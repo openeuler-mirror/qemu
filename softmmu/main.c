@@ -23,6 +23,7 @@
  */
 
 #include "qemu/osdep.h"
+#include "qemu/log.h"
 #include "qemu-common.h"
 #include "sysemu/sysemu.h"
 
@@ -47,6 +48,7 @@ int main(int argc, char **argv)
 int main(int argc, char **argv, char **envp)
 {
     qemu_init(argc, argv, envp);
+    qemu_log("qemu enter main_loop\n");
     qemu_main_loop();
     qemu_cleanup();
 
