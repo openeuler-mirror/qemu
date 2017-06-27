@@ -536,6 +536,10 @@ void usb_check_attach(USBDevice *dev, Error **errp)
                    bus->qbus.name, port->path, portspeed);
         return;
     }
+
+    qemu_log("attach usb device \"%s\" (%s speed) to VM bus \"%s\", "
+             "port \"%s\" (%s speed)\n", dev->product_desc, devspeed,
+             bus->qbus.name, port->path, portspeed);
 }
 
 void usb_device_attach(USBDevice *dev, Error **errp)
@@ -564,6 +568,8 @@ int usb_device_detach(USBDevice *dev)
 
     usb_detach(port);
     dev->attached = false;
+    qemu_log("detach usb device \"%s\" from VM bus \"%s\", port \"%s\"\n",
+             dev->product_desc, bus->qbus.name, port->path);
     return 0;
 }
 

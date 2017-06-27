@@ -322,6 +322,7 @@ int os_mlock(void)
 #ifdef HAVE_MLOCKALL
     int ret = 0;
 
+    qemu_log("do mlockall\n");
     ret = mlockall(MCL_CURRENT | MCL_FUTURE);
     if (ret < 0) {
         error_report("mlockall: %s", strerror(errno));

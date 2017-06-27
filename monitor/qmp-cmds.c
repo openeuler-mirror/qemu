@@ -21,6 +21,7 @@
 #include "sysemu/sysemu.h"
 #include "qemu/config-file.h"
 #include "qemu/uuid.h"
+#include "qemu/log.h"
 #include "chardev/char.h"
 #include "ui/qemu-spice.h"
 #include "ui/console.h"
@@ -150,8 +151,10 @@ void qmp_cont(Error **errp)
     }
 
     if (runstate_check(RUN_STATE_INMIGRATE)) {
+        qemu_log("qmp cont is received in migration\n");
         autostart = 1;
     } else {
+        qemu_log("qmp cont is received and vm is started\n");
         vm_start();
     }
 }

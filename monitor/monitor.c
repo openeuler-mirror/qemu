@@ -23,6 +23,7 @@
  */
 
 #include "qemu/osdep.h"
+#include "qemu/log.h"
 #include "monitor-internal.h"
 #include "qapi/error.h"
 #include "qapi/opts-visitor.h"
