@@ -1,0 +1,34 @@
+From 8108317641b3cb378bf1862dc3c0a73d1e0976ce Mon Sep 17 00:00:00 2001
+From: Eric Auger <eric.auger@redhat.com>
+Date: Tue, 4 Sep 2018 08:48:33 -0400
+Subject: [PATCH] hw/arm/smmuv3: Fill the IOTLBEntry arch_id on NH_VA
+ invalidation
+
+When the guest invalidates one S1 entry, it passes the asid.
+When propagating this invalidation downto the host, the asid
+information also must be passed. So let's fill the arch_id field
+introduced for that purpose and accordingly set the flags to
+indicate its presence.
+
+Signed-off-by: Eric Auger <eric.auger@redhat.com>
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+---
+ hw/arm/smmuv3.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/hw/arm/smmuv3.c b/hw/arm/smmuv3.c
+index f8e721f949..c6b950af35 100644
+--- a/hw/arm/smmuv3.c
++++ b/hw/arm/smmuv3.c
+@@ -824,6 +824,8 @@ static void smmuv3_notify_iova(IOMMUMemoryRegion *mr,
+     entry.iova = iova;
+     entry.addr_mask = (1 << tt->granule_sz) - 1;
+     entry.perm = IOMMU_NONE;
++    entry.flags = IOMMU_INV_FLAGS_ARCHID;
++    entry.arch_id = asid;
+ 
+     memory_region_notify_one(n, &entry);
+ }
+-- 
+2.27.0
+
