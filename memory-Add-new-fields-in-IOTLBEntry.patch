@@ -1,0 +1,84 @@
+From 5a77056573d946eb9220b90dd1edce1f6f925c42 Mon Sep 17 00:00:00 2001
+From: Eric Auger <eric.auger@redhat.com>
+Date: Tue, 4 Sep 2018 08:43:05 -0400
+Subject: [PATCH] memory: Add new fields in IOTLBEntry
+
+The current IOTLBEntry becomes too simple to interact with
+some physical IOMMUs. IOTLBs can be invalidated with different
+granularities: domain, pasid, addr. Current IOTLB entry only offers
+page selective invalidation. Let's add a granularity field
+that conveys this information.
+
+TLB entries are usually tagged with some ids such as the asid
+or pasid. When propagating an invalidation command from the
+guest to the host, we need to pass those IDs.
+
+Also we add a leaf field which indicates, in case of invalidation
+notification, whether only cache entries for the last level of
+translation are required to be invalidated.
+
+A flag field is introduced to inform whether those fields are set.
+
+Signed-off-by: Eric Auger <eric.auger@redhat.com>
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+---
+ include/exec/memory.h | 36 +++++++++++++++++++++++++++++++++++-
+ 1 file changed, 35 insertions(+), 1 deletion(-)
+
+diff --git a/include/exec/memory.h b/include/exec/memory.h
+index dca8184277..3c5206dce6 100644
+--- a/include/exec/memory.h
++++ b/include/exec/memory.h
+@@ -66,14 +66,48 @@ typedef enum {
+     IOMMU_RW   = 3,
+ } IOMMUAccessFlags;
+ 
++/* Granularity of the cache invalidation */
++typedef enum {
++    IOMMU_INV_GRAN_ADDR = 0,
++    IOMMU_INV_GRAN_PASID,
++    IOMMU_INV_GRAN_DOMAIN,
++} IOMMUInvGranularity;
++
+ #define IOMMU_ACCESS_FLAG(r, w) (((r) ? IOMMU_RO : 0) | ((w) ? IOMMU_WO : 0))
+ 
++/**
++ * IOMMUTLBEntry - IOMMU TLB entry
++ *
++ * Structure used when performing a translation or when notifying MAP or
++ * UNMAP (invalidation) events
++ *
++ * @target_as: target address space
++ * @iova: IO virtual address (input)
++ * @translated_addr: translated address (output)
++ * @addr_mask: address mask (0xfff means 4K binding), must be multiple of 2
++ * @perm: permission flag of the mapping (NONE encodes no mapping or
++ * invalidation notification)
++ * @granularity: granularity of the invalidation
++ * @flags: informs whether the following fields are set
++ * @arch_id: architecture specific ID tagging the TLB
++ * @pasid: PASID tagging the TLB
++ * @leaf: when @perm is NONE, indicates whether only caches for the last
++ * level of translation need to be invalidated.
++ */
+ struct IOMMUTLBEntry {
+     AddressSpace    *target_as;
+     hwaddr           iova;
+     hwaddr           translated_addr;
+-    hwaddr           addr_mask;  /* 0xfff = 4k translation */
++    hwaddr           addr_mask;
+     IOMMUAccessFlags perm;
++    IOMMUInvGranularity granularity;
++#define IOMMU_INV_FLAGS_PASID  (1 << 0)
++#define IOMMU_INV_FLAGS_ARCHID (1 << 1)
++#define IOMMU_INV_FLAGS_LEAF   (1 << 2)
++    uint32_t         flags;
++    uint32_t         arch_id;
++    uint32_t         pasid;
++    bool             leaf;
+ };
+ 
+ /*
+-- 
+2.27.0
+
