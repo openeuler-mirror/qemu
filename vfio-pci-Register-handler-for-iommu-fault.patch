@@ -1,0 +1,168 @@
+From 65b96da46d2c5dfdcf3a4618cf75ca94345164d7 Mon Sep 17 00:00:00 2001
+From: Eric Auger <eric.auger@redhat.com>
+Date: Thu, 13 Dec 2018 04:39:30 -0500
+Subject: [PATCH] vfio/pci: Register handler for iommu fault
+
+We use the new extended IRQ VFIO_IRQ_TYPE_NESTED type and
+VFIO_IRQ_SUBTYPE_DMA_FAULT subtype to set/unset
+a notifier for physical DMA faults. The associated eventfd is
+triggered, in nested mode, whenever a fault is detected at IOMMU
+physical level.
+
+The actual handler will be implemented in subsequent patches.
+
+Signed-off-by: Eric Auger <eric.auger@redhat.com>
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+---
+ hw/vfio/pci.c | 81 ++++++++++++++++++++++++++++++++++++++++++++++++++-
+ hw/vfio/pci.h |  7 +++++
+ 2 files changed, 87 insertions(+), 1 deletion(-)
+
+diff --git a/hw/vfio/pci.c b/hw/vfio/pci.c
+index bbcba3fd16..f5c05d508d 100644
+--- a/hw/vfio/pci.c
++++ b/hw/vfio/pci.c
+@@ -2857,6 +2857,76 @@ static PCIPASIDOps vfio_pci_pasid_ops = {
+     .set_pasid_table = vfio_iommu_set_pasid_table,
+ };
+ 
++static void vfio_dma_fault_notifier_handler(void *opaque)
++{
++    VFIOPCIExtIRQ *ext_irq = opaque;
++
++    if (!event_notifier_test_and_clear(&ext_irq->notifier)) {
++        return;
++    }
++}
++
++static int vfio_register_ext_irq_handler(VFIOPCIDevice *vdev,
++                                         uint32_t type, uint32_t subtype,
++                                         IOHandler *handler)
++{
++    int32_t fd, ext_irq_index, index;
++    struct vfio_irq_info *irq_info;
++    Error *err = NULL;
++    EventNotifier *n;
++    int ret;
++
++    ret = vfio_get_dev_irq_info(&vdev->vbasedev, type, subtype, &irq_info);
++    if (ret) {
++        return ret;
++    }
++    index = irq_info->index;
++    ext_irq_index = irq_info->index - VFIO_PCI_NUM_IRQS;
++    g_free(irq_info);
++
++    vdev->ext_irqs[ext_irq_index].vdev = vdev;
++    vdev->ext_irqs[ext_irq_index].index = index;
++    n = &vdev->ext_irqs[ext_irq_index].notifier;
++
++    ret = event_notifier_init(n, 0);
++    if (ret) {
++        error_report("vfio: Unable to init event notifier for ext irq %d(%d)",
++                     ext_irq_index, ret);
++        return ret;
++    }
++
++    fd = event_notifier_get_fd(n);
++    qemu_set_fd_handler(fd, vfio_dma_fault_notifier_handler, NULL,
++                        &vdev->ext_irqs[ext_irq_index]);
++
++    ret = vfio_set_irq_signaling(&vdev->vbasedev, index, 0,
++                                 VFIO_IRQ_SET_ACTION_TRIGGER, fd, &err);
++    if (ret) {
++        error_reportf_err(err, VFIO_MSG_PREFIX, vdev->vbasedev.name);
++        qemu_set_fd_handler(fd, NULL, NULL, vdev);
++        event_notifier_cleanup(n);
++    }
++    return ret;
++}
++
++static void vfio_unregister_ext_irq_notifiers(VFIOPCIDevice *vdev)
++{
++    VFIODevice *vbasedev = &vdev->vbasedev;
++    Error *err = NULL;
++    int i;
++
++    for (i = 0; i < vbasedev->num_irqs - VFIO_PCI_NUM_IRQS; i++) {
++        if (vfio_set_irq_signaling(vbasedev, i + VFIO_PCI_NUM_IRQS , 0,
++                                   VFIO_IRQ_SET_ACTION_TRIGGER, -1, &err)) {
++            error_reportf_err(err, VFIO_MSG_PREFIX, vdev->vbasedev.name);
++        }
++        qemu_set_fd_handler(event_notifier_get_fd(&vdev->ext_irqs[i].notifier),
++                            NULL, NULL, vdev);
++        event_notifier_cleanup(&vdev->ext_irqs[i].notifier);
++    }
++    g_free(vdev->ext_irqs);
++}
++
+ static void vfio_realize(PCIDevice *pdev, Error **errp)
+ {
+     VFIOPCIDevice *vdev = PCI_VFIO(pdev);
+@@ -2867,7 +2937,7 @@ static void vfio_realize(PCIDevice *pdev, Error **errp)
+     ssize_t len;
+     struct stat st;
+     int groupid;
+-    int i, ret;
++    int i, ret, nb_ext_irqs;
+     bool is_mdev;
+ 
+     if (!vdev->vbasedev.sysfsdev) {
+@@ -2955,6 +3025,11 @@ static void vfio_realize(PCIDevice *pdev, Error **errp)
+         goto error;
+     }
+ 
++    nb_ext_irqs = vdev->vbasedev.num_irqs - VFIO_PCI_NUM_IRQS;
++    if (nb_ext_irqs > 0) {
++        vdev->ext_irqs = g_new0(VFIOPCIExtIRQ, nb_ext_irqs);
++    }
++
+     vfio_populate_device(vdev, &err);
+     if (err) {
+         error_propagate(errp, err);
+@@ -3161,6 +3236,9 @@ static void vfio_realize(PCIDevice *pdev, Error **errp)
+ 
+     vfio_register_err_notifier(vdev);
+     vfio_register_req_notifier(vdev);
++    vfio_register_ext_irq_handler(vdev, VFIO_IRQ_TYPE_NESTED,
++                                  VFIO_IRQ_SUBTYPE_DMA_FAULT,
++                                  vfio_dma_fault_notifier_handler);
+     vfio_setup_resetfn_quirk(vdev);
+ 
+     pci_setup_pasid_ops(pdev, &vfio_pci_pasid_ops);
+@@ -3201,6 +3279,7 @@ static void vfio_exitfn(PCIDevice *pdev)
+ 
+     vfio_unregister_req_notifier(vdev);
+     vfio_unregister_err_notifier(vdev);
++    vfio_unregister_ext_irq_notifiers(vdev);
+     pci_device_set_intx_routing_notifier(&vdev->pdev, NULL);
+     vfio_disable_interrupts(vdev);
+     if (vdev->intx.mmap_timer) {
+diff --git a/hw/vfio/pci.h b/hw/vfio/pci.h
+index 834a90d646..893d074375 100644
+--- a/hw/vfio/pci.h
++++ b/hw/vfio/pci.h
+@@ -113,6 +113,12 @@ typedef struct VFIOMSIXInfo {
+     unsigned long *pending;
+ } VFIOMSIXInfo;
+ 
++typedef struct VFIOPCIExtIRQ {
++    struct VFIOPCIDevice *vdev;
++    EventNotifier notifier;
++    uint32_t index;
++} VFIOPCIExtIRQ;
++
+ typedef struct VFIOPCIDevice {
+     PCIDevice pdev;
+     VFIODevice vbasedev;
+@@ -134,6 +140,7 @@ typedef struct VFIOPCIDevice {
+     PCIHostDeviceAddress host;
+     EventNotifier err_notifier;
+     EventNotifier req_notifier;
++    VFIOPCIExtIRQ *ext_irqs;
+     int (*resetfn)(struct VFIOPCIDevice *);
+     uint32_t vendor_id;
+     uint32_t device_id;
+-- 
+2.27.0
+
