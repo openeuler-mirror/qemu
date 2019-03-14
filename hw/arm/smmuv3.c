@@ -795,7 +795,7 @@ epilogue:
 static void smmuv3_notify_iova(IOMMUMemoryRegion *mr,
                                IOMMUNotifier *n,
                                int asid,
-                               dma_addr_t iova)
+                               dma_addr_t iova, bool leaf)
 {
     SMMUDevice *sdev = container_of(mr, SMMUDevice, iommu);
     SMMUEventInfo event = {};
@@ -826,6 +826,7 @@ static void smmuv3_notify_iova(IOMMUMemoryRegion *mr,
     entry.perm = IOMMU_NONE;
     entry.flags = IOMMU_INV_FLAGS_ARCHID;
     entry.arch_id = asid;
+    entry.leaf = leaf;
 
     memory_region_notify_one(n, &entry);
 }
@@ -854,7 +855,8 @@ static void smmuv3_notify_asid(IOMMUMemoryRegion *mr,
 }
 
 /* invalidate an asid/iova tuple in all mr's */
-static void smmuv3_inv_notifiers_iova(SMMUState *s, int asid, dma_addr_t iova)
+static void smmuv3_inv_notifiers_iova(SMMUState *s, int asid, dma_addr_t iova,
+                                      bool leaf)
 {
     SMMUDevice *sdev;
 
@@ -865,7 +867,7 @@ static void smmuv3_inv_notifiers_iova(SMMUState *s, int asid, dma_addr_t iova)
         trace_smmuv3_inv_notifiers_iova(mr->parent_obj.name, asid, iova);
 
         IOMMU_NOTIFIER_FOREACH(n, mr) {
-            smmuv3_notify_iova(mr, n, asid, iova);
+            smmuv3_notify_iova(mr, n, asid, iova, leaf);
         }
     }
 }
@@ -1018,9 +1020,10 @@ static int smmuv3_cmdq_consume(SMMUv3State *s)
         {
             dma_addr_t addr = CMD_ADDR(&cmd);
             uint16_t vmid = CMD_VMID(&cmd);
+            bool leaf = CMD_LEAF(&cmd);
 
             trace_smmuv3_cmdq_tlbi_nh_vaa(vmid, addr);
-            smmuv3_inv_notifiers_iova(bs, -1, addr);
+            smmuv3_inv_notifiers_iova(bs, -1, addr, leaf);
             smmu_iotlb_inv_all(bs);
             break;
         }
@@ -1032,7 +1035,7 @@ static int smmuv3_cmdq_consume(SMMUv3State *s)
             bool leaf = CMD_LEAF(&cmd);
 
             trace_smmuv3_cmdq_tlbi_nh_va(vmid, asid, addr, leaf);
-            smmuv3_inv_notifiers_iova(bs, asid, addr);
+            smmuv3_inv_notifiers_iova(bs, asid, addr, leaf);
             smmu_iotlb_inv_iova(bs, asid, addr);
             break;
         }
