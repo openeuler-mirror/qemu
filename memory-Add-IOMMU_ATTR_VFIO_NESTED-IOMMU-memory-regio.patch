@@ -1,0 +1,72 @@
+From 5f4291f431add76b8754a5fb2d62ab4108ece73f Mon Sep 17 00:00:00 2001
+From: Eric Auger <eric.auger@redhat.com>
+Date: Mon, 1 Jul 2019 11:30:30 +0200
+Subject: [PATCH] memory: Add IOMMU_ATTR_VFIO_NESTED IOMMU memory region
+ attribute
+
+We introduce a new IOMMU Memory Region attribute,
+IOMMU_ATTR_VFIO_NESTED that tells whether the virtual IOMMU
+requires HW nested paging for VFIO integration.
+
+Current Intel virtual IOMMU device supports "Caching
+Mode" and does not require 2 stages at physical level to be
+integrated with VFIO. However SMMUv3 does not implement such
+"caching mode" and requires to use HW nested paging.
+
+As such SMMUv3 is the first IOMMU device to advertise this
+attribute.
+
+Signed-off-by: Eric Auger <eric.auger@redhat.com>
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+---
+ hw/arm/smmuv3.c       | 12 ++++++++++++
+ include/exec/memory.h |  3 ++-
+ 2 files changed, 14 insertions(+), 1 deletion(-)
+
+diff --git a/hw/arm/smmuv3.c b/hw/arm/smmuv3.c
+index 0ef1ca376c..55eed5189e 100644
+--- a/hw/arm/smmuv3.c
++++ b/hw/arm/smmuv3.c
+@@ -1531,6 +1531,17 @@ static void smmuv3_notify_flag_changed(IOMMUMemoryRegion *iommu,
+     }
+ }
+ 
++static int smmuv3_get_attr(IOMMUMemoryRegion *iommu,
++                           enum IOMMUMemoryRegionAttr attr,
++                           void *data)
++{
++    if (attr == IOMMU_ATTR_VFIO_NESTED) {
++        *(bool *) data = true;
++        return 0;
++    }
++    return -EINVAL;
++}
++
+ static void smmuv3_iommu_memory_region_class_init(ObjectClass *klass,
+                                                   void *data)
+ {
+@@ -1538,6 +1549,7 @@ static void smmuv3_iommu_memory_region_class_init(ObjectClass *klass,
+ 
+     imrc->translate = smmuv3_translate;
+     imrc->notify_flag_changed = smmuv3_notify_flag_changed;
++    imrc->get_attr = smmuv3_get_attr;
+ }
+ 
+ static const TypeInfo smmuv3_type_info = {
+diff --git a/include/exec/memory.h b/include/exec/memory.h
+index 3c5206dce6..74606e14aa 100644
+--- a/include/exec/memory.h
++++ b/include/exec/memory.h
+@@ -240,7 +240,8 @@ struct MemoryRegionOps {
+ };
+ 
+ enum IOMMUMemoryRegionAttr {
+-    IOMMU_ATTR_SPAPR_TCE_FD
++    IOMMU_ATTR_SPAPR_TCE_FD,
++    IOMMU_ATTR_VFIO_NESTED,
+ };
+ 
+ /**
+-- 
+2.27.0
+
