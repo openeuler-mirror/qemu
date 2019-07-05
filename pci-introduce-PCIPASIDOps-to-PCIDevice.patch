@@ -1,0 +1,127 @@
+From 26adddfe4645b69c16ed8d6601f373d40bddd0e3 Mon Sep 17 00:00:00 2001
+From: Liu Yi L <yi.l.liu@intel.com>
+Date: Fri, 5 Jul 2019 19:01:36 +0800
+Subject: [PATCH] pci: introduce PCIPASIDOps to PCIDevice
+
+This patch introduces PCIPASIDOps for IOMMU related operations.
+
+https://lists.gnu.org/archive/html/qemu-devel/2018-03/msg00078.html
+https://lists.gnu.org/archive/html/qemu-devel/2018-03/msg00940.html
+
+So far, to setup virt-SVA for assigned SVA capable device, needs to
+configure host translation structures for specific pasid. (e.g. bind
+guest page table to host and enable nested translation in host).
+Besides, vIOMMU emulator needs to forward guest's cache invalidation
+to host since host nested translation is enabled. e.g. on VT-d, guest
+owns 1st level translation table, thus cache invalidation for 1st
+level should be propagated to host.
+
+This patch adds two functions: alloc_pasid and free_pasid to support
+guest pasid allocation and free. The implementations of the callbacks
+would be device passthru modules. Like vfio.
+
+Cc: Kevin Tian <kevin.tian@intel.com>
+Cc: Jacob Pan <jacob.jun.pan@linux.intel.com>
+Cc: Peter Xu <peterx@redhat.com>
+Cc: Eric Auger <eric.auger@redhat.com>
+Cc: Yi Sun <yi.y.sun@linux.intel.com>
+Cc: David Gibson <david@gibson.dropbear.id.au>
+Signed-off-by: Liu Yi L <yi.l.liu@intel.com>
+Signed-off-by: Yi Sun <yi.y.sun@linux.intel.com>
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+---
+ hw/pci/pci.c         | 34 ++++++++++++++++++++++++++++++++++
+ include/hw/pci/pci.h | 11 +++++++++++
+ 2 files changed, 45 insertions(+)
+
+diff --git a/hw/pci/pci.c b/hw/pci/pci.c
+index e74143ccc3..f11ca7964e 100644
+--- a/hw/pci/pci.c
++++ b/hw/pci/pci.c
+@@ -2626,6 +2626,40 @@ void pci_setup_iommu(PCIBus *bus, PCIIOMMUFunc fn, void *opaque)
+     bus->iommu_opaque = opaque;
+ }
+ 
++void pci_setup_pasid_ops(PCIDevice *dev, PCIPASIDOps *ops)
++{
++    assert(ops && !dev->pasid_ops);
++    dev->pasid_ops = ops;
++}
++
++bool pci_device_is_pasid_ops_set(PCIBus *bus, int32_t devfn)
++{
++    PCIDevice *dev;
++
++    if (!bus) {
++        return false;
++    }
++
++    dev = bus->devices[devfn];
++    return !!(dev && dev->pasid_ops);
++}
++
++int pci_device_set_pasid_table(PCIBus *bus, int32_t devfn,
++                               IOMMUConfig *config)
++{
++    PCIDevice *dev;
++
++    if (!bus) {
++        return -EINVAL;
++    }
++
++    dev = bus->devices[devfn];
++    if (dev && dev->pasid_ops && dev->pasid_ops->set_pasid_table) {
++        return dev->pasid_ops->set_pasid_table(bus, devfn, config);
++    }
++    return -ENOENT;
++}
++
+ static void pci_dev_get_w64(PCIBus *b, PCIDevice *dev, void *opaque)
+ {
+     Range *range = opaque;
+diff --git a/include/hw/pci/pci.h b/include/hw/pci/pci.h
+index aaf1b9f70d..bb14ed61b0 100644
+--- a/include/hw/pci/pci.h
++++ b/include/hw/pci/pci.h
+@@ -9,6 +9,7 @@
+ #include "hw/isa/isa.h"
+ 
+ #include "hw/pci/pcie.h"
++#include "hw/iommu/iommu.h"
+ 
+ extern bool pci_available;
+ 
+@@ -263,6 +264,11 @@ struct PCIReqIDCache {
+ };
+ typedef struct PCIReqIDCache PCIReqIDCache;
+ 
++struct PCIPASIDOps {
++    int (*set_pasid_table)(PCIBus *bus, int32_t devfn, IOMMUConfig *config);
++};
++typedef struct PCIPASIDOps PCIPASIDOps;
++
+ struct PCIDevice {
+     DeviceState qdev;
+ 
+@@ -352,6 +358,7 @@ struct PCIDevice {
+     MSIVectorUseNotifier msix_vector_use_notifier;
+     MSIVectorReleaseNotifier msix_vector_release_notifier;
+     MSIVectorPollNotifier msix_vector_poll_notifier;
++    PCIPASIDOps *pasid_ops;
+ };
+ 
+ void pci_register_bar(PCIDevice *pci_dev, int region_num,
+@@ -485,6 +492,10 @@ typedef AddressSpace *(*PCIIOMMUFunc)(PCIBus *, void *, int);
+ AddressSpace *pci_device_iommu_address_space(PCIDevice *dev);
+ void pci_setup_iommu(PCIBus *bus, PCIIOMMUFunc fn, void *opaque);
+ 
++void pci_setup_pasid_ops(PCIDevice *dev, PCIPASIDOps *ops);
++bool pci_device_is_pasid_ops_set(PCIBus *bus, int32_t devfn);
++int pci_device_set_pasid_table(PCIBus *bus, int32_t devfn, IOMMUConfig *config);
++
+ static inline void
+ pci_set_byte(uint8_t *config, uint8_t val)
+ {
+-- 
+2.27.0
+
