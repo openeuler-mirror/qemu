@@ -1578,8 +1578,7 @@ static void migrate_fd_cleanup(MigrationState *s)
         qemu_fclose(tmp);
     }
 
-    assert((s->state != MIGRATION_STATUS_ACTIVE) &&
-           (s->state != MIGRATION_STATUS_POSTCOPY_ACTIVE));
+    assert(!migration_is_active(s));
 
     if (s->state == MIGRATION_STATUS_CANCELLING) {
         migrate_set_state(&s->state, MIGRATION_STATUS_CANCELLING,
@@ -1739,6 +1738,12 @@ bool migration_is_idle(void)
     }
 
     return false;
+}
+
+bool migration_is_active(MigrationState *s)
+{
+    return (s->state == MIGRATION_STATUS_ACTIVE ||
+            s->state == MIGRATION_STATUS_POSTCOPY_ACTIVE);
 }
 
 void migrate_init(MigrationState *s)
@@ -3307,8 +3312,7 @@ static void *migration_thread(void *opaque)
 
     trace_migration_thread_setup_complete();
 
-    while (s->state == MIGRATION_STATUS_ACTIVE ||
-           s->state == MIGRATION_STATUS_POSTCOPY_ACTIVE) {
+    while (migration_is_active(s)) {
         int64_t current_time;
 
         if (urgent || !qemu_file_rate_limit(s->to_dst_file)) {
