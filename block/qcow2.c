@@ -272,6 +272,7 @@ static int qcow2_read_extensions(BlockDriverState *bs, uint64_t start_offset,
                 void *feature_table = g_malloc0(ext.len + 2 * sizeof(Qcow2Feature));
                 ret = bdrv_pread(bs->file, offset , feature_table, ext.len);
                 if (ret < 0) {
+                    g_free(feature_table);
                     error_setg_errno(errp, -ret, "ERROR: ext_feature_table: "
                                      "Could not read table");
                     return ret;
