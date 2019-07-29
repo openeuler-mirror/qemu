@@ -1,0 +1,59 @@
+From 98ed0f915cf3335768ed84ee5dfa54f4e99aaf00 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Mon, 29 Jul 2019 16:35:53 -0400
+Subject: [PATCH] block/backup: add 'never' policy to bitmap sync mode
+
+This adds a "never" policy for bitmap synchronization. Regardless of if
+the job succeeds or fails, we never update the bitmap. This can be used
+to perform differential backups, or simply to avoid the job modifying a
+bitmap.
+
+Signed-off-by: John Snow <jsnow@redhat.com>
+Reviewed-by: Max Reitz <mreitz@redhat.com>
+Message-id: 20190709232550.10724-7-jsnow@redhat.com
+Signed-off-by: John Snow <jsnow@redhat.com>
+---
+ block/backup.c       | 7 +++++--
+ qapi/block-core.json | 5 ++++-
+ 2 files changed, 9 insertions(+), 3 deletions(-)
+
+diff --git a/block/backup.c b/block/backup.c
+index e37eda80cd..84a56337ac 100644
+--- a/block/backup.c
++++ b/block/backup.c
+@@ -274,8 +274,11 @@ static void backup_cleanup_sync_bitmap(BackupBlockJob *job, int ret)
+     BdrvDirtyBitmap *bm;
+     BlockDriverState *bs = blk_bs(job->common.blk);
+ 
+-    if (ret < 0) {
+-        /* Merge the successor back into the parent, delete nothing. */
++    if (ret < 0 || job->bitmap_mode == BITMAP_SYNC_MODE_NEVER) {
++        /*
++         * Failure, or we don't want to synchronize the bitmap.
++         * Merge the successor back into the parent, delete nothing.
++         */
+         bm = bdrv_reclaim_dirty_bitmap(bs, job->sync_bitmap, NULL);
+         assert(bm);
+     } else {
+diff --git a/qapi/block-core.json b/qapi/block-core.json
+index 97baff3a8c..48a0bfab63 100644
+--- a/qapi/block-core.json
++++ b/qapi/block-core.json
+@@ -1146,10 +1146,13 @@
+ # @on-success: The bitmap is only synced when the operation is successful.
+ #              This is the behavior always used for 'INCREMENTAL' backups.
+ #
++# @never: The bitmap is never synchronized with the operation, and is
++#         treated solely as a read-only manifest of blocks to copy.
++#
+ # Since: 4.2
+ ##
+ { 'enum': 'BitmapSyncMode',
+-  'data': ['on-success'] }
++  'data': ['on-success', 'never'] }
+ 
+ ##
+ # @MirrorCopyMode:
+-- 
+2.27.0
+
