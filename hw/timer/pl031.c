@@ -59,6 +59,15 @@ static uint32_t pl031_get_count(PL031State *s)
     return s->tick_offset + now / NANOSECONDS_PER_SECOND;
 }
 
+static void pl031_get_date(Object *obj, struct tm *current_tm, Error **errp)
+{
+    PL031State *s = PL031(obj);
+    time_t ti = pl031_get_count(s);
+
+    /* Changed to UTC time */
+    gmtime_r(&ti, current_tm);
+}
+
 static void pl031_set_alarm(PL031State *s)
 {
     uint32_t ticks;
@@ -193,6 +202,10 @@ static void pl031_init(Object *obj)
         qemu_clock_get_ns(rtc_clock) / NANOSECONDS_PER_SECOND;
 
     s->timer = timer_new_ns(rtc_clock, pl031_interrupt, s);
+
+    object_property_add_tm(OBJECT(s), "date", pl031_get_date, NULL);
+    object_property_add_alias(qdev_get_machine(), "rtc-time",
+                              OBJECT(s), "date", NULL);
 }
 
 static int pl031_pre_save(void *opaque)
