@@ -24,6 +24,7 @@
 
 #include "qemu/osdep.h"
 #include "sysemu/numa.h"
+#include "sysemu/sysemu.h"
 #include "exec/cpu-common.h"
 #include "exec/ramlist.h"
 #include "qemu/bitmap.h"

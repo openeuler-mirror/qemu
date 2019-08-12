@@ -22,6 +22,7 @@
 #include "qapi/qapi-commands-misc.h"
 #include "qemu/error-report.h"
 #include "qemu/range.h"
+#include "sysemu/sysemu.h"
 #include "sysemu/xen-mapcache.h"
 #include "trace.h"
 #include "exec/address-spaces.h"
