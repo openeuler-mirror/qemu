@@ -211,6 +211,7 @@ static void aarch64_a72_initfn(Object *obj)
     ARMCPU *cpu = ARM_CPU(obj);
 
     cpu->dtb_compatible = "arm,cortex-a72";
+    cpu->kvm_target = QEMU_KVM_ARM_TARGET_GENERIC_V8;
     set_feature(&cpu->env, ARM_FEATURE_V8);
     set_feature(&cpu->env, ARM_FEATURE_VFP4);
     set_feature(&cpu->env, ARM_FEATURE_NEON);
@@ -275,7 +276,6 @@ static void aarch64_kunpeng_920_initfn(Object *obj)
     cpu->id_aa64dfr0 = 0x110305408;
     cpu->isar.id_aa64isar0 = 0x10211120;
     cpu->isar.id_aa64mmfr0 = 0x101125;
-    cpu->kvm_target = KVM_ARM_TARGET_GENERIC_V8;
 }
 
 static void cpu_max_get_sve_vq(Object *obj, Visitor *v, const char *name,
