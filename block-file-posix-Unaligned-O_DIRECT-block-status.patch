@@ -1,0 +1,87 @@
+From 9c3db310ff0b7473272ae8dce5e04e2f8a825390 Mon Sep 17 00:00:00 2001
+From: Max Reitz <mreitz@redhat.com>
+Date: Wed, 15 May 2019 06:15:40 +0200
+Subject: [PATCH] block/file-posix: Unaligned O_DIRECT block-status
+
+Currently, qemu crashes whenever someone queries the block status of an
+unaligned image tail of an O_DIRECT image:
+$ echo > foo
+$ qemu-img map --image-opts driver=file,filename=foo,cache.direct=on
+Offset          Length          Mapped to       File
+qemu-img: block/io.c:2093: bdrv_co_block_status: Assertion `*pnum &&
+QEMU_IS_ALIGNED(*pnum, align) && align > offset - aligned_offset'
+failed.
+
+This is because bdrv_co_block_status() checks that the result returned
+by the driver's implementation is aligned to the request_alignment, but
+file-posix can fail to do so, which is actually mentioned in a comment
+there: "[...] possibly including a partial sector at EOF".
+
+Fix this by rounding up those partial sectors.
+
+There are two possible alternative fixes:
+(1) We could refuse to open unaligned image files with O_DIRECT
+    altogether.  That sounds reasonable until you realize that qcow2
+    does necessarily not fill up its metadata clusters, and that nobody
+    runs qemu-img create with O_DIRECT.  Therefore, unpreallocated qcow2
+    files usually have an unaligned image tail.
+
+(2) bdrv_co_block_status() could ignore unaligned tails.  It actually
+    throws away everything past the EOF already, so that sounds
+    reasonable.
+    Unfortunately, the block layer knows file lengths only with a
+    granularity of BDRV_SECTOR_SIZE, so bdrv_co_block_status() usually
+    would have to guess whether its file length information is inexact
+    or whether the driver is broken.
+
+Fixing what raw_co_block_status() returns is the safest thing to do.
+
+There seems to be no other block driver that sets request_alignment and
+does not make sure that it always returns aligned values.
+
+Cc: qemu-stable@nongnu.org
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry-picked from commit 9c3db310ff0b7473272ae8dce5e04e2f8a825390)
+---
+ block/file-posix.c | 16 ++++++++++++++++
+ 1 file changed, 16 insertions(+)
+
+diff --git a/block/file-posix.c b/block/file-posix.c
+index e09e15bbf8..d018429672 100644
+--- a/block/file-posix.c
++++ b/block/file-posix.c
+@@ -2488,6 +2488,8 @@ static int coroutine_fn raw_co_block_status(BlockDriverState *bs,
+     off_t data = 0, hole = 0;
+     int ret;
+ 
++    assert(QEMU_IS_ALIGNED(offset | bytes, bs->bl.request_alignment));
++
+     ret = fd_open(bs);
+     if (ret < 0) {
+         return ret;
+@@ -2513,6 +2515,20 @@ static int coroutine_fn raw_co_block_status(BlockDriverState *bs,
+         /* On a data extent, compute bytes to the end of the extent,
+          * possibly including a partial sector at EOF. */
+         *pnum = MIN(bytes, hole - offset);
++
++        /*
++         * We are not allowed to return partial sectors, though, so
++         * round up if necessary.
++         */
++        if (!QEMU_IS_ALIGNED(*pnum, bs->bl.request_alignment)) {
++            int64_t file_length = raw_getlength(bs);
++            if (file_length > 0) {
++                /* Ignore errors, this is just a safeguard */
++                assert(hole == file_length);
++            }
++            *pnum = ROUND_UP(*pnum, bs->bl.request_alignment);
++        }
++
+         ret = BDRV_BLOCK_DATA;
+     } else {
+         /* On a hole, compute bytes to the beginning of the next extent.  */
+-- 
+2.19.1
+

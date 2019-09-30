@@ -1,0 +1,37 @@
+From 754da86714d550c3f995f11a2587395081362e0a Mon Sep 17 00:00:00 2001
+From: Eric Blake <eblake@redhat.com>
+Date: Wed, 17 Apr 2019 12:11:00 -0500
+Subject: [PATCH] cutils: Fix size_to_str() on 32-bit platforms
+
+When extracting a human-readable size formatter, we changed 'uint64_t
+div' pre-patch to 'unsigned long div' post-patch. Which breaks on
+32-bit platforms, resulting in 'inf' instead of intended values larger
+than 999GB.
+
+Fixes: 22951aaa
+CC: qemu-stable@nongnu.org
+Reported-by: Max Reitz <mreitz@redhat.com>
+Signed-off-by: Eric Blake <eblake@redhat.com>
+Reviewed-by: Max Reitz <mreitz@redhat.com>
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry-picked from commit 754da86714d550c3f995f11a2587395081362e0a)
+---
+ util/cutils.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/util/cutils.c b/util/cutils.c
+index e098debdc0..d682c90901 100644
+--- a/util/cutils.c
++++ b/util/cutils.c
+@@ -825,7 +825,7 @@ const char *qemu_ether_ntoa(const MACAddr *mac)
+ char *size_to_str(uint64_t val)
+ {
+     static const char *suffixes[] = { "", "Ki", "Mi", "Gi", "Ti", "Pi", "Ei" };
+-    unsigned long div;
++    uint64_t div;
+     int i;
+ 
+     /*
+-- 
+2.19.1
+

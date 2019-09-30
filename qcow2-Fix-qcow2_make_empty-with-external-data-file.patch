@@ -1,0 +1,49 @@
+From db04524f820582ebf1189223b6378de238511da1 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Mon, 29 Apr 2019 12:52:21 +0200
+Subject: [PATCH] qcow2: Fix qcow2_make_empty() with external data file
+
+make_completely_empty() is an optimisated path for bdrv_make_empty()
+where completely new metadata is created inside the image file instead
+of going through all clusters and discarding them. For an external data
+file, however, we actually need to do discard operations on the data
+file; just overwriting the qcow2 file doesn't get rid of the data.
+
+The necessary slow path with an explicit discard operation already
+exists for other cases. Use it for external data files, too.
+
+Cc: qemu-stable@nongnu.org
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+(cherry-picked from commit db04524f820582ebf1189223b6378de238511da1)
+---
+ block/qcow2.c | 7 +++++--
+ 1 file changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/block/qcow2.c b/block/qcow2.c
+index 7fbef97aab..840f289a48 100644
+--- a/block/qcow2.c
++++ b/block/qcow2.c
+@@ -4384,14 +4384,17 @@ static int qcow2_make_empty(BlockDriverState *bs)
+ 
+     if (s->qcow_version >= 3 && !s->snapshots && !s->nb_bitmaps &&
+         3 + l1_clusters <= s->refcount_block_size &&
+-        s->crypt_method_header != QCOW_CRYPT_LUKS) {
++        s->crypt_method_header != QCOW_CRYPT_LUKS &&
++        !has_data_file(bs)) {
+         /* The following function only works for qcow2 v3 images (it
+          * requires the dirty flag) and only as long as there are no
+          * features that reserve extra clusters (such as snapshots,
+          * LUKS header, or persistent bitmaps), because it completely
+          * empties the image.  Furthermore, the L1 table and three
+          * additional clusters (image header, refcount table, one
+-         * refcount block) have to fit inside one refcount block. */
++         * refcount block) have to fit inside one refcount block. It
++         * only resets the image file, i.e. does not work with an
++         * external data file. */
+         return make_completely_empty(bs);
+     }
+ 
+-- 
+2.19.1
+

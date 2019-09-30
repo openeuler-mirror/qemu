@@ -1,0 +1,27 @@
+From 76ab77108279f9d328e4a7fe1684141084698d97 Mon Sep 17 00:00:00 2001
+From: zhanghailiang <zhang.zhanghailiang@huawei.com>
+Date: Thu, 25 Jul 2019 16:05:11 +0800
+Subject: [PATCH] qcow2: fix memory leak in qcow2_read_extensions
+
+Free feature_table if it is failed in bdrv_pread.
+
+Signed-off-by: fangyi <eric.fangyi@huawei.com>
+---
+ block/qcow2.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/block/qcow2.c b/block/qcow2.c
+index 3ace3b22..5e85cf4b 100644
+--- a/block/qcow2.c
++++ b/block/qcow2.c
+@@ -258,6 +258,7 @@ static int qcow2_read_extensions(BlockDriverState *bs, uint64_t start_offset,
+                 void* feature_table = g_malloc0(ext.len + 2 * sizeof(Qcow2Feature));
+                 ret = bdrv_pread(bs->file, offset , feature_table, ext.len);
+                 if (ret < 0) {
++                    g_free(feature_table);
+                     error_setg_errno(errp, -ret, "ERROR: ext_feature_table: "
+                                      "Could not read table");
+                     return ret;
+-- 
+2.19.1
+

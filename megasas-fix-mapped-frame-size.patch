@@ -1,0 +1,35 @@
+From 2e56fbc87f6ec3cd56c37b01d313abd502b80d61 Mon Sep 17 00:00:00 2001
+From: Peter Lieven <pl@kamp.de>
+Date: Thu, 4 Apr 2019 14:10:15 +0200
+Subject: [PATCH] megasas: fix mapped frame size
+
+the current value of 1024 bytes (16 * MFI_FRAME_SIZE) we map is not enough to hold
+the maximum number of scatter gather elements we advertise. We actually need a
+maximum of 2048 bytes. This is 128 max sg elements * 16 bytes (sizeof (union mfi_sgl)).
+
+Cc: qemu-stable@nongnu.org
+Signed-off-by: Peter Lieven <pl@kamp.de>
+Message-Id: <20190404121015.28634-1-pl@kamp.de>
+Reviewed-by: Hannes Reinecke <hare@suse.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+(cherry-picked from commit 2e56fbc87f6ec3cd56c37b01d313abd502b80d61)
+---
+ hw/scsi/megasas.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/hw/scsi/megasas.c b/hw/scsi/megasas.c
+index a56317e026..5ad762de23 100644
+--- a/hw/scsi/megasas.c
++++ b/hw/scsi/megasas.c
+@@ -477,7 +477,7 @@ static MegasasCmd *megasas_enqueue_frame(MegasasState *s,
+ {
+     PCIDevice *pcid = PCI_DEVICE(s);
+     MegasasCmd *cmd = NULL;
+-    int frame_size = MFI_FRAME_SIZE * 16;
++    int frame_size = MEGASAS_MAX_SGE * sizeof(union mfi_sgl);
+     hwaddr frame_size_p = frame_size;
+     unsigned long index;
+ 
+-- 
+2.19.1
+

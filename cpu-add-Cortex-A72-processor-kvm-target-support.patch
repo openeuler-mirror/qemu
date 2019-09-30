@@ -1,0 +1,58 @@
+From 4304d1de2c790ac75ed2f5984c4a3a2760c08fff Mon Sep 17 00:00:00 2001
+From: Xu Yandong <xuyandong2@huawei.com>
+Date: Mon, 23 Sep 2019 14:35:25 +0800
+Subject: [PATCH] cpu: add Cortex-A72 processor kvm target support
+
+The ARM Cortex-A72 is ARMv8-A micro-architecture,
+add kvm target to ARM Cortex-A72 processor definition.
+
+Signed-off-by: Xu Yandong <xuyandong2@huawei.com>
+---
+ target/arm/cpu64.c      | 2 +-
+ target/arm/kvm-consts.h | 3 +++
+ 2 files changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/target/arm/cpu64.c b/target/arm/cpu64.c
+index e408f50d..afbfd1ec 100644
+--- a/target/arm/cpu64.c
++++ b/target/arm/cpu64.c
+@@ -212,6 +212,7 @@ static void aarch64_a72_initfn(Object *obj)
+     ARMCPU *cpu = ARM_CPU(obj);
+ 
+     cpu->dtb_compatible = "arm,cortex-a72";
++    cpu->kvm_target = QEMU_KVM_ARM_TARGET_GENERIC_V8;
+     set_feature(&cpu->env, ARM_FEATURE_V8);
+     set_feature(&cpu->env, ARM_FEATURE_VFP4);
+     set_feature(&cpu->env, ARM_FEATURE_NEON);
+@@ -276,7 +277,6 @@ static void aarch64_kunpeng_t82_initfn(Object *obj)
+     cpu->id_aa64dfr0 = 0x110305408;
+     cpu->isar.id_aa64isar0 = 0x10211120;
+     cpu->isar.id_aa64mmfr0 = 0x101125;
+-    cpu->kvm_target = KVM_ARM_TARGET_GENERIC_V8;
+ }
+ 
+ static void cpu_max_get_sve_vq(Object *obj, Visitor *v, const char *name,
+diff --git a/target/arm/kvm-consts.h b/target/arm/kvm-consts.h
+index aad28258..b7dac596 100644
+--- a/target/arm/kvm-consts.h
++++ b/target/arm/kvm-consts.h
+@@ -130,6 +130,8 @@ MISMATCH_CHECK(QEMU_PSCI_RET_DISABLED, PSCI_RET_DISABLED);
+ #define QEMU_KVM_ARM_TARGET_CORTEX_A57 2
+ #define QEMU_KVM_ARM_TARGET_XGENE_POTENZA 3
+ #define QEMU_KVM_ARM_TARGET_CORTEX_A53 4
++/* Generic ARM v8 target */
++#define QEMU_KVM_ARM_TARGET_GENERIC_V8 5
+ 
+ /* There's no kernel define for this: sentinel value which
+  * matches no KVM target value for either 64 or 32 bit
+@@ -142,6 +144,7 @@ MISMATCH_CHECK(QEMU_KVM_ARM_TARGET_FOUNDATION_V8, KVM_ARM_TARGET_FOUNDATION_V8);
+ MISMATCH_CHECK(QEMU_KVM_ARM_TARGET_CORTEX_A57, KVM_ARM_TARGET_CORTEX_A57);
+ MISMATCH_CHECK(QEMU_KVM_ARM_TARGET_XGENE_POTENZA, KVM_ARM_TARGET_XGENE_POTENZA);
+ MISMATCH_CHECK(QEMU_KVM_ARM_TARGET_CORTEX_A53, KVM_ARM_TARGET_CORTEX_A53);
++MISMATCH_CHECK(QEMU_KVM_ARM_TARGET_GENERIC_V8, KVM_ARM_TARGET_GENERIC_V8);
+ #else
+ MISMATCH_CHECK(QEMU_KVM_ARM_TARGET_CORTEX_A15, KVM_ARM_TARGET_CORTEX_A15);
+ MISMATCH_CHECK(QEMU_KVM_ARM_TARGET_CORTEX_A7, KVM_ARM_TARGET_CORTEX_A7);
+-- 
+2.23.0
+

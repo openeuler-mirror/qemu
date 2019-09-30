@@ -1,0 +1,67 @@
+From 2ffc49eea1bbd454913a88a0ad872c2649b36950 Mon Sep 17 00:00:00 2001
+From: David Hildenbrand <david@redhat.com>
+Date: Mon, 22 Jul 2019 15:41:05 +0200
+Subject: [PATCH] virtio-balloon: Simplify deflate with pbp
+
+Let's simplify this - the case we are optimizing for is very hard to
+trigger and not worth the effort. If we're switching from inflation to
+deflation, let's reset the pbp.
+
+Acked-by: David Gibson <david@gibson.dropbear.id.au>
+Signed-off-by: David Hildenbrand <david@redhat.com>
+Message-Id: <20190722134108.22151-4-david@redhat.com>
+Reviewed-by: Michael S. Tsirkin <mst@redhat.com>
+Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+(cherry-picked from commit 2ffc49eea1bbd454913a88a0ad872c2649b36950)
+---
+ hw/virtio/virtio-balloon.c | 26 +++++---------------------
+ 1 file changed, 5 insertions(+), 21 deletions(-)
+
+diff --git a/hw/virtio/virtio-balloon.c b/hw/virtio/virtio-balloon.c
+index a78d2d2184..04a7e6c772 100644
+--- a/hw/virtio/virtio-balloon.c
++++ b/hw/virtio/virtio-balloon.c
+@@ -117,7 +117,7 @@ static void balloon_deflate_page(VirtIOBalloon *balloon,
+     void *addr = memory_region_get_ram_ptr(mr) + offset;
+     RAMBlock *rb;
+     size_t rb_page_size;
+-    ram_addr_t ram_offset, host_page_base;
++    ram_addr_t ram_offset;
+     void *host_addr;
+     int ret;
+ 
+@@ -125,27 +125,11 @@ static void balloon_deflate_page(VirtIOBalloon *balloon,
+      * host address? */
+     rb = qemu_ram_block_from_host(addr, false, &ram_offset);
+     rb_page_size = qemu_ram_pagesize(rb);
+-    host_page_base = ram_offset & ~(rb_page_size - 1);
+-
+-    if (balloon->pbp
+-        && rb == balloon->pbp->rb
+-        && host_page_base == balloon->pbp->base) {
+-        int subpages = rb_page_size / BALLOON_PAGE_SIZE;
+ 
+-        /*
+-         * This means the guest has asked to discard some of the 4kiB
+-         * subpages of a host page, but then changed its mind and
+-         * asked to keep them after all.  It's exceedingly unlikely
+-         * for a guest to do this in practice, but handle it anyway,
+-         * since getting it wrong could mean discarding memory the
+-         * guest is still using. */
+-        clear_bit((ram_offset - balloon->pbp->base) / BALLOON_PAGE_SIZE,
+-                  balloon->pbp->bitmap);
+-
+-        if (bitmap_empty(balloon->pbp->bitmap, subpages)) {
+-            g_free(balloon->pbp);
+-            balloon->pbp = NULL;
+-        }
++    if (balloon->pbp) {
++        /* Let's play safe and always reset the pbp on deflation requests. */
++        g_free(balloon->pbp);
++        balloon->pbp = NULL;
+     }
+ 
+     host_addr = (void *)((uintptr_t)addr & ~(rb_page_size - 1));
+-- 
+2.19.1
+

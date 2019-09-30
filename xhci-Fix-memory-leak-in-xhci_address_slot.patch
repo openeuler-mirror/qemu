@@ -1,0 +1,47 @@
+From c0de0a04d03183f524c2f60cda8ae1e886197a7d Mon Sep 17 00:00:00 2001
+From: Ying Fang <fangying1@huawei.com>
+Date: Tue, 27 Aug 2019 10:54:48 +0800
+Subject: [PATCH] xhci: Fix memory leak in xhci_address_slot
+
+Address Sanitizer shows memory leak in xhci_address_slot
+hw/usb/hcd-xhci.c:2156 and the stack is as bellow:
+
+Direct leak of 64 byte(s) in 4 object(s) allocated from:
+    #0 0xffff91c6f5ab in realloc (/lib64/libasan.so.4+0xd35ab)
+    #1 0xffff91987243 in g_realloc (/lib64/libglib-2.0.so.0+0x57243)
+    #2 0xaaaab0b26a1f in qemu_iovec_add util/iov.c:296
+    #3 0xaaaab07e5ce3 in xhci_address_slot hw/usb/hcd-xhci.c:2156
+    #4 0xaaaab07e5ce3 in xhci_process_commands hw/usb/hcd-xhci.c:2493
+    #5 0xaaaab00058d7 in memory_region_write_accessor qemu/memory.c:507
+    #6 0xaaaab0000d87 in access_with_adjusted_size memory.c:573
+    #7 0xaaaab000abcf in memory_region_dispatch_write memory.c:1516
+    #8 0xaaaaaff59947 in flatview_write_continue exec.c:3367
+    #9 0xaaaaaff59c33 in flatview_write exec.c:3406
+    #10 0xaaaaaff63b3b in address_space_write exec.c:3496
+    #11 0xaaaab002f263 in kvm_cpu_exec accel/kvm/kvm-all.c:2288
+    #12 0xaaaaaffee427 in qemu_kvm_cpu_thread_fn cpus.c:1290
+    #13 0xaaaab0b1a943 in qemu_thread_start util/qemu-thread-posix.c:502
+    #14 0xffff908ce8bb in start_thread (/lib64/libpthread.so.0+0x78bb)
+    #15 0xffff908165cb in thread_start (/lib64/libc.so.6+0xd55cb)
+
+Cc: zhanghailiang <zhang.zhanghailiang@huawei.com>
+Signed-off-by: Ying Fang <fangying1@huawei.com>
+---
+ hw/usb/hcd-xhci.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/hw/usb/hcd-xhci.c b/hw/usb/hcd-xhci.c
+index f578264948..471759cd4c 100644
+--- a/hw/usb/hcd-xhci.c
++++ b/hw/usb/hcd-xhci.c
+@@ -2161,6 +2161,7 @@ static TRBCCode xhci_address_slot(XHCIState *xhci, unsigned int slotid,
+                                   DeviceOutRequest | USB_REQ_SET_ADDRESS,
+                                   slotid, 0, 0, NULL);
+         assert(p.status != USB_RET_ASYNC);
++        usb_packet_cleanup(&p);
+     }
+ 
+     res = xhci_enable_ep(xhci, slotid, 1, octx+32, ep0_ctx);
+-- 
+2.19.1
+

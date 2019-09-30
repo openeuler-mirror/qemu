@@ -1,0 +1,63 @@
+From e965bc6c633921ab238b1f5ea64055975b24e2bb Mon Sep 17 00:00:00 2001
+From: Stefan Hajnoczi <stefanha@redhat.com>
+Date: Tue, 23 Jul 2019 20:06:23 +0100
+Subject: [PATCH 4/5] util/async: hold AioContext ref to prevent use-after-free
+
+The tests/test-bdrv-drain /bdrv-drain/iothread/drain test case does the
+following:
+
+1. The preadv coroutine calls aio_bh_schedule_oneshot() and then yields.
+2. The one-shot BH executes in another AioContext.  All it does is call
+   aio_co_wakeup(preadv_co).
+3. The preadv coroutine is re-entered and returns.
+
+There is a race condition in aio_co_wake() where the preadv coroutine
+returns and the test case destroys the preadv IOThread.  aio_co_wake()
+can still be running in the other AioContext and it performs an access
+to the freed IOThread AioContext.
+
+Here is the race in aio_co_schedule():
+
+  QSLIST_INSERT_HEAD_ATOMIC(&ctx->scheduled_coroutines,
+                            co, co_scheduled_next);
+  <-- race: co may execute before we invoke qemu_bh_schedule()!
+  qemu_bh_schedule(ctx->co_schedule_bh);
+
+So if co causes ctx to be freed then we're in trouble.  Fix this problem
+by holding a reference to ctx.
+
+Signed-off-by: Stefan Hajnoczi <stefanha@redhat.com>
+Reviewed-by: Paolo Bonzini <pbonzini@redhat.com>
+Message-id: 20190723190623.21537-1-stefanha@redhat.com
+Message-Id: <20190723190623.21537-1-stefanha@redhat.com>
+Signed-off-by: Stefan Hajnoczi <stefanha@redhat.com>
+(cherry-picked from commit f0f81002873c06fdef9bb2a272ddfd26af65b851)
+---
+ util/async.c | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/util/async.c b/util/async.c
+index c10642a..afc17fb 100644
+--- a/util/async.c
++++ b/util/async.c
+@@ -460,9 +460,17 @@ void aio_co_schedule(AioContext *ctx, Coroutine *co)
+         abort();
+     }
+ 
++    /* The coroutine might run and release the last ctx reference before we
++     * invoke qemu_bh_schedule().  Take a reference to keep ctx alive until
++     * we're done.
++     */
++    aio_context_ref(ctx);
++
+     QSLIST_INSERT_HEAD_ATOMIC(&ctx->scheduled_coroutines,
+                               co, co_scheduled_next);
+     qemu_bh_schedule(ctx->co_schedule_bh);
++
++    aio_context_unref(ctx);
+ }
+ 
+ void aio_co_wake(struct Coroutine *co)
+-- 
+1.8.3.1
+

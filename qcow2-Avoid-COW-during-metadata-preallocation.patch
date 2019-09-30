@@ -1,0 +1,38 @@
+From f29fbf7c6b1c9a84f6931c1c222716fbe073e6e4 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Mon, 15 Apr 2019 16:25:01 +0200
+Subject: [PATCH] qcow2: Avoid COW during metadata preallocation
+
+Limiting the allocation to INT_MAX bytes isn't particularly clever
+because it means that the final cluster will be a partial cluster which
+will be completed through a COW operation. This results in unnecessary
+data read and write requests which lead to an unwanted non-sparse
+filesystem block for metadata preallocation.
+
+Align the maximum allocation size down to the cluster size to avoid this
+situation.
+
+Cc: qemu-stable@nongnu.org
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+(cherry-picked from commit f29fbf7c6b1c9a84f6931c1c222716fbe073e6e4)
+---
+ block/qcow2.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/block/qcow2.c b/block/qcow2.c
+index 3ace3b2209..dfac74c264 100644
+--- a/block/qcow2.c
++++ b/block/qcow2.c
+@@ -2734,7 +2734,7 @@ static int coroutine_fn preallocate_co(BlockDriverState *bs, uint64_t offset,
+     bytes = new_length - offset;
+ 
+     while (bytes) {
+-        cur_bytes = MIN(bytes, INT_MAX);
++        cur_bytes = MIN(bytes, QEMU_ALIGN_DOWN(INT_MAX, s->cluster_size));
+         ret = qcow2_alloc_cluster_offset(bs, offset, &cur_bytes,
+                                          &host_offset, &meta);
+         if (ret < 0) {
+-- 
+2.19.1
+

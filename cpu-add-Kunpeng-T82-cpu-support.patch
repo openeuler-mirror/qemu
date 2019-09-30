@@ -1,0 +1,65 @@
+From 70063948181062161a341a8738a53708d8ed0a0b Mon Sep 17 00:00:00 2001
+From: Xu Yandong <xuyandong2@huawei.com>
+Date: Wed, 28 Aug 2019 01:36:21 -0400
+Subject: [PATCH] cpu: add Kunpeng-T82 cpu support
+
+Signed-off-by: Xu Yandong <xuyandong2@huawei.com>
+---
+ hw/arm/virt.c      |  1 +
+ target/arm/cpu64.c | 21 +++++++++++++++++++++
+ 2 files changed, 22 insertions(+)
+
+diff --git a/hw/arm/virt.c b/hw/arm/virt.c
+index f89757df..11468b72 100644
+--- a/hw/arm/virt.c
++++ b/hw/arm/virt.c
+@@ -179,6 +179,7 @@ static const char *valid_cpus[] = {
+     ARM_CPU_TYPE_NAME("cortex-a53"),
+     ARM_CPU_TYPE_NAME("cortex-a57"),
+     ARM_CPU_TYPE_NAME("cortex-a72"),
++    ARM_CPU_TYPE_NAME("Kunpeng-T82"),
+     ARM_CPU_TYPE_NAME("host"),
+     ARM_CPU_TYPE_NAME("max"),
+ };
+diff --git a/target/arm/cpu64.c b/target/arm/cpu64.c
+index 228906f2..5581d5e1 100644
+--- a/target/arm/cpu64.c
++++ b/target/arm/cpu64.c
+@@ -258,6 +258,26 @@ static void aarch64_a72_initfn(Object *obj)
+     define_arm_cp_regs(cpu, cortex_a72_a57_a53_cp_reginfo);
+ }
+ 
++static void aarch64_kunpeng_t82_initfn(Object *obj)
++{
++    ARMCPU *cpu = ARM_CPU(obj);
++
++    /*
++     * Hisilicon Kunpeng-T82 CPU is based on cortex-a72,
++     * so first initialize cpu data as cortex-a72 CPU,
++     * and then update the special registers.
++     */
++    aarch64_a72_initfn(obj);
++
++    cpu->midr = 0x480fd010;
++    cpu->ctr = 0x84448004;
++    cpu->isar.id_aa64pfr0 = 0x11001111;
++    cpu->id_aa64dfr0 = 0x110305408;
++    cpu->isar.id_aa64isar0 = 0x10211120;
++    cpu->isar.id_aa64mmfr0 = 0x101125;
++    cpu->kvm_target = KVM_ARM_TARGET_GENERIC_V8;
++}
++
+ static void cpu_max_get_sve_vq(Object *obj, Visitor *v, const char *name,
+                                void *opaque, Error **errp)
+ {
+@@ -388,6 +408,7 @@ static const ARMCPUInfo aarch64_cpus[] = {
+     { .name = "cortex-a57",         .initfn = aarch64_a57_initfn },
+     { .name = "cortex-a53",         .initfn = aarch64_a53_initfn },
+     { .name = "cortex-a72",         .initfn = aarch64_a72_initfn },
++    { .name = "Kunpeng-T82",        .initfn = aarch64_kunpeng_t82_initfn },
+     { .name = "max",                .initfn = aarch64_max_initfn },
+     { .name = NULL }
+ };
+-- 
+2.19.1
+

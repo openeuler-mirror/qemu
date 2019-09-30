@@ -1,0 +1,113 @@
+From e6129b271b9dccca22c84870e313c315f2c70063 Mon Sep 17 00:00:00 2001
+From: David Hildenbrand <david@redhat.com>
+Date: Mon, 22 Jul 2019 15:41:06 +0200
+Subject: [PATCH] virtio-balloon: Better names for offset variables in
+ inflate/deflate code
+
+"host_page_base" is really confusing, let's make this clearer, also
+rename the other offsets to indicate to which base they apply.
+
+offset -> mr_offset
+ram_offset -> rb_offset
+host_page_base -> rb_aligned_offset
+
+While at it, use QEMU_ALIGN_DOWN() instead of a handcrafted computation
+and move the computation to the place where it is needed.
+
+Acked-by: David Gibson <david@gibson.dropbear.id.au>
+Signed-off-by: David Hildenbrand <david@redhat.com>
+Message-Id: <20190722134108.22151-5-david@redhat.com>
+Reviewed-by: Michael S. Tsirkin <mst@redhat.com>
+Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+(cherry-picked from commit e6129b271b9dccca22c84870e313c315f2c70063)
+---
+ hw/virtio/virtio-balloon.c | 26 +++++++++++++-------------
+ 1 file changed, 13 insertions(+), 13 deletions(-)
+
+diff --git a/hw/virtio/virtio-balloon.c b/hw/virtio/virtio-balloon.c
+index 04a7e6c772..f206cc8bf7 100644
+--- a/hw/virtio/virtio-balloon.c
++++ b/hw/virtio/virtio-balloon.c
+@@ -41,24 +41,23 @@ struct PartiallyBalloonedPage {
+ };
+ 
+ static void balloon_inflate_page(VirtIOBalloon *balloon,
+-                                 MemoryRegion *mr, hwaddr offset)
++                                 MemoryRegion *mr, hwaddr mr_offset)
+ {
+-    void *addr = memory_region_get_ram_ptr(mr) + offset;
++    void *addr = memory_region_get_ram_ptr(mr) + mr_offset;
++    ram_addr_t rb_offset, rb_aligned_offset;
+     RAMBlock *rb;
+     size_t rb_page_size;
+     int subpages;
+-    ram_addr_t ram_offset, host_page_base;
+ 
+     /* XXX is there a better way to get to the RAMBlock than via a
+      * host address? */
+-    rb = qemu_ram_block_from_host(addr, false, &ram_offset);
++    rb = qemu_ram_block_from_host(addr, false, &rb_offset);
+     rb_page_size = qemu_ram_pagesize(rb);
+-    host_page_base = ram_offset & ~(rb_page_size - 1);
+ 
+     if (rb_page_size == BALLOON_PAGE_SIZE) {
+         /* Easy case */
+ 
+-        ram_block_discard_range(rb, ram_offset, rb_page_size);
++        ram_block_discard_range(rb, rb_offset, rb_page_size);
+         /* We ignore errors from ram_block_discard_range(), because it
+          * has already reported them, and failing to discard a balloon
+          * page is not fatal */
+@@ -74,11 +73,12 @@ static void balloon_inflate_page(VirtIOBalloon *balloon,
+     warn_report_once(
+ "Balloon used with backing page size > 4kiB, this may not be reliable");
+ 
++    rb_aligned_offset = QEMU_ALIGN_DOWN(rb_offset, rb_page_size);
+     subpages = rb_page_size / BALLOON_PAGE_SIZE;
+ 
+     if (balloon->pbp
+         && (rb != balloon->pbp->rb
+-            || host_page_base != balloon->pbp->base)) {
++            || rb_aligned_offset != balloon->pbp->base)) {
+         /* We've partially ballooned part of a host page, but now
+          * we're trying to balloon part of a different one.  Too hard,
+          * give up on the old partial page */
+@@ -91,10 +91,10 @@ static void balloon_inflate_page(VirtIOBalloon *balloon,
+         size_t bitlen = BITS_TO_LONGS(subpages) * sizeof(unsigned long);
+         balloon->pbp = g_malloc0(sizeof(PartiallyBalloonedPage) + bitlen);
+         balloon->pbp->rb = rb;
+-        balloon->pbp->base = host_page_base;
++        balloon->pbp->base = rb_aligned_offset;
+     }
+ 
+-    set_bit((ram_offset - balloon->pbp->base) / BALLOON_PAGE_SIZE,
++    set_bit((rb_offset - balloon->pbp->base) / BALLOON_PAGE_SIZE,
+             balloon->pbp->bitmap);
+ 
+     if (bitmap_full(balloon->pbp->bitmap, subpages)) {
+@@ -112,18 +112,18 @@ static void balloon_inflate_page(VirtIOBalloon *balloon,
+ }
+ 
+ static void balloon_deflate_page(VirtIOBalloon *balloon,
+-                                 MemoryRegion *mr, hwaddr offset)
++                                 MemoryRegion *mr, hwaddr mr_offset)
+ {
+-    void *addr = memory_region_get_ram_ptr(mr) + offset;
++    void *addr = memory_region_get_ram_ptr(mr) + mr_offset;
++    ram_addr_t rb_offset;
+     RAMBlock *rb;
+     size_t rb_page_size;
+-    ram_addr_t ram_offset;
+     void *host_addr;
+     int ret;
+ 
+     /* XXX is there a better way to get to the RAMBlock than via a
+      * host address? */
+-    rb = qemu_ram_block_from_host(addr, false, &ram_offset);
++    rb = qemu_ram_block_from_host(addr, false, &rb_offset);
+     rb_page_size = qemu_ram_pagesize(rb);
+ 
+     if (balloon->pbp) {
+-- 
+2.19.1
+

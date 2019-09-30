@@ -1,0 +1,49 @@
+From 68d4653b5ffde629e9b05d5de13b6adcde9d153b Mon Sep 17 00:00:00 2001
+From: Ying Fang <fangying1@huawei.com>
+Date: Mon, 29 Jul 2019 16:20:51 +0800
+Subject: [PATCH] pl031: support rtc-timer property for pl031
+
+This patch adds the rtc-timer property for pl031, we can get the
+rtc time (UTC) through qmp command "qom-get date" with this property.
+
+Signed-off-by: Haibin Wang <wanghaibin.wang@huawei.com>
+Reviewed-by: Shannon Zhao <shannon.zhaosl@gmail.com>
+Reviewed-by: Ying Fang <fangying1@huawei.com>
+---
+ hw/timer/pl031.c | 13 +++++++++++++
+ 1 file changed, 13 insertions(+)
+
+diff --git a/hw/timer/pl031.c b/hw/timer/pl031.c
+index 274ad47a..04331472 100644
+--- a/hw/timer/pl031.c
++++ b/hw/timer/pl031.c
+@@ -57,6 +57,15 @@ static uint32_t pl031_get_count(PL031State *s)
+     return s->tick_offset + now / NANOSECONDS_PER_SECOND;
+ }
+ 
++static void pl031_get_date(Object *obj, struct tm *current_tm, Error **errp)
++{
++    PL031State *s = PL031(obj);
++    time_t ti = pl031_get_count(s);
++
++    /* Changed to UTC time */
++    gmtime_r(&ti, current_tm);
++}
++
+ static void pl031_set_alarm(PL031State *s)
+ {
+     uint32_t ticks;
+@@ -191,6 +200,10 @@ static void pl031_init(Object *obj)
+         qemu_clock_get_ns(rtc_clock) / NANOSECONDS_PER_SECOND;
+ 
+     s->timer = timer_new_ns(rtc_clock, pl031_interrupt, s);
++
++    object_property_add_tm(OBJECT(s), "date", pl031_get_date, NULL);
++    object_property_add_alias(qdev_get_machine(), "rtc-time",
++                              OBJECT(s), "date", NULL);
+ }
+ 
+ static int pl031_pre_save(void *opaque)
+-- 
+2.19.1
+

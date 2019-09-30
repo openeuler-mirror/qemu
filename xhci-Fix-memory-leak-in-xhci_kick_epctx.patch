@@ -1,0 +1,44 @@
+From 2212f37e0e477d8da0cff02cfc8b7a921ca11bef Mon Sep 17 00:00:00 2001
+From: fangying <fangying1@huawei.com>
+Date: Wed, 28 Aug 2019 14:02:22 +0800
+Subject: [PATCH] xhci: Fix memory leak in xhci_kick_epctx
+
+Address Sanitizer shows memory leak in xhci_kick_epctx hw/usb/hcd-xhci.c:1912.
+A sglist is leaked when a packet is retired and returns USB_RET_NAK status.
+The leak stack is as bellow:
+
+Direct leak of 2688 byte(s) in 168 object(s) allocated from:
+    #0 0xffffae8b11db in __interceptor_malloc (/lib64/libasan.so.4+0xd31db)
+    #1 0xffffae5c9163 in g_malloc (/lib64/libglib-2.0.so.0+0x57163)
+    #2 0xaaaabb6fb3f7 in qemu_sglist_init dma-helpers.c:43
+    #3 0xaaaabba705a7 in pci_dma_sglist_init include/hw/pci/pci.h:837
+    #4 0xaaaabba705a7 in xhci_xfer_create_sgl hw/usb/hcd-xhci.c:1443
+    #5 0xaaaabba705a7 in xhci_setup_packet hw/usb/hcd-xhci.c:1615
+    #6 0xaaaabba77a6f in xhci_kick_epctx hw/usb/hcd-xhci.c:1912
+    #7 0xaaaabbdaad27 in timerlist_run_timers util/qemu-timer.c:592
+    #8 0xaaaabbdab19f in qemu_clock_run_timers util/qemu-timer.c:606
+    #9 0xaaaabbdab19f in qemu_clock_run_all_timers util/qemu-timer.c:692
+    #10 0xaaaabbdab9a3 in main_loop_wait util/main-loop.c:524
+    #11 0xaaaabb6ff5e7 in main_loop vl.c:1806
+    #12 0xaaaabb1e1453 in main vl.c:4488
+
+Signed-off-by: Ying Fang <fangying1@huawei.com>
+---
+ hw/usb/hcd-xhci.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/hw/usb/hcd-xhci.c b/hw/usb/hcd-xhci.c
+index 6e1ec786..e10fbd3d 100644
+--- a/hw/usb/hcd-xhci.c
++++ b/hw/usb/hcd-xhci.c
+@@ -1911,6 +1911,7 @@ static void xhci_kick_epctx(XHCIEPContext *epctx, unsigned int streamid)
+             }
+             usb_handle_packet(xfer->packet.ep->dev, &xfer->packet);
+             if (xfer->packet.status == USB_RET_NAK) {
++                xhci_xfer_unmap(xfer);
+                 return;
+             }
+             xhci_try_complete_packet(xfer);
+-- 
+2.19.1
+

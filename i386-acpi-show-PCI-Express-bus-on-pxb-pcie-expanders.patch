@@ -1,0 +1,40 @@
+From ee4b0c8686f781987879508d7c6dd605b5435bac Mon Sep 17 00:00:00 2001
+From: Evgeny Yakovlev <wrfsh@yandex-team.ru>
+Date: Fri, 19 Jul 2019 11:54:29 +0300
+Subject: [PATCH] i386/acpi: show PCI Express bus on pxb-pcie expanders
+
+Show PCIe host bridge PNP id with PCI host bridge as a compatible id
+when expanding a pcie bus.
+
+Cc: qemu-stable@nongnu.org
+Signed-off-by: Evgeny Yakovlev <wrfsh@yandex-team.ru>
+Message-Id: <1563526469-15588-1-git-send-email-wrfsh@yandex-team.ru>
+Reviewed-by: Michael S. Tsirkin <mst@redhat.com>
+Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+(cherry-picked from commit ee4b0c8686f781987879508d7c6dd605b5435bac)
+---
+ hw/i386/acpi-build.c | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/hw/i386/acpi-build.c b/hw/i386/acpi-build.c
+index e7b756b51b..f3fdfefcd5 100644
+--- a/hw/i386/acpi-build.c
++++ b/hw/i386/acpi-build.c
+@@ -1914,10 +1914,13 @@ build_dsdt(GArray *table_data, BIOSLinker *linker,
+             scope = aml_scope("\\_SB");
+             dev = aml_device("PC%.02X", bus_num);
+             aml_append(dev, aml_name_decl("_UID", aml_int(bus_num)));
+-            aml_append(dev, aml_name_decl("_HID", aml_eisaid("PNP0A03")));
+             aml_append(dev, aml_name_decl("_BBN", aml_int(bus_num)));
+             if (pci_bus_is_express(bus)) {
++                aml_append(dev, aml_name_decl("_HID", aml_eisaid("PNP0A08")));
++                aml_append(dev, aml_name_decl("_CID", aml_eisaid("PNP0A03")));
+                 aml_append(dev, build_q35_osc_method());
++            } else {
++                aml_append(dev, aml_name_decl("_HID", aml_eisaid("PNP0A03")));
+             }
+ 
+             if (numa_node != NUMA_NODE_UNASSIGNED) {
+-- 
+2.19.1
+

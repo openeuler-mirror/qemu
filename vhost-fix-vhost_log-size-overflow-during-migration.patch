@@ -1,0 +1,69 @@
+From 240e647a14df9677b3a501f7b8b870e40aac3fd5 Mon Sep 17 00:00:00 2001
+From: Li Hangjing <lihangjing@baidu.com>
+Date: Mon, 3 Jun 2019 14:15:24 +0800
+Subject: [PATCH] vhost: fix vhost_log size overflow during migration
+
+When a guest which doesn't support multiqueue is migrated with a multi queues
+vhost-user-blk deivce, a crash will occur like:
+
+0 qemu_memfd_alloc (name=<value optimized out>, size=562949953421312, seals=<value optimized out>, fd=0x7f87171fe8b4, errp=0x7f87171fe8a8) at util/memfd.c:153
+1 0x00007f883559d7cf in vhost_log_alloc (size=70368744177664, share=true) at hw/virtio/vhost.c:186
+2 0x00007f88355a0758 in vhost_log_get (listener=0x7f8838bd7940, enable=1) at qemu-2-12/hw/virtio/vhost.c:211
+3 vhost_dev_log_resize (listener=0x7f8838bd7940, enable=1) at hw/virtio/vhost.c:263
+4 vhost_migration_log (listener=0x7f8838bd7940, enable=1) at hw/virtio/vhost.c:787
+5 0x00007f88355463d6 in memory_global_dirty_log_start () at memory.c:2503
+6 0x00007f8835550577 in ram_init_bitmaps (f=0x7f88384ce600, opaque=0x7f8836024098) at migration/ram.c:2173
+7 ram_init_all (f=0x7f88384ce600, opaque=0x7f8836024098) at migration/ram.c:2192
+8 ram_save_setup (f=0x7f88384ce600, opaque=0x7f8836024098) at migration/ram.c:2219
+9 0x00007f88357a419d in qemu_savevm_state_setup (f=0x7f88384ce600) at migration/savevm.c:1002
+10 0x00007f883579fc3e in migration_thread (opaque=0x7f8837530400) at migration/migration.c:2382
+11 0x00007f8832447893 in start_thread () from /lib64/libpthread.so.0
+12 0x00007f8832178bfd in clone () from /lib64/libc.so.6
+
+This is because vhost_get_log_size() returns a overflowed vhost-log size.
+In this function, it uses the uninitialized variable vqs->used_phys and
+vqs->used_size to get the vhost-log size.
+
+Signed-off-by: Li Hangjing <lihangjing@baidu.com>
+Reviewed-by: Xie Yongji <xieyongji@baidu.com>
+Reviewed-by: Chai Wen <chaiwen@baidu.com>
+Message-Id: <20190603061524.24076-1-lihangjing@baidu.com>
+Cc: qemu-stable@nongnu.org
+Reviewed-by: Michael S. Tsirkin <mst@redhat.com>
+Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+(cherry-pick from commit 240e647a14df9677b3a501f7b8b870e40aac3fd5)
+---
+ hw/virtio/vhost.c | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/hw/virtio/vhost.c b/hw/virtio/vhost.c
+index 60747a6f93..bc899fc60e 100644
+--- a/hw/virtio/vhost.c
++++ b/hw/virtio/vhost.c
+@@ -131,6 +131,11 @@ static int vhost_sync_dirty_bitmap(struct vhost_dev *dev,
+     }
+     for (i = 0; i < dev->nvqs; ++i) {
+         struct vhost_virtqueue *vq = dev->vqs + i;
++
++        if (!vq->used_phys && !vq->used_size) {
++            continue;
++        }
++
+         vhost_dev_sync_region(dev, section, start_addr, end_addr, vq->used_phys,
+                               range_get_last(vq->used_phys, vq->used_size));
+     }
+@@ -168,6 +173,11 @@ static uint64_t vhost_get_log_size(struct vhost_dev *dev)
+     }
+     for (i = 0; i < dev->nvqs; ++i) {
+         struct vhost_virtqueue *vq = dev->vqs + i;
++
++        if (!vq->used_phys && !vq->used_size) {
++            continue;
++        }
++
+         uint64_t last = vq->used_phys + vq->used_size - 1;
+         log_size = MAX(log_size, last / VHOST_LOG_CHUNK + 1);
+     }
+-- 
+2.19.1
+

@@ -1,0 +1,41 @@
+From f995e8b5e5c14f83a16433f192440ec5c82c87fa Mon Sep 17 00:00:00 2001
+From: Ying Fang <fangying1@huawei.com>
+Date: Mon, 29 Jul 2019 16:16:35 +0800
+Subject: [PATCH] pl011: reset read FIFO when UARTTIMSC=0 & UARTICR=0xffff
+
+We can enable ACPI when AArch64 Linux is booted with QEMU and UEFI (AAVMF).
+When VM is booting and the SBSA driver has not initialized, writting data
+that exceds 32 bytes will cause the read FIFO full and proceeding data will
+be lost. The searil port appears to be stuck in this abnormal situation.
+
+A hack to reset read FIFO when UARTTIMSC=0 & UARTICR=0xffff appears to
+resolve the issue.
+
+The question is fully discussed at
+https://www.spinics.net/lists/linux-serial/msg23163.html
+
+Signed-off-by: Haibin Wang <wanghaibin.wang@huawei.com>
+Reviewed-by: Shannon Zhao <shannon.zhaosl@gmail.com>
+Reviewed-by: Ying Fang <fangying1@huawei.com>
+---
+ hw/char/pl011.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/hw/char/pl011.c b/hw/char/pl011.c
+index e5dd448f..899745ef 100644
+--- a/hw/char/pl011.c
++++ b/hw/char/pl011.c
+@@ -223,6 +223,10 @@ static void pl011_write(void *opaque, hwaddr offset,
+     case 17: /* UARTICR */
+         s->int_level &= ~value;
+         pl011_update(s);
++        if (!s->int_enabled && !s->int_level) {
++            s->read_count = 0;
++            s->read_pos = 0;
++        }
+         break;
+     case 18: /* UARTDMACR */
+         s->dmacr = value;
+-- 
+2.19.1
+

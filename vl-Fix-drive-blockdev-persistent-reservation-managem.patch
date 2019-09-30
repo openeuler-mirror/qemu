@@ -1,0 +1,55 @@
+From 9ea18ed25a36527167e9676f25d983df5e7f76e6 Mon Sep 17 00:00:00 2001
+From: Markus Armbruster <armbru@redhat.com>
+Date: Tue, 4 Jun 2019 17:12:50 +0200
+Subject: [PATCH] vl: Fix -drive / -blockdev persistent reservation management
+
+qemu-system-FOO's main() acts on command line arguments in its own
+idiosyncratic order.  There's not much method to its madness.
+Whenever we find a case where one kind of command line argument needs
+to refer to something created for another kind later, we rejigger the
+order.
+
+Recent commit cda4aa9a5a "vl: Create block backends before setting
+machine properties" was such a rejigger.  Block backends are now
+created before "delayed" objects.  This broke persistent reservation
+management.  Reproducer:
+
+    $ qemu-system-x86_64 -object pr-manager-helper,id=pr-helper0,path=/tmp/pr-helper0.sock-drive -drive file=/dev/mapper/crypt,file.pr-manager=pr-helper0,format=raw,if=none,id=drive-scsi0-0-0-2
+    qemu-system-x86_64: -drive file=/dev/mapper/crypt,file.pr-manager=pr-helper0,format=raw,if=none,id=drive-scsi0-0-0-2: No persistent reservation manager with id 'pr-helper0'
+
+The delayed pr-manager-helper object is created too late for use by
+-drive or -blockdev.  Normal objects are still created in time.
+
+pr-manager-helper has always been a delayed object (commit 7c9e527659
+"scsi, file-posix: add support for persistent reservation
+management").  Turns out there's no real reason for that.  Make it a
+normal object.
+
+Fixes: cda4aa9a5a08777cf13e164c0543bd4888b8adce
+Signed-off-by: Markus Armbruster <armbru@redhat.com>
+Message-Id: <20190604151251.9903-2-armbru@redhat.com>
+Reviewed-by: Michal Privoznik <mprivozn@redhat.com>
+Cc: qemu-stable@nongnu.org
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+(cherry-picked from commit 9ea18ed25a36527167e9676f25d983df5e7f76e6)
+---
+ vl.c | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/vl.c b/vl.c
+index f023a8ca73..cc6246d2af 100644
+--- a/vl.c
++++ b/vl.c
+@@ -2751,8 +2751,7 @@ static bool object_create_initial(const char *type, QemuOpts *opts)
+         exit(0);
+     }
+ 
+-    if (g_str_equal(type, "rng-egd") ||
+-        g_str_has_prefix(type, "pr-manager-")) {
++    if (g_str_equal(type, "rng-egd")) {
+         return false;
+     }
+ 
+-- 
+2.19.1
+

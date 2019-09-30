@@ -1,0 +1,41 @@
+From ffa207d08253ffffb3993a1dbe09e40af4fc91f1 Mon Sep 17 00:00:00 2001
+From: David Hildenbrand <david@redhat.com>
+Date: Mon, 22 Jul 2019 15:41:03 +0200
+Subject: [PATCH] virtio-balloon: Fix wrong sign extension of PFNs
+
+If we directly cast from int to uint64_t, we will first sign-extend to
+an int64_t, which is wrong. We actually want to treat the PFNs like
+unsigned values.
+
+As far as I can see, this dates back to the initial virtio-balloon
+commit, but wasn't triggered as fairly big guests would be required.
+
+Cc: qemu-stable@nongnu.org
+Reported-by: Michael S. Tsirkin <mst@redhat.com>
+Signed-off-by: David Hildenbrand <david@redhat.com>
+Message-Id: <20190722134108.22151-2-david@redhat.com>
+Reviewed-by: Michael S. Tsirkin <mst@redhat.com>
+Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+Reviewed-by: David Gibson <david@gibson.dropbear.id.au>
+(cherry-picked from commit ffa207d08253ffffb3993a1dbe09e40af4fc91f1)
+---
+ hw/virtio/virtio-balloon.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/hw/virtio/virtio-balloon.c b/hw/virtio/virtio-balloon.c
+index e85d1c0d5c..515abf6553 100644
+--- a/hw/virtio/virtio-balloon.c
++++ b/hw/virtio/virtio-balloon.c
+@@ -343,8 +343,8 @@ static void virtio_balloon_handle_output(VirtIODevice *vdev, VirtQueue *vq)
+         }
+ 
+         while (iov_to_buf(elem->out_sg, elem->out_num, offset, &pfn, 4) == 4) {
++            unsigned int p = virtio_ldl_p(vdev, &pfn);
+             hwaddr pa;
+-            int p = virtio_ldl_p(vdev, &pfn);
+ 
+             pa = (hwaddr) p << VIRTIO_BALLOON_PFN_SHIFT;
+             offset += 4;
+-- 
+2.19.1
+

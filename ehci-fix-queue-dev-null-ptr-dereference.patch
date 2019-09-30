@@ -1,0 +1,35 @@
+From 901ac0dee4b17890db815d143a8efeeac5d105f7 Mon Sep 17 00:00:00 2001
+From: Gerd Hoffmann <kraxel@redhat.com>
+Date: Wed, 21 Aug 2019 10:53:19 +0200
+Subject: [PATCH 1/5] ehci: fix queue->dev null ptr dereference
+
+In case we don't have a device for an active queue, just skip
+processing the queue (same we do for inactive queues) and log
+a guest bug.
+
+Reported-by: Guenter Roeck <linux@roeck-us.net>
+Signed-off-by: Gerd Hoffmann <kraxel@redhat.com>
+Tested-by: Guenter Roeck <linux@roeck-us.net>
+Message-id: 20190821085319.13711-1-kraxel@redhat.com
+(cherry-picked from commit 1be344b7ad25d572dadeee46d80f0103354352b2)
+---
+ hw/usb/hcd-ehci.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/hw/usb/hcd-ehci.c b/hw/usb/hcd-ehci.c
+index 62dab05..5f089f3 100644
+--- a/hw/usb/hcd-ehci.c
++++ b/hw/usb/hcd-ehci.c
+@@ -1834,6 +1834,9 @@ static int ehci_state_fetchqtd(EHCIQueue *q)
+             ehci_set_state(q->ehci, q->async, EST_EXECUTING);
+             break;
+         }
++    } else if (q->dev == NULL) {
++        ehci_trace_guest_bug(q->ehci, "no device attached to queue");
++        ehci_set_state(q->ehci, q->async, EST_HORIZONTALQH);
+     } else {
+         p = ehci_alloc_packet(q);
+         p->qtdaddr = q->qtdaddr;
+-- 
+1.8.3.1
+
