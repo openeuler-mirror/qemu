@@ -1,0 +1,126 @@
+From c4db6fcb2c45b800cd46e088f8265ccc0631b6fc Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Daniel=20P=2E=20Berrang=C3=A9?= <berrange@redhat.com>
+Date: Mon, 14 Oct 2019 17:28:27 +0100
+Subject: [PATCH] crypto: add support for nettle's native XTS impl
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Nettle 3.5.0 will add support for the XTS mode. Use this because long
+term we wish to delete QEMU's XTS impl to avoid carrying private crypto
+algorithm impls.
+
+Unfortunately this degrades nettle performance from 612 MB/s to 568 MB/s
+as nettle's XTS impl isn't so well optimized yet.
+
+Reviewed-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+Reviewed-by: Stefano Garzarella <sgarzare@redhat.com>
+Signed-off-by: Daniel P. Berrangé <berrange@redhat.com>
+---
+ configure              | 18 ++++++++++++++++++
+ crypto/cipher-nettle.c | 18 ++++++++++++++++++
+ 2 files changed, 36 insertions(+)
+
+diff --git a/configure b/configure
+index 577533e9ed..5dcaac3b95 100755
+--- a/configure
++++ b/configure
+@@ -473,6 +473,7 @@ gtk_gl="no"
+ tls_priority="NORMAL"
+ gnutls=""
+ nettle=""
++nettle_xts="no"
+ gcrypt=""
+ gcrypt_hmac="no"
+ auth_pam=""
+@@ -2918,6 +2919,19 @@ if test "$nettle" != "no"; then
+             pass="yes"
+         fi
+     fi
++    if test "$pass" = "yes"
++    then
++        cat > $TMPC << EOF
++#include <nettle/xts.h>
++int main(void) {
++  return 0;
++}
++EOF
++        if compile_prog "$nettle_cflags" "$nettle_libs" ; then
++            nettle_xts=yes
++            qemu_private_xts=no
++        fi
++    fi
+     if test "$pass" = "no" && test "$nettle" = "yes"; then
+         feature_not_found "nettle" "Install nettle devel >= 2.7.1"
+     else
+@@ -6391,6 +6405,10 @@ echo "TLS priority      $tls_priority"
+ echo "GNUTLS support    $gnutls"
+ echo "libgcrypt         $gcrypt"
+ echo "nettle            $nettle $(echo_version $nettle $nettle_version)"
++if test "$nettle" = "yes"
++then
++   echo "  XTS             $nettle_xts"
++fi
+ echo "libtasn1          $tasn1"
+ echo "PAM               $auth_pam"
+ echo "iconv support     $iconv"
+diff --git a/crypto/cipher-nettle.c b/crypto/cipher-nettle.c
+index d7411bb8ff..7e9a4cc199 100644
+--- a/crypto/cipher-nettle.c
++++ b/crypto/cipher-nettle.c
+@@ -19,7 +19,9 @@
+  */
+ 
+ #include "qemu/osdep.h"
++#ifdef CONFIG_QEMU_PRIVATE_XTS
+ #include "crypto/xts.h"
++#endif
+ #include "cipherpriv.h"
+ 
+ #include <nettle/nettle-types.h>
+@@ -30,6 +32,9 @@
+ #include <nettle/serpent.h>
+ #include <nettle/twofish.h>
+ #include <nettle/ctr.h>
++#ifndef CONFIG_QEMU_PRIVATE_XTS
++#include <nettle/xts.h>
++#endif
+ 
+ typedef void (*QCryptoCipherNettleFuncWrapper)(const void *ctx,
+                                                size_t length,
+@@ -626,9 +631,15 @@ qcrypto_nettle_cipher_encrypt(QCryptoCipher *cipher,
+         break;
+ 
+     case QCRYPTO_CIPHER_MODE_XTS:
++#ifdef CONFIG_QEMU_PRIVATE_XTS
+         xts_encrypt(ctx->ctx, ctx->ctx_tweak,
+                     ctx->alg_encrypt_wrapper, ctx->alg_encrypt_wrapper,
+                     ctx->iv, len, out, in);
++#else
++        xts_encrypt_message(ctx->ctx, ctx->ctx_tweak,
++                            ctx->alg_encrypt_native,
++                            ctx->iv, len, out, in);
++#endif
+         break;
+ 
+     case QCRYPTO_CIPHER_MODE_CTR:
+@@ -673,9 +684,16 @@ qcrypto_nettle_cipher_decrypt(QCryptoCipher *cipher,
+         break;
+ 
+     case QCRYPTO_CIPHER_MODE_XTS:
++#ifdef CONFIG_QEMU_PRIVATE_XTS
+         xts_decrypt(ctx->ctx, ctx->ctx_tweak,
+                     ctx->alg_encrypt_wrapper, ctx->alg_decrypt_wrapper,
+                     ctx->iv, len, out, in);
++#else
++        xts_decrypt_message(ctx->ctx, ctx->ctx_tweak,
++                            ctx->alg_decrypt_native,
++                            ctx->alg_encrypt_native,
++                            ctx->iv, len, out, in);
++#endif
+         break;
+     case QCRYPTO_CIPHER_MODE_CTR:
+         ctr_crypt(ctx->ctx, ctx->alg_encrypt_native,
+-- 
+2.27.0
+
