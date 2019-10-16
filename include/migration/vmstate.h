@@ -1117,7 +1117,7 @@ bool vmstate_save_needed(const VMStateDescription *vmsd, void *opaque);
 #define  VMSTATE_INSTANCE_ID_ANY  -1
 
 /* Returns: 0 on success, -1 on failure */
-int vmstate_register_with_alias_id(DeviceState *dev, int instance_id,
+int vmstate_register_with_alias_id(DeviceState *dev, uint32_t instance_id,
                                    const VMStateDescription *vmsd,
                                    void *base, int alias_id,
                                    int required_for_version,
