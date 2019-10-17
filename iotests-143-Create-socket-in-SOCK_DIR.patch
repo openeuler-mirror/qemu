@@ -1,0 +1,59 @@
+From 2e8fecd9e963c740cfe73d0de4491541423e185f Mon Sep 17 00:00:00 2001
+From: Max Reitz <mreitz@redhat.com>
+Date: Thu, 17 Oct 2019 15:31:40 +0200
+Subject: [PATCH] iotests/143: Create socket in $SOCK_DIR
+
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+Reviewed-by: Thomas Huth <thuth@redhat.com>
+Message-id: 20191017133155.5327-9-mreitz@redhat.com
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+---
+ tests/qemu-iotests/143     | 6 +++---
+ tests/qemu-iotests/143.out | 2 +-
+ 2 files changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/tests/qemu-iotests/143 b/tests/qemu-iotests/143
+index 92249ac8da..f649b36195 100755
+--- a/tests/qemu-iotests/143
++++ b/tests/qemu-iotests/143
+@@ -29,7 +29,7 @@ status=1	# failure is the default!
+ _cleanup()
+ {
+     _cleanup_qemu
+-    rm -f "$TEST_DIR/nbd"
++    rm -f "$SOCK_DIR/nbd"
+ }
+ trap "_cleanup; exit \$status" 0 1 2 3 15
+ 
+@@ -51,12 +51,12 @@ _send_qemu_cmd $QEMU_HANDLE \
+ _send_qemu_cmd $QEMU_HANDLE \
+     "{ 'execute': 'nbd-server-start',
+        'arguments': { 'addr': { 'type': 'unix',
+-                                'data': { 'path': '$TEST_DIR/nbd' }}}}" \
++                                'data': { 'path': '$SOCK_DIR/nbd' }}}}" \
+     'return'
+ 
+ # This should just result in a client error, not in the server crashing
+ $QEMU_IO_PROG -f raw -c quit \
+-    "nbd+unix:///no_such_export?socket=$TEST_DIR/nbd" 2>&1 \
++    "nbd+unix:///no_such_export?socket=$SOCK_DIR/nbd" 2>&1 \
+     | _filter_qemu_io | _filter_nbd
+ 
+ _send_qemu_cmd $QEMU_HANDLE \
+diff --git a/tests/qemu-iotests/143.out b/tests/qemu-iotests/143.out
+index ee71b5aa42..037d34a409 100644
+--- a/tests/qemu-iotests/143.out
++++ b/tests/qemu-iotests/143.out
+@@ -1,7 +1,7 @@
+ QA output created by 143
+ {"return": {}}
+ {"return": {}}
+-qemu-io: can't open device nbd+unix:///no_such_export?socket=TEST_DIR/nbd: Requested export not available
++qemu-io: can't open device nbd+unix:///no_such_export?socket=SOCK_DIR/nbd: Requested export not available
+ server reported: export 'no_such_export' not present
+ {"return": {}}
+ {"timestamp": {"seconds":  TIMESTAMP, "microseconds":  TIMESTAMP}, "event": "SHUTDOWN", "data": {"guest": false, "reason": "host-qmp-quit"}}
+-- 
+2.27.0
+
