@@ -49,6 +49,7 @@ pcie_cap_v1_fill(PCIDevice *dev, uint8_t port, uint8_t type, uint8_t version)
 {
     uint8_t *exp_cap = dev->config + dev->exp.exp_cap;
     uint8_t *cmask = dev->cmask + dev->exp.exp_cap;
+    PCIESlot *s = (PCIESlot *)object_dynamic_cast(OBJECT(dev), TYPE_PCIE_SLOT);
 
     /* capability register
     interrupt message number defaults to 0 */
@@ -75,11 +76,20 @@ pcie_cap_v1_fill(PCIDevice *dev, uint8_t port, uint8_t type, uint8_t version)
                  QEMU_PCI_EXP_LNKSTA_NLW(QEMU_PCI_EXP_LNK_X1) |
                  QEMU_PCI_EXP_LNKSTA_CLS(QEMU_PCI_EXP_LNK_2_5GT));
 
-    if (dev->cap_present & QEMU_PCIE_LNKSTA_DLLLA) {
-        pci_word_test_and_set_mask(exp_cap + PCI_EXP_LNKSTA,
-                                   PCI_EXP_LNKSTA_DLLLA);
+    /* If a device is plugged in the pcie-root-port when VM kernel
+     * is just booting, the kernel will wrongly disable the device.
+     * This bug was brought in two patches of the linux kernel, i.e.
+     * https://patchwork.kernel.org/patch/10575355/ and
+     * https://patchwork.kernel.org/patch/10766219/.
+     * To fix this up, let's enable the PCI_EXP_LNKSTA_DLLLA
+     * only if it is a PCIESlot device.
+     */
+    if (s == NULL || s->disable_lnksta_dllla == 0) {
+        if (dev->cap_present & QEMU_PCIE_LNKSTA_DLLLA) {
+            pci_word_test_and_set_mask(exp_cap + PCI_EXP_LNKSTA,
+                                       PCI_EXP_LNKSTA_DLLLA);
+        }
     }
-
     /* We changed link status bits over time, and changing them across
      * migrations is generally fine as hardware changes them too.
      * Let's not bother checking.

@@ -50,6 +50,8 @@ struct PCIESlot {
     uint8_t     chassis;
     uint16_t    slot;
 
+    uint8_t     disable_lnksta_dllla;
+
     PCIExpLinkSpeed speed;
     PCIExpLinkWidth width;
 
