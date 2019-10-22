@@ -1,0 +1,34 @@
+From 986fcd107eb251d11bae70a2777f950f06fdafa4 Mon Sep 17 00:00:00 2001
+From: Cathy Zhang <cathy.zhang@intel.com>
+Date: Tue, 22 Oct 2019 15:35:26 +0800
+Subject: [PATCH] i386: Add MSR feature bit for MDS-NO
+
+Define MSR_ARCH_CAP_MDS_NO in the IA32_ARCH_CAPABILITIES MSR to allow
+CPU models to report the feature when host supports it.
+
+Signed-off-by: Cathy Zhang <cathy.zhang@intel.com>
+Reviewed-by: Xiaoyao Li <xiaoyao.li@intel.com>
+Reviewed-by: Tao Xu <tao3.xu@intel.com>
+Message-Id: <1571729728-23284-2-git-send-email-cathy.zhang@intel.com>
+Signed-off-by: Eduardo Habkost <ehabkost@redhat.com>
+
+Signed-off-by: Jingyi Wang <wangjingyi11@huawei.com>
+---
+ target/i386/cpu.h | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/target/i386/cpu.h b/target/i386/cpu.h
+index 488b4dc778..9ef868eb71 100644
+--- a/target/i386/cpu.h
++++ b/target/i386/cpu.h
+@@ -747,6 +747,7 @@ typedef uint32_t FeatureWordArray[FEATURE_WORDS];
+ #define MSR_ARCH_CAP_RSBA       (1U << 2)
+ #define MSR_ARCH_CAP_SKIP_L1DFL_VMENTRY (1U << 3)
+ #define MSR_ARCH_CAP_SSB_NO     (1U << 4)
++#define MSR_ARCH_CAP_MDS_NO     (1U << 5)
+ 
+ #define MSR_CORE_CAP_SPLIT_LOCK_DETECT  (1U << 5)
+ 
+-- 
+2.27.0
+
