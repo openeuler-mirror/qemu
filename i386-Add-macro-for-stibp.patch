@@ -1,0 +1,36 @@
+From 1e7b66433eaef14948869a39dbda3debe0a70eb0 Mon Sep 17 00:00:00 2001
+From: Cathy Zhang <cathy.zhang@intel.com>
+Date: Tue, 22 Oct 2019 15:35:27 +0800
+Subject: [PATCH] i386: Add macro for stibp
+
+stibp feature is already added through the following commit.
+https://github.com/qemu/qemu/commit/0e8916582991b9fd0b94850a8444b8b80d0a0955
+
+Add a macro for it to allow CPU models to report it when host supports.
+
+Signed-off-by: Cathy Zhang <cathy.zhang@intel.com>
+Reviewed-by: Xiaoyao Li <xiaoyao.li@intel.com>
+Reviewed-by: Tao Xu <tao3.xu@intel.com>
+Message-Id: <1571729728-23284-3-git-send-email-cathy.zhang@intel.com>
+Signed-off-by: Eduardo Habkost <ehabkost@redhat.com>
+
+Signed-off-by: Jingyi Wang <wangjingyi11@huawei.com>
+---
+ target/i386/cpu.h | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/target/i386/cpu.h b/target/i386/cpu.h
+index 9ef868eb71..58d8c48964 100644
+--- a/target/i386/cpu.h
++++ b/target/i386/cpu.h
+@@ -689,6 +689,7 @@ typedef uint32_t FeatureWordArray[FEATURE_WORDS];
+ #define CPUID_7_0_EDX_AVX512_4VNNIW (1U << 2) /* AVX512 Neural Network Instructions */
+ #define CPUID_7_0_EDX_AVX512_4FMAPS (1U << 3) /* AVX512 Multiply Accumulation Single Precision */
+ #define CPUID_7_0_EDX_SPEC_CTRL     (1U << 26) /* Speculation Control */
++#define CPUID_7_0_EDX_STIBP             (1U << 27)  /* Single Thread Indirect Branch Predictors */
+ #define CPUID_7_0_EDX_ARCH_CAPABILITIES (1U << 29)  /*Arch Capabilities*/
+ #define CPUID_7_0_EDX_CORE_CAPABILITY   (1U << 30)  /*Core Capability*/
+ #define CPUID_7_0_EDX_SPEC_CTRL_SSBD  (1U << 31) /* Speculative Store Bypass Disable */
+-- 
+2.27.0
+
