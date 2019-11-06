@@ -1,7 +1,7 @@
 From 70063948181062161a341a8738a53708d8ed0a0b Mon Sep 17 00:00:00 2001
 From: Xu Yandong <xuyandong2@huawei.com>
 Date: Wed, 28 Aug 2019 01:36:21 -0400
-Subject: [PATCH] cpu: add Kunpeng-T82 cpu support
+Subject: [PATCH] cpu: add Kunpeng-920 cpu support
 
 Signed-off-by: Xu Yandong <xuyandong2@huawei.com>
 ---
@@ -17,7 +17,7 @@ index f89757df..11468b72 100644
      ARM_CPU_TYPE_NAME("cortex-a53"),
      ARM_CPU_TYPE_NAME("cortex-a57"),
      ARM_CPU_TYPE_NAME("cortex-a72"),
-+    ARM_CPU_TYPE_NAME("Kunpeng-T82"),
++    ARM_CPU_TYPE_NAME("Kunpeng-920"),
      ARM_CPU_TYPE_NAME("host"),
      ARM_CPU_TYPE_NAME("max"),
  };
@@ -29,12 +29,12 @@ index 228906f2..5581d5e1 100644
      define_arm_cp_regs(cpu, cortex_a72_a57_a53_cp_reginfo);
  }
  
-+static void aarch64_kunpeng_t82_initfn(Object *obj)
++static void aarch64_kunpeng_920_initfn(Object *obj)
 +{
 +    ARMCPU *cpu = ARM_CPU(obj);
 +
 +    /*
-+     * Hisilicon Kunpeng-T82 CPU is based on cortex-a72,
++     * Hisilicon Kunpeng-920 CPU is similar to cortex-a72,
 +     * so first initialize cpu data as cortex-a72 CPU,
 +     * and then update the special registers.
 +     */
@@ -56,7 +56,7 @@ index 228906f2..5581d5e1 100644
      { .name = "cortex-a57",         .initfn = aarch64_a57_initfn },
      { .name = "cortex-a53",         .initfn = aarch64_a53_initfn },
      { .name = "cortex-a72",         .initfn = aarch64_a72_initfn },
-+    { .name = "Kunpeng-T82",        .initfn = aarch64_kunpeng_t82_initfn },
++    { .name = "Kunpeng-920",        .initfn = aarch64_kunpeng_920_initfn },
      { .name = "max",                .initfn = aarch64_max_initfn },
      { .name = NULL }
  };

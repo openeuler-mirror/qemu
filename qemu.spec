@@ -6,8 +6,9 @@ Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY
 URL: http://www.qemu.org
 Source0: https://www.qemu.org/download/%{name}-%{version}%{?rcstr}.tar.xz
-Source1: 99-qemu-guest-agent.rules
-Source2: bridge.conf
+Source1: 80-kvm.rules
+Source2: 99-qemu-guest-agent.rules
+Source3: bridge.conf
 
 Patch0001: qxl-check-release-info-object.patch
 Patch0002: target-i386-define-md-clear-bit.patch
@@ -56,9 +57,11 @@ Patch0044: memory-unref-the-memory-region-in-simplify-flatview.patch
 Patch0045: scsi-lsi-exit-infinite-loop-while-executing-script-C.patch
 Patch0046: util-async-hold-AioContext-ref-to-prevent-use-after-.patch
 Patch0047: vhost-user-scsi-prevent-using-uninitialized-vqs.patch
-Patch0048: cpu-add-Kunpeng-T82-cpu-support.patch
+Patch0048: cpu-add-Kunpeng-920-cpu-support.patch
 Patch0049: cpu-parse-feature-to-avoid-failure.patch
 Patch0050: cpu-add-Cortex-A72-processor-kvm-target-support.patch
+Patch0051: vnc-fix-memory-leak-when-vnc-disconnect.patch
+Patch0052: pcie-disable-the-PCI_EXP_LINKSTA_DLLA-cap.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -219,11 +222,14 @@ make %{?_smp_mflags} DESTDIR=%{buildroot} \
 
 %find_lang %{name}
 install -m 0755 qemu-kvm  %{buildroot}%{_libexecdir}/
-rm $RPM_BUILD_ROOT%{_bindir}/qemu-system-*
+ln -s  %{_libexecdir}/qemu-kvm %{buildroot}/%{_bindir}/qemu-kvm
+
+rm %{buildroot}/%{_bindir}/qemu-system-*
 install -D -p -m 0644 contrib/systemd/qemu-pr-helper.service %{buildroot}%{_unitdir}/qemu-pr-helper.service
 install -D -p -m 0644 contrib/systemd/qemu-pr-helper.socket %{buildroot}%{_unitdir}/qemu-pr-helper.socket
 install -D -p -m 0644 qemu.sasl %{buildroot}%{_sysconfdir}/sasl2/qemu.conf
 install -D -m 0644 %{_sourcedir}/bridge.conf %{buildroot}%{_sysconfdir}/qemu/bridge.conf
+install -D -m 0644 %{_sourcedir}/80-kvm.rules %{buildroot}/usr/lib/udev/rules.d/80-kvm.rules
 
 # For qemu-guest-agent package
 %global _udevdir /lib/udev/rules.d
@@ -288,6 +294,7 @@ getent passwd qemu >/dev/null || \
 %files  -f %{name}.lang
 %dir %{_datadir}/%{name}/
 %{_libexecdir}/qemu-kvm
+%{_bindir}/qemu-kvm
 %{_datadir}/%{name}/efi-virtio.rom
 %{_datadir}/%{name}/efi-e1000.rom
 %{_datadir}/%{name}/efi-e1000e.rom
@@ -317,6 +324,10 @@ getent passwd qemu >/dev/null || \
 %config(noreplace) %{_sysconfdir}/sasl2/qemu.conf
 %dir %{_sysconfdir}/qemu
 %config(noreplace) %{_sysconfdir}/qemu/bridge.conf
+/usr/lib/udev/rules.d/80-kvm.rules
+%doc %{qemudocdir}/COPYING
+%doc %{qemudocdir}/COPYING.LIB
+%doc %{qemudocdir}/LICENSE
 %ifarch x86_64
 %{_datadir}/%{name}/bios.bin
 %{_datadir}/%{name}/bios-256k.bin
@@ -344,9 +355,6 @@ getent passwd qemu >/dev/null || \
 %doc %{qemudocdir}/qemu-qmp-ref.txt
 %doc %{qemudocdir}/README
 %doc %{qemudocdir}/Changelog
-%doc %{qemudocdir}/COPYING
-%doc %{qemudocdir}/COPYING.LIB
-%doc %{qemudocdir}/LICENSE
 %{_mandir}/man1/qemu.1*
 %{_mandir}/man1/virtfs-proxy-helper.1*
 %{_mandir}/man7/qemu-block-drivers.7*
@@ -371,6 +379,9 @@ getent passwd qemu >/dev/null || \
 
 
 %changelog
+* Thu Oct 17 2019 backport from qemu upstream
+- vnc-fix-memory-leak-when-vnc-disconnect.patch
+
 * Mon Sep  9 2019 backport from qemu upstream
 - ehci-fix-queue-dev-null-ptr-dereference.patch
 - memory-unref-the-memory-region-in-simplify-flatview.patch

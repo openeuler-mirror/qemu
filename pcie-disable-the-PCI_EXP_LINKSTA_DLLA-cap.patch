@@ -1,0 +1,99 @@
+From 7381599d4222f9b5cff6935a66e8b311af77f620 Mon Sep 17 00:00:00 2001
+From: Li Mingwang <limingwang@huawei.com>
+Date: Thu, 17 Oct 2019 16:57:52 +0800
+Subject: [PATCH] Subject: [PATCH] pcie: disable the PCI_EXP_LINKSTA_DLLA cap
+ for pcie-root-port by default
+
+If the PCI_EXP_LNKSTA_DLLLA capability is set by default, linux
+kernel will send PDC event to detect whether there is a device in
+pcie slot. If a device is pluged in the pcie-root-port at the same
+time, hot-plug device will send ABP + PDC events to the kernel. The
+VM kernel will wrongly unplug the device if two PDC events get too
+close. Thus we'd better set the PCI_EXP_LNKSTA_DLLLA capability only
+in hotplug scenario
+
+Signed-off-by: Li Mingwang <limingwang@huawei.com>
+---
+ hw/core/machine.c                  |  1 +
+ hw/pci-bridge/gen_pcie_root_port.c |  1 +
+ hw/pci/pcie.c                      | 18 ++++++++++++++----
+ include/hw/pci/pcie_port.h         |  2 ++
+ 4 files changed, 18 insertions(+), 4 deletions(-)
+
+diff --git a/hw/core/machine.c b/hw/core/machine.c
+index 5d046a43..29a708da 100644
+--- a/hw/core/machine.c
++++ b/hw/core/machine.c
+@@ -30,6 +30,7 @@ const size_t hw_compat_4_0_len = G_N_ELEMENTS(hw_compat_4_0);
+ GlobalProperty hw_compat_3_1[] = {
+     { "pcie-root-port", "x-speed", "2_5" },
+     { "pcie-root-port", "x-width", "1" },
++    { "pcie-root-port", "fast-plug", "0" },
+     { "memory-backend-file", "x-use-canonical-path-for-ramblock-id", "true" },
+     { "memory-backend-memfd", "x-use-canonical-path-for-ramblock-id", "true" },
+     { "tpm-crb", "ppi", "false" },
+diff --git a/hw/pci-bridge/gen_pcie_root_port.c b/hw/pci-bridge/gen_pcie_root_port.c
+index 26bda73e..3179c4ea 100644
+--- a/hw/pci-bridge/gen_pcie_root_port.c
++++ b/hw/pci-bridge/gen_pcie_root_port.c
+@@ -131,6 +131,7 @@ static Property gen_rp_props[] = {
+                                 speed, PCIE_LINK_SPEED_16),
+     DEFINE_PROP_PCIE_LINK_WIDTH("x-width", PCIESlot,
+                                 width, PCIE_LINK_WIDTH_32),
++    DEFINE_PROP_UINT8("fast-plug", PCIESlot, disable_lnksta_dllla, 0),
+     DEFINE_PROP_END_OF_LIST()
+ };
+ 
+diff --git a/hw/pci/pcie.c b/hw/pci/pcie.c
+index cf1ca30f..c0d6ff13 100644
+--- a/hw/pci/pcie.c
++++ b/hw/pci/pcie.c
+@@ -50,6 +50,7 @@ pcie_cap_v1_fill(PCIDevice *dev, uint8_t port, uint8_t type, uint8_t version)
+ {
+     uint8_t *exp_cap = dev->config + dev->exp.exp_cap;
+     uint8_t *cmask = dev->cmask + dev->exp.exp_cap;
++    PCIESlot *s = (PCIESlot *)object_dynamic_cast(OBJECT(dev), TYPE_PCIE_SLOT);
+ 
+     /* capability register
+     interrupt message number defaults to 0 */
+@@ -76,11 +77,20 @@ pcie_cap_v1_fill(PCIDevice *dev, uint8_t port, uint8_t type, uint8_t version)
+                  QEMU_PCI_EXP_LNKSTA_NLW(QEMU_PCI_EXP_LNK_X1) |
+                  QEMU_PCI_EXP_LNKSTA_CLS(QEMU_PCI_EXP_LNK_2_5GT));
+ 
+-    if (dev->cap_present & QEMU_PCIE_LNKSTA_DLLLA) {
+-        pci_word_test_and_set_mask(exp_cap + PCI_EXP_LNKSTA,
+-                                   PCI_EXP_LNKSTA_DLLLA);
++    /* If a device is plugged in the pcie-root-port when VM kernel
++     * is just booting, the kernel will wrongly disable the device.
++     * This bug was brought in two patches of the linux kernel, i.e.
++     * https://patchwork.kernel.org/patch/10575355/ and
++     * https://patchwork.kernel.org/patch/10766219/.
++     * To fix this up, let's enable the PCI_EXP_LNKSTA_DLLLA
++     * only if it is a PCIESlot device.
++     */
++    if (s == NULL || s->disable_lnksta_dllla == 0) {
++        if (dev->cap_present & QEMU_PCIE_LNKSTA_DLLLA) {
++            pci_word_test_and_set_mask(exp_cap + PCI_EXP_LNKSTA,
++                                       PCI_EXP_LNKSTA_DLLLA);
++        }
+     }
+-
+     /* We changed link status bits over time, and changing them across
+      * migrations is generally fine as hardware changes them too.
+      * Let's not bother checking.
+diff --git a/include/hw/pci/pcie_port.h b/include/hw/pci/pcie_port.h
+index 09586f46..c3969921 100644
+--- a/include/hw/pci/pcie_port.h
++++ b/include/hw/pci/pcie_port.h
+@@ -50,6 +50,8 @@ struct PCIESlot {
+     uint8_t     chassis;
+     uint16_t    slot;
+ 
++    uint8_t     disable_lnksta_dllla;
++
+     PCIExpLinkSpeed speed;
+     PCIExpLinkWidth width;
+ 
+-- 
+2.19.1
+
