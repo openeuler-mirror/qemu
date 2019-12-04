@@ -1,0 +1,32 @@
+From 5b137b37ef7c4941200798cca99200e80ef17a01 Mon Sep 17 00:00:00 2001
+From: Greg Kurz <groug@kaod.org>
+Date: Wed, 4 Dec 2019 20:43:43 +0100
+Subject: [PATCH] xics: Don't deassert outputs
+
+The correct way to do this is to deassert the input pins on the CPU side.
+This is the case since a previous change.
+
+Signed-off-by: Greg Kurz <groug@kaod.org>
+Message-Id: <157548862298.3650476.1228720391270249433.stgit@bahia.lan>
+Signed-off-by: David Gibson <david@gibson.dropbear.id.au>
+---
+ hw/intc/xics.c | 3 ---
+ 1 file changed, 3 deletions(-)
+
+diff --git a/hw/intc/xics.c b/hw/intc/xics.c
+index faa976e2f8..d2d377fc85 100644
+--- a/hw/intc/xics.c
++++ b/hw/intc/xics.c
+@@ -303,9 +303,6 @@ static void icp_reset_handler(void *dev)
+     icp->pending_priority = 0xff;
+     icp->mfrr = 0xff;
+ 
+-    /* Make all outputs are deasserted */
+-    qemu_set_irq(icp->output, 0);
+-
+     if (kvm_irqchip_in_kernel()) {
+         Error *local_err = NULL;
+ 
+-- 
+2.27.0
+
