@@ -76,13 +76,11 @@ BuildRequires: gtk3-devel
 BuildRequires: gnutls-devel
 BuildRequires: numactl-devel
 BuildRequires: device-mapper-multipath-devel
-BuildRequires: libfdt-devel
 BuildRequires: rdma-core-devel
 BuildRequires: libcap-devel
 BuildRequires: libcap-ng-devel
 BuildRequires: cyrus-sasl-devel
 BuildRequires: libaio-devel
-BuildRequires: virglrenderer-devel
 BuildRequires: usbredir-devel >= 0.5.2
 BuildRequires: libseccomp-devel >= 2.3.0
 BuildRequires: systemd-devel
@@ -101,13 +99,14 @@ BuildRequires: bzip2-devel
 BuildRequires: libepoxy-devel
 BuildRequires: libtasn1-devel
 BuildRequires: libxml2-devel
-%ifarch x86_64
-BuildRequires: libpmem-devel
-%endif
 BuildRequires: libudev-devel
 BuildRequires: pam-devel
 BuildRequires: perl-Test-Harness
 BuildRequires: python3-devel
+%ifarch aarch64
+BuildRequires: libfdt-devel
+BuildRequires: virglrenderer-devel
+%endif
 
 Requires(post): /usr/bin/getent
 Requires(post): /usr/sbin/groupadd
@@ -151,6 +150,13 @@ Summary: QEMU command line tool for manipulating disk images
 %description img
 This package provides a command line tool for manipulating disk images
 
+%ifarch %{ix86} x86_64
+%package seabios
+Summary: QEMU seabios
+%description seabios
+This package include bios-256k.bin and bios.bin of seabios
+%endif
+
 %prep
 %setup -q -n qemu-%{version}%{?rcstr}
 %autopatch -p1
@@ -190,14 +196,16 @@ buildldflags="VL_LDFLAGS=-Wl,--build-id"
     --enable-mpath \
     --disable-libnfs \
     --disable-bzip2 \
-    --enable-fdt \
     --enable-kvm \
     --enable-tcg \
     --enable-rdma \
     --enable-linux-aio \
     --enable-cap-ng \
     --enable-vhost-user \
+%ifarch aarch64
+    --enable-fdt \
     --enable-virglrenderer \
+%endif
     --enable-cap-ng \
     --enable-libusb \
     --disable-bluez \
@@ -377,6 +385,11 @@ getent passwd qemu >/dev/null || \
 %{_bindir}/qemu-io
 %{_bindir}/qemu-nbd
 
+%ifarch %{ix86} x86_64
+%files seabios
+%{_datadir}/%{name}/bios-256k.bin
+%{_datadir}/%{name}/bios.bin
+%endif
 
 %changelog
 * Thu Oct 17 2019 backport from qemu upstream
