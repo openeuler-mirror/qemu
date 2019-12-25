@@ -1,0 +1,83 @@
+From 3a87d07722d4be717a97b59cfbc7b2ba27ca30b0 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Tue, 28 May 2019 19:33:31 -0400
+Subject: [PATCH] migration/dirty-bitmaps: change bitmap enumeration method
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Shift from looking at every root BDS to *every* BDS. This will migrate
+bitmaps that are attached to blockdev created nodes instead of just ones
+attached to emulated storage devices.
+
+Note that this will not migrate anonymous or internal-use bitmaps, as
+those are defined as having no name.
+
+This will also fix the Coverity issues Peter Maydell has been asking
+about for the past several releases, as well as fixing a real bug.
+
+Reported-by: Peter Maydell <peter.maydell@linaro.org>
+Reported-by: Coverity 😅
+Reported-by: aihua liang <aliang@redhat.com>
+Reviewed-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Signed-off-by: John Snow <jsnow@redhat.com>
+Message-id: 20190514201926.10407-1-jsnow@redhat.com
+Fixes: https://bugzilla.redhat.com/show_bug.cgi?id=1652490
+Fixes: Coverity CID 1390625
+CC: Stefan Hajnoczi <stefanha@redhat.com>
+Signed-off-by: John Snow <jsnow@redhat.com>
+(cherry picked from commit 592203e7cfbd1ad261178431fcf390adfe8b16df)
+Signed-off-by: Michael Roth <mdroth@linux.vnet.ibm.com>
+---
+ migration/block-dirty-bitmap.c | 14 ++++----------
+ 1 file changed, 4 insertions(+), 10 deletions(-)
+
+diff --git a/migration/block-dirty-bitmap.c b/migration/block-dirty-bitmap.c
+index d1bb863cb6..4a896a09eb 100644
+--- a/migration/block-dirty-bitmap.c
++++ b/migration/block-dirty-bitmap.c
+@@ -273,7 +273,6 @@ static int init_dirty_bitmap_migration(void)
+     BlockDriverState *bs;
+     BdrvDirtyBitmap *bitmap;
+     DirtyBitmapMigBitmapState *dbms;
+-    BdrvNextIterator it;
+     Error *local_err = NULL;
+ 
+     dirty_bitmap_mig_state.bulk_completed = false;
+@@ -281,13 +280,8 @@ static int init_dirty_bitmap_migration(void)
+     dirty_bitmap_mig_state.prev_bitmap = NULL;
+     dirty_bitmap_mig_state.no_bitmaps = false;
+ 
+-    for (bs = bdrv_first(&it); bs; bs = bdrv_next(&it)) {
+-        const char *drive_name = bdrv_get_device_or_node_name(bs);
+-
+-        /* skip automatically inserted nodes */
+-        while (bs && bs->drv && bs->implicit) {
+-            bs = backing_bs(bs);
+-        }
++    for (bs = bdrv_next_all_states(NULL); bs; bs = bdrv_next_all_states(bs)) {
++        const char *name = bdrv_get_device_or_node_name(bs);
+ 
+         for (bitmap = bdrv_dirty_bitmap_next(bs, NULL); bitmap;
+              bitmap = bdrv_dirty_bitmap_next(bs, bitmap))
+@@ -296,7 +290,7 @@ static int init_dirty_bitmap_migration(void)
+                 continue;
+             }
+ 
+-            if (drive_name == NULL) {
++            if (!name || strcmp(name, "") == 0) {
+                 error_report("Found bitmap '%s' in unnamed node %p. It can't "
+                              "be migrated", bdrv_dirty_bitmap_name(bitmap), bs);
+                 goto fail;
+@@ -313,7 +307,7 @@ static int init_dirty_bitmap_migration(void)
+ 
+             dbms = g_new0(DirtyBitmapMigBitmapState, 1);
+             dbms->bs = bs;
+-            dbms->node_name = drive_name;
++            dbms->node_name = name;
+             dbms->bitmap = bitmap;
+             dbms->total_sectors = bdrv_nb_sectors(bs);
+             dbms->sectors_per_chunk = CHUNK_SIZE * 8 *
+-- 
+2.19.1
+

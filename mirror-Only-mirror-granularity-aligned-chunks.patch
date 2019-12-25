@@ -1,0 +1,84 @@
+From d65d02614b6b0f6bcc64cd2a737b5204c0fc5304 Mon Sep 17 00:00:00 2001
+From: Max Reitz <mreitz@redhat.com>
+Date: Mon, 5 Aug 2019 17:33:08 +0200
+Subject: [PATCH] mirror: Only mirror granularity-aligned chunks
+
+In write-blocking mode, all writes to the top node directly go to the
+target.  We must only mirror chunks of data that are aligned to the
+job's granularity, because that is how the dirty bitmap works.
+Therefore, the request alignment for writes must be the job's
+granularity (in write-blocking mode).
+
+Unfortunately, this forces all reads and writes to have the same
+granularity (we only need this alignment for writes to the target, not
+the source), but that is something to be fixed another time.
+
+Cc: qemu-stable@nongnu.org
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+Message-id: 20190805153308.2657-1-mreitz@redhat.com
+Reviewed-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Fixes: d06107ade0ce74dc39739bac80de84b51ec18546
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+(cherry picked from commit 9adc1cb49af8d4e54f57980b1eed5c0a4b2dafa6)
+Signed-off-by: Michael Roth <mdroth@linux.vnet.ibm.com>
+---
+ block/mirror.c | 29 +++++++++++++++++++++++++++++
+ 1 file changed, 29 insertions(+)
+
+diff --git a/block/mirror.c b/block/mirror.c
+index ff15cfb197..062dc42867 100644
+--- a/block/mirror.c
++++ b/block/mirror.c
+@@ -1477,6 +1477,15 @@ static void bdrv_mirror_top_child_perm(BlockDriverState *bs, BdrvChild *c,
+     *nshared = BLK_PERM_ALL;
+ }
+ 
++static void bdrv_mirror_top_refresh_limits(BlockDriverState *bs, Error **errp)
++{
++    MirrorBDSOpaque *s = bs->opaque;
++
++    if (s && s->job && s->job->copy_mode == MIRROR_COPY_MODE_WRITE_BLOCKING) {
++        bs->bl.request_alignment = s->job->granularity;
++    }
++}
++
+ /* Dummy node that provides consistent read to its users without requiring it
+  * from its backing file and that allows writes on the backing file chain. */
+ static BlockDriver bdrv_mirror_top = {
+@@ -1489,6 +1498,7 @@ static BlockDriver bdrv_mirror_top = {
+     .bdrv_co_block_status       = bdrv_co_block_status_from_backing,
+     .bdrv_refresh_filename      = bdrv_mirror_top_refresh_filename,
+     .bdrv_child_perm            = bdrv_mirror_top_child_perm,
++    .bdrv_refresh_limits        = bdrv_mirror_top_refresh_limits,
+ };
+ 
+ static void mirror_start_job(const char *job_id, BlockDriverState *bs,
+@@ -1627,6 +1637,25 @@ static void mirror_start_job(const char *job_id, BlockDriverState *bs,
+         s->should_complete = true;
+     }
+ 
++    /*
++     * Must be called before we start tracking writes, but after
++     *
++     *     ((MirrorBlockJob *)
++     *         ((MirrorBDSOpaque *)
++     *             mirror_top_bs->opaque
++     *         )->job
++     *     )->copy_mode
++     *
++     * has the correct value.
++     * (We start tracking writes as of the following
++     * bdrv_create_dirty_bitmap() call.)
++     */
++    bdrv_refresh_limits(mirror_top_bs, &local_err);
++    if (local_err) {
++        error_propagate(errp, local_err);
++        goto fail;
++    }
++
+     s->dirty_bitmap = bdrv_create_dirty_bitmap(bs, granularity, NULL, errp);
+     if (!s->dirty_bitmap) {
+         goto fail;
+-- 
+2.19.1
+

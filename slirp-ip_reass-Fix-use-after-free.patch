@@ -1,0 +1,47 @@
+From b27192be13da3fb59f51185d9a1f944b3474b2fc Mon Sep 17 00:00:00 2001
+From: Michael Roth <mdroth@linux.vnet.ibm.com>
+Date: Tue, 24 Sep 2019 16:04:04 -0500
+Subject: [PATCH] slirp: ip_reass: Fix use after free
+
+Using ip_deq after m_free might read pointers from an allocation reuse.
+
+This would be difficult to exploit, but that is still related with
+CVE-2019-14378 which generates fragmented IP packets that would trigger this
+issue and at least produce a DoS.
+
+Signed-off-by: Samuel Thibault <samuel.thibault@ens-lyon.org>
+(from libslirp.git commit c59279437eda91841b9d26079c70b8a540d41204)
+Fixes: CVE-2019-15890
+Signed-off-by: Michael Roth <mdroth@linux.vnet.ibm.com>
+---
+ slirp/src/ip_input.c | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/slirp/src/ip_input.c b/slirp/src/ip_input.c
+index 68a99de5b5..89ae04e0c1 100644
+--- a/slirp/src/ip_input.c
++++ b/slirp/src/ip_input.c
+@@ -297,6 +297,7 @@ ip_reass(Slirp *slirp, struct ip *ip, struct ipq *fp)
+ 	 */
+ 	while (q != (struct ipasfrag*)&fp->frag_link &&
+             ip->ip_off + ip->ip_len > q->ipf_off) {
++        struct ipasfrag *prev;
+ 		i = (ip->ip_off + ip->ip_len) - q->ipf_off;
+ 		if (i < q->ipf_len) {
+ 			q->ipf_len -= i;
+@@ -304,9 +305,10 @@ ip_reass(Slirp *slirp, struct ip *ip, struct ipq *fp)
+ 			m_adj(dtom(slirp, q), i);
+ 			break;
+ 		}
++        prev = q;
+ 		q = q->ipf_next;
+-		m_free(dtom(slirp, q->ipf_prev));
+-		ip_deq(q->ipf_prev);
++		ip_deq(prev);
++		m_free(dtom(slirp, prev));
+ 	}
+ 
+ insert:
+-- 
+2.19.1
+
