@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.0.0
-Release: 4
+Release: 5
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY
@@ -80,6 +80,9 @@ Patch0067: slirp-Fix-heap-overflow-in-ip_reass-on-big-packet-input.patch
 Patch0068: slirp-ip_reass-Fix-use-after-free.patch
 Patch0069: hw-core-loader-Fix-possible-crash-in-rom_copy.patch
 Patch0070: migration-Fix-use-after-free-during-process-exit.patch
+Patch0071: linux-headers-update-against-KVM-ARM-Fix-256-vcpus.patch
+Patch0072: intc-arm_gic-Support-IRQ-injection-for-more-than-256.patch
+Patch0073: ARM-KVM-Check-KVM_CAP_ARM_IRQ_LINE_LAYOUT_2-for-smp_.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -410,6 +413,11 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Mon Jan  6 2020 backport from qemu upstream
+- linux headers: update against "KVM/ARM: Fix >256 vcp
+- intc/arm_gic: Support IRQ injection for more than 256 vpus
+- ARM: KVM: Check KVM_CAP_ARM_IRQ_LINE_LAYOUT_2 for smp_cpus > 256
+
 * Fri Nov 12 2019 backport from qemu upstream v4.0.1 release
 - usb-tablet: fix serial compat property
 - blockdev-backup: don't check aio_context too early
