@@ -1,0 +1,64 @@
+From 33d6a2bc0e432a85962b71bcb2c3b5eec39bf436 Mon Sep 17 00:00:00 2001
+From: Gerd Hoffmann <kraxel@redhat.com>
+Date: Tue, 7 Jan 2020 09:36:06 +0100
+Subject: [PATCH] xhci: recheck slot status
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Factor out slot status check into a helper function.  Add an additional
+check after completing transfers.  This is needed in case a guest
+queues multiple transfers in a row and a device unplug happens while
+qemu processes them.
+
+Buglink: https://bugzilla.redhat.com/show_bug.cgi?id=1786413
+Signed-off-by: Gerd Hoffmann <kraxel@redhat.com>
+Reviewed-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+Message-id: 20200107083606.12393-1-kraxel@redhat.com
+---
+ hw/usb/hcd-xhci.c | 15 ++++++++++++---
+ 1 file changed, 12 insertions(+), 3 deletions(-)
+
+diff --git a/hw/usb/hcd-xhci.c b/hw/usb/hcd-xhci.c
+index 24565de1d1..4b42f53b9c 100644
+--- a/hw/usb/hcd-xhci.c
++++ b/hw/usb/hcd-xhci.c
+@@ -1860,6 +1860,13 @@ static void xhci_kick_ep(XHCIState *xhci, unsigned int slotid,
+     xhci_kick_epctx(epctx, streamid);
+ }
+ 
++static bool xhci_slot_ok(XHCIState *xhci, int slotid)
++{
++    return (xhci->slots[slotid - 1].uport &&
++            xhci->slots[slotid - 1].uport->dev &&
++            xhci->slots[slotid - 1].uport->dev->attached);
++}
++
+ static void xhci_kick_epctx(XHCIEPContext *epctx, unsigned int streamid)
+ {
+     XHCIState *xhci = epctx->xhci;
+@@ -1877,9 +1884,7 @@ static void xhci_kick_epctx(XHCIEPContext *epctx, unsigned int streamid)
+ 
+     /* If the device has been detached, but the guest has not noticed this
+        yet the 2 above checks will succeed, but we must NOT continue */
+-    if (!xhci->slots[epctx->slotid - 1].uport ||
+-        !xhci->slots[epctx->slotid - 1].uport->dev ||
+-        !xhci->slots[epctx->slotid - 1].uport->dev->attached) {
++    if (!xhci_slot_ok(xhci, epctx->slotid)) {
+         return;
+     }
+ 
+@@ -1986,6 +1991,10 @@ static void xhci_kick_epctx(XHCIEPContext *epctx, unsigned int streamid)
+         } else {
+             xhci_fire_transfer(xhci, xfer, epctx);
+         }
++        if (!xhci_slot_ok(xhci, epctx->slotid)) {
++            /* surprise removal -> stop processing */
++            break;
++        }
+         if (xfer->complete) {
+             /* update ring dequeue ptr */
+             xhci_set_ep_state(xhci, epctx, stctx, epctx->state);
+-- 
+2.27.0
+
