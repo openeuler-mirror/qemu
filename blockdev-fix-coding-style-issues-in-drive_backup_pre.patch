@@ -1,0 +1,44 @@
+From ffbf1e237d0311512c411e195278e69d710fb9cf Mon Sep 17 00:00:00 2001
+From: Sergio Lopez <slp@redhat.com>
+Date: Wed, 8 Jan 2020 15:31:31 +0100
+Subject: [PATCH] blockdev: fix coding style issues in drive_backup_prepare
+
+Fix a couple of minor coding style issues in drive_backup_prepare.
+
+Signed-off-by: Sergio Lopez <slp@redhat.com>
+Reviewed-by: Max Reitz <mreitz@redhat.com>
+Reviewed-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+---
+ blockdev.c | 8 +++++---
+ 1 file changed, 5 insertions(+), 3 deletions(-)
+
+diff --git a/blockdev.c b/blockdev.c
+index 4435795b6d..99b1cafb8f 100644
+--- a/blockdev.c
++++ b/blockdev.c
+@@ -3597,7 +3597,7 @@ static BlockJob *do_drive_backup(DriveBackup *backup, JobTxn *txn,
+ 
+     if (!backup->has_format) {
+         backup->format = backup->mode == NEW_IMAGE_MODE_EXISTING ?
+-                         NULL : (char*) bs->drv->format_name;
++                         NULL : (char *) bs->drv->format_name;
+     }
+ 
+     /* Early check to avoid creating target */
+@@ -3607,8 +3607,10 @@ static BlockJob *do_drive_backup(DriveBackup *backup, JobTxn *txn,
+ 
+     flags = bs->open_flags | BDRV_O_RDWR;
+ 
+-    /* See if we have a backing HD we can use to create our new image
+-     * on top of. */
++    /*
++     * See if we have a backing HD we can use to create our new image
++     * on top of.
++     */
+     if (backup->sync == MIRROR_SYNC_MODE_TOP) {
+         source = backing_bs(bs);
+         if (!source) {
+-- 
+2.27.0
+
