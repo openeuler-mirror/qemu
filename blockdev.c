@@ -3597,7 +3597,7 @@ static BlockJob *do_drive_backup(DriveBackup *backup, JobTxn *txn,
 
     if (!backup->has_format) {
         backup->format = backup->mode == NEW_IMAGE_MODE_EXISTING ?
-                         NULL : (char*) bs->drv->format_name;
+                         NULL : (char *) bs->drv->format_name;
     }
 
     /* Early check to avoid creating target */
@@ -3607,8 +3607,10 @@ static BlockJob *do_drive_backup(DriveBackup *backup, JobTxn *txn,
 
     flags = bs->open_flags | BDRV_O_RDWR;
 
-    /* See if we have a backing HD we can use to create our new image
-     * on top of. */
+    /*
+     * See if we have a backing HD we can use to create our new image
+     * on top of.
+     */
     if (backup->sync == MIRROR_SYNC_MODE_TOP) {
         source = backing_bs(bs);
         if (!source) {
