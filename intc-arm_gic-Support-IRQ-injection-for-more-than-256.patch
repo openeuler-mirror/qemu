@@ -1,0 +1,132 @@
+From 15849387df5c25e8ebaef19e2a16e8d428675f5d Mon Sep 17 00:00:00 2001
+From: Eric Auger <eric.auger@redhat.com>
+Date: Thu, 3 Oct 2019 17:46:39 +0200
+Subject: [PATCH 2/3] intc/arm_gic: Support IRQ injection for more than 256
+ vpus
+
+Host kernels that expose the KVM_CAP_ARM_IRQ_LINE_LAYOUT_2 capability
+allow injection of interrupts along with vcpu ids larger than 255.
+Let's encode the vpcu id on 12 bits according to the upgraded KVM_IRQ_LINE
+ABI when needed.
+
+Given that we have two callsites that need to assemble
+the value for kvm_set_irq(), a new helper routine, kvm_arm_set_irq
+is introduced.
+
+Without that patch qemu exits with "kvm_set_irq: Invalid argument"
+message.
+
+Signed-off-by: Eric Auger <eric.auger@redhat.com>
+Reported-by: Zenghui Yu <yuzenghui@huawei.com>
+Reviewed-by: Richard Henderson <richard.henderson@linaro.org>
+Reviewed-by: Andrew Jones <drjones@redhat.com>
+Acked-by: Marc Zyngier <maz@kernel.org>
+Message-id: 20191003154640.22451-3-eric.auger@redhat.com
+Signed-off-by: Peter Maydell <peter.maydell@linaro.org>
+(cherry-picked from commit f6530926e2310147a7844a3e663230d47b3d7333)
+Signed-off-by: Zenghui Yu <yuzenghui@huawei.com>
+---
+ hw/intc/arm_gic_kvm.c |  7 ++-----
+ target/arm/cpu.c      | 10 ++++------
+ target/arm/kvm.c      | 12 ++++++++++++
+ target/arm/kvm_arm.h  |  1 +
+ 4 files changed, 19 insertions(+), 11 deletions(-)
+
+diff --git a/hw/intc/arm_gic_kvm.c b/hw/intc/arm_gic_kvm.c
+index a611e8ee..7d600a61 100644
+--- a/hw/intc/arm_gic_kvm.c
++++ b/hw/intc/arm_gic_kvm.c
+@@ -55,7 +55,7 @@ void kvm_arm_gic_set_irq(uint32_t num_irq, int irq, int level)
+      * has separate fields in the irq number for type,
+      * CPU number and interrupt number.
+      */
+-    int kvm_irq, irqtype, cpu;
++    int irqtype, cpu;
+ 
+     if (irq < (num_irq - GIC_INTERNAL)) {
+         /* External interrupt. The kernel numbers these like the GIC
+@@ -72,10 +72,7 @@ void kvm_arm_gic_set_irq(uint32_t num_irq, int irq, int level)
+         cpu = irq / GIC_INTERNAL;
+         irq %= GIC_INTERNAL;
+     }
+-    kvm_irq = (irqtype << KVM_ARM_IRQ_TYPE_SHIFT)
+-        | (cpu << KVM_ARM_IRQ_VCPU_SHIFT) | irq;
+-
+-    kvm_set_irq(kvm_state, kvm_irq, !!level);
++    kvm_arm_set_irq(cpu, irqtype, irq, !!level);
+ }
+ 
+ static void kvm_arm_gicv2_set_irq(void *opaque, int irq, int level)
+diff --git a/target/arm/cpu.c b/target/arm/cpu.c
+index 41557821..0b4c8e27 100644
+--- a/target/arm/cpu.c
++++ b/target/arm/cpu.c
+@@ -561,16 +561,16 @@ static void arm_cpu_kvm_set_irq(void *opaque, int irq, int level)
+     ARMCPU *cpu = opaque;
+     CPUARMState *env = &cpu->env;
+     CPUState *cs = CPU(cpu);
+-    int kvm_irq = KVM_ARM_IRQ_TYPE_CPU << KVM_ARM_IRQ_TYPE_SHIFT;
+     uint32_t linestate_bit;
++    int irq_id;
+ 
+     switch (irq) {
+     case ARM_CPU_IRQ:
+-        kvm_irq |= KVM_ARM_IRQ_CPU_IRQ;
++        irq_id = KVM_ARM_IRQ_CPU_IRQ;
+         linestate_bit = CPU_INTERRUPT_HARD;
+         break;
+     case ARM_CPU_FIQ:
+-        kvm_irq |= KVM_ARM_IRQ_CPU_FIQ;
++        irq_id = KVM_ARM_IRQ_CPU_FIQ;
+         linestate_bit = CPU_INTERRUPT_FIQ;
+         break;
+     default:
+@@ -582,9 +582,7 @@ static void arm_cpu_kvm_set_irq(void *opaque, int irq, int level)
+     } else {
+         env->irq_line_state &= ~linestate_bit;
+     }
+-
+-    kvm_irq |= cs->cpu_index << KVM_ARM_IRQ_VCPU_SHIFT;
+-    kvm_set_irq(kvm_state, kvm_irq, level ? 1 : 0);
++    kvm_arm_set_irq(cs->cpu_index, KVM_ARM_IRQ_TYPE_CPU, irq_id, !!level);
+ #endif
+ }
+ 
+diff --git a/target/arm/kvm.c b/target/arm/kvm.c
+index 79a79f01..f60185ad 100644
+--- a/target/arm/kvm.c
++++ b/target/arm/kvm.c
+@@ -728,6 +728,18 @@ int kvm_arm_vgic_probe(void)
+     }
+ }
+ 
++int kvm_arm_set_irq(int cpu, int irqtype, int irq, int level)
++{
++    int kvm_irq = (irqtype << KVM_ARM_IRQ_TYPE_SHIFT) | irq;
++    int cpu_idx1 = cpu % 256;
++    int cpu_idx2 = cpu / 256;
++
++    kvm_irq |= (cpu_idx1 << KVM_ARM_IRQ_VCPU_SHIFT) |
++               (cpu_idx2 << KVM_ARM_IRQ_VCPU2_SHIFT);
++
++    return kvm_set_irq(kvm_state, kvm_irq, !!level);
++}
++
+ int kvm_arch_fixup_msi_route(struct kvm_irq_routing_entry *route,
+                              uint64_t address, uint32_t data, PCIDevice *dev)
+ {
+diff --git a/target/arm/kvm_arm.h b/target/arm/kvm_arm.h
+index 2a07333c..a9f3ccab 100644
+--- a/target/arm/kvm_arm.h
++++ b/target/arm/kvm_arm.h
+@@ -235,6 +235,7 @@ int kvm_arm_vgic_probe(void);
+ 
+ void kvm_arm_pmu_set_irq(CPUState *cs, int irq);
+ void kvm_arm_pmu_init(CPUState *cs);
++int kvm_arm_set_irq(int cpu, int irqtype, int irq, int level);
+ 
+ #else
+ 
+-- 
+2.19.1
+
