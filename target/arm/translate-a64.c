@@ -13587,6 +13587,8 @@ static void disas_crypto_three_reg_sha512(DisasContext *s, uint32_t insn)
             feature = dc_isar_feature(aa64_sha3, s);
             genfn = NULL;
             break;
+        default:
+            g_assert_not_reached();
         }
     } else {
         switch (opcode) {
