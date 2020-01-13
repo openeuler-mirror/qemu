@@ -664,6 +664,34 @@ build_gtdt(GArray *table_data, BIOSLinker *linker, VirtMachineState *vms)
                  table_data->len - gtdt_start, 2, NULL, NULL);
 }
 
+void virt_madt_cpu_entry(AcpiDeviceIf *adev, int uid,
+                         const CPUArchIdList *possible_cpus, GArray *entry)
+{
+    VirtMachineState *vms = VIRT_MACHINE(qdev_get_machine());
+    const MemMapEntry *memmap = vms->memmap;
+    AcpiMadtGenericCpuInterface *gicc = acpi_data_push(entry, sizeof(*gicc));
+    ARMCPU *armcpu = ARM_CPU(qemu_get_cpu(uid));
+
+    gicc->type = ACPI_APIC_GENERIC_CPU_INTERFACE;
+    gicc->length = sizeof(*gicc);
+    if (vms->gic_version == 2) {
+        gicc->base_address = cpu_to_le64(memmap[VIRT_GIC_CPU].base);
+        gicc->gich_base_address = cpu_to_le64(memmap[VIRT_GIC_HYP].base);
+        gicc->gicv_base_address = cpu_to_le64(memmap[VIRT_GIC_VCPU].base);
+    }
+    gicc->cpu_interface_number = cpu_to_le32(uid);
+    gicc->arm_mpidr = cpu_to_le64(armcpu->mp_affinity);
+    gicc->uid = cpu_to_le32(uid);
+    gicc->flags = cpu_to_le32(ACPI_MADT_GICC_ENABLED);
+
+    if (arm_feature(&armcpu->env, ARM_FEATURE_PMU)) {
+        gicc->performance_interrupt = cpu_to_le32(PPI(VIRTUAL_PMU_IRQ));
+    }
+    if (vms->virt) {
+        gicc->vgic_interrupt = cpu_to_le32(PPI(ARCH_GIC_MAINT_IRQ));
+    }
+}
+
 /* MADT */
 static void
 build_madt(GArray *table_data, BIOSLinker *linker, VirtMachineState *vms)
@@ -686,28 +714,7 @@ build_madt(GArray *table_data, BIOSLinker *linker, VirtMachineState *vms)
     gicd->version = vms->gic_version;
 
     for (i = 0; i < vms->smp_cpus; i++) {
-        AcpiMadtGenericCpuInterface *gicc = acpi_data_push(table_data,
-                                                           sizeof(*gicc));
-        ARMCPU *armcpu = ARM_CPU(qemu_get_cpu(i));
-
-        gicc->type = ACPI_APIC_GENERIC_CPU_INTERFACE;
-        gicc->length = sizeof(*gicc);
-        if (vms->gic_version == 2) {
-            gicc->base_address = cpu_to_le64(memmap[VIRT_GIC_CPU].base);
-            gicc->gich_base_address = cpu_to_le64(memmap[VIRT_GIC_HYP].base);
-            gicc->gicv_base_address = cpu_to_le64(memmap[VIRT_GIC_VCPU].base);
-        }
-        gicc->cpu_interface_number = cpu_to_le32(i);
-        gicc->arm_mpidr = cpu_to_le64(armcpu->mp_affinity);
-        gicc->uid = cpu_to_le32(i);
-        gicc->flags = cpu_to_le32(ACPI_MADT_GICC_ENABLED);
-
-        if (arm_feature(&armcpu->env, ARM_FEATURE_PMU)) {
-            gicc->performance_interrupt = cpu_to_le32(PPI(VIRTUAL_PMU_IRQ));
-        }
-        if (vms->virt) {
-            gicc->vgic_interrupt = cpu_to_le32(PPI(ARCH_GIC_MAINT_IRQ));
-        }
+        virt_madt_cpu_entry(NULL, i, NULL, table_data);
     }
 
     if (vms->gic_version == 3) {
