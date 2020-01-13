@@ -84,6 +84,10 @@ Patch0071: linux-headers-update-against-KVM-ARM-Fix-256-vcpus.patch
 Patch0072: intc-arm_gic-Support-IRQ-injection-for-more-than-256.patch
 Patch0073: ARM-KVM-Check-KVM_CAP_ARM_IRQ_LINE_LAYOUT_2-for-smp_.patch
 Patch0074: 9pfs-local-Fix-possible-memory-leak-in-local_link.patch
+Patch0075: scsi-disk-define-props-in-scsi_block_disk-to-avoid-memleaks.patch
+Patch0076: arm-translate-a64-fix-uninitialized-variable-warning.patch
+Patch0077: nbd-fix-uninitialized-variable-warning.patch
+Patch0078: xhci-Fix-memory-leak-in-xhci_kick_epctx-when-poweroff.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -416,6 +420,10 @@ getent passwd qemu >/dev/null || \
 %changelog
 * Mon Jan 13 2020 Huawei Technologies Co., Ltd. <fangying1@huawei.com>
 - 9pfs: Fix a possible memory leak in local_link
+- scsi-disk: disk define props in scsi_block to avoid memleaks
+- arm/translate-a64: fix uninitialized variable warning
+- nbd: fix uninitialized variable warning
+- xhci: Fix memory leak in xhci_kick_epctx when poweroff
 
 * Mon Jan  6 2020 backport from qemu upstream
 - linux headers: update against "KVM/ARM: Fix >256 vcp

@@ -1,0 +1,56 @@
+From cf859d444770243fa184019fd4eab135b2653390 Mon Sep 17 00:00:00 2001
+From: Chen Qun <kuhn.chenqun@huawei.com>
+Date: Fri, 10 Jan 2020 18:36:24 +0800
+Subject: [PATCH] xhci: Fix memory leak in xhci_kick_epctx when poweroff
+ GuestOS
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+start vm with libvirt, when GuestOS running, enter poweroff command using
+the xhci keyboard, then ASAN shows memory leak stack：
+
+Direct leak of 80 byte(s) in 5 object(s) allocated from:
+    #0 0xfffd1e6431cb in __interceptor_malloc (/lib64/libasan.so.4+0xd31cb)
+    #1 0xfffd1e107163 in g_malloc (/lib64/libglib-2.0.so.0+0x57163)
+    #2 0xaaad39051367 in qemu_sglist_init /qemu/dma-helpers.c:43
+    #3 0xaaad3947c407 in pci_dma_sglist_init /qemu/include/hw/pci/pci.h:842
+    #4 0xaaad3947c407 in xhci_xfer_create_sgl /qemu/hw/usb/hcd-xhci.c:1446
+    #5 0xaaad3947c407 in xhci_setup_packet /qemu/hw/usb/hcd-xhci.c:1618
+    #6 0xaaad3948625f in xhci_submit /qemu/hw/usb/hcd-xhci.c:1827
+    #7 0xaaad3948625f in xhci_fire_transfer /qemu/hw/usb/hcd-xhci.c:1839
+    #8 0xaaad3948625f in xhci_kick_epctx /qemu/hw/usb/hcd-xhci.c:1991
+    #9 0xaaad3948f537 in xhci_doorbell_write /qemu/hw/usb/hcd-xhci.c:3158
+    #10 0xaaad38bcbfc7 in memory_region_write_accessor /qemu/memory.c:483
+    #11 0xaaad38bc654f in access_with_adjusted_size /qemu/memory.c:544
+    #12 0xaaad38bd1877 in memory_region_dispatch_write /qemu/memory.c:1482
+    #13 0xaaad38b1c77f in flatview_write_continue /qemu/exec.c:3167
+    #14 0xaaad38b1ca83 in flatview_write /qemu/exec.c:3207
+    #15 0xaaad38b268db in address_space_write /qemu/exec.c:3297
+    #16 0xaaad38bf909b in kvm_cpu_exec /qemu/accel/kvm/kvm-all.c:2383
+    #17 0xaaad38bb063f in qemu_kvm_cpu_thread_fn /qemu/cpus.c:1246
+    #18 0xaaad39821c93 in qemu_thread_start /qemu/util/qemu-thread-posix.c:519
+    #19 0xfffd1c8378bb  (/lib64/libpthread.so.0+0x78bb)
+    #20 0xfffd1c77616b  (/lib64/libc.so.6+0xd616b)
+
+Reported-by: Euler Robot <euler.robot@huawei.com>
+Signed-off-by: Chen Qun <kuhn.chenqun@h
+---
+ hw/usb/hcd-xhci.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/hw/usb/hcd-xhci.c b/hw/usb/hcd-xhci.c
+index 80988bb305..0d3d96d05a 100644
+--- a/hw/usb/hcd-xhci.c
++++ b/hw/usb/hcd-xhci.c
+@@ -2000,6 +2000,7 @@ static void xhci_kick_epctx(XHCIEPContext *epctx, unsigned int streamid)
+         if (xfer != NULL && xfer->running_retry) {
+             DPRINTF("xhci: xfer nacked, stopping schedule\n");
+             epctx->retry = xfer;
++            xhci_xfer_unmap(xfer);
+             break;
+         }
+         if (count++ > TRANSFER_LIMIT) {
+-- 
+2.23.0
+

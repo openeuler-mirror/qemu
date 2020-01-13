@@ -1,0 +1,46 @@
+From eb5abb631196b97879a868ec75e7f70400695f7f Mon Sep 17 00:00:00 2001
+From: Pan Nengyuan <pannengyuan@huawei.com>
+Date: Mon, 13 Jan 2020 17:03:08 +0800
+Subject: [PATCH] nbd: fix uninitialized variable warning
+
+Fixes:
+/mnt/sdb/qemu/nbd/server.c: In function 'nbd_handle_request':
+/mnt/sdb/qemu/nbd/server.c:2313:9: error: 'ret' may be used uninitialized in this function [-Werror=maybe-uninitialized]
+     int ret;
+
+Reported-by: Euler Robot <euler.robot@huawei.com>
+Signed-off-by: Pan Nengyuan <pannengyuan@huawei.com>
+---
+ nbd/server.c | 10 +---------
+ 1 file changed, 1 insertion(+), 9 deletions(-)
+
+diff --git a/nbd/server.c b/nbd/server.c
+index e21bd501..aefb07d9 100644
+--- a/nbd/server.c
++++ b/nbd/server.c
+@@ -2304,20 +2304,12 @@ static coroutine_fn int nbd_handle_request(NBDClient *client,
+                                                !client->export_meta.bitmap,
+                                                NBD_META_ID_BASE_ALLOCATION,
+                                                errp);
+-                if (ret < 0) {
+-                    return ret;
+-                }
+-            }
+-
+-            if (client->export_meta.bitmap) {
++            } else {                     /* client->export_meta.bitmap */
+                 ret = nbd_co_send_bitmap(client, request->handle,
+                                          client->exp->export_bitmap,
+                                          request->from, request->len,
+                                          dont_fragment,
+                                          true, NBD_META_ID_DIRTY_BITMAP, errp);
+-                if (ret < 0) {
+-                    return ret;
+-                }
+             }
+ 
+             return ret;
+-- 
+2.18.1
+
+

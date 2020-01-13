@@ -1,0 +1,36 @@
+From b4bab3bf6a75d97d2f1098c4dc52d35ced003c70 Mon Sep 17 00:00:00 2001
+From: Pan Nengyuan <pannengyuan@huawei.com>
+Date: Mon, 13 Jan 2020 17:01:11 +0800
+Subject: [PATCH] arm/translate-a64: fix uninitialized variable warning
+
+Fixes:
+target/arm/translate-a64.c: In function 'disas_crypto_three_reg_sha512':
+target/arm/translate-a64.c:13625:9: error: 'genfn' may be used uninitialized in this function [-Werror=maybe-uninitialized]
+    genfn(tcg_rd_ptr, tcg_rn_ptr, tcg_rm_ptr);
+    ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+qemu/target/arm/translate-a64.c:13609:8: error: 'feature' may be used uninitialized in this function [-Werror=maybe-uninitialized]
+    if (!feature) {
+
+Reported-by: Euler Robot <euler.robot@huawei.com>
+Signed-off-by: Pan Nengyuan <pannengyuan@huawei.com>
+---
+ target/arm/translate-a64.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/target/arm/translate-a64.c b/target/arm/translate-a64.c
+index dcdeb801..5f423d5d 100644
+--- a/target/arm/translate-a64.c
++++ b/target/arm/translate-a64.c
+@@ -13767,6 +13767,8 @@ static void disas_crypto_three_reg_sha512(DisasContext *s, uint32_t insn)
+             feature = dc_isar_feature(aa64_sha3, s);
+             genfn = NULL;
+             break;
++        default:
++            g_assert_not_reached();
+         }
+     } else {
+         switch (opcode) {
+-- 
+2.18.1
+
+
