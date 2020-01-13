@@ -1,0 +1,21 @@
+There is a possible memory leak while local_link return -1 without free
+odirpath and oname.
+
+Reported-by: Euler Robot <euler.robot@huawei.com>
+Reviewed-by: Christian Schoenebeck <qemu_oss@crudebyte.com>
+Signed-off-by: Jaijun Chen <chenjiajun8@huawei.com>
+Signed-off-by: Xiang Zheng <zhengxiang9@huawei.com>
+
+diff --git a/hw/9pfs/9p-local.c b/hw/9pfs/9p-local.c
+index 4708c0bd89..491b08aee8 100644
+--- a/hw/9pfs/9p-local.c
++++ b/hw/9pfs/9p-local.c
+@@ -947,7 +947,7 @@  static int local_link(FsContext *ctx, V9fsPath *oldpath,
+     if (ctx->export_flags & V9FS_SM_MAPPED_FILE &&
+         local_is_mapped_file_metadata(ctx, name)) {
+         errno = EINVAL;
+-        return -1;
++        goto out;
+     }
+ 
+     odirfd = local_opendir_nofollow(ctx, odirpath);

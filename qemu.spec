@@ -83,6 +83,7 @@ Patch0070: migration-Fix-use-after-free-during-process-exit.patch
 Patch0071: linux-headers-update-against-KVM-ARM-Fix-256-vcpus.patch
 Patch0072: intc-arm_gic-Support-IRQ-injection-for-more-than-256.patch
 Patch0073: ARM-KVM-Check-KVM_CAP_ARM_IRQ_LINE_LAYOUT_2-for-smp_.patch
+Patch0074: 9pfs-local-Fix-possible-memory-leak-in-local_link.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -413,12 +414,15 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Mon Jan 13 2020 Huawei Technologies Co., Ltd. <fangying1@huawei.com>
+- 9pfs: Fix a possible memory leak in local_link
+
 * Mon Jan  6 2020 backport from qemu upstream
 - linux headers: update against "KVM/ARM: Fix >256 vcp
 - intc/arm_gic: Support IRQ injection for more than 256 vpus
 - ARM: KVM: Check KVM_CAP_ARM_IRQ_LINE_LAYOUT_2 for smp_cpus > 256
 
-* Fri Nov 12 2019 backport from qemu upstream v4.0.1 release
+* Thu Dec 12 2019 backport from qemu upstream v4.0.1 release
 - usb-tablet: fix serial compat property
 - blockdev-backup: don't check aio_context too early
 - migration/dirty-bitmaps: change bitmap enumeration method
