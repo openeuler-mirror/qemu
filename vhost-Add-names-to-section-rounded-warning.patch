@@ -1,0 +1,37 @@
+From 437a9d2c7e48495ffc467808eece045579956c79 Mon Sep 17 00:00:00 2001
+From: "Dr. David Alan Gilbert" <dgilbert@redhat.com>
+Date: Thu, 16 Jan 2020 20:24:13 +0000
+Subject: [PATCH] vhost: Add names to section rounded warning
+
+Add the memory region names to section rounding/alignment
+warnings.
+
+Signed-off-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+Message-Id: <20200116202414.157959-2-dgilbert@redhat.com>
+Reviewed-by: Michael S. Tsirkin <mst@redhat.com>
+Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+---
+ hw/virtio/vhost.c | 7 ++++---
+ 1 file changed, 4 insertions(+), 3 deletions(-)
+
+diff --git a/hw/virtio/vhost.c b/hw/virtio/vhost.c
+index 9c16f0d107..ae61c33c15 100644
+--- a/hw/virtio/vhost.c
++++ b/hw/virtio/vhost.c
+@@ -591,9 +591,10 @@ static void vhost_region_add_section(struct vhost_dev *dev,
+              * match up in the same RAMBlock if they do.
+              */
+             if (mrs_gpa < prev_gpa_start) {
+-                error_report("%s:Section rounded to %"PRIx64
+-                             " prior to previous %"PRIx64,
+-                             __func__, mrs_gpa, prev_gpa_start);
++                error_report("%s:Section '%s' rounded to %"PRIx64
++                             " prior to previous '%s' %"PRIx64,
++                             __func__, section->mr->name, mrs_gpa,
++                             prev_sec->mr->name, prev_gpa_start);
+                 /* A way to cleanly fail here would be better */
+                 return;
+             }
+-- 
+2.27.0
+
