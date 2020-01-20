@@ -1,0 +1,50 @@
+From 8664cd20e4cdb8594076a26dacef592a4b4816b2 Mon Sep 17 00:00:00 2001
+From: Paolo Bonzini <pbonzini@redhat.com>
+Date: Mon, 20 Jan 2020 19:21:44 +0100
+Subject: [PATCH] target/i386: kvm: initialize microcode revision from KVM
+
+KVM can return the host microcode revision as a feature MSR.
+Use it as the default value for -cpu host.
+
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+Message-Id: <1579544504-3616-4-git-send-email-pbonzini@redhat.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ target/i386/cpu.c | 4 ++++
+ target/i386/kvm.c | 5 +++++
+ 2 files changed, 9 insertions(+)
+
+diff --git a/target/i386/cpu.c b/target/i386/cpu.c
+index ec8bc9957e..1962f00c77 100644
+--- a/target/i386/cpu.c
++++ b/target/i386/cpu.c
+@@ -6330,6 +6330,10 @@ static void x86_cpu_realizefn(DeviceState *dev, Error **errp)
+                        &cpu->mwait.ecx, &cpu->mwait.edx);
+             env->features[FEAT_1_ECX] |= CPUID_EXT_MONITOR;
+         }
++        if (kvm_enabled() && cpu->ucode_rev == 0) {
++            cpu->ucode_rev = kvm_arch_get_supported_msr_feature(kvm_state,
++                                                                MSR_IA32_UCODE_REV);
++        }
+     }
+ 
+     if (cpu->ucode_rev == 0) {
+diff --git a/target/i386/kvm.c b/target/i386/kvm.c
+index 60060087fd..7437f86130 100644
+--- a/target/i386/kvm.c
++++ b/target/i386/kvm.c
+@@ -2628,6 +2628,11 @@ static void kvm_init_msrs(X86CPU *cpu)
+                           env->features[FEAT_CORE_CAPABILITY]);
+     }
+ 
++    if (kvm_arch_get_supported_msr_feature(kvm_state,
++                                           MSR_IA32_UCODE_REV)) {
++        kvm_msr_entry_add(cpu, MSR_IA32_UCODE_REV, cpu->ucode_rev);
++    }
++
+     /*
+      * Older kernels do not include VMX MSRs in KVM_GET_MSR_INDEX_LIST, but
+      * all kernels with MSR features should have them.
+-- 
+2.27.0
+
