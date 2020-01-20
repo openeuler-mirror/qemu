@@ -88,6 +88,7 @@ Patch0075: scsi-disk-define-props-in-scsi_block_disk-to-avoid-memleaks.patch
 Patch0076: arm-translate-a64-fix-uninitialized-variable-warning.patch
 Patch0077: nbd-fix-uninitialized-variable-warning.patch
 Patch0078: xhci-Fix-memory-leak-in-xhci_kick_epctx-when-poweroff.patch
+Patch0079: block-fix-memleaks-in-bdrv_refresh_filename.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -418,6 +419,9 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Thu Jan 16 2020 Huawei Technologies Co., Ltd. <pannengyuan@huawei.com>
+- block: fix memleaks in bdrv_refresh_filename
+
 * Mon Jan 13 2020 Huawei Technologies Co., Ltd. <fangying1@huawei.com>
 - 9pfs: Fix a possible memory leak in local_link
 - scsi-disk: disk define props in scsi_block to avoid memleaks
