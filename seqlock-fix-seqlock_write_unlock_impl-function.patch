@@ -1,0 +1,44 @@
+From 96e00e040cd8ae23cebf183cf3a8dc9cf1f6149d Mon Sep 17 00:00:00 2001
+From: Luc Michel <luc.michel@greensocs.com>
+Date: Wed, 29 Jan 2020 15:49:48 +0100
+Subject: [PATCH] seqlock: fix seqlock_write_unlock_impl function
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+The seqlock write unlock function was incorrectly calling
+seqlock_write_begin() instead of seqlock_write_end(), and was releasing
+the lock before incrementing the sequence. This could lead to a race
+condition and a corrupted sequence number becoming odd even though the
+lock is not held.
+
+Signed-off-by: Luc Michel <luc.michel@greensocs.com>
+Reviewed-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+Message-Id: <20200129144948.2161551-1-luc.michel@greensocs.com>
+Fixes: 988fcafc73 ("seqlock: add QemuLockable support", 2018-08-23)
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ include/qemu/seqlock.h | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/include/qemu/seqlock.h b/include/qemu/seqlock.h
+index fd408b7ec5..8b6b4ee4bb 100644
+--- a/include/qemu/seqlock.h
++++ b/include/qemu/seqlock.h
+@@ -55,11 +55,11 @@ static inline void seqlock_write_lock_impl(QemuSeqLock *sl, QemuLockable *lock)
+ #define seqlock_write_lock(sl, lock) \
+     seqlock_write_lock_impl(sl, QEMU_MAKE_LOCKABLE(lock))
+ 
+-/* Lock out other writers and update the count.  */
++/* Update the count and release the lock.  */
+ static inline void seqlock_write_unlock_impl(QemuSeqLock *sl, QemuLockable *lock)
+ {
++    seqlock_write_end(sl);
+     qemu_lockable_unlock(lock);
+-    seqlock_write_begin(sl);
+ }
+ #define seqlock_write_unlock(sl, lock) \
+     seqlock_write_unlock_impl(sl, QEMU_MAKE_LOCKABLE(lock))
+-- 
+2.27.0
+
