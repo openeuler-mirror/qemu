@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.0.0
-Release: 5
+Release: 6
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY
@@ -201,7 +201,7 @@ buildldflags="VL_LDFLAGS=-Wl,--build-id"
 ./configure \
     --prefix=%{_prefix}   \
     --target-list=${buildarch}     \
-    --extra-cflags="%{optflags} -fPIE -DPIE -fno-inline -fPIC"    \
+    --extra-cflags="%{optflags} -fPIE -DPIE -fPIC"    \
     --extra-ldflags="-Wl,--build-id -pie -Wl,-z,relro -Wl,-z,now -Wl,-z,noexecstack" \
     --datadir=%{_datadir} \
     --docdir=%{_docdir}/%{name}  \
@@ -419,6 +419,9 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Thu Feb  6 2020 Huawei Technologies Co., Ltd. <zhang.zhanghailiang@huawei.com>
+- spec: remove fno-inline option for configure
+
 * Thu Jan 16 2020 Huawei Technologies Co., Ltd. <pannengyuan@huawei.com>
 - block: fix memleaks in bdrv_refresh_filename
 
