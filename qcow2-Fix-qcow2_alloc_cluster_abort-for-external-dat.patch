@@ -1,0 +1,39 @@
+From fad649b88c93d0567be4e426f23063b439037095 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Tue, 11 Feb 2020 10:48:59 +0100
+Subject: [PATCH] qcow2: Fix qcow2_alloc_cluster_abort() for external data file
+
+For external data file, cluster allocations return an offset in the data
+file and are not refcounted. In this case, there is nothing to do for
+qcow2_alloc_cluster_abort(). Freeing the same offset in the qcow2 file
+is wrong and causes crashes in the better case or image corruption in
+the worse case.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Message-Id: <20200211094900.17315-3-kwolf@redhat.com>
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+---
+ block/qcow2-cluster.c | 7 +++++--
+ 1 file changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/block/qcow2-cluster.c b/block/qcow2-cluster.c
+index f8576031b6..7e7e051437 100644
+--- a/block/qcow2-cluster.c
++++ b/block/qcow2-cluster.c
+@@ -1026,8 +1026,11 @@ err:
+ void qcow2_alloc_cluster_abort(BlockDriverState *bs, QCowL2Meta *m)
+ {
+     BDRVQcow2State *s = bs->opaque;
+-    qcow2_free_clusters(bs, m->alloc_offset, m->nb_clusters << s->cluster_bits,
+-                        QCOW2_DISCARD_NEVER);
++    if (!has_data_file(bs)) {
++        qcow2_free_clusters(bs, m->alloc_offset,
++                            m->nb_clusters << s->cluster_bits,
++                            QCOW2_DISCARD_NEVER);
++    }
+ }
+ 
+ /*
+-- 
+2.27.0
+
