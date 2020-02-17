@@ -1,0 +1,48 @@
+From 8470399d9508b3b56d625866ea235c2a5b4cb39a Mon Sep 17 00:00:00 2001
+From: Paolo Bonzini <pbonzini@redhat.com>
+Date: Mon, 17 Feb 2020 16:23:16 +0000
+Subject: [PATCH] target/i386: enable monitor and ucode revision with -cpu max
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: Paolo Bonzini <pbonzini@redhat.com>
+Message-id: <20200217162316.2464-7-pbonzini@redhat.com>
+Patchwork-id: 93910
+O-Subject: [RHEL-AV-8.2.0 qemu-kvm PATCH 6/6] target/i386: enable monitor and ucode revision with -cpu max
+Bugzilla: 1791648
+RH-Acked-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+RH-Acked-by: Maxim Levitsky <mlevitsk@redhat.com>
+RH-Acked-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+
+These two features were incorrectly tied to host_cpuid_required rather than
+cpu->max_features.  As a result, -cpu max was not enabling either MONITOR
+features or ucode revision.
+
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+(cherry picked from commit be02cda3afde60d219786e23c3f8edb53aec8e17)
+
+[RHEL7: context, upstream uses g_autofree]
+
+Signed-off-by: Danilo C. L. de Paula <ddepaula@redhat.com>
+---
+ target/i386/cpu.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/target/i386/cpu.c b/target/i386/cpu.c
+index 22e0e89718..6147cd419a 100644
+--- a/target/i386/cpu.c
++++ b/target/i386/cpu.c
+@@ -6317,7 +6317,9 @@ static void x86_cpu_realizefn(DeviceState *dev, Error **errp)
+             g_free(name);
+             goto out;
+         }
++    }
+ 
++    if (cpu->max_features && accel_uses_host_cpuid()) {
+         if (enable_cpu_pm) {
+             host_cpuid(5, 0, &cpu->mwait.eax, &cpu->mwait.ebx,
+                        &cpu->mwait.ecx, &cpu->mwait.edx);
+-- 
+2.27.0
+
