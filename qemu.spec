@@ -11,7 +11,6 @@ Source2: 99-qemu-guest-agent.rules
 Source3: bridge.conf
 
 Patch0001: qxl-check-release-info-object.patch
-Patch0003: Revert-Enable-build-and-install-of-our-rST-docs.patch
 Patch0004: ARM64-record-vtimer-tick-when-cpu-is-stopped.patch
 Patch0005: pl011-reset-read-FIFO-when-UARTTIMSC-0-UARTICR-0xfff.patch
 Patch0006: pl031-support-rtc-timer-property-for-pl031.patch
@@ -51,6 +50,7 @@ BuildRequires: perl-podlators
 BuildRequires: kernel
 BuildRequires: chrpath
 BuildRequires: gettext
+BuildRequires: python-sphinx
 
 BuildRequires: zlib-devel
 BuildRequires: gtk3-devel
@@ -342,6 +342,7 @@ getent passwd qemu >/dev/null || \
 %doc %{qemudocdir}/qemu-ga-ref.txt
 %doc %{qemudocdir}/qemu-qmp-ref.html
 %doc %{qemudocdir}/qemu-qmp-ref.txt
+%doc %{qemudocdir}/interop
 %doc %{qemudocdir}/README
 %doc %{qemudocdir}/Changelog
 %{_mandir}/man1/qemu.1*
