@@ -1,6 +1,6 @@
 Name: qemu
-Version: 4.0.0
-Release: 6
+Version: 4.0.1
+Release: 7
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY
@@ -11,42 +11,12 @@ Source2: 99-qemu-guest-agent.rules
 Source3: bridge.conf
 
 Patch0001: qxl-check-release-info-object.patch
-Patch0002: target-i386-define-md-clear-bit.patch
-Patch0003: Revert-Enable-build-and-install-of-our-rST-docs.patch
 Patch0004: ARM64-record-vtimer-tick-when-cpu-is-stopped.patch
 Patch0005: pl011-reset-read-FIFO-when-UARTTIMSC-0-UARTICR-0xfff.patch
 Patch0006: pl031-support-rtc-timer-property-for-pl031.patch
 Patch0007: vhost-cancel-migration-when-vhost-user-restarted.patch
 Patch0008: qcow2-fix-memory-leak-in-qcow2_read_extensions.patch
 Patch0009: hw-arm-expose-host-CPU-frequency-info-to-guest.patch
-Patch0010: block-Fix-AioContext-switch-for-bs-drv-NULL.patch
-Patch0011: cutils-Fix-size_to_str-on-32-bit-platforms.patch
-Patch0012: qcow2-Avoid-COW-during-metadata-preallocation.patch
-Patch0013: qcow2-Add-errp-to-preallocate_co.patch
-Patch0014: qcow2-Fix-full-preallocation-with-external-data-file.patch
-Patch0015: qcow2-Fix-qcow2_make_empty-with-external-data-file.patch
-Patch0016: megasas-fix-mapped-frame-size.patch
-Patch0017: kbd-state-fix-autorepeat-handling.patch
-Patch0018: block-file-posix-Unaligned-O_DIRECT-block-status.patch
-Patch0019: hw-add-compat-machines-for-4.1.patch
-Patch0020: usb-tablet-fix-serial-compat-property.patch
-Patch0021: q35-Revert-to-kernel-irqchip.patch
-Patch0022: hw-Nuke-hw_compat_4_0_1-and-pc_compat_4_0_1.patch
-Patch0023: vl-Fix-drive-blockdev-persistent-reservation-management.patch
-Patch0024: vhost-fix-vhost_log-size-overflow-during-migration.patch
-Patch0025: virtio-pci-fix-missing-device-properties.patch
-Patch0026: i386-acpi-fix-gint-overflow-in-crs_range_compare.patch
-Patch0027: ioapic-kvm-Skip-route-updates-for-masked-pins.patch
-Patch0028: i386-acpi-show-PCI-Express-bus-on-pxb-pcie-expanders.patch
-Patch0029: virtio-balloon-fix-QEMU-4.0-config-size-migration-in.patch
-Patch0030: virtio-balloon-Fix-wrong-sign-extension-of-PFNs.patch
-Patch0031: virtio-balloon-Fix-QEMU-crashes-on-pagesize-BALLOON_.patch
-Patch0032: virtio-balloon-Simplify-deflate-with-pbp.patch
-Patch0033: virtio-balloon-Better-names-for-offset-variables.patch
-Patch0034: virtio-balloon-Rework-pbp-tracking-data.patch
-Patch0035: virtio-balloon-Use-temporary-PBP-only.patch
-Patch0036: virtio-balloon-don-t-track-subpages-for-the-PBP.patch
-Patch0037: virtio-balloon-free-pbp-more-aggressively.patch
 Patch0038: qemu-bridge-helper-restrict-interface-name-to-IFNAMS.patch
 Patch0039: qemu-bridge-helper-move-repeating-code-in-parse_acl.patch
 Patch0040: smbios-Add-missing-member-of-type-4-for-smbios-3.0.patch
@@ -56,7 +26,6 @@ Patch0043: xhci-Fix-memory-leak-in-xhci_address_slot.patch
 Patch0044: xhci-Fix-memory-leak-in-xhci_kick_epctx.patch
 Patch0045: ehci-fix-queue-dev-null-ptr-dereference.patch
 Patch0046: memory-unref-the-memory-region-in-simplify-flatview.patch
-Patch0047: scsi-lsi-exit-infinite-loop-while-executing-script.patch
 Patch0048: util-async-hold-AioContext-ref-to-prevent-use-after-free.patch
 Patch0049: vhost-user-scsi-prevent-using-uninitialized-vqs.patch
 Patch0050: cpu-add-Kunpeng-920-cpu-support.patch
@@ -64,22 +33,6 @@ Patch0051: cpu-parse-feature-to-avoid-failure.patch
 Patch0052: cpu-add-Cortex-A72-processor-kvm-target-support.patch
 Patch0053: vnc-fix-memory-leak-when-vnc-disconnect.patch
 Patch0054: pcie-disable-the-PCI_EXP_LINKSTA_DLLA-cap.patch
-Patch0055: blockdev-backup-don-t-check-aio_context-too-early.patch
-Patch0056: migration-dirty-bitmaps-change-bitmap-enumeration-method.patch
-Patch0057: target-i386-add-MDS-NO-feature.patch
-Patch0058: usbredir-fix-buffer-overflow-on-vmload.patch
-Patch0059: util-hbitmap-update-orig_size-on-truncate.patch
-Patch0060: mirror-Only-mirror-granularity-aligned-chunks.patch
-Patch0061: qcow2-Fix-the-calculation-of-the-maximum-L2-cache-size.patch
-Patch0062: dma-helpers-ensure-AIO-callback-is-invoked-after-can.patch
-Patch0063: pr-manager-Fix-invalid-g_free-crash-bug.patch
-Patch0064: block-create-Do-not-abort-if-a-block-driver-is-not-available.patch
-Patch0065: block-nfs-tear-down-aio-before-nfs_close.patch
-Patch0066: blockjob-update-nodes-head-while-removing-all-bdrv.patch
-Patch0067: slirp-Fix-heap-overflow-in-ip_reass-on-big-packet-input.patch
-Patch0068: slirp-ip_reass-Fix-use-after-free.patch
-Patch0069: hw-core-loader-Fix-possible-crash-in-rom_copy.patch
-Patch0070: migration-Fix-use-after-free-during-process-exit.patch
 Patch0071: linux-headers-update-against-KVM-ARM-Fix-256-vcpus.patch
 Patch0072: intc-arm_gic-Support-IRQ-injection-for-more-than-256.patch
 Patch0073: ARM-KVM-Check-KVM_CAP_ARM_IRQ_LINE_LAYOUT_2-for-smp_.patch
@@ -97,6 +50,7 @@ BuildRequires: perl-podlators
 BuildRequires: kernel
 BuildRequires: chrpath
 BuildRequires: gettext
+BuildRequires: python-sphinx
 
 BuildRequires: zlib-devel
 BuildRequires: gtk3-devel
@@ -388,6 +342,7 @@ getent passwd qemu >/dev/null || \
 %doc %{qemudocdir}/qemu-ga-ref.txt
 %doc %{qemudocdir}/qemu-qmp-ref.html
 %doc %{qemudocdir}/qemu-qmp-ref.txt
+%doc %{qemudocdir}/interop
 %doc %{qemudocdir}/README
 %doc %{qemudocdir}/Changelog
 %{_mandir}/man1/qemu.1*
@@ -438,24 +393,8 @@ getent passwd qemu >/dev/null || \
 - ARM: KVM: Check KVM_CAP_ARM_IRQ_LINE_LAYOUT_2 for smp_cpus > 256
 
 * Thu Dec 12 2019 backport from qemu upstream v4.0.1 release
-- usb-tablet: fix serial compat property
-- blockdev-backup: don't check aio_context too early
-- migration/dirty-bitmaps: change bitmap enumeration method
-- target/i386: add MDS-NO feature
-- usbredir: fix buffer-overflow on vmload
 - tpm: Exit in reset when backend indicates failure
 - tpm_emulator: Translate TPM error codes to strings
-- util/hbitmap: update orig_size on truncate
-- mirror: Only mirror granularity-aligned chunks
-- qcow2: Fix the calculation of the maximum L2 cache size
-- dma-helpers: ensure AIO callback is invoked after cancellation
-- pr-manager: Fix invalid g_free() crash bug
-- block/nfs: tear down aio before nfs_close
-- blockjob: update nodes head while removing all bdrv
-- slirp: Fix heap overflow in ip_reass on big packet input
-- slirp: ip_reass: Fix use after free
-- hw/core/loader: Fix possible crash in rom_copy()
-- migration: Fix use-after-free during process exit
 
 * Thu Oct 17 2019 backport from qemu upstream
 - vnc-fix-memory-leak-when-vnc-disconnect.patch
@@ -463,7 +402,6 @@ getent passwd qemu >/dev/null || \
 * Mon Sep  9 2019 backport from qemu upstream
 - ehci-fix-queue-dev-null-ptr-dereference.patch
 - memory-unref-the-memory-region-in-simplify-flatview.patch
-- scsi-lsi-exit-infinite-loop-while-executing-script-C.patch
 - util-async-hold-AioContext-ref-to-prevent-use-after-.patch
 - vhost-user-scsi-prevent-using-uninitialized-vqs.patch
 
@@ -485,34 +423,6 @@ getent passwd qemu >/dev/null || \
 * Mon Aug 5 2019 fix CVE-2019-13164
 - qemu-bridge-helper: restrict interface name to IFNAMSIZ
 - qemu-bridge-helper: move repeating code in parse_acl_file
-
-* Wed Jul 31 2019 backport from qemu upstream
-- block: Fix AioContext switch for bs->drv == NULL
-- cutils: Fix size_to_str() on 32-bit platforms
-- qcow2: Avoid COW during metadata preallocation
-- qcow2: Add errp to preallocate_co()
-- qcow2: qcow2: Fix full preallocation with external data file
-- qcow2: Fix qcow2_make_empty() with external data file
-- megasas: fix mapped frame size
-- kbd-state: fix autorepeat handling
-- block/file-posix: Unaligned O_DIRECT block-status
-- hw: add compat machines for 4.1
-- q35: Revert to kernel irqchip
-- hw: Nuke hw_compat_4_0_1 and pc_compat_4_0_1
-- vl: Fix -drive / -blockdev persistent reservation management
-- vhost: fix vhost_log size overflow during migration
-- virtio-pci: fix missing device properties
-- i386/acpi: fix gint overflow in crs_range_compare
-- ioapic: kvm: Skip route updates for masked pins
-- i386/acpi: show PCI Express bus on pxb-pcie expanders
-- virtio-balloon: Fix wrong sign extension of PFNs
-- virtio-balloon: Fix QEMU crashes on pagesize > BALLOON_PAGE_SIZE
-- virtio-balloon: Simplify deflate with pbp
-- virtio-balloon: Better names for offset variables in inflate/deflate code
-- virtio-balloon: Rework pbp tracking data
-- virtio-balloon: Use temporary PBP only
-- virtio-balloon: virtio-balloon: don't track subpages for the PBP
-- virtio-balloon: free pbp more aggressively
 
 * Tue Jul 30 2019 Huawei Technologies Co., Ltd. <zhang.zhanghailiang@huawei.com
 - qcow2: fix memory leak in qcow2_read_extensions
