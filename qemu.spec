@@ -166,6 +166,7 @@ buildldflags="VL_LDFLAGS=-Wl,--build-id"
     --interp-prefix=%{_prefix}/qemu-%%M \
     --firmwarepath=%{_datadir}/%{name}    \
     --with-pkgversion=%{name}-%{version}-%{release} \
+    --python=/usr/bin/python3 \
     --disable-strip \
     --disable-werror  \
     --disable-slirp  \
