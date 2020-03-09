@@ -940,7 +940,6 @@ static void virtser_port_device_realize(DeviceState *dev, Error **errp)
     Error *err = NULL;
 
     port->vser = bus->vser;
-    port->bh = qemu_bh_new(flush_queued_data_bh, port);
 
     assert(vsc->have_data);
 
@@ -989,6 +988,7 @@ static void virtser_port_device_realize(DeviceState *dev, Error **errp)
         return;
     }
 
+    port->bh = qemu_bh_new(flush_queued_data_bh, port);
     port->elem = NULL;
 }
 
