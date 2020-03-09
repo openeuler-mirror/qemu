@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.0.1
-Release: 7
+Release: 8
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY
@@ -42,6 +42,7 @@ Patch0076: arm-translate-a64-fix-uninitialized-variable-warning.patch
 Patch0077: nbd-fix-uninitialized-variable-warning.patch
 Patch0078: xhci-Fix-memory-leak-in-xhci_kick_epctx-when-poweroff.patch
 Patch0079: block-fix-memleaks-in-bdrv_refresh_filename.patch
+Patch0080: iscsi-Cap-block-count-from-GET-LBA-STATUS-CVE-2020-1.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -375,6 +376,10 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Mon Mar 9 2020 backport from qemu upstream
+- iscsi: Cap block count from GET LBA STATUS (CVE-2020-1711)
+
+
 * Thu Feb  6 2020 Huawei Technologies Co., Ltd. <zhang.zhanghailiang@huawei.com>
 - spec: remove fno-inline option for configure
 
