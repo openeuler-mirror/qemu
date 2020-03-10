@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.0.1
-Release: 7
+Release: 8
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY
@@ -11,37 +11,38 @@ Source2: 99-qemu-guest-agent.rules
 Source3: bridge.conf
 
 Patch0001: qxl-check-release-info-object.patch
-Patch0004: ARM64-record-vtimer-tick-when-cpu-is-stopped.patch
-Patch0005: pl011-reset-read-FIFO-when-UARTTIMSC-0-UARTICR-0xfff.patch
-Patch0006: pl031-support-rtc-timer-property-for-pl031.patch
-Patch0007: vhost-cancel-migration-when-vhost-user-restarted.patch
-Patch0008: qcow2-fix-memory-leak-in-qcow2_read_extensions.patch
-Patch0009: hw-arm-expose-host-CPU-frequency-info-to-guest.patch
-Patch0038: qemu-bridge-helper-restrict-interface-name-to-IFNAMS.patch
-Patch0039: qemu-bridge-helper-move-repeating-code-in-parse_acl.patch
-Patch0040: smbios-Add-missing-member-of-type-4-for-smbios-3.0.patch
-Patch0041: hw-arm-virt-Introduce-cpu-topology-support.patch
-Patch0042: hw-arm64-add-vcpu-cache-info-support.patch
-Patch0043: xhci-Fix-memory-leak-in-xhci_address_slot.patch
-Patch0044: xhci-Fix-memory-leak-in-xhci_kick_epctx.patch
-Patch0045: ehci-fix-queue-dev-null-ptr-dereference.patch
-Patch0046: memory-unref-the-memory-region-in-simplify-flatview.patch
-Patch0048: util-async-hold-AioContext-ref-to-prevent-use-after-free.patch
-Patch0049: vhost-user-scsi-prevent-using-uninitialized-vqs.patch
-Patch0050: cpu-add-Kunpeng-920-cpu-support.patch
-Patch0051: cpu-parse-feature-to-avoid-failure.patch
-Patch0052: cpu-add-Cortex-A72-processor-kvm-target-support.patch
-Patch0053: vnc-fix-memory-leak-when-vnc-disconnect.patch
-Patch0054: pcie-disable-the-PCI_EXP_LINKSTA_DLLA-cap.patch
-Patch0071: linux-headers-update-against-KVM-ARM-Fix-256-vcpus.patch
-Patch0072: intc-arm_gic-Support-IRQ-injection-for-more-than-256.patch
-Patch0073: ARM-KVM-Check-KVM_CAP_ARM_IRQ_LINE_LAYOUT_2-for-smp_.patch
-Patch0074: 9pfs-local-Fix-possible-memory-leak-in-local_link.patch
-Patch0075: scsi-disk-define-props-in-scsi_block_disk-to-avoid-memleaks.patch
-Patch0076: arm-translate-a64-fix-uninitialized-variable-warning.patch
-Patch0077: nbd-fix-uninitialized-variable-warning.patch
-Patch0078: xhci-Fix-memory-leak-in-xhci_kick_epctx-when-poweroff.patch
-Patch0079: block-fix-memleaks-in-bdrv_refresh_filename.patch
+Patch0002: ARM64-record-vtimer-tick-when-cpu-is-stopped.patch
+Patch0003: pl011-reset-read-FIFO-when-UARTTIMSC-0-UARTICR-0xfff.patch
+Patch0004: pl031-support-rtc-timer-property-for-pl031.patch
+Patch0005: vhost-cancel-migration-when-vhost-user-restarted.patch
+Patch0006: qcow2-fix-memory-leak-in-qcow2_read_extensions.patch
+Patch0007: hw-arm-expose-host-CPU-frequency-info-to-guest.patch
+Patch0008: qemu-bridge-helper-restrict-interface-name-to-IFNAMS.patch
+Patch0009: qemu-bridge-helper-move-repeating-code-in-parse_acl.patch
+Patch0010: smbios-Add-missing-member-of-type-4-for-smbios-3.0.patch
+Patch0011: hw-arm-virt-Introduce-cpu-topology-support.patch
+Patch0012: hw-arm64-add-vcpu-cache-info-support.patch
+Patch0013: xhci-Fix-memory-leak-in-xhci_address_slot.patch
+Patch0014: xhci-Fix-memory-leak-in-xhci_kick_epctx.patch
+Patch0015: ehci-fix-queue-dev-null-ptr-dereference.patch
+Patch0016: memory-unref-the-memory-region-in-simplify-flatview.patch
+Patch0017: util-async-hold-AioContext-ref-to-prevent-use-after-free.patch
+Patch0018: vhost-user-scsi-prevent-using-uninitialized-vqs.patch
+Patch0019: cpu-add-Kunpeng-920-cpu-support.patch
+Patch0020: cpu-parse-feature-to-avoid-failure.patch
+Patch0021: cpu-add-Cortex-A72-processor-kvm-target-support.patch
+Patch0022: vnc-fix-memory-leak-when-vnc-disconnect.patch
+Patch0023: pcie-disable-the-PCI_EXP_LINKSTA_DLLA-cap.patch
+Patch0024: linux-headers-update-against-KVM-ARM-Fix-256-vcpus.patch
+Patch0025: intc-arm_gic-Support-IRQ-injection-for-more-than-256.patch
+Patch0026: ARM-KVM-Check-KVM_CAP_ARM_IRQ_LINE_LAYOUT_2-for-smp_.patch
+Patch0027: 9pfs-local-Fix-possible-memory-leak-in-local_link.patch
+Patch0028: scsi-disk-define-props-in-scsi_block_disk-to-avoid-memleaks.patch
+Patch0029: arm-translate-a64-fix-uninitialized-variable-warning.patch
+Patch0030: nbd-fix-uninitialized-variable-warning.patch
+Patch0031: xhci-Fix-memory-leak-in-xhci_kick_epctx-when-poweroff.patch
+Patch0032: block-fix-memleaks-in-bdrv_refresh_filename.patch
+Patch0033: iscsi-Cap-block-count-from-GET-LBA-STATUS-CVE-2020-1.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -375,6 +376,10 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Mon Mar 9 2020 backport from qemu upstream
+- iscsi: Cap block count from GET LBA STATUS (CVE-2020-1711)
+
+
 * Thu Feb  6 2020 Huawei Technologies Co., Ltd. <zhang.zhanghailiang@huawei.com>
 - spec: remove fno-inline option for configure
 
