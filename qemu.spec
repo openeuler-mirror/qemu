@@ -46,6 +46,7 @@ Patch0033: iscsi-Cap-block-count-from-GET-LBA-STATUS-CVE-2020-1.patch
 Patch0034: tcp_emu-Fix-oob-access.patch
 Patch0035: slirp-use-correct-size-while-emulating-IRC-commands.patch
 Patch0036: slirp-use-correct-size-while-emulating-commands.patch
+Patch0037: tcp_emu-fix-unsafe-snprintf-usages.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -383,6 +384,7 @@ getent passwd qemu >/dev/null || \
 - tcp_emu: Fix oob access
 - slirp: use correct size while emulating IRC commands
 - slirp: use correct size while emulating commands
+- tcp_emu: fix unsafe snprintf() usages
 
 * Mon Mar 9 2020 backport from qemu upstream
 - iscsi: Cap block count from GET LBA STATUS (CVE-2020-1711)
