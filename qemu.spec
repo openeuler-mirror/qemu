@@ -43,6 +43,9 @@ Patch0030: nbd-fix-uninitialized-variable-warning.patch
 Patch0031: xhci-Fix-memory-leak-in-xhci_kick_epctx-when-poweroff.patch
 Patch0032: block-fix-memleaks-in-bdrv_refresh_filename.patch
 Patch0033: iscsi-Cap-block-count-from-GET-LBA-STATUS-CVE-2020-1.patch
+Patch0034: tcp_emu-Fix-oob-access.patch
+Patch0035: slirp-use-correct-size-while-emulating-IRC-commands.patch
+Patch0036: slirp-use-correct-size-while-emulating-commands.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -376,9 +379,13 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Wed Mar 11 2020 backport from qemu upstream
+- tcp_emu: Fix oob access
+- slirp: use correct size while emulating IRC commands
+- slirp: use correct size while emulating commands
+
 * Mon Mar 9 2020 backport from qemu upstream
 - iscsi: Cap block count from GET LBA STATUS (CVE-2020-1711)
-
 
 * Thu Feb  6 2020 Huawei Technologies Co., Ltd. <zhang.zhanghailiang@huawei.com>
 - spec: remove fno-inline option for configure
