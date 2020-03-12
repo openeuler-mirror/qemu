@@ -1,0 +1,52 @@
+From 882149fd8401f8ff667ea384bb68008354fd110f Mon Sep 17 00:00:00 2001
+From: Prasad J Pandit <pjp@fedoraproject.org>
+Date: Wed, 11 Mar 2020 18:19:36 +0800
+Subject: [PATCH] slirp: use correct size while emulating IRC commands
+
+While emulating IRC DCC commands, tcp_emu() uses 'mbuf' size
+'m->m_size' to write DCC commands via snprintf(3). This may
+lead to OOB write access, because 'bptr' points somewhere in
+the middle of 'mbuf' buffer, not at the start. Use M_FREEROOM(m)
+size to avoid OOB access.
+Reported-by: default avatarVishnu Dev TJ <vishnudevtj@gmail.com>
+Signed-off-by: default avatarPrasad J Pandit <pjp@fedoraproject.org>
+Reviewed-by: Samuel Thibault's avatarSamuel Thibault <samuel.thibault@ens-lyon.org>
+Message-Id: <20200109094228.79764-2-ppandit@redhat.com>
+---
+ slirp/src/tcp_subr.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/slirp/src/tcp_subr.c b/slirp/src/tcp_subr.c
+index 4608942f..2053b11b 100644
+--- a/slirp/src/tcp_subr.c
++++ b/slirp/src/tcp_subr.c
+@@ -786,7 +786,7 @@ tcp_emu(struct socket *so, struct mbuf *m)
+ 				return 1;
+ 			}
+ 			m->m_len = bptr - m->m_data; /* Adjust length */
+-                        m->m_len += snprintf(bptr, m->m_size,
++                        m->m_len += snprintf(bptr, M_FREEROOM(m),
+                                              "DCC CHAT chat %lu %u%c\n",
+                                              (unsigned long)ntohl(so->so_faddr.s_addr),
+                                              ntohs(so->so_fport), 1);
+@@ -797,7 +797,7 @@ tcp_emu(struct socket *so, struct mbuf *m)
+ 				return 1;
+ 			}
+ 			m->m_len = bptr - m->m_data; /* Adjust length */
+-                        m->m_len += snprintf(bptr, m->m_size,
++                        m->m_len += snprintf(bptr, M_FREEROOM(m),
+                                              "DCC SEND %s %lu %u %u%c\n", buff,
+                                              (unsigned long)ntohl(so->so_faddr.s_addr),
+                                              ntohs(so->so_fport), n1, 1);
+@@ -808,7 +808,7 @@ tcp_emu(struct socket *so, struct mbuf *m)
+ 				return 1;
+ 			}
+ 			m->m_len = bptr - m->m_data; /* Adjust length */
+-                        m->m_len += snprintf(bptr, m->m_size,
++                        m->m_len += snprintf(bptr, M_FREEROOM(m),
+                                              "DCC MOVE %s %lu %u %u%c\n", buff,
+                                              (unsigned long)ntohl(so->so_faddr.s_addr),
+                                              ntohs(so->so_fport), n1, 1);
+-- 
+2.21.1 (Apple Git-122.3)
+
