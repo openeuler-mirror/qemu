@@ -1,0 +1,45 @@
+From 6f7a7f18f4460b0891eabbe1ca69e599216427b7 Mon Sep 17 00:00:00 2001
+From: Chen Qun <kuhn.chenqun@huawei.com>
+Date: Mon, 16 Mar 2020 14:26:06 +0800
+Subject: [PATCH] moniter: fix memleak in monitor_fdset_dup_fd_find_remove
+
+When remove dup_fd in monitor_fdset_dup_fd_find_remove function,
+we need to free mon_fdset_fd_dup. ASAN shows memory leak stack:
+
+Direct leak of 96 byte(s) in 3 object(s) allocated from:
+    #0 0xfffd37b033b3 in __interceptor_calloc (/lib64/libasan.so.4+0xd33b3)
+    #1 0xfffd375c71cb in g_malloc0 (/lib64/libglib-2.0.so.0+0x571cb)
+    #2 0xaaae25bf1c17 in monitor_fdset_dup_fd_add /qemu/monitor.c:2576
+    #3 0xaaae265cfd8f in qemu_open /qemu/util/osdep.c:315
+    #4 0xaaae264e2b2b in qmp_chardev_open_file_source /qemu/chardev/char-fd.c:122
+    #5 0xaaae264e47cf in qmp_chardev_open_file /qemu/chardev/char-file.c:81
+    #6 0xaaae264e118b in qemu_char_open /qemu/chardev/char.c:237
+    #7 0xaaae264e118b in qemu_chardev_new /qemu/chardev/char.c:964
+    #8 0xaaae264e1543 in qemu_chr_new_from_opts /qemu/chardev/char.c:680
+    #9 0xaaae25e12e0f in chardev_init_func /qemu/vl.c:2083
+    #10 0xaaae26603823 in qemu_opts_foreach /qemu/util/qemu-option.c:1170
+    #11 0xaaae258c9787 in main /qemu/vl.c:4089
+    #12 0xfffd35b80b9f in __libc_start_main (/lib64/libc.so.6+0x20b9f)
+
+Reported-by: Euler Robot <euler.robot@huawei.com>
+Signed-off-by: Chen Qun <kuhn.chenqun@huawei.com>
+(cherry picked from commit a661614de18c89f58cad3fc1bb8aab44e820183a)
+---
+ monitor.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/monitor.c b/monitor.c
+index 4807bbe..b5b15b5 100644
+--- a/monitor.c
++++ b/monitor.c
+@@ -2596,6 +2596,7 @@ static int monitor_fdset_dup_fd_find_remove(int dup_fd, bool remove)
+             if (mon_fdset_fd_dup->fd == dup_fd) {
+                 if (remove) {
+                     QLIST_REMOVE(mon_fdset_fd_dup, next);
++                    g_free(mon_fdset_fd_dup);
+                     if (QLIST_EMPTY(&mon_fdset->dup_fds)) {
+                         monitor_fdset_cleanup(mon_fdset);
+                     }
+-- 
+1.8.3.1
+

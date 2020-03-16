@@ -1,0 +1,30 @@
+From 547b06bb04287eb97ffb02e213aa8466c15cce65 Mon Sep 17 00:00:00 2001
+From: Chen Qun <kuhn.chenqun@huawei.com>
+Date: Mon, 16 Mar 2020 14:35:34 +0800
+Subject: [PATCH] block/iscsi: use MIN() between mx_sb_len and sb_len_wr
+
+Use MIN() macro between mx_sb_len and sb_len_wr the len for sbp copy data.
+
+Reported-by: Euler Robot <euler.robot@huawei.com>
+Signed-off-by: Chen Qun <kuhn.chenqun@huawei.com>
+---
+ block/iscsi.c | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/block/iscsi.c b/block/iscsi.c
+index 3f86aaf..5c3c598 100644
+--- a/block/iscsi.c
++++ b/block/iscsi.c
+@@ -989,8 +989,7 @@ iscsi_aio_ioctl_cb(struct iscsi_context *iscsi, int status,
+         acb->ioh->driver_status |= SG_ERR_DRIVER_SENSE;
+ 
+         acb->ioh->sb_len_wr = acb->task->datain.size - 2;
+-        ss = (acb->ioh->mx_sb_len >= acb->ioh->sb_len_wr) ?
+-             acb->ioh->mx_sb_len : acb->ioh->sb_len_wr;
++        ss = MIN(acb->ioh->mx_sb_len, acb->ioh->sb_len_wr);
+         memcpy(acb->ioh->sbp, &acb->task->datain.data[2], ss);
+     }
+ 
+-- 
+1.8.3.1
+
