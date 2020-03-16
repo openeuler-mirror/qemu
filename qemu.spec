@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.0.1
-Release: 9
+Release: 10
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY
@@ -49,6 +49,16 @@ Patch0036: slirp-use-correct-size-while-emulating-commands.patch
 Patch0037: tcp_emu-fix-unsafe-snprintf-usages.patch
 Patch0038: block-iscsi-use-MIN-between-mx_sb_len-and-sb_len_wr.patch 
 Patch0039: monitor-fix-memory-leak-in-monitor_fdset_dup_fd_find.patch
+Patch0040: vhost-Fix-memory-region-section-comparison.patch
+Patch0041: memory-Align-MemoryRegionSections-fields.patch
+Patch0042: memory-Provide-an-equality-function-for-MemoryRegion.patch
+Patch0043: file-posix-Handle-undetectable-alignment.patch
+Patch0044: block-backup-fix-max_transfer-handling-for-copy_rang.patch
+Patch0045: block-backup-fix-backup_cow_with_offload-for-last-cl.patch
+Patch0046: qcow2-Limit-total-allocation-range-to-INT_MAX.patch
+Patch0047: mirror-Do-not-dereference-invalid-pointers.patch
+Patch0048: COLO-compare-Fix-incorrect-if-logic.patch
+Patch0049: qcow2-bitmap-Fix-uint64_t-left-shift-overflow.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -382,7 +392,10 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
-* Thu Mar 16 2020 Huawei Technologies Co., Ltd. <kuhn.chenqun@huawei.com>
+* Mon Mar 16 2020 backport some bug fix patches from upstream
+- Patch from number 0040 to 0049 are picked from stable-4.1.1
+
+* Mon Mar 16 2020 Huawei Technologies Co., Ltd. <kuhn.chenqun@huawei.com>
 - moniter: fix memleak in monitor_fdset_dup_fd_find_remove
 - block/iscsi: use MIN() between mx_sb_len and sb_len_wr
 
@@ -457,3 +470,4 @@ getent passwd qemu >/dev/null || \
 
 * Tue Jul 23 2019 openEuler Buildteam <buildteam@openeuler.org> - version-release
 - Package init
+

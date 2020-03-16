@@ -1,0 +1,35 @@
+From adb934c8d2cfd8b920e69712f07a8fb9399fdc2d Mon Sep 17 00:00:00 2001
+From: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Date: Fri, 20 Sep 2019 17:20:43 +0300
+Subject: [PATCH] block/backup: fix backup_cow_with_offload for last cluster
+
+We shouldn't try to copy bytes beyond EOF. Fix it.
+
+Fixes: 9ded4a0114968e
+Signed-off-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Reviewed-by: Max Reitz <mreitz@redhat.com>
+Reviewed-by: John Snow <jsnow@redhat.com>
+Message-id: 20190920142056.12778-3-vsementsov@virtuozzo.com
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+(cherry picked from commit 1048ddf0a32dcdaa952e581bd503d49adad527cc)
+Signed-off-by: Michael Roth <mdroth@linux.vnet.ibm.com>
+---
+ block/backup.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/block/backup.c b/block/backup.c
+index 8119d3c..55736ea 100644
+--- a/block/backup.c
++++ b/block/backup.c
+@@ -169,7 +169,7 @@ static int coroutine_fn backup_cow_with_offload(BackupBlockJob *job,
+ 
+     assert(QEMU_IS_ALIGNED(job->copy_range_size, job->cluster_size));
+     assert(QEMU_IS_ALIGNED(start, job->cluster_size));
+-    nbytes = MIN(job->copy_range_size, end - start);
++    nbytes = MIN(job->copy_range_size, MIN(end, job->len) - start);
+     nr_clusters = DIV_ROUND_UP(nbytes, job->cluster_size);
+     hbitmap_reset(job->copy_bitmap, start, job->cluster_size * nr_clusters);
+     ret = blk_co_copy_range(blk, start, job->target, start, nbytes,
+-- 
+1.8.3.1
+

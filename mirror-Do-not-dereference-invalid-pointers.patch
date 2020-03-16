@@ -1,0 +1,61 @@
+From 609aad11051c6f2053cc32b4881f5581c92435f3 Mon Sep 17 00:00:00 2001
+From: Max Reitz <mreitz@redhat.com>
+Date: Mon, 14 Oct 2019 17:39:28 +0200
+Subject: [PATCH] mirror: Do not dereference invalid pointers
+
+mirror_exit_common() may be called twice (if it is called from
+mirror_prepare() and fails, it will be called from mirror_abort()
+again).
+
+In such a case, many of the pointers in the MirrorBlockJob object will
+already be freed.  This can be seen most reliably for s->target, which
+is set to NULL (and then dereferenced by blk_bs()).
+
+Cc: qemu-stable@nongnu.org
+Fixes: 737efc1eda23b904fbe0e66b37715fb0e5c3e58b
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+Reviewed-by: John Snow <jsnow@redhat.com>
+Reviewed-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Message-id: 20191014153931.20699-2-mreitz@redhat.com
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+(cherry picked from commit f93c3add3a773e0e3f6277e5517583c4ad3a43c2)
+Signed-off-by: Michael Roth <mdroth@linux.vnet.ibm.com>
+---
+ block/mirror.c | 13 +++++++++----
+ 1 file changed, 9 insertions(+), 4 deletions(-)
+
+diff --git a/block/mirror.c b/block/mirror.c
+index 062dc42..408486c 100644
+--- a/block/mirror.c
++++ b/block/mirror.c
+@@ -617,11 +617,11 @@ static int mirror_exit_common(Job *job)
+ {
+     MirrorBlockJob *s = container_of(job, MirrorBlockJob, common.job);
+     BlockJob *bjob = &s->common;
+-    MirrorBDSOpaque *bs_opaque = s->mirror_top_bs->opaque;
++    MirrorBDSOpaque *bs_opaque;
+     AioContext *replace_aio_context = NULL;
+-    BlockDriverState *src = s->mirror_top_bs->backing->bs;
+-    BlockDriverState *target_bs = blk_bs(s->target);
+-    BlockDriverState *mirror_top_bs = s->mirror_top_bs;
++    BlockDriverState *src;
++    BlockDriverState *target_bs;
++    BlockDriverState *mirror_top_bs;
+     Error *local_err = NULL;
+     bool abort = job->ret < 0;
+     int ret = 0;
+@@ -631,6 +631,11 @@ static int mirror_exit_common(Job *job)
+     }
+     s->prepared = true;
+ 
++    mirror_top_bs = s->mirror_top_bs;
++    bs_opaque = mirror_top_bs->opaque;
++    src = mirror_top_bs->backing->bs;
++    target_bs = blk_bs(s->target);
++
+     if (bdrv_chain_contains(src, target_bs)) {
+         bdrv_unfreeze_backing_chain(mirror_top_bs, target_bs);
+     }
+-- 
+1.8.3.1
+
