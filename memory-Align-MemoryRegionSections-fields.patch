@@ -1,0 +1,45 @@
+From aebd98d0799d6dd9bb4dd4bf73f0b75c5f4e665d Mon Sep 17 00:00:00 2001
+From: "Dr. David Alan Gilbert" <dgilbert@redhat.com>
+Date: Wed, 14 Aug 2019 18:55:33 +0100
+Subject: [PATCH] memory: Align MemoryRegionSections fields
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+MemoryRegionSection includes an Int128 'size' field;
+on some platforms the compiler causes an alignment of this to
+a 128bit boundary, leaving 8 bytes of dead space.
+This deadspace can be filled with junk.
+
+Move the size field to the top avoiding unnecessary alignment.
+
+Signed-off-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+Reviewed-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+Message-Id: <20190814175535.2023-2-dgilbert@redhat.com>
+Reviewed-by: Michael S. Tsirkin <mst@redhat.com>
+Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+(cherry picked from commit 44f85d3276397cfa2cfa379c61430405dad4e644)
+Signed-off-by: Michael Roth <mdroth@linux.vnet.ibm.com>
+---
+ include/exec/memory.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/include/exec/memory.h b/include/exec/memory.h
+index 1625913..f0f0767 100644
+--- a/include/exec/memory.h
++++ b/include/exec/memory.h
+@@ -484,10 +484,10 @@ static inline FlatView *address_space_to_flatview(AddressSpace *as)
+  * @nonvolatile: this section is non-volatile
+  */
+ struct MemoryRegionSection {
++    Int128 size;
+     MemoryRegion *mr;
+     FlatView *fv;
+     hwaddr offset_within_region;
+-    Int128 size;
+     hwaddr offset_within_address_space;
+     bool readonly;
+     bool nonvolatile;
+-- 
+1.8.3.1
+

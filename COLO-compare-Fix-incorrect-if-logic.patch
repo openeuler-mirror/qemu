@@ -1,0 +1,60 @@
+From 124032e79e354f5e7cc28958f2ca6b9f898da719 Mon Sep 17 00:00:00 2001
+From: Fan Yang <Fan_Yang@sjtu.edu.cn>
+Date: Tue, 24 Sep 2019 22:08:29 +0800
+Subject: [PATCH] COLO-compare: Fix incorrect `if` logic
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+'colo_mark_tcp_pkt' should return 'true' when packets are the same, and
+'false' otherwise.  However, it returns 'true' when
+'colo_compare_packet_payload' returns non-zero while
+'colo_compare_packet_payload' is just a 'memcmp'.  The result is that
+COLO-compare reports inconsistent TCP packets when they are actually
+the same.
+
+Fixes: f449c9e549c ("colo: compare the packet based on the tcp sequence number")
+Cc: qemu-stable@nongnu.org
+Reviewed-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+Signed-off-by: Fan Yang <Fan_Yang@sjtu.edu.cn>
+Signed-off-by: Jason Wang <jasowang@redhat.com>
+(cherry picked from commit 1e907a32b77e5d418538453df5945242e43224fa)
+Signed-off-by: Michael Roth <mdroth@linux.vnet.ibm.com>
+---
+ net/colo-compare.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/net/colo-compare.c b/net/colo-compare.c
+index bf10526..9827c0e 100644
+--- a/net/colo-compare.c
++++ b/net/colo-compare.c
+@@ -287,7 +287,7 @@ static bool colo_mark_tcp_pkt(Packet *ppkt, Packet *spkt,
+     *mark = 0;
+ 
+     if (ppkt->tcp_seq == spkt->tcp_seq && ppkt->seq_end == spkt->seq_end) {
+-        if (colo_compare_packet_payload(ppkt, spkt,
++        if (!colo_compare_packet_payload(ppkt, spkt,
+                                         ppkt->header_size, spkt->header_size,
+                                         ppkt->payload_size)) {
+             *mark = COLO_COMPARE_FREE_SECONDARY | COLO_COMPARE_FREE_PRIMARY;
+@@ -297,7 +297,7 @@ static bool colo_mark_tcp_pkt(Packet *ppkt, Packet *spkt,
+ 
+     /* one part of secondary packet payload still need to be compared */
+     if (!after(ppkt->seq_end, spkt->seq_end)) {
+-        if (colo_compare_packet_payload(ppkt, spkt,
++        if (!colo_compare_packet_payload(ppkt, spkt,
+                                         ppkt->header_size + ppkt->offset,
+                                         spkt->header_size + spkt->offset,
+                                         ppkt->payload_size - ppkt->offset)) {
+@@ -316,7 +316,7 @@ static bool colo_mark_tcp_pkt(Packet *ppkt, Packet *spkt,
+         /* primary packet is longer than secondary packet, compare
+          * the same part and mark the primary packet offset
+          */
+-        if (colo_compare_packet_payload(ppkt, spkt,
++        if (!colo_compare_packet_payload(ppkt, spkt,
+                                         ppkt->header_size + ppkt->offset,
+                                         spkt->header_size + spkt->offset,
+                                         spkt->payload_size - spkt->offset)) {
+-- 
+1.8.3.1
+

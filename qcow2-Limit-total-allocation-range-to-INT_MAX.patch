@@ -1,0 +1,59 @@
+From 3d83643fb8d69f1c38df3e90634f9b82d4a62a1c Mon Sep 17 00:00:00 2001
+From: Max Reitz <mreitz@redhat.com>
+Date: Thu, 10 Oct 2019 12:08:57 +0200
+Subject: [PATCH] qcow2: Limit total allocation range to INT_MAX
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+When the COW areas are included, the size of an allocation can exceed
+INT_MAX.  This is kind of limited by handle_alloc() in that it already
+caps avail_bytes at INT_MAX, but the number of clusters still reflects
+the original length.
+
+This can have all sorts of effects, ranging from the storage layer write
+call failing to image corruption.  (If there were no image corruption,
+then I suppose there would be data loss because the .cow_end area is
+forced to be empty, even though there might be something we need to
+COW.)
+
+Fix all of it by limiting nb_clusters so the equivalent number of bytes
+will not exceed INT_MAX.
+
+Cc: qemu-stable@nongnu.org
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+Reviewed-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit d1b9d19f99586b33795e20a79f645186ccbc070f)
+Signed-off-by: Michael Roth <mdroth@linux.vnet.ibm.com>
+---
+ block/qcow2-cluster.c | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/block/qcow2-cluster.c b/block/qcow2-cluster.c
+index 974a4e8..c4a99c1 100644
+--- a/block/qcow2-cluster.c
++++ b/block/qcow2-cluster.c
+@@ -1342,6 +1342,9 @@ static int handle_alloc(BlockDriverState *bs, uint64_t guest_offset,
+     nb_clusters = MIN(nb_clusters, s->l2_slice_size - l2_index);
+     assert(nb_clusters <= INT_MAX);
+ 
++    /* Limit total allocation byte count to INT_MAX */
++    nb_clusters = MIN(nb_clusters, INT_MAX >> s->cluster_bits);
++
+     /* Find L2 entry for the first involved cluster */
+     ret = get_cluster_table(bs, guest_offset, &l2_slice, &l2_index);
+     if (ret < 0) {
+@@ -1430,7 +1433,7 @@ static int handle_alloc(BlockDriverState *bs, uint64_t guest_offset,
+      * request actually writes to (excluding COW at the end)
+      */
+     uint64_t requested_bytes = *bytes + offset_into_cluster(s, guest_offset);
+-    int avail_bytes = MIN(INT_MAX, nb_clusters << s->cluster_bits);
++    int avail_bytes = nb_clusters << s->cluster_bits;
+     int nb_bytes = MIN(requested_bytes, avail_bytes);
+     QCowL2Meta *old_m = *m;
+ 
+-- 
+1.8.3.1
+

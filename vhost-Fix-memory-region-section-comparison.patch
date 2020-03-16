@@ -1,0 +1,45 @@
+From 8df0aa6ebb27fcf535a7d28cfdc006cd9a34a041 Mon Sep 17 00:00:00 2001
+From: "Dr. David Alan Gilbert" <dgilbert@redhat.com>
+Date: Wed, 14 Aug 2019 18:55:35 +0100
+Subject: [PATCH] vhost: Fix memory region section comparison
+
+Using memcmp to compare structures wasn't safe,
+as I found out on ARM when I was getting falce miscompares.
+
+Use the helper function for comparing the MRSs.
+
+Fixes: ade6d081fc33948e56e6 ("vhost: Regenerate region list from changed sections list")
+Cc: qemu-stable@nongnu.org
+Signed-off-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+Message-Id: <20190814175535.2023-4-dgilbert@redhat.com>
+Reviewed-by: Michael S. Tsirkin <mst@redhat.com>
+Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+(cherry picked from commit 3fc4a64cbaed2ddee4c60ddc06740b320e18ab82)
+Signed-off-by: Michael Roth <mdroth@linux.vnet.ibm.com>
+---
+ hw/virtio/vhost.c | 9 +++++++--
+ 1 file changed, 7 insertions(+), 2 deletions(-)
+
+diff --git a/hw/virtio/vhost.c b/hw/virtio/vhost.c
+index 6d3a013..221e635 100644
+--- a/hw/virtio/vhost.c
++++ b/hw/virtio/vhost.c
+@@ -451,8 +451,13 @@ static void vhost_commit(MemoryListener *listener)
+         changed = true;
+     } else {
+         /* Same size, lets check the contents */
+-        changed = n_old_sections && memcmp(dev->mem_sections, old_sections,
+-                         n_old_sections * sizeof(old_sections[0])) != 0;
++        for (int i = 0; i < n_old_sections; i++) {
++            if (!MemoryRegionSection_eq(&old_sections[i],
++                                        &dev->mem_sections[i])) {
++                changed = true;
++                break;
++            }
++        }
+     }
+ 
+     trace_vhost_commit(dev->started, changed);
+-- 
+1.8.3.1
+
