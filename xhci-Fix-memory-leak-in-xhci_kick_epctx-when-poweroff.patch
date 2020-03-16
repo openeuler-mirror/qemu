@@ -34,7 +34,7 @@ Direct leak of 80 byte(s) in 5 object(s) allocated from:
     #20 0xfffd1c77616b  (/lib64/libc.so.6+0xd616b)
 
 Reported-by: Euler Robot <euler.robot@huawei.com>
-Signed-off-by: Chen Qun <kuhn.chenqun@h
+Signed-off-by: Chen Qun <kuhn.chenqun@huawei.com>
 ---
  hw/usb/hcd-xhci.c | 1 +
  1 file changed, 1 insertion(+)

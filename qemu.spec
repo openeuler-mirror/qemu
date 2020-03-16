@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.0.1
-Release: 8
+Release: 9
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY
@@ -47,6 +47,8 @@ Patch0034: tcp_emu-Fix-oob-access.patch
 Patch0035: slirp-use-correct-size-while-emulating-IRC-commands.patch
 Patch0036: slirp-use-correct-size-while-emulating-commands.patch
 Patch0037: tcp_emu-fix-unsafe-snprintf-usages.patch
+Patch0038: block-iscsi-use-MIN-between-mx_sb_len-and-sb_len_wr.patch 
+Patch0039: monitor-fix-memory-leak-in-monitor_fdset_dup_fd_find.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -380,6 +382,10 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Thu Mar 16 2020 Huawei Technologies Co., Ltd. <kuhn.chenqun@huawei.com>
+- moniter: fix memleak in monitor_fdset_dup_fd_find_remove
+- block/iscsi: use MIN() between mx_sb_len and sb_len_wr
+
 * Wed Mar 11 2020 backport from qemu upstream
 - tcp_emu: Fix oob access
 - slirp: use correct size while emulating IRC commands
