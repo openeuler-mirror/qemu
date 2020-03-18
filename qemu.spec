@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.0.1
-Release: 10
+Release: 11
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY
@@ -257,6 +257,8 @@ rm -rf %{buildroot}%{_datadir}/%{name}/linuxboot.bin
 rm -rf %{buildroot}%{_datadir}/%{name}/kvmvapic.bin
 rm -rf %{buildroot}%{_datadir}/%{name}/sgabios.bin
 rm -rf %{buildroot}%{_datadir}/%{name}/multiboot.bin
+rm -rf %{buildroot}%{_datadir}/%{name}/linuxboot_dma.bin
+rm -rf %{buildroot}%{_datadir}/%{name}/pvh.bin
 %endif
 rm -rf %{buildroot}%{_datadir}/%{name}/openbios-*
 rm -rf %{buildroot}%{_datadir}/%{name}/slof.bin
@@ -264,11 +266,9 @@ rm -rf %{buildroot}%{_datadir}/%{name}/QEMU,*.bin
 rm -rf %{buildroot}%{_datadir}/%{name}/bamboo.dtb
 rm -rf %{buildroot}%{_datadir}/%{name}/canyonlands.dtb
 rm -rf %{buildroot}%{_datadir}/%{name}/hppa-firmware.img
-rm -rf %{buildroot}%{_datadir}/%{name}/linuxboot_dma.bin
 rm -rf %{buildroot}%{_datadir}/%{name}/palcode-clipper
 rm -rf %{buildroot}%{_datadir}/%{name}/petalogix-*
 rm -rf %{buildroot}%{_datadir}/%{name}/ppc_*
-rm -rf %{buildroot}%{_datadir}/%{name}/pvh.bin
 rm -rf %{buildroot}%{_datadir}/%{name}/qemu_vga.ndrv
 rm -rf %{buildroot}%{_datadir}/%{name}/s390-*
 rm -rf %{buildroot}%{_datadir}/%{name}/skiboot.lid
@@ -347,6 +347,8 @@ getent passwd qemu >/dev/null || \
 %{_datadir}/%{name}/vgabios-ramfb.bin
 %{_datadir}/%{name}/vgabios-bochs-display.bin
 %{_datadir}/%{name}/linuxboot.bin
+%{_datadir}/%{name}/linuxboot_dma.bin
+%{_datadir}/%{name}/pvh.bin
 %{_datadir}/%{name}/multiboot.bin
 %{_datadir}/%{name}/kvmvapic.bin
 %{_datadir}/%{name}/sgabios.bin
@@ -392,6 +394,9 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Thu Mar 17 2020 Huawei Technologies Co., Ltd. <zhang.zhanghailiang@huawei.com>
+- Put linuxboot_dma.bin and pvh.bin in x86 package
+
 * Mon Mar 16 2020 backport some bug fix patches from upstream
 - Patch from number 0040 to 0049 are picked from stable-4.1.1
 
