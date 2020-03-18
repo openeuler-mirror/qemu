@@ -92,13 +92,6 @@ static void pcie_cap_fill_slot_lnk(PCIDevice *dev)
         return;
     }
 
-    /* Clear and fill LNKCAP from what was configured above */
-    pci_long_test_and_clear_mask(exp_cap + PCI_EXP_LNKCAP,
-                                 PCI_EXP_LNKCAP_MLW | PCI_EXP_LNKCAP_SLS);
-    pci_long_test_and_set_mask(exp_cap + PCI_EXP_LNKCAP,
-                               QEMU_PCI_EXP_LNKCAP_MLW(s->width) |
-                               QEMU_PCI_EXP_LNKCAP_MLS(s->speed));
-
     /*
      * Link bandwidth notification is required for all root ports and
      * downstream ports supporting links wider than x1 or multiple link
@@ -106,6 +99,12 @@ static void pcie_cap_fill_slot_lnk(PCIDevice *dev)
      */
     if (s->width > QEMU_PCI_EXP_LNK_X1 ||
         s->speed > QEMU_PCI_EXP_LNK_2_5GT) {
+        /* Clear and fill LNKCAP from what was configured above */
+        pci_long_test_and_clear_mask(exp_cap + PCI_EXP_LNKCAP,
+                                 PCI_EXP_LNKCAP_MLW | PCI_EXP_LNKCAP_SLS);
+        pci_long_test_and_set_mask(exp_cap + PCI_EXP_LNKCAP,
+                               QEMU_PCI_EXP_LNKCAP_MLW(s->width) |
+                               QEMU_PCI_EXP_LNKCAP_MLS(s->speed));
         pci_long_test_and_set_mask(exp_cap + PCI_EXP_LNKCAP,
                                    PCI_EXP_LNKCAP_LBNC);
     }
