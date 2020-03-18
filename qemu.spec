@@ -59,6 +59,8 @@ Patch0046: qcow2-Limit-total-allocation-range-to-INT_MAX.patch
 Patch0047: mirror-Do-not-dereference-invalid-pointers.patch
 Patch0048: COLO-compare-Fix-incorrect-if-logic.patch
 Patch0049: qcow2-bitmap-Fix-uint64_t-left-shift-overflow.patch
+Patch0050: pcie-Add-pcie-root-port-fast-plug-unplug-feature.patch
+Patch0051: pcie-Compat-with-devices-which-do-not-support-Link-W.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -394,7 +396,11 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
-* Thu Mar 17 2020 Huawei Technologies Co., Ltd. <zhang.zhanghailiang@huawei.com>
+* Wed Mar 18 2020 Huawei Technologies Co., Ltd. <fangying1@huawei.com>
+- pcie: Add pcie-root-port fast plug/unplug feature
+- pcie: Compat with devices which do not support Link Width
+
+* Tue Mar 17 2020 Huawei Technologies Co., Ltd. <zhang.zhanghailiang@huawei.com>
 - Put linuxboot_dma.bin and pvh.bin in x86 package
 
 * Mon Mar 16 2020 backport some bug fix patches from upstream
