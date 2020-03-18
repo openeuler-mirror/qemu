@@ -1,0 +1,49 @@
+From 5e1ad9f0f3c344b9fe20fc01ea2f1dfb8ac7fd67 Mon Sep 17 00:00:00 2001
+From: fangying <fangying1@huawei.com>
+Date: Wed, 18 Mar 2020 12:51:33 +0800
+Subject: [PATCH 2/2] pcie: Compat with devices which do not support Link
+ Width, such as ioh3420
+
+We hack into PCI_EXP_LNKCAP to support device fast plug/unplug
+for pcie-root-port. However some devices like ioh3420 does not
+suport it, so PCI_EXP_LNKCAP is not set for such devices.
+
+Signed-off-by: Ying Fang <fangying1@huawei.com>
+---
+ hw/pci/pcie.c | 13 ++++++-------
+ 1 file changed, 6 insertions(+), 7 deletions(-)
+
+diff --git a/hw/pci/pcie.c b/hw/pci/pcie.c
+index 2a8ff86d..5044bff4 100644
+--- a/hw/pci/pcie.c
++++ b/hw/pci/pcie.c
+@@ -108,13 +108,6 @@ static void pcie_cap_fill_slot_lnk(PCIDevice *dev)
+         return;
+     }
+ 
+-    /* Clear and fill LNKCAP from what was configured above */
+-    pci_long_test_and_clear_mask(exp_cap + PCI_EXP_LNKCAP,
+-                                 PCI_EXP_LNKCAP_MLW | PCI_EXP_LNKCAP_SLS);
+-    pci_long_test_and_set_mask(exp_cap + PCI_EXP_LNKCAP,
+-                               QEMU_PCI_EXP_LNKCAP_MLW(s->width) |
+-                               QEMU_PCI_EXP_LNKCAP_MLS(s->speed));
+-
+     /*
+      * Link bandwidth notification is required for all root ports and
+      * downstream ports supporting links wider than x1 or multiple link
+@@ -122,6 +115,12 @@ static void pcie_cap_fill_slot_lnk(PCIDevice *dev)
+      */
+     if (s->width > QEMU_PCI_EXP_LNK_X1 ||
+         s->speed > QEMU_PCI_EXP_LNK_2_5GT) {
++        /* Clear and fill LNKCAP from what was configured above */
++        pci_long_test_and_clear_mask(exp_cap + PCI_EXP_LNKCAP,
++                                 PCI_EXP_LNKCAP_MLW | PCI_EXP_LNKCAP_SLS);
++        pci_long_test_and_set_mask(exp_cap + PCI_EXP_LNKCAP,
++                               QEMU_PCI_EXP_LNKCAP_MLW(s->width) |
++                               QEMU_PCI_EXP_LNKCAP_MLS(s->speed));
+         pci_long_test_and_set_mask(exp_cap + PCI_EXP_LNKCAP,
+                                    PCI_EXP_LNKCAP_LBNC);
+     }
+-- 
+2.19.1
+
