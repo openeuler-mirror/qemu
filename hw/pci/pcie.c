@@ -84,7 +84,7 @@ pcie_cap_v1_fill(PCIDevice *dev, uint8_t port, uint8_t type, uint8_t version)
      * To fix this up, let's enable the PCI_EXP_LNKSTA_DLLLA
      * only if it is a PCIESlot device.
      */
-    if (s == NULL || s->disable_lnksta_dllla == 0) {
+    if (s == NULL || s->fast_plug == 0) {
         if (dev->cap_present & QEMU_PCIE_LNKSTA_DLLLA) {
             pci_word_test_and_set_mask(exp_cap + PCI_EXP_LNKSTA,
                                        PCI_EXP_LNKSTA_DLLLA);
@@ -135,8 +135,11 @@ static void pcie_cap_fill_slot_lnk(PCIDevice *dev)
          */
         pci_long_test_and_set_mask(exp_cap + PCI_EXP_LNKCAP,
                                    PCI_EXP_LNKCAP_DLLLARC);
-        pci_word_test_and_set_mask(exp_cap + PCI_EXP_LNKSTA,
-                                   PCI_EXP_LNKSTA_DLLLA);
+
+        if(s->fast_plug == 0) {
+            pci_word_test_and_set_mask(exp_cap + PCI_EXP_LNKSTA,
+                                       PCI_EXP_LNKSTA_DLLLA);
+        }
 
         /*
          * Target Link Speed defaults to the highest link speed supported by
@@ -476,6 +479,8 @@ void pcie_cap_slot_unplug_request_cb(HotplugHandler *hotplug_dev,
     Error *local_err = NULL;
     PCIDevice *pci_dev = PCI_DEVICE(dev);
     PCIBus *bus = pci_get_bus(pci_dev);
+    PCIESlot *s = PCIE_SLOT(PCI_DEVICE(hotplug_dev));
+    uint8_t *exp_cap = pci_dev->config + pci_dev->exp.exp_cap;
 
     pcie_cap_slot_plug_common(PCI_DEVICE(hotplug_dev), dev, &local_err);
     if (local_err) {
@@ -494,7 +499,17 @@ void pcie_cap_slot_unplug_request_cb(HotplugHandler *hotplug_dev,
         return;
     }
 
-    pcie_cap_slot_push_attention_button(PCI_DEVICE(hotplug_dev));
+    if ((pci_dev->cap_present & QEMU_PCIE_LNKSTA_DLLLA) && s->fast_plug) {
+        pci_word_test_and_clear_mask(exp_cap+ PCI_EXP_LNKSTA,
+                                    PCI_EXP_LNKSTA_DLLLA);
+    }
+
+    if (s->fast_unplug) {
+        pcie_cap_slot_event(PCI_DEVICE(hotplug_dev),
+                            PCI_EXP_HP_EV_PDC | PCI_EXP_HP_EV_ABP);
+    } else {
+        pcie_cap_slot_push_attention_button(PCI_DEVICE(hotplug_dev));
+    }
 }
 
 /* pci express slot for pci express root/downstream port
