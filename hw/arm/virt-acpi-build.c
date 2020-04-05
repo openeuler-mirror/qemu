@@ -937,6 +937,7 @@ build_dsdt(GArray *table_data, BIOSLinker *linker, VirtMachineState *vms)
     const int *irqmap = vms->irqmap;
     AcpiTable table = { .sig = "DSDT", .rev = 2, .oem_id = vms->oem_id,
                         .oem_table_id = vms->oem_table_id };
+    bool cpu_aml_built = false;
 
     acpi_table_begin(&table, table_data);
     dsdt = init_aml_allocator();
@@ -947,7 +948,6 @@ build_dsdt(GArray *table_data, BIOSLinker *linker, VirtMachineState *vms)
      * the RTC ACPI device at all when using UEFI.
      */
     scope = aml_scope("\\_SB");
-    acpi_dsdt_add_cpus(scope, vms);
     acpi_dsdt_add_uart(scope, &memmap[VIRT_UART],
                        (irqmap[VIRT_UART] + ARM_SPI_BASE));
     if (vmc->acpi_expose_flash) {
@@ -977,6 +977,19 @@ build_dsdt(GArray *table_data, BIOSLinker *linker, VirtMachineState *vms)
                                      AML_SYSTEM_MEMORY,
                                      memmap[VIRT_PCDIMM_ACPI].base);
         }
+
+        if (event & ACPI_GED_CPU_HOTPLUG_EVT) {
+            CPUHotplugFeatures opts = {
+                .acpi_1_compatible = false, .has_legacy_cphp = false
+            };
+            build_cpus_aml(dsdt, ms, opts, memmap[VIRT_CPU_ACPI].base,
+                           "\\_SB", NULL, AML_SYSTEM_MEMORY);
+            cpu_aml_built = true;
+        }
+    }
+
+    if (!cpu_aml_built) {
+        acpi_dsdt_add_cpus(scope, vms);
     }
 
     acpi_dsdt_add_power_button(scope);
