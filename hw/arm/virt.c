@@ -213,6 +213,10 @@ static const char *valid_cpus[] = {
     ARM_CPU_TYPE_NAME("max"),
 };
 
+static MemoryRegion *secure_sysmem;
+static MemoryRegion *tag_sysmem;
+static MemoryRegion *secure_tag_sysmem;
+
 static bool cpu_type_valid(const char *cpu)
 {
     int i;
@@ -1990,9 +1994,6 @@ static void machvirt_init(MachineState *machine)
     MachineClass *mc = MACHINE_GET_CLASS(machine);
     const CPUArchIdList *possible_cpus;
     MemoryRegion *sysmem = get_system_memory();
-    MemoryRegion *secure_sysmem = NULL;
-    MemoryRegion *tag_sysmem = NULL;
-    MemoryRegion *secure_tag_sysmem = NULL;
     int n, virt_max_cpus;
     bool firmware_loaded;
     bool aarch64 = true;
@@ -2099,99 +2100,10 @@ static void machvirt_init(MachineState *machine)
         }
 
         cpuobj = object_new(possible_cpus->cpus[n].type);
-        object_property_set_int(cpuobj, "mp-affinity",
-                                possible_cpus->cpus[n].arch_id, NULL);
+        aarch64 &= object_property_get_bool(cpuobj, "aarch64", NULL);
 
         cs = CPU(cpuobj);
         cs->cpu_index = n;
-
-        numa_cpu_pre_plug(&possible_cpus->cpus[cs->cpu_index], DEVICE(cpuobj),
-                          &error_fatal);
-
-        aarch64 &= object_property_get_bool(cpuobj, "aarch64", NULL);
-
-        if (!vms->secure) {
-            object_property_set_bool(cpuobj, "has_el3", false, NULL);
-        }
-
-        if (!vms->virt && object_property_find(cpuobj, "has_el2")) {
-            object_property_set_bool(cpuobj, "has_el2", false, NULL);
-        }
-
-        if (vms->psci_conduit != QEMU_PSCI_CONDUIT_DISABLED) {
-            object_property_set_int(cpuobj, "psci-conduit", vms->psci_conduit,
-                                    NULL);
-
-            /* Secondary CPUs start in PSCI powered-down state */
-            if (n > 0) {
-                object_property_set_bool(cpuobj, "start-powered-off", true,
-                                         NULL);
-            }
-        }
-
-        if (vmc->kvm_no_adjvtime &&
-            object_property_find(cpuobj, "kvm-no-adjvtime")) {
-            object_property_set_bool(cpuobj, "kvm-no-adjvtime", true, NULL);
-        }
-
-        if (vmc->no_kvm_steal_time &&
-            object_property_find(cpuobj, "kvm-steal-time")) {
-            object_property_set_bool(cpuobj, "kvm-steal-time", false, NULL);
-        }
-
-        if (vmc->no_pmu && object_property_find(cpuobj, "pmu")) {
-            object_property_set_bool(cpuobj, "pmu", false, NULL);
-        }
-
-        if (object_property_find(cpuobj, "reset-cbar")) {
-            object_property_set_int(cpuobj, "reset-cbar",
-                                    vms->memmap[VIRT_CPUPERIPHS].base,
-                                    &error_abort);
-        }
-
-        object_property_set_link(cpuobj, "memory", OBJECT(sysmem),
-                                 &error_abort);
-        if (vms->secure) {
-            object_property_set_link(cpuobj, "secure-memory",
-                                     OBJECT(secure_sysmem), &error_abort);
-        }
-
-        if (vms->mte) {
-            /* Create the memory region only once, but link to all cpus. */
-            if (!tag_sysmem) {
-                /*
-                 * The property exists only if MemTag is supported.
-                 * If it is, we must allocate the ram to back that up.
-                 */
-                if (!object_property_find(cpuobj, "tag-memory")) {
-                    error_report("MTE requested, but not supported "
-                                 "by the guest CPU");
-                    exit(1);
-                }
-
-                tag_sysmem = g_new(MemoryRegion, 1);
-                memory_region_init(tag_sysmem, OBJECT(machine),
-                                   "tag-memory", UINT64_MAX / 32);
-
-                if (vms->secure) {
-                    secure_tag_sysmem = g_new(MemoryRegion, 1);
-                    memory_region_init(secure_tag_sysmem, OBJECT(machine),
-                                       "secure-tag-memory", UINT64_MAX / 32);
-
-                    /* As with ram, secure-tag takes precedence over tag.  */
-                    memory_region_add_subregion_overlap(secure_tag_sysmem, 0,
-                                                        tag_sysmem, -1);
-                }
-            }
-
-            object_property_set_link(cpuobj, "tag-memory", OBJECT(tag_sysmem),
-                                     &error_abort);
-            if (vms->secure) {
-                object_property_set_link(cpuobj, "secure-tag-memory",
-                                         OBJECT(secure_tag_sysmem),
-                                         &error_abort);
-            }
-        }
 
         qdev_realize(DEVICE(cpuobj), NULL, &error_fatal);
         object_unref(cpuobj);
@@ -2600,10 +2512,16 @@ static void virt_memory_plug(HotplugHandler *hotplug_dev,
 static void virt_cpu_pre_plug(HotplugHandler *hotplug_dev,
                               DeviceState *dev, Error **errp)
 {
-    CPUState *cs = CPU(dev);
     ARMCPUTopoInfo topo;
+    Object *cpuobj = OBJECT(dev);
+    CPUState *cs = CPU(dev);
     ARMCPU *cpu = ARM_CPU(dev);
     MachineState *ms = MACHINE(hotplug_dev);
+    MachineClass *mc = MACHINE_GET_CLASS(hotplug_dev);
+    VirtMachineState *vms = VIRT_MACHINE(hotplug_dev);
+    VirtMachineClass *vmc = VIRT_MACHINE_GET_CLASS(hotplug_dev);
+    const CPUArchIdList *possible_cpus = mc->possible_cpu_arch_ids(ms);
+    MemoryRegion *sysmem = get_system_memory();
     int smp_clusters = ms->smp.clusters;
     int smp_cores = ms->smp.cores;
     int smp_threads = ms->smp.threads;
@@ -2673,6 +2591,97 @@ static void virt_cpu_pre_plug(HotplugHandler *hotplug_dev,
         return;
     }
     cpu->thread_id = topo.smt_id;
+
+    /* Init some properties */
+
+    object_property_set_int(cpuobj, "mp-affinity",
+                            possible_cpus->cpus[cs->cpu_index].arch_id, NULL);
+
+    numa_cpu_pre_plug(&possible_cpus->cpus[cs->cpu_index], DEVICE(cpuobj),
+                      &error_fatal);
+
+    if (!vms->secure) {
+        object_property_set_bool(cpuobj, "has_el3", false, NULL);
+    }
+
+    if (!vms->virt && object_property_find(cpuobj, "has_el2")) {
+        object_property_set_bool(cpuobj, "has_el2", false, NULL);
+    }
+
+    if (vms->psci_conduit != QEMU_PSCI_CONDUIT_DISABLED) {
+        object_property_set_int(cpuobj, "psci-conduit", vms->psci_conduit,
+                                NULL);
+
+        /* Secondary CPUs start in PSCI powered-down state */
+        if (cs->cpu_index > 0) {
+            object_property_set_bool(cpuobj, "start-powered-off", true,
+                                     NULL);
+        }
+    }
+
+    if (vmc->kvm_no_adjvtime &&
+        object_property_find(cpuobj, "kvm-no-adjvtime")) {
+        object_property_set_bool(cpuobj, "kvm-no-adjvtime", true, NULL);
+    }
+
+    if (vmc->no_kvm_steal_time &&
+        object_property_find(cpuobj, "kvm-steal-time")) {
+        object_property_set_bool(cpuobj, "kvm-steal-time", false, NULL);
+    }
+
+    if (vmc->no_pmu && object_property_find(cpuobj, "pmu")) {
+        object_property_set_bool(cpuobj, "pmu", false, NULL);
+    }
+
+    if (object_property_find(cpuobj, "reset-cbar")) {
+        object_property_set_int(cpuobj, "reset-cbar",
+                                vms->memmap[VIRT_CPUPERIPHS].base,
+                                &error_abort);
+    }
+
+    object_property_set_link(cpuobj, "memory", OBJECT(sysmem),
+                             &error_abort);
+    if (vms->secure) {
+        object_property_set_link(cpuobj, "secure-memory",
+                                 OBJECT(secure_sysmem), &error_abort);
+    }
+
+    if (vms->mte) {
+        /* Create the memory region only once, but link to all cpus. */
+        if (!tag_sysmem) {
+            /*
+             * The property exists only if MemTag is supported.
+             * If it is, we must allocate the ram to back that up.
+             */
+            if (!object_property_find(cpuobj, "tag-memory")) {
+                error_report("MTE requested, but not supported "
+                             "by the guest CPU");
+                exit(1);
+            }
+
+            tag_sysmem = g_new(MemoryRegion, 1);
+            memory_region_init(tag_sysmem, OBJECT(ms),
+                               "tag-memory", UINT64_MAX / 32);
+
+            if (vms->secure) {
+                secure_tag_sysmem = g_new(MemoryRegion, 1);
+                memory_region_init(secure_tag_sysmem, OBJECT(ms),
+                                   "secure-tag-memory", UINT64_MAX / 32);
+
+                /* As with ram, secure-tag takes precedence over tag.  */
+                memory_region_add_subregion_overlap(secure_tag_sysmem, 0,
+                                                    tag_sysmem, -1);
+            }
+        }
+
+        object_property_set_link(cpuobj, "tag-memory", OBJECT(tag_sysmem),
+                                 &error_abort);
+        if (vms->secure) {
+            object_property_set_link(cpuobj, "secure-tag-memory",
+                                     OBJECT(secure_tag_sysmem),
+                                     &error_abort);
+        }
+    }
 }
 
 static void virt_cpu_plug(HotplugHandler *hotplug_dev,
