@@ -76,6 +76,7 @@ struct KVMARMGICv3Class {
     ARMGICv3CommonClass parent_class;
     DeviceRealize parent_realize;
     void (*parent_reset)(DeviceState *dev);
+    CPUHotplugRealize parent_cpu_hotplug_realize;
 };
 
 static void kvm_arm_gicv3_set_irq(void *opaque, int irq, int level)
@@ -771,6 +772,14 @@ static void kvm_arm_gicv3_cpu_realize(GICv3State *s, int ncpu)
     define_arm_cp_regs(cpu, gicv3_cpuif_reginfo);
 }
 
+static void kvm_arm_gicv3_cpu_hotplug_realize(GICv3State *s, int ncpu)
+{
+    KVMARMGICv3Class *kagcc = KVM_ARM_GICV3_GET_CLASS(s);
+
+    kagcc->parent_cpu_hotplug_realize(s, ncpu);
+    kvm_arm_gicv3_cpu_realize(s, ncpu);
+}
+
 static void kvm_arm_gicv3_realize(DeviceState *dev, Error **errp)
 {
     GICv3State *s = KVM_ARM_GICV3(dev);
@@ -881,6 +890,8 @@ static void kvm_arm_gicv3_class_init(ObjectClass *klass, void *data)
     ARMGICv3CommonClass *agcc = ARM_GICV3_COMMON_CLASS(klass);
     KVMARMGICv3Class *kgc = KVM_ARM_GICV3_CLASS(klass);
 
+    kgc->parent_cpu_hotplug_realize = agcc->cpu_hotplug_realize;
+    agcc->cpu_hotplug_realize = kvm_arm_gicv3_cpu_hotplug_realize;
     agcc->pre_save = kvm_arm_gicv3_get;
     agcc->post_load = kvm_arm_gicv3_put;
     device_class_set_parent_realize(dc, kvm_arm_gicv3_realize,

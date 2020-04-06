@@ -376,6 +376,19 @@ static const MemoryRegionOps gic_ops[] = {
     }
 };
 
+static void gicv3_cpu_realize(GICv3State *s, int i)
+{
+    gicv3_init_one_cpuif(s, i);
+}
+
+static void arm_gicv3_cpu_hotplug_realize(GICv3State *s, int ncpu)
+{
+    ARMGICv3Class *agc = ARM_GICV3_GET_CLASS(s);
+
+    agc->parent_cpu_hotplug_realize(s, ncpu);
+    gicv3_cpu_realize(s, ncpu);
+}
+
 static void arm_gic_realize(DeviceState *dev, Error **errp)
 {
     /* Device instance realize function for the GIC sysbus device */
@@ -393,7 +406,7 @@ static void arm_gic_realize(DeviceState *dev, Error **errp)
     gicv3_init_irqs_and_mmio(s, gicv3_set_irq, gic_ops);
 
     for (i = 0; i < s->num_cpu; i++) {
-        gicv3_init_one_cpuif(s, i);
+        gicv3_cpu_realize(s, i);
     }
 }
 
@@ -403,6 +416,8 @@ static void arm_gicv3_class_init(ObjectClass *klass, void *data)
     ARMGICv3CommonClass *agcc = ARM_GICV3_COMMON_CLASS(klass);
     ARMGICv3Class *agc = ARM_GICV3_CLASS(klass);
 
+    agc->parent_cpu_hotplug_realize = agcc->cpu_hotplug_realize;
+    agcc->cpu_hotplug_realize = arm_gicv3_cpu_hotplug_realize;
     agcc->post_load = arm_gicv3_post_load;
     device_class_set_parent_realize(dc, arm_gic_realize, &agc->parent_realize);
 }

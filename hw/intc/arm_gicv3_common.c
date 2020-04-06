@@ -311,6 +311,11 @@ static void arm_gicv3_common_cpu_realize(GICv3State *s, int ncpu)
     gicv3_set_gicv3state(cpu, &s->cpu[ncpu]);
 }
 
+static void arm_gicv3_common_cpu_hotplug_realize(GICv3State *s, int ncpu)
+{
+    arm_gicv3_common_cpu_realize(s, ncpu);
+}
+
 static void arm_gicv3_common_realize(DeviceState *dev, Error **errp)
 {
     GICv3State *s = ARM_GICV3_COMMON(dev);
@@ -371,6 +376,7 @@ static void arm_gicv3_common_realize(DeviceState *dev, Error **errp)
 
     for (i = 0; i < s->num_cpu; i++) {
         CPUState *cpu = qemu_get_cpu(i);
+
         uint64_t cpu_affid;
 
         arm_gicv3_common_cpu_realize(s, i);
@@ -537,12 +543,14 @@ static Property arm_gicv3_common_properties[] = {
 static void arm_gicv3_common_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
+    ARMGICv3CommonClass *agcc = ARM_GICV3_COMMON_CLASS(klass);
     ARMLinuxBootIfClass *albifc = ARM_LINUX_BOOT_IF_CLASS(klass);
 
     dc->reset = arm_gicv3_common_reset;
     dc->realize = arm_gicv3_common_realize;
     device_class_set_props(dc, arm_gicv3_common_properties);
     dc->vmsd = &vmstate_gicv3;
+    agcc->cpu_hotplug_realize = arm_gicv3_common_cpu_hotplug_realize;
     albifc->arm_linux_init = arm_gic_common_linux_init;
 }
 
