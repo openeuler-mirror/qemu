@@ -286,10 +286,14 @@ GICV3_BITMAP_ACCESSORS(edge_trigger)
 #define ARM_GICV3_COMMON_GET_CLASS(obj) \
      OBJECT_GET_CLASS(ARMGICv3CommonClass, (obj), TYPE_ARM_GICV3_COMMON)
 
+typedef void (*CPUHotplugRealize)(GICv3State *s, int ncpu);
+
 typedef struct ARMGICv3CommonClass {
     /*< private >*/
     SysBusDeviceClass parent_class;
     /*< public >*/
+
+    CPUHotplugRealize cpu_hotplug_realize;
 
     void (*pre_save)(GICv3State *s);
     void (*post_load)(GICv3State *s);

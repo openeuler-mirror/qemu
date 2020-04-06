@@ -26,6 +26,8 @@ typedef struct ARMGICv3Class {
     ARMGICv3CommonClass parent_class;
     /*< public >*/
 
+    CPUHotplugRealize parent_cpu_hotplug_realize;
+
     DeviceRealize parent_realize;
 } ARMGICv3Class;
 
