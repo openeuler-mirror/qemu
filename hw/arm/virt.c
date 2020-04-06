@@ -39,6 +39,7 @@
 #include "hw/sysbus.h"
 #include "hw/arm/boot.h"
 #include "hw/arm/primecell.h"
+#include "hw/arm/topology.h"
 #include "hw/arm/virt.h"
 #include "hw/block/flash.h"
 #include "hw/vfio/vfio-calxeda-xgmac.h"
@@ -2524,6 +2525,7 @@ static const CPUArchIdList *virt_possible_cpu_arch_ids(MachineState *ms)
     int n;
     unsigned int max_cpus = ms->smp.max_cpus;
     VirtMachineState *vms = VIRT_MACHINE(ms);
+    ARMCPUTopoInfo topo;
 
     if (ms->possible_cpus) {
         assert(ms->possible_cpus->len == max_cpus);
@@ -2535,10 +2537,19 @@ static const CPUArchIdList *virt_possible_cpu_arch_ids(MachineState *ms)
     ms->possible_cpus->len = max_cpus;
     for (n = 0; n < ms->possible_cpus->len; n++) {
         ms->possible_cpus->cpus[n].type = ms->cpu_type;
+        ms->possible_cpus->cpus[n].vcpus_count = 1;
         ms->possible_cpus->cpus[n].arch_id =
             virt_cpu_mp_affinity(vms, n);
+
+        topo_ids_from_idx(n, ms->smp.clusters, ms->smp.cores, ms->smp.threads, &topo);
+        ms->possible_cpus->cpus[n].props.has_socket_id = true;
+        ms->possible_cpus->cpus[n].props.socket_id = topo.pkg_id;
+        ms->possible_cpus->cpus[n].props.has_cluster_id = true;
+        ms->possible_cpus->cpus[n].props.cluster_id = topo.cluster_id;
+        ms->possible_cpus->cpus[n].props.has_core_id = true;
+        ms->possible_cpus->cpus[n].props.core_id = topo.core_id;
         ms->possible_cpus->cpus[n].props.has_thread_id = true;
-        ms->possible_cpus->cpus[n].props.thread_id = n;
+        ms->possible_cpus->cpus[n].props.thread_id = topo.smt_id;
     }
     return ms->possible_cpus;
 }
@@ -2589,7 +2600,79 @@ static void virt_memory_plug(HotplugHandler *hotplug_dev,
 static void virt_cpu_pre_plug(HotplugHandler *hotplug_dev,
                               DeviceState *dev, Error **errp)
 {
-    /* Currently nothing to do */
+    CPUState *cs = CPU(dev);
+    ARMCPUTopoInfo topo;
+    ARMCPU *cpu = ARM_CPU(dev);
+    MachineState *ms = MACHINE(hotplug_dev);
+    int smp_clusters = ms->smp.clusters;
+    int smp_cores = ms->smp.cores;
+    int smp_threads = ms->smp.threads;
+
+    /* if cpu idx is not set, set it based on socket/cluster/core/thread
+     * properties
+     */
+    if (cs->cpu_index == UNASSIGNED_CPU_INDEX) {
+        int max_socket = ms->smp.max_cpus / smp_threads / smp_cores / smp_clusters;
+        if (cpu->socket_id < 0 || cpu->socket_id >= max_socket) {
+            error_setg(errp, "Invalid CPU socket-id: %u must be in range 0:%u",
+                       cpu->socket_id, max_socket - 1);
+            return;
+        }
+        if (cpu->cluster_id < 0 || cpu->cluster_id >= smp_clusters) {
+            error_setg(errp, "Invalid CPU cluster-id: %u must be in range 0:%u",
+                       cpu->cluster_id, smp_clusters - 1);
+            return;
+        }
+        if (cpu->core_id < 0 || cpu->core_id >= smp_cores) {
+            error_setg(errp, "Invalid CPU core-id: %u must be in range 0:%u",
+                       cpu->core_id, smp_cores - 1);
+            return;
+        }
+        if (cpu->thread_id < 0 || cpu->thread_id >= smp_threads) {
+            error_setg(errp, "Invalid CPU thread-id: %u must be in range 0:%u",
+                       cpu->thread_id, smp_threads - 1);
+            return;
+        }
+
+        topo.pkg_id = cpu->socket_id;
+        topo.cluster_id = cpu->cluster_id;
+        topo.core_id = cpu->core_id;
+        topo.smt_id = cpu->thread_id;
+        cs->cpu_index = idx_from_topo_ids(smp_clusters, smp_cores, smp_threads, &topo);
+    }
+
+    /* if 'address' properties socket-id/cluster-id/core-id/thread-id are not
+     * set, set them so that machine_query_hotpluggable_cpus would show correct
+     * values
+     */
+    topo_ids_from_idx(cs->cpu_index, smp_clusters, smp_cores, smp_threads, &topo);
+    if (cpu->socket_id != -1 && cpu->socket_id != topo.pkg_id) {
+        error_setg(errp, "property socket-id: %u doesn't match set idx:"
+            " 0x%x (socket-id: %u)", cpu->socket_id, cs->cpu_index, topo.pkg_id);
+        return;
+    }
+    cpu->socket_id = topo.pkg_id;
+
+    if (cpu->cluster_id != -1 && cpu->cluster_id != topo.cluster_id) {
+        error_setg(errp, "property cluster-id: %u doesn't match set idx:"
+            " 0x%x (cluster-id: %u)", cpu->cluster_id, cs->cpu_index, topo.cluster_id);
+        return;
+    }
+    cpu->cluster_id = topo.cluster_id;
+
+    if (cpu->core_id != -1 && cpu->core_id != topo.core_id) {
+        error_setg(errp, "property core-id: %u doesn't match set idx:"
+            " 0x%x (core-id: %u)", cpu->core_id, cs->cpu_index, topo.core_id);
+        return;
+    }
+    cpu->core_id = topo.core_id;
+
+    if (cpu->thread_id != -1 && cpu->thread_id != topo.smt_id) {
+        error_setg(errp, "property thread-id: %u doesn't match set idx:"
+            " 0x%x (thread-id: %u)", cpu->thread_id, cs->cpu_index, topo.smt_id);
+        return;
+    }
+    cpu->thread_id = topo.smt_id;
 }
 
 static void virt_cpu_plug(HotplugHandler *hotplug_dev,
