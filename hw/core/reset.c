@@ -48,6 +48,31 @@ void qemu_register_reset(QEMUResetHandler *func, void *opaque)
     QTAILQ_INSERT_TAIL(&reset_handlers, re, entry);
 }
 
+QEMUResetEntry *qemu_get_reset_entry(QEMUResetHandler *func,
+                                     void *opaque)
+{
+    QEMUResetEntry *re;
+
+    QTAILQ_FOREACH(re, &reset_handlers, entry) {
+        if (re->func == func && re->opaque == opaque) {
+            return re;
+        }
+    }
+
+    return NULL;
+}
+
+void qemu_register_reset_after(QEMUResetEntry *entry,
+                               QEMUResetHandler *func,
+                               void *opaque)
+{
+    QEMUResetEntry *re = g_malloc0(sizeof(QEMUResetEntry));
+
+    re->func = func;
+    re->opaque = opaque;
+    QTAILQ_INSERT_AFTER(&reset_handlers, entry, re, entry);
+}
+
 void qemu_unregister_reset(QEMUResetHandler *func, void *opaque)
 {
     QEMUResetEntry *re;
