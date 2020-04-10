@@ -2580,6 +2580,8 @@ static void arm_cpu_class_init(ObjectClass *oc, void *data)
     device_class_set_props(dc, arm_cpu_properties);
     device_class_set_parent_reset(dc, arm_cpu_reset, &acc->parent_reset);
 
+    dc->user_creatable = true;
+
     cc->class_by_name = arm_cpu_class_by_name;
     cc->has_work = arm_cpu_has_work;
     cc->dump_state = arm_cpu_dump_state;

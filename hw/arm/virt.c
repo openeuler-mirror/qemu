@@ -52,6 +52,8 @@
 #include "sysemu/tpm.h"
 #include "sysemu/kvm.h"
 #include "sysemu/hvf.h"
+#include "sysemu/cpus.h"
+#include "sysemu/hw_accel.h"
 #include "hw/loader.h"
 #include "qapi/error.h"
 #include "qemu/bitops.h"
@@ -703,9 +705,9 @@ static inline DeviceState *create_acpi_ged(VirtMachineState *vms)
         event |= ACPI_GED_NVDIMM_HOTPLUG_EVT;
     }
 
-    /* event |= ACPI_GED_CPU_HOTPLUG_EVT;
-     * Currently CPU hotplug is not enabled.
-     */
+    if (vms->cpu_hotplug_enabled) {
+        event |= ACPI_GED_CPU_HOTPLUG_EVT;
+    }
 
     dev = qdev_new(TYPE_ACPI_GED);
     qdev_prop_set_uint32(dev, "ged-event", event);
@@ -2555,10 +2557,17 @@ static void virt_cpu_pre_plug(HotplugHandler *hotplug_dev,
     VirtMachineState *vms = VIRT_MACHINE(hotplug_dev);
     VirtMachineClass *vmc = VIRT_MACHINE_GET_CLASS(hotplug_dev);
     const CPUArchIdList *possible_cpus = mc->possible_cpu_arch_ids(ms);
+    const CPUArchId *cpu_slot = NULL;
     MemoryRegion *sysmem = get_system_memory();
     int smp_clusters = ms->smp.clusters;
     int smp_cores = ms->smp.cores;
     int smp_threads = ms->smp.threads;
+
+    if (!object_dynamic_cast(OBJECT(cpu), ms->cpu_type)) {
+        error_setg(errp, "Invalid CPU type, expected cpu type: '%s'",
+                   ms->cpu_type);
+        return;
+    }
 
     /* if cpu idx is not set, set it based on socket/cluster/core/thread
      * properties
@@ -2591,6 +2600,20 @@ static void virt_cpu_pre_plug(HotplugHandler *hotplug_dev,
         topo.core_id = cpu->core_id;
         topo.smt_id = cpu->thread_id;
         cs->cpu_index = idx_from_topo_ids(smp_clusters, smp_cores, smp_threads, &topo);
+    }
+
+    /* Some hotplug capability checks */
+    if (cs->cpu_index >= ms->smp.cpus) {
+        if (!vms->acpi_dev) {
+            error_setg(errp, "CPU cold/hot plug is disabled: "
+                             "missing acpi device.");
+            return;
+        }
+        if (!vms->cpu_hotplug_enabled) {
+            error_setg(errp, "CPU cold/hot plug is disabled: "
+                             "should use AArch64 CPU and GICv3.");
+            return;
+        }
     }
 
     /* if 'address' properties socket-id/cluster-id/core-id/thread-id are not
@@ -2630,6 +2653,13 @@ static void virt_cpu_pre_plug(HotplugHandler *hotplug_dev,
 
     object_property_set_int(cpuobj, "mp-affinity",
                             possible_cpus->cpus[cs->cpu_index].arch_id, NULL);
+
+    cpu_slot = &possible_cpus->cpus[cs->cpu_index];
+    if (cpu_slot->cpu) {
+        error_setg(errp, "CPU[%d] with mp_affinity %" PRIu64 " exists",
+                   cs->cpu_index, cpu->mp_affinity);
+        return;
+    }
 
     numa_cpu_pre_plug(&possible_cpus->cpus[cs->cpu_index], DEVICE(cpuobj),
                       &error_fatal);
@@ -2716,12 +2746,83 @@ static void virt_cpu_pre_plug(HotplugHandler *hotplug_dev,
                                      &error_abort);
         }
     }
+
+    /* If we use KVM accel, we should pause all vcpus to
+     * allow hot access of vcpu registers.
+     */
+    if (dev->hotplugged && kvm_enabled()) {
+        pause_all_vcpus();
+    }
 }
 
 static void virt_cpu_plug(HotplugHandler *hotplug_dev,
                           DeviceState *dev, Error **errp)
 {
-    /* Currently nothing to do */
+    CPUArchId *cpu_slot;
+    CPUState *cs = CPU(dev);
+    int ncpu = cs->cpu_index;
+    MachineState *ms = MACHINE(hotplug_dev);
+    VirtMachineState *vms = VIRT_MACHINE(hotplug_dev);
+    bool pmu = object_property_get_bool(OBJECT(first_cpu), "pmu", NULL);
+    bool steal_time = object_property_get_bool(OBJECT(first_cpu),
+                                               "kvm-steal-time", NULL);
+    GICv3State *gicv3;
+    ARMGICv3CommonClass *agcc;
+    Error *local_err = NULL;
+
+    /* For CPU that is cold/hot plugged */
+    if (ncpu >= ms->smp.cpus) {
+        /* Realize GIC related parts of CPU */
+        assert(vms->gic_version == 3);
+        gicv3 = ARM_GICV3_COMMON(vms->gic);
+        agcc = ARM_GICV3_COMMON_GET_CLASS(gicv3);
+        agcc->cpu_hotplug_realize(gicv3, ncpu);
+        connect_gic_cpu_irqs(vms, ncpu);
+
+        /* Init PMU and steal_time part */
+        if (kvm_enabled()) {
+            hwaddr pvtime_reg_base = vms->memmap[VIRT_PVTIME].base;
+
+            if (pmu) {
+                assert(arm_feature(&ARM_CPU(cs)->env, ARM_FEATURE_PMU));
+                if (kvm_irqchip_in_kernel()) {
+                    kvm_arm_pmu_set_irq(cs, PPI(VIRTUAL_PMU_IRQ));
+                }
+                kvm_arm_pmu_init(cs);
+            }
+            if (steal_time) {
+                kvm_arm_pvtime_init(cs, pvtime_reg_base +
+                                        ncpu * PVTIME_SIZE_PER_CPU);
+            }
+        }
+
+        /* Register CPU reset and trigger it manually */
+        cpu_synchronize_state(cs);
+        cpu_hotplug_register_reset(ncpu);
+        cpu_hotplug_reset_manually(ncpu);
+        cpu_synchronize_post_reset(cs);
+    }
+
+    if (dev->hotplugged && kvm_enabled()) {
+        resume_all_vcpus();
+    }
+
+    if (vms->acpi_dev) {
+        hotplug_handler_plug(HOTPLUG_HANDLER(vms->acpi_dev), dev, &local_err);
+        if (local_err) {
+            goto out;
+        }
+    }
+
+    vms->boot_cpus++;
+    if (vms->fw_cfg) {
+        fw_cfg_modify_i16(vms->fw_cfg, FW_CFG_NB_CPUS, vms->boot_cpus);
+    }
+
+    cpu_slot = &ms->possible_cpus->cpus[ncpu];
+    cpu_slot->cpu = OBJECT(dev);
+out:
+    error_propagate(errp, local_err);
 }
 
 static void virt_machine_device_pre_plug_cb(HotplugHandler *hotplug_dev,
@@ -2940,6 +3041,7 @@ static void virt_machine_class_init(ObjectClass *oc, void *data)
     mc->default_cpu_type = ARM_CPU_TYPE_NAME("cortex-a15");
     mc->get_default_cpu_node_id = virt_get_default_cpu_node_id;
     mc->kvm_type = virt_kvm_type;
+    mc->has_hotpluggable_cpus = true;
     assert(!mc->get_hotplug_handler);
     mc->get_hotplug_handler = virt_machine_get_hotplug_handler;
     hc->pre_plug = virt_machine_device_pre_plug_cb;

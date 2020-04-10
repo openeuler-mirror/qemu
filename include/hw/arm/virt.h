@@ -168,6 +168,7 @@ struct VirtMachineState {
     uint32_t msi_phandle;
     uint32_t iommu_phandle;
     int psci_conduit;
+    uint32_t boot_cpus;
     hwaddr highest_gpa;
     DeviceState *gic;
     DeviceState *acpi_dev;
