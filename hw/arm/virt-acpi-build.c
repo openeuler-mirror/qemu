@@ -678,6 +678,13 @@ void virt_madt_cpu_entry(AcpiDeviceIf *adev, int uid,
     const MemMapEntry *memmap = vms->memmap;
     AcpiMadtGenericCpuInterface *gicc = acpi_data_push(entry, sizeof(*gicc));
     ARMCPU *armcpu = ARM_CPU(qemu_get_cpu(uid));
+    static bool pmu;
+
+    if (uid == 0) {
+        pmu = arm_feature(&armcpu->env, ARM_FEATURE_PMU);
+    }
+    /* FEATURE_PMU should be all enabled or disabled for CPUs */
+    assert(!armcpu || arm_feature(&armcpu->env, ARM_FEATURE_PMU) == pmu);
 
     gicc->type = ACPI_APIC_GENERIC_CPU_INTERFACE;
     gicc->length = sizeof(*gicc);
@@ -687,11 +694,15 @@ void virt_madt_cpu_entry(AcpiDeviceIf *adev, int uid,
         gicc->gicv_base_address = cpu_to_le64(memmap[VIRT_GIC_VCPU].base);
     }
     gicc->cpu_interface_number = cpu_to_le32(uid);
-    gicc->arm_mpidr = cpu_to_le64(armcpu->mp_affinity);
+    gicc->arm_mpidr = possible_cpus->cpus[uid].arch_id;
     gicc->uid = cpu_to_le32(uid);
-    gicc->flags = cpu_to_le32(ACPI_MADT_GICC_ENABLED);
+    if (armcpu) {
+        gicc->flags = cpu_to_le32(ACPI_MADT_GICC_ENABLED);
+    } else {
+        gicc->flags = cpu_to_le32(ACPI_MADT_GICC_DISABLED);
+    }
 
-    if (arm_feature(&armcpu->env, ARM_FEATURE_PMU)) {
+    if (pmu) {
         gicc->performance_interrupt = cpu_to_le32(PPI(VIRTUAL_PMU_IRQ));
     }
     if (vms->virt) {
@@ -704,12 +715,17 @@ static void
 build_madt(GArray *table_data, BIOSLinker *linker, VirtMachineState *vms)
 {
     VirtMachineClass *vmc = VIRT_MACHINE_GET_CLASS(vms);
+    MachineClass *mc = MACHINE_GET_CLASS(vms);
+    MachineState *ms = MACHINE(vms);
+    const CPUArchIdList *possible_cpus = mc->possible_cpu_arch_ids(ms);
     int madt_start = table_data->len;
     const MemMapEntry *memmap = vms->memmap;
     const int *irqmap = vms->irqmap;
     AcpiMultipleApicTable *madt;
     AcpiMadtGenericDistributor *gicd;
     AcpiMadtGenericMsiFrame *gic_msi;
+    /* The MADT GICC numbers */
+    int num_cpu = vms->smp_cpus;
     int i;
 
     madt = acpi_data_push(table_data, sizeof *madt);
@@ -720,8 +736,8 @@ build_madt(GArray *table_data, BIOSLinker *linker, VirtMachineState *vms)
     gicd->base_address = cpu_to_le64(memmap[VIRT_GIC_DIST].base);
     gicd->version = vms->gic_version;
 
-    for (i = 0; i < vms->smp_cpus; i++) {
-        virt_madt_cpu_entry(NULL, i, NULL, table_data);
+    for (i = 0; i < num_cpu; i++) {
+        virt_madt_cpu_entry(NULL, i, possible_cpus, table_data);
     }
 
     if (vms->gic_version == 3) {

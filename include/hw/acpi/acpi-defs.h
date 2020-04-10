@@ -306,6 +306,7 @@ typedef struct AcpiMadtGenericCpuInterface AcpiMadtGenericCpuInterface;
 
 /* GICC CPU Interface Flags */
 #define ACPI_MADT_GICC_ENABLED 1
+#define ACPI_MADT_GICC_DISABLED 0
 
 struct AcpiMadtGenericDistributor {
     ACPI_SUB_HEADER_DEF
