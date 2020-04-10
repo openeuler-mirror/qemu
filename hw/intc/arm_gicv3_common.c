@@ -24,10 +24,12 @@
 #include "qemu/osdep.h"
 #include "qapi/error.h"
 #include "qemu/module.h"
+#include "qemu/error-report.h"
 #include "qom/cpu.h"
 #include "hw/intc/arm_gicv3_common.h"
 #include "gicv3_internal.h"
 #include "hw/arm/linux-boot-if.h"
+#include "hw/boards.h"
 #include "sysemu/kvm.h"
 
 
@@ -363,10 +365,15 @@ static void arm_gicv3_common_realize(DeviceState *dev, Error **errp)
     for (i = 0; i < s->num_cpu; i++) {
         CPUState *cpu = qemu_get_cpu(i);
 
+        MachineState *ms = MACHINE(qdev_get_machine());
+        MachineClass *mc = MACHINE_GET_CLASS(ms);
+        const CPUArchIdList *possible_cpus = NULL;
         uint64_t cpu_affid;
         int last;
 
-        arm_gicv3_common_cpu_realize(s, i);
+        if (cpu) {
+            arm_gicv3_common_cpu_realize(s, i);
+        }
 
         /* Pre-construct the GICR_TYPER:
          * For our implementation:
@@ -380,7 +387,19 @@ static void arm_gicv3_common_realize(DeviceState *dev, Error **errp)
          *  VLPIS == 0 (virtual LPIs not supported)
          *  PLPIS == 0 (physical LPIs not supported)
          */
-        cpu_affid = object_property_get_uint(OBJECT(cpu), "mp-affinity", NULL);
+        if (cpu) {
+            cpu_affid = object_property_get_uint(OBJECT(cpu), "mp-affinity", NULL);
+        } else {
+            if (!mc->possible_cpu_arch_ids) {
+                error_report("MachineClass must implement possible_cpu_arch_ids "
+                             "hook to support pre-sizing GICv3");
+                exit(1);
+            }
+
+            possible_cpus = mc->possible_cpu_arch_ids(ms);
+            cpu_affid = possible_cpus->cpus[i].arch_id;
+        }
+
         last = (i == s->num_cpu - 1);
 
         /* The CPU mp-affinity property is in MPIDR register format; squash

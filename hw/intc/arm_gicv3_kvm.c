@@ -341,6 +341,10 @@ static void kvm_arm_gicv3_put(GICv3State *s)
         for (ncpu = 0; ncpu < s->num_cpu; ncpu++) {
             GICv3CPUState *c = &s->cpu[ncpu];
 
+            if (!qemu_get_cpu(ncpu)) {
+                continue;
+            }
+
             reg64 = c->gicr_propbaser;
             regl = (uint32_t)reg64;
             kvm_gicr_access(s, GICR_PROPBASER, ncpu, &regl, true);
@@ -365,6 +369,10 @@ static void kvm_arm_gicv3_put(GICv3State *s)
 
     for (ncpu = 0; ncpu < s->num_cpu; ncpu++) {
         GICv3CPUState *c = &s->cpu[ncpu];
+
+        if (!qemu_get_cpu(ncpu)) {
+            continue;
+        }
 
         reg = c->gicr_ctlr;
         kvm_gicr_access(s, GICR_CTLR, ncpu, &reg, true);
@@ -462,6 +470,10 @@ static void kvm_arm_gicv3_put(GICv3State *s)
         GICv3CPUState *c = &s->cpu[ncpu];
         int num_pri_bits;
 
+        if (!qemu_get_cpu(ncpu)) {
+            continue;
+        }
+
         kvm_gicc_access(s, ICC_SRE_EL1, ncpu, &c->icc_sre_el1, true);
         kvm_gicc_access(s, ICC_CTLR_EL1, ncpu,
                         &c->icc_ctlr_el1[GICV3_NS], true);
@@ -525,6 +537,10 @@ static void kvm_arm_gicv3_get(GICv3State *s)
     /* Redistributor state (one per CPU) */
 
     for (ncpu = 0; ncpu < s->num_cpu; ncpu++) {
+        if (!qemu_get_cpu(ncpu)) {
+            continue;
+        }
+
         GICv3CPUState *c = &s->cpu[ncpu];
 
         kvm_gicr_access(s, GICR_CTLR, ncpu, &reg, false);
@@ -560,6 +576,10 @@ static void kvm_arm_gicv3_get(GICv3State *s)
 
     if (redist_typer & GICR_TYPER_PLPIS) {
         for (ncpu = 0; ncpu < s->num_cpu; ncpu++) {
+            if (!qemu_get_cpu(ncpu)) {
+                continue;
+            }
+
             GICv3CPUState *c = &s->cpu[ncpu];
 
             kvm_gicr_access(s, GICR_PROPBASER, ncpu, &regl, false);
@@ -613,6 +633,10 @@ static void kvm_arm_gicv3_get(GICv3State *s)
      */
 
     for (ncpu = 0; ncpu < s->num_cpu; ncpu++) {
+        if (!qemu_get_cpu(ncpu)) {
+            continue;
+        }
+
         GICv3CPUState *c = &s->cpu[ncpu];
         int num_pri_bits;
 
@@ -806,7 +830,9 @@ static void kvm_arm_gicv3_realize(DeviceState *dev, Error **errp)
     }
 
     for (i = 0; i < s->num_cpu; i++) {
-        kvm_arm_gicv3_cpu_realize(s, i);
+        if (qemu_get_cpu(i)) {
+            kvm_arm_gicv3_cpu_realize(s, i);
+        }
     }
 
     /* Try to create the device via the device control API */

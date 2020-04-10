@@ -20,6 +20,7 @@
 #include "qemu/module.h"
 #include "hw/sysbus.h"
 #include "hw/intc/arm_gicv3.h"
+#include "qom/cpu.h"
 #include "gicv3_internal.h"
 
 static bool irqbetter(GICv3CPUState *cs, int irq, uint8_t prio)
@@ -206,7 +207,9 @@ static void gicv3_update_noirqset(GICv3State *s, int start, int len)
     assert(len > 0);
 
     for (i = 0; i < s->num_cpu; i++) {
-        s->cpu[i].seenbetter = false;
+        if (qemu_get_cpu(i)) {
+            s->cpu[i].seenbetter = false;
+        }
     }
 
     /* Find the highest priority pending interrupt in this range. */
@@ -248,16 +251,18 @@ static void gicv3_update_noirqset(GICv3State *s, int start, int len)
      * now be the new best one).
      */
     for (i = 0; i < s->num_cpu; i++) {
-        GICv3CPUState *cs = &s->cpu[i];
+        if (qemu_get_cpu(i)) {
+            GICv3CPUState *cs = &s->cpu[i];
 
-        if (cs->seenbetter) {
-            cs->hppi.grp = gicv3_irq_group(cs->gic, cs, cs->hppi.irq);
-        }
+            if (cs->seenbetter) {
+                cs->hppi.grp = gicv3_irq_group(cs->gic, cs, cs->hppi.irq);
+            }
 
-        if (!cs->seenbetter && cs->hppi.prio != 0xff &&
-            cs->hppi.irq >= start && cs->hppi.irq < start + len) {
-            gicv3_full_update_noirqset(s);
-            break;
+            if (!cs->seenbetter && cs->hppi.prio != 0xff &&
+                cs->hppi.irq >= start && cs->hppi.irq < start + len) {
+                gicv3_full_update_noirqset(s);
+                break;
+            }
         }
     }
 }
@@ -268,7 +273,9 @@ void gicv3_update(GICv3State *s, int start, int len)
 
     gicv3_update_noirqset(s, start, len);
     for (i = 0; i < s->num_cpu; i++) {
-        gicv3_cpuif_update(&s->cpu[i]);
+        if (qemu_get_cpu(i)) {
+            gicv3_cpuif_update(&s->cpu[i]);
+        }
     }
 }
 
@@ -280,7 +287,9 @@ void gicv3_full_update_noirqset(GICv3State *s)
     int i;
 
     for (i = 0; i < s->num_cpu; i++) {
-        s->cpu[i].hppi.prio = 0xff;
+        if (qemu_get_cpu(i)) {
+            s->cpu[i].hppi.prio = 0xff;
+        }
     }
 
     /* Note that we can guarantee that these functions will not
@@ -291,7 +300,9 @@ void gicv3_full_update_noirqset(GICv3State *s)
     gicv3_update_noirqset(s, GIC_INTERNAL, s->num_irq - GIC_INTERNAL);
 
     for (i = 0; i < s->num_cpu; i++) {
-        gicv3_redist_update_noirqset(&s->cpu[i]);
+        if (qemu_get_cpu(i)) {
+            gicv3_redist_update_noirqset(&s->cpu[i]);
+        }
     }
 }
 
@@ -304,7 +315,9 @@ void gicv3_full_update(GICv3State *s)
 
     gicv3_full_update_noirqset(s);
     for (i = 0; i < s->num_cpu; i++) {
-        gicv3_cpuif_update(&s->cpu[i]);
+        if (qemu_get_cpu(i)) {
+            gicv3_cpuif_update(&s->cpu[i]);
+        }
     }
 }
 
@@ -401,7 +414,9 @@ static void arm_gic_realize(DeviceState *dev, Error **errp)
     }
 
     for (i = 0; i < s->num_cpu; i++) {
-        gicv3_cpu_realize(s, i);
+        if (qemu_get_cpu(i)) {
+            gicv3_cpu_realize(s, i);
+        }
     }
 }
 

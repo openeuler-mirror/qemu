@@ -168,8 +168,9 @@ static inline int virt_gicv3_redist_region_count(VirtMachineState *vms)
                 vms->memmap[VIRT_GIC_REDIST].size / GICV3_REDIST_SIZE;
 
     assert(vms->gic_version == 3);
+    GICv3State *s = ARM_GICV3_COMMON(vms->gic);
 
-    return vms->smp_cpus > redist0_capacity ? 2 : 1;
+    return s->num_cpu > redist0_capacity ? 2 : 1;
 }
 
 #endif /* QEMU_ARM_VIRT_H */
