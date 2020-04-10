@@ -61,7 +61,6 @@ Patch0048: COLO-compare-Fix-incorrect-if-logic.patch
 Patch0049: qcow2-bitmap-Fix-uint64_t-left-shift-overflow.patch
 Patch0050: pcie-Add-pcie-root-port-fast-plug-unplug-feature.patch
 Patch0051: pcie-Compat-with-devices-which-do-not-support-Link-W.patch
-Patch0052: util-async-Add-memory-barrier-to-aio_ctx_prepare.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -397,9 +396,6 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
-* Thu Apr 2 2020 Huawei Technologies Co., Ltd. <fangying1@huawei.com>
-util/async: Add memory barrier to aio_ctx_prepare
-
 * Wed Mar 18 2020 Huawei Technologies Co., Ltd. <fangying1@huawei.com>
 - pcie: Add pcie-root-port fast plug/unplug feature
 - pcie: Compat with devices which do not support Link Width
