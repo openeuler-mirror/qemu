@@ -2086,9 +2086,29 @@ static void virt_cpu_pre_plug(HotplugHandler *hotplug_dev,
     VirtMachineState *vms = VIRT_MACHINE(hotplug_dev);
     VirtMachineClass *vmc = VIRT_MACHINE_GET_CLASS(hotplug_dev);
     const CPUArchIdList *possible_cpus = mc->possible_cpu_arch_ids(ms);
+    const CPUArchId *cpu_slot = NULL;
     MemoryRegion *sysmem = get_system_memory();
     int smp_cores = ms->smp.cores;
     int smp_threads = ms->smp.threads;
+
+    /* Some hotplug capability checks */
+
+    if (!object_dynamic_cast(OBJECT(cpu), ms->cpu_type)) {
+        error_setg(errp, "Invalid CPU type, expected cpu type: '%s'",
+                   ms->cpu_type);
+        return;
+    }
+
+    if (dev->hotplugged && !vms->acpi_dev) {
+        error_setg(errp, "CPU hotplug is disabled: missing acpi device.");
+        return;
+    }
+
+    if (dev->hotplugged && !vms->cpu_hotplug_enabled) {
+        error_setg(errp, "CPU hotplug is disabled: "
+                         "should use AArch64 CPU and GICv3.");
+        return;
+    }
 
     /* if cpu idx is not set, set it based on socket/core/thread properties */
     if (cs->cpu_index == UNASSIGNED_CPU_INDEX) {
@@ -2144,6 +2164,13 @@ static void virt_cpu_pre_plug(HotplugHandler *hotplug_dev,
 
     object_property_set_int(cpuobj, possible_cpus->cpus[cs->cpu_index].arch_id,
                             "mp-affinity", NULL);
+
+    cpu_slot = &possible_cpus->cpus[cs->cpu_index];
+    if (cpu_slot->cpu) {
+        error_setg(errp, "CPU[%d] with mp_affinity %" PRIu64 " exists",
+                   cs->cpu_index, cpu->mp_affinity);
+        return;
+    }
 
     numa_cpu_pre_plug(&possible_cpus->cpus[cs->cpu_index], DEVICE(cpuobj),
                       &error_fatal);
