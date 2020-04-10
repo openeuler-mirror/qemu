@@ -61,6 +61,7 @@
 
 #include "hw/sysbus.h"
 #include "hw/acpi/memory_hotplug.h"
+#include "hw/arm/virt.h"
 
 #define ACPI_POWER_BUTTON_DEVICE "PWRB"
 

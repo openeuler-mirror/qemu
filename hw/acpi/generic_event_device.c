@@ -288,6 +288,7 @@ static void acpi_ged_class_init(ObjectClass *class, void *data)
     hc->plug = acpi_ged_device_plug_cb;
 
     adevc->send_event = acpi_ged_send_event;
+    adevc->madt_cpu = virt_madt_cpu_entry;
 }
 
 static const TypeInfo acpi_ged_info = {
