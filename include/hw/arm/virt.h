@@ -149,6 +149,7 @@ struct VirtMachineState {
     bool its;
     bool tcg_its;
     bool virt;
+    bool cpu_hotplug_enabled;
     bool ras;
     bool mte;
     OnOffAuto acpi;
