@@ -859,6 +859,9 @@ build_madt(GArray *table_data, BIOSLinker *linker, VirtMachineState *vms)
     build_append_int_noprefix(table_data, vms->gic_version, 1);
     build_append_int_noprefix(table_data, 0, 3);   /* Reserved */
 
+    if (vms->cpu_hotplug_enabled) {
+        num_cpu = ms->smp.max_cpus;
+    }
     for (i = 0; i < num_cpu; i++) {
         virt_madt_cpu_entry(NULL, i, possible_cpus, table_data, false);
     }

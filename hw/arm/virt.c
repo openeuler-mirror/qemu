@@ -833,6 +833,9 @@ static void create_gic(VirtMachineState *vms, MemoryRegion *mem)
     unsigned int smp_cpus = ms->smp.cpus;
     uint32_t nb_redist_regions = 0;
 
+    if (vms->cpu_hotplug_enabled) {
+        num_cpus = ms->smp.max_cpus;
+    }
     assert(num_cpus >= smp_cpus);
 
     gictype = (type == 3) ? gicv3_class_name() : gic_class_name();
@@ -2119,8 +2122,15 @@ static void machvirt_init(MachineState *machine)
         Object *cpuobj;
         CPUState *cs;
 
+        if (kvm_enabled() && vms->cpu_hotplug_enabled) {
+            if (kvm_create_parked_vcpu(n) < 0) {
+                error_report("mach-virt: Create KVM parked vCPU failed");
+                exit(1);
+            }
+        }
+
         if (n >= smp_cpus) {
-            break;
+            continue;
         }
 
         cpuobj = object_new(possible_cpus->cpus[n].type);
@@ -2208,7 +2218,7 @@ static void machvirt_init(MachineState *machine)
     }
 
     vms->bootinfo.ram_size = machine->ram_size;
-    vms->bootinfo.nb_cpus = smp_cpus;
+    vms->bootinfo.nb_cpus = vms->cpu_hotplug_enabled ? max_cpus : smp_cpus;
     vms->bootinfo.board_id = -1;
     vms->bootinfo.loader_start = vms->memmap[VIRT_MEM].base;
     vms->bootinfo.get_dtb = machvirt_dtb;
