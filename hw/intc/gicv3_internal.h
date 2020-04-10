@@ -495,7 +495,7 @@ void gicv3_redist_update_lpi(GICv3CPUState *cs);
  */
 void gicv3_redist_update_lpi_only(GICv3CPUState *cs);
 void gicv3_redist_send_sgi(GICv3CPUState *cs, int grp, int irq, bool ns);
-void gicv3_init_cpuif(GICv3State *s);
+void gicv3_init_one_cpuif(GICv3State *s, int ncpu);
 
 /**
  * gicv3_cpuif_update:
