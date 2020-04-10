@@ -202,7 +202,7 @@ int kvm_arm_get_max_vm_ipa_size(MachineState *ms)
 int kvm_arch_init(MachineState *ms, KVMState *s)
 {
     int ret = 0;
-    unsigned int smp_cpus = ms->smp.cpus;
+    unsigned int max_cpus = ms->smp.max_cpus;
     /* For ARM interrupt delivery is always asynchronous,
      * whether we are using an in-kernel VGIC or not.
      */
@@ -216,9 +216,9 @@ int kvm_arch_init(MachineState *ms, KVMState *s)
 
     cap_has_mp_state = kvm_check_extension(s, KVM_CAP_MP_STATE);
 
-    if (smp_cpus > 256 &&
+    if (max_cpus > 256 &&
         !kvm_check_extension(s, KVM_CAP_ARM_IRQ_LINE_LAYOUT_2)) {
-        error_report("Using more than 256 vcpus requires a host kernel "
+        error_report("Using more than max 256 vcpus requires a host kernel "
                      "with KVM_CAP_ARM_IRQ_LINE_LAYOUT_2");
         ret = -EINVAL;
     }

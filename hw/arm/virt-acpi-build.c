@@ -736,6 +736,9 @@ build_madt(GArray *table_data, BIOSLinker *linker, VirtMachineState *vms)
     gicd->base_address = cpu_to_le64(memmap[VIRT_GIC_DIST].base);
     gicd->version = vms->gic_version;
 
+    if (vms->cpu_hotplug_enabled) {
+        num_cpu = ms->smp.max_cpus;
+    }
     for (i = 0; i < num_cpu; i++) {
         virt_madt_cpu_entry(NULL, i, possible_cpus, table_data);
     }
@@ -902,9 +905,11 @@ static
 void virt_acpi_build(VirtMachineState *vms, AcpiBuildTables *tables)
 {
     VirtMachineClass *vmc = VIRT_MACHINE_GET_CLASS(vms);
+    MachineState *ms = MACHINE(vms);
     GArray *table_offsets;
     unsigned dsdt, xsdt;
     GArray *tables_blob = tables->table_data;
+    int num_cpus;
 
     table_offsets = g_array_new(false, true /* clear */,
                                         sizeof(uint32_t));
@@ -923,7 +928,12 @@ void virt_acpi_build(VirtMachineState *vms, AcpiBuildTables *tables)
 
     acpi_add_table(table_offsets, tables_blob);
 
-    build_pptt(tables_blob, tables->linker, vms->smp_cpus);
+    if (vms->cpu_hotplug_enabled) {
+        num_cpus = ms->smp.max_cpus;
+    } else {
+        num_cpus = ms->smp.cpus;
+    }
+    build_pptt(tables_blob, tables->linker, num_cpus);
 
     acpi_add_table(table_offsets, tables_blob);
     build_madt(tables_blob, tables->linker, vms);
