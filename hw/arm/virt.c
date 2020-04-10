@@ -1645,6 +1645,7 @@ static void machvirt_init(MachineState *machine)
 {
     VirtMachineState *vms = VIRT_MACHINE(machine);
     VirtMachineClass *vmc = VIRT_MACHINE_GET_CLASS(machine);
+    MachineState *ms = MACHINE(machine);
     MachineClass *mc = MACHINE_GET_CLASS(machine);
     const CPUArchIdList *possible_cpus;
     MemoryRegion *sysmem = get_system_memory();
@@ -1655,6 +1656,7 @@ static void machvirt_init(MachineState *machine)
     bool has_ged = !vmc->no_ged;
     unsigned int smp_cpus = machine->smp.cpus;
     unsigned int max_cpus = machine->smp.max_cpus;
+    ObjectClass *cpu_class;
 
     /*
      * In accelerated mode, the memory map is computed earlier in kvm_type()
@@ -1759,6 +1761,11 @@ static void machvirt_init(MachineState *machine)
     }
 
     create_fdt(vms);
+
+    cpu_class = object_class_by_name(ms->cpu_type);
+    vms->cpu_hotplug_enabled = has_ged && firmware_loaded &&
+        acpi_enabled && vms->gic_version == 3 &&
+        !!object_class_dynamic_cast(cpu_class, TYPE_AARCH64_CPU);
 
     possible_cpus = mc->possible_cpu_arch_ids(machine);
     for (n = 0; n < possible_cpus->len; n++) {
