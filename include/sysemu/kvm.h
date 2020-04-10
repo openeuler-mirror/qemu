@@ -221,6 +221,7 @@ int kvm_has_pit_state2(void);
 int kvm_has_many_ioeventfds(void);
 int kvm_has_gsi_routing(void);
 int kvm_has_intx_set_mask(void);
+int kvm_create_parked_vcpu(unsigned long vcpu_id);
 
 /**
  * kvm_arm_supports_user_irq

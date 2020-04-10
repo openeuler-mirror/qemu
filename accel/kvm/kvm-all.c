@@ -433,6 +433,29 @@ void kvm_destroy_vcpu(CPUState *cpu)
     }
 }
 
+int kvm_create_parked_vcpu(unsigned long vcpu_id)
+{
+    KVMState *s = kvm_state;
+    struct KVMParkedVcpu *vcpu = NULL;
+    int ret;
+
+    DPRINTF("kvm_create_parked_vcpu\n");
+
+    ret = kvm_vm_ioctl(s, KVM_CREATE_VCPU, (void *)vcpu_id);
+    if (ret < 0) {
+        DPRINTF("kvm_create_vcpu failed\n");
+        goto err;
+    }
+
+    vcpu = g_malloc0(sizeof(*vcpu));
+    vcpu->vcpu_id = vcpu_id;
+    vcpu->kvm_fd = ret;
+    QLIST_INSERT_HEAD(&s->kvm_parked_vcpus, vcpu, node);
+
+err:
+    return ret;
+}
+
 static int kvm_get_vcpu(KVMState *s, unsigned long vcpu_id)
 {
     struct KVMParkedVcpu *cpu;
