@@ -301,6 +301,16 @@ void gicv3_init_irqs_and_mmio(GICv3State *s, qemu_irq_handler handler,
     }
 }
 
+static void arm_gicv3_common_cpu_realize(GICv3State *s, int ncpu)
+{
+    CPUState *cpu = qemu_get_cpu(ncpu);
+
+    s->cpu[ncpu].cpu = cpu;
+    s->cpu[ncpu].gic = s;
+    /* Store GICv3CPUState in CPUARMState gicv3state pointer */
+    gicv3_set_gicv3state(cpu, &s->cpu[ncpu]);
+}
+
 static void arm_gicv3_common_realize(DeviceState *dev, Error **errp)
 {
     GICv3State *s = ARM_GICV3_COMMON(dev);
@@ -363,10 +373,7 @@ static void arm_gicv3_common_realize(DeviceState *dev, Error **errp)
         CPUState *cpu = qemu_get_cpu(i);
         uint64_t cpu_affid;
 
-        s->cpu[i].cpu = cpu;
-        s->cpu[i].gic = s;
-        /* Store GICv3CPUState in CPUARMState gicv3state pointer */
-        gicv3_set_gicv3state(cpu, &s->cpu[i]);
+        arm_gicv3_common_cpu_realize(s, i);
 
         /* Pre-construct the GICR_TYPER:
          * For our implementation:
