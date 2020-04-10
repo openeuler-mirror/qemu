@@ -787,8 +787,16 @@ void virt_madt_cpu_entry(AcpiDeviceIf *adev, int i,
     ARMCPU *armcpu = ARM_CPU(qemu_get_cpu(i));
     uint64_t physical_base_address = 0, gich = 0, gicv = 0;
     uint32_t vgic_interrupt = vms->virt ? PPI(ARCH_GIC_MAINT_IRQ) : 0;
-    uint32_t pmu_interrupt = arm_feature(&armcpu->env, ARM_FEATURE_PMU) ?
-                                         PPI(VIRTUAL_PMU_IRQ) : 0;
+    uint32_t pmu_interrupt, enabled;
+    static bool pmu;
+
+    if (i == 0) {
+        pmu = arm_feature(&armcpu->env, ARM_FEATURE_PMU);
+    }
+    /* FEATURE_PMU should be all enabled or disabled for CPUs */
+    assert(!armcpu || arm_feature(&armcpu->env, ARM_FEATURE_PMU) == pmu);
+    pmu_interrupt = pmu ? PPI(VIRTUAL_PMU_IRQ) : 0;
+    enabled = armcpu || force_enabled ? 1 /* Enabled */ : 0 /* Disabled */;
 
     if (vms->gic_version == 2) {
         physical_base_address = memmap[VIRT_GIC_CPU].base;
@@ -803,7 +811,7 @@ void virt_madt_cpu_entry(AcpiDeviceIf *adev, int i,
     build_append_int_noprefix(table_data, i, 4);    /* GIC ID */
     build_append_int_noprefix(table_data, i, 4);    /* ACPI Processor UID */
     /* Flags */
-    build_append_int_noprefix(table_data, 1, 4);    /* Enabled */
+    build_append_int_noprefix(table_data, enabled, 4);    /* Enabled */
     /* Parking Protocol Version */
     build_append_int_noprefix(table_data, 0, 4);
     /* Performance Interrupt GSIV */
@@ -817,7 +825,7 @@ void virt_madt_cpu_entry(AcpiDeviceIf *adev, int i,
     build_append_int_noprefix(table_data, vgic_interrupt, 4);
     build_append_int_noprefix(table_data, 0, 8);    /* GICR Base Address*/
     /* MPIDR */
-    build_append_int_noprefix(table_data, armcpu->mp_affinity, 8);
+    build_append_int_noprefix(table_data, possible_cpus->cpus[i].arch_id, 8);
 }
 
 static void
@@ -825,9 +833,14 @@ build_madt(GArray *table_data, BIOSLinker *linker, VirtMachineState *vms)
 {
     int i;
     VirtMachineClass *vmc = VIRT_MACHINE_GET_CLASS(vms);
+    MachineClass *mc = MACHINE_GET_CLASS(vms);
+    MachineState *ms = MACHINE(vms);
+    const CPUArchIdList *possible_cpus = mc->possible_cpu_arch_ids(ms);
     const MemMapEntry *memmap = vms->memmap;
     AcpiTable table = { .sig = "APIC", .rev = 3, .oem_id = vms->oem_id,
                         .oem_table_id = vms->oem_table_id };
+    /* The MADT GICC numbers */
+    int num_cpu = ms->smp.cpus;
 
     acpi_table_begin(&table, table_data);
     /* Local Interrupt Controller Address */
@@ -846,8 +859,8 @@ build_madt(GArray *table_data, BIOSLinker *linker, VirtMachineState *vms)
     build_append_int_noprefix(table_data, vms->gic_version, 1);
     build_append_int_noprefix(table_data, 0, 3);   /* Reserved */
 
-    for (i = 0; i < MACHINE(vms)->smp.cpus; i++) {
-        virt_madt_cpu_entry(NULL, i, NULL, table_data, false);
+    for (i = 0; i < num_cpu; i++) {
+        virt_madt_cpu_entry(NULL, i, possible_cpus, table_data, false);
     }
 
     if (vms->gic_version == 3) {
