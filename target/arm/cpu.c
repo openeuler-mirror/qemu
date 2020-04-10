@@ -2598,6 +2598,8 @@ static void arm_cpu_class_init(ObjectClass *oc, void *data)
     acc->parent_reset = cc->reset;
     cc->reset = arm_cpu_reset;
 
+    dc->user_creatable = true;
+
     cc->class_by_name = arm_cpu_class_by_name;
     cc->has_work = arm_cpu_has_work;
     cc->cpu_exec_interrupt = arm_cpu_exec_interrupt;
