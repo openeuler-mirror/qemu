@@ -827,14 +827,19 @@ static void create_gic(VirtMachineState *vms, MemoryRegion *mem)
     SysBusDevice *gicbusdev;
     const char *gictype;
     int type = vms->gic_version, i;
+    /* The max number of CPUs suppored by GIC */
+    unsigned int num_cpus = ms->smp.cpus;
+    /* The number of CPUs present before boot */
     unsigned int smp_cpus = ms->smp.cpus;
     uint32_t nb_redist_regions = 0;
+
+    assert(num_cpus >= smp_cpus);
 
     gictype = (type == 3) ? gicv3_class_name() : gic_class_name();
 
     vms->gic = qdev_new(gictype);
     qdev_prop_set_uint32(vms->gic, "revision", type);
-    qdev_prop_set_uint32(vms->gic, "num-cpu", smp_cpus);
+    qdev_prop_set_uint32(vms->gic, "num-cpu", num_cpus);
     /* Note that the num-irq property counts both internal and external
      * interrupts; there are always 32 of the former (mandated by GIC spec).
      */
@@ -846,7 +851,7 @@ static void create_gic(VirtMachineState *vms, MemoryRegion *mem)
     if (type == 3) {
         uint32_t redist0_capacity =
                     vms->memmap[VIRT_GIC_REDIST].size / GICV3_REDIST_SIZE;
-        uint32_t redist0_count = MIN(smp_cpus, redist0_capacity);
+        uint32_t redist0_count = MIN(num_cpus, redist0_capacity);
 
         nb_redist_regions = virt_gicv3_redist_region_count(vms);
 
@@ -867,7 +872,7 @@ static void create_gic(VirtMachineState *vms, MemoryRegion *mem)
                     vms->memmap[VIRT_HIGH_GIC_REDIST2].size / GICV3_REDIST_SIZE;
 
             qdev_prop_set_uint32(vms->gic, "redist-region-count[1]",
-                MIN(smp_cpus - redist0_count, redist1_capacity));
+                MIN(num_cpus - redist0_count, redist1_capacity));
         }
     } else {
         if (!kvm_irqchip_in_kernel()) {
@@ -894,7 +899,11 @@ static void create_gic(VirtMachineState *vms, MemoryRegion *mem)
 
     /* Wire the outputs from each CPU's generic timer and the GICv3
      * maintenance interrupt signal to the appropriate GIC PPI inputs,
-     * and the GIC's IRQ/FIQ/VIRQ/VFIQ interrupt outputs to the CPU's inputs.
+     * and the GIC's IRQ/FIQ/VIRQ/VFIQ interrupt outputs to the CPU's
+     * inputs.
+     *
+     * The irqs of remaining CPUs (if we has) will be connected during
+     * hotplugging.
      */
     for (i = 0; i < smp_cpus; i++) {
         connect_gic_cpu_irqs(vms, i);

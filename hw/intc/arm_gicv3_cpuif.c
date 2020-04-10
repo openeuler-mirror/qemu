@@ -1676,6 +1676,10 @@ static void icc_generate_sgi(CPUARMState *env, GICv3CPUState *cs,
                                  aff, targetlist);
 
     for (i = 0; i < s->num_cpu; i++) {
+        if (!qemu_get_cpu(i)) {
+            continue;
+        }
+
         GICv3CPUState *ocs = &s->cpu[i];
 
         if (irm) {
