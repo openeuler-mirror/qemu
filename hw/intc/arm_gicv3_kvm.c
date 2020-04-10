@@ -764,6 +764,12 @@ static void vm_change_state_handler(void *opaque, bool running,
     }
 }
 
+static void kvm_arm_gicv3_cpu_realize(GICv3State *s, int ncpu)
+{
+    ARMCPU *cpu = ARM_CPU(qemu_get_cpu(ncpu));
+
+    define_arm_cp_regs(cpu, gicv3_cpuif_reginfo);
+}
 
 static void kvm_arm_gicv3_realize(DeviceState *dev, Error **errp)
 {
@@ -790,9 +796,7 @@ static void kvm_arm_gicv3_realize(DeviceState *dev, Error **errp)
     gicv3_init_irqs_and_mmio(s, kvm_arm_gicv3_set_irq, NULL);
 
     for (i = 0; i < s->num_cpu; i++) {
-        ARMCPU *cpu = ARM_CPU(qemu_get_cpu(i));
-
-        define_arm_cp_regs(cpu, gicv3_cpuif_reginfo);
+        kvm_arm_gicv3_cpu_realize(s, i);
     }
 
     /* Try to create the device via the device control API */
