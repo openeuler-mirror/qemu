@@ -61,6 +61,8 @@ Patch0048: COLO-compare-Fix-incorrect-if-logic.patch
 Patch0049: qcow2-bitmap-Fix-uint64_t-left-shift-overflow.patch
 Patch0050: pcie-Add-pcie-root-port-fast-plug-unplug-feature.patch
 Patch0051: pcie-Compat-with-devices-which-do-not-support-Link-W.patch
+Patch0052: aio-wait-delegate-polling-of-main-AioContext-if-BQL-not-held.patch
+Patch0053: async-use-explicit-memory-barriers.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -396,6 +398,10 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Sat Apr 11 4 2020 Huawei Technologies Co., Ltd. <fangying1@huawei.com>
+- aio-wait: delegate polling of main AioContext if BQL not held
+- async: use explicit memory barriers
+
 * Wed Mar 18 2020 Huawei Technologies Co., Ltd. <fangying1@huawei.com>
 - pcie: Add pcie-root-port fast plug/unplug feature
 - pcie: Compat with devices which do not support Link Width
