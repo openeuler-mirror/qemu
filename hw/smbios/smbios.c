@@ -688,7 +688,9 @@ static void smbios_build_type_4_table(MachineState *ms, unsigned instance)
     t->thread_count = ms->smp.threads;
     t->processor_characteristics = cpu_to_le16(0x02); /* Unknown */
     t->processor_family2 = cpu_to_le16(0x01); /* Other */
-
+    t->corecount2 = 0;
+    t->enabledcorecount2 = 0;
+    t->threadcount2 = 0;
     SMBIOS_BUILD_TABLE_POST;
     smbios_type4_count++;
 }
