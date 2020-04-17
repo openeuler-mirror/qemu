@@ -61,6 +61,46 @@ Patch0048: pcie-Add-pcie-root-port-fast-plug-unplug-feature.patch
 Patch0049: pcie-Compat-with-devices-which-do-not-support-Link-W.patch
 Patch0050: aio-wait-delegate-polling-of-main-AioContext-if-BQL-not-held.patch
 Patch0051: async-use-explicit-memory-barriers.patch
+Patch0052: dma-helpers-ensure-AIO-callback-is-invoked-after-can.patch
+Patch0053: Revert-ide-ahci-Check-for-ECANCELED-in-aio-callbacks.patch
+Patch0054: pc-Don-t-make-die-id-mandatory-unless-necessary.patch
+Patch0055: block-file-posix-Reduce-xfsctl-use.patch
+Patch0056: pr-manager-Fix-invalid-g_free-crash-bug.patch
+Patch0057: x86-do-not-advertise-die-id-in-query-hotpluggbale-cp.patch
+Patch0058: vpc-Return-0-from-vpc_co_create-on-success.patch
+Patch0059: target-arm-Free-TCG-temps-in-trans_VMOV_64_sp.patch
+Patch0060: target-arm-Don-t-abort-on-M-profile-exception-return.patch
+Patch0061: libvhost-user-fix-SLAVE_SEND_FD-handling.patch
+Patch0062: qcow2-Fix-the-calculation-of-the-maximum-L2-cache-si.patch
+Patch0063: block-nfs-tear-down-aio-before-nfs_close.patch
+Patch0064: blockjob-update-nodes-head-while-removing-all-bdrv.patch
+Patch0065: block-qcow2-Fix-corruption-introduced-by-commit-8ac0.patch
+Patch0066: coroutine-Add-qemu_co_mutex_assert_locked.patch
+Patch0067: qcow2-Fix-corruption-bug-in-qcow2_detect_metadata_pr.patch
+Patch0068: hw-arm-boot.c-Set-NSACR.-CP11-CP10-for-NS-kernel-boo.patch
+Patch0069: make-release-pull-in-edk2-submodules-so-we-can-build.patch
+Patch0070: roms-Makefile.edk2-don-t-pull-in-submodules-when-bui.patch
+Patch0071: block-snapshot-Restrict-set-of-snapshot-nodes.patch
+Patch0072: vhost-user-save-features-if-the-char-dev-is-closed.patch
+Patch0073: hw-core-loader-Fix-possible-crash-in-rom_copy.patch
+Patch0074: ui-Fix-hanging-up-Cocoa-display-on-macOS-10.15-Catal.patch
+Patch0075: virtio-new-post_load-hook.patch
+Patch0076: virtio-net-prevent-offloads-reset-on-migration.patch
+Patch0077: util-hbitmap-strict-hbitmap_reset.patch
+Patch0078: hbitmap-handle-set-reset-with-zero-length.patch
+Patch0079: target-arm-Allow-reading-flags-from-FPSCR-for-M-prof.patch
+Patch0080: scsi-lsi-exit-infinite-loop-while-executing-script-C.patch
+Patch0081: virtio-blk-Cancel-the-pending-BH-when-the-dataplane-.patch
+Patch0082: qcow2-Fix-QCOW2_COMPRESSED_SECTOR_MASK.patch
+Patch0083: util-iov-introduce-qemu_iovec_init_extended.patch
+Patch0084: util-iov-improve-qemu_iovec_is_zero.patch
+Patch0085: block-io-refactor-padding.patch
+Patch0086: block-Make-wait-mark-serialising-requests-public.patch
+Patch0087: block-Add-bdrv_co_get_self_request.patch
+Patch0088: block-file-posix-Let-post-EOF-fallocate-serialize.patch
+Patch0089: block-posix-Always-allocate-the-first-block.patch
+Patch0090: block-create-Do-not-abort-if-a-block-driver-is-not-a.patch
+Patch0091: mirror-Keep-mirror_top_bs-drained-after-dropping-per.patch
 
 
 BuildRequires: flex
@@ -407,6 +447,9 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Fri Apr 17 2020 Huawei Technologies Co., Ltd. <fangying1@huawei.com>
+- backport patch bundles from qemu stable v4.1.1
+
 * Thu Apr 16 2020 Huawei Technologies Co., Ltd. <fangying1@huawei.com>
 - aio-wait: delegate polling of main AioContext if BQL not held
 - async: use explicit memory barriers
