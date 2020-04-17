@@ -1,0 +1,42 @@
+From 7b404cae7fa2850d476c29258f03b8e77a5b4bd0 Mon Sep 17 00:00:00 2001
+From: Adrian Moreno <amorenoz@redhat.com>
+Date: Tue, 24 Sep 2019 18:20:44 +0200
+Subject: [PATCH] vhost-user: save features if the char dev is closed
+
+That way the state can be correctly restored when the device is opened
+again. This might happen if the backend is restarted.
+
+Buglink: https://bugzilla.redhat.com/show_bug.cgi?id=1738768
+Reported-by: Pei Zhang <pezhang@redhat.com>
+Fixes: 6ab79a20af3a ("do not call vhost_net_cleanup() on running net from char user event")
+Cc: ddstreet@canonical.com
+Cc: Michael S. Tsirkin <mst@redhat.com>
+Cc: qemu-stable@nongnu.org
+Signed-off-by: Adrian Moreno <amorenoz@redhat.com>
+Message-Id: <20190924162044.11414-1-amorenoz@redhat.com>
+Acked-by: Jason Wang <jasowang@redhat.com>
+Reviewed-by: Michael S. Tsirkin <mst@redhat.com>
+Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+(cherry picked from commit c6beefd674fff8d41b90365dfccad32e53a5abcb)
+Signed-off-by: Michael Roth <mdroth@linux.vnet.ibm.com>
+---
+ net/vhost-user.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/net/vhost-user.c b/net/vhost-user.c
+index 51921de443..014199d600 100644
+--- a/net/vhost-user.c
++++ b/net/vhost-user.c
+@@ -235,6 +235,10 @@ static void chr_closed_bh(void *opaque)
+
+     s = DO_UPCAST(NetVhostUserState, nc, ncs[0]);
+
++    if (s->vhost_net) {
++        s->acked_features = vhost_net_get_acked_features(s->vhost_net);
++    }
++
+     qmp_set_link(name, false, &err);
+
+     qemu_chr_fe_set_handlers(&s->chr, NULL, NULL, net_vhost_user_event,
+--
+2.23.0

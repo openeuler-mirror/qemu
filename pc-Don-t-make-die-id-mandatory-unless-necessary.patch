@@ -1,0 +1,102 @@
+From 7ebcd375ade505358c1c45542de22f188c599bdd Mon Sep 17 00:00:00 2001
+From: Eduardo Habkost <ehabkost@redhat.com>
+Date: Fri, 16 Aug 2019 14:07:50 -0300
+Subject: [PATCH] pc: Don't make die-id mandatory unless necessary
+
+We have this issue reported when using libvirt to hotplug CPUs:
+https://bugzilla.redhat.com/show_bug.cgi?id=1741451
+
+Basically, libvirt is not copying die-id from
+query-hotpluggable-cpus, but die-id is now mandatory.
+
+We could blame libvirt and say it is not following the documented
+interface, because we have this buried in the QAPI schema
+documentation:
+
+> Note: currently there are 5 properties that could be present
+> but management should be prepared to pass through other
+> properties with device_add command to allow for future
+> interface extension. This also requires the filed names to be kept in
+> sync with the properties passed to -device/device_add.
+
+But I don't think this would be reasonable from us.  We can just
+make QEMU more flexible and let die-id to be omitted when there's
+no ambiguity.  This will allow us to keep compatibility with
+existing libvirt versions.
+
+Test case included to ensure we don't break this again.
+
+Fixes: commit 176d2cda0dee ("i386/cpu: Consolidate die-id validity in smp context")
+Signed-off-by: Eduardo Habkost <ehabkost@redhat.com>
+Message-Id: <20190816170750.23910-1-ehabkost@redhat.com>
+Signed-off-by: Eduardo Habkost <ehabkost@redhat.com>
+(cherry picked from commit fea374e7c8079563bca7c8fac895c6a880f76adc)
+Signed-off-by: Michael Roth <mdroth@linux.vnet.ibm.com>
+---
+ hw/i386/pc.c                             |  8 ++++++
+ tests/acceptance/pc_cpu_hotplug_props.py | 35 ++++++++++++++++++++++++
+ 2 files changed, 43 insertions(+)
+ create mode 100644 tests/acceptance/pc_cpu_hotplug_props.py
+
+diff --git a/hw/i386/pc.c b/hw/i386/pc.c
+index 549c437050..947f81070f 100644
+--- a/hw/i386/pc.c
++++ b/hw/i386/pc.c
+@@ -2403,6 +2403,14 @@ static void pc_cpu_pre_plug(HotplugHandler *hotplug_dev,
+         int max_socket = (ms->smp.max_cpus - 1) /
+                                 smp_threads / smp_cores / pcms->smp_dies;
+
++        /*
++         * die-id was optional in QEMU 4.0 and older, so keep it optional
++         * if there's only one die per socket.
++         */
++        if (cpu->die_id < 0 && pcms->smp_dies == 1) {
++            cpu->die_id = 0;
++        }
++
+         if (cpu->socket_id < 0) {
+             error_setg(errp, "CPU socket-id is not set");
+             return;
+diff --git a/tests/acceptance/pc_cpu_hotplug_props.py b/tests/acceptance/pc_cpu_hotplug_props.py
+new file mode 100644
+index 0000000000..08b7e632c6
+--- /dev/null
++++ b/tests/acceptance/pc_cpu_hotplug_props.py
+@@ -0,0 +1,35 @@
++#
++# Ensure CPU die-id can be omitted on -device
++#
++#  Copyright (c) 2019 Red Hat Inc
++#
++# Author:
++#  Eduardo Habkost <ehabkost@redhat.com>
++#
++# This library is free software; you can redistribute it and/or
++# modify it under the terms of the GNU Lesser General Public
++# License as published by the Free Software Foundation; either
++# version 2 of the License, or (at your option) any later version.
++#
++# This library is distributed in the hope that it will be useful,
++# but WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++# Lesser General Public License for more details.
++#
++# You should have received a copy of the GNU Lesser General Public
++# License along with this library; if not, see <http://www.gnu.org/licenses/>.
++#
++
++from avocado_qemu import Test
++
++class OmittedCPUProps(Test):
++    """
++    :avocado: tags=arch:x86_64
++    """
++    def test_no_die_id(self):
++        self.vm.add_args('-nodefaults', '-S')
++        self.vm.add_args('-smp', '1,sockets=2,cores=2,threads=2,maxcpus=8')
++        self.vm.add_args('-cpu', 'qemu64')
++        self.vm.add_args('-device', 'qemu64-x86_64-cpu,socket-id=1,core-id=0,thread-id=0')
++        self.vm.launch()
++        self.assertEquals(len(self.vm.command('query-cpus')), 2)
+--
+2.23.0

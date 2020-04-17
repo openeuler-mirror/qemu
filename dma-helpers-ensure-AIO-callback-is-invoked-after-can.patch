@@ -1,0 +1,79 @@
+From fbde196c30e4797a51bda046ba514b187963d4ba Mon Sep 17 00:00:00 2001
+From: Paolo Bonzini <pbonzini@redhat.com>
+Date: Mon, 29 Jul 2019 23:34:16 +0200
+Subject: [PATCH] dma-helpers: ensure AIO callback is invoked after
+ cancellation
+
+dma_aio_cancel unschedules the BH if there is one, which corresponds
+to the reschedule_dma case of dma_blk_cb.  This can stall the DMA
+permanently, because dma_complete will never get invoked and therefore
+nobody will ever invoke the original AIO callback in dbs->common.cb.
+
+Fix this by invoking the callback (which is ensured to happen after
+a bdrv_aio_cancel_async, or done manually in the dbs->bh case), and
+add assertions to check that the DMA state machine is indeed waiting
+for dma_complete or reschedule_dma, but never both.
+
+Reported-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+Message-id: 20190729213416.1972-1-pbonzini@redhat.com
+Signed-off-by: John Snow <jsnow@redhat.com>
+(cherry picked from commit 539343c0a47e19d5dd64d846d64d084d9793681f)
+Signed-off-by: Michael Roth <mdroth@linux.vnet.ibm.com>
+---
+ dma-helpers.c | 13 +++++++++----
+ 1 file changed, 9 insertions(+), 4 deletions(-)
+
+diff --git a/dma-helpers.c b/dma-helpers.c
+index 2d7e02d35e..d3871dc61e 100644
+--- a/dma-helpers.c
++++ b/dma-helpers.c
+@@ -90,6 +90,7 @@ static void reschedule_dma(void *opaque)
+ {
+     DMAAIOCB *dbs = (DMAAIOCB *)opaque;
+
++    assert(!dbs->acb && dbs->bh);
+     qemu_bh_delete(dbs->bh);
+     dbs->bh = NULL;
+     dma_blk_cb(dbs, 0);
+@@ -111,15 +112,12 @@ static void dma_complete(DMAAIOCB *dbs, int ret)
+ {
+     trace_dma_complete(dbs, ret, dbs->common.cb);
+
++    assert(!dbs->acb && !dbs->bh);
+     dma_blk_unmap(dbs);
+     if (dbs->common.cb) {
+         dbs->common.cb(dbs->common.opaque, ret);
+     }
+     qemu_iovec_destroy(&dbs->iov);
+-    if (dbs->bh) {
+-        qemu_bh_delete(dbs->bh);
+-        dbs->bh = NULL;
+-    }
+     qemu_aio_unref(dbs);
+ }
+
+@@ -179,14 +177,21 @@ static void dma_aio_cancel(BlockAIOCB *acb)
+
+     trace_dma_aio_cancel(dbs);
+
++    assert(!(dbs->acb && dbs->bh));
+     if (dbs->acb) {
++        /* This will invoke dma_blk_cb.  */
+         blk_aio_cancel_async(dbs->acb);
++        return;
+     }
++
+     if (dbs->bh) {
+         cpu_unregister_map_client(dbs->bh);
+         qemu_bh_delete(dbs->bh);
+         dbs->bh = NULL;
+     }
++    if (dbs->common.cb) {
++        dbs->common.cb(dbs->common.opaque, -ECANCELED);
++    }
+ }
+
+ static AioContext *dma_get_aio_context(BlockAIOCB *acb)
+--
+2.23.0

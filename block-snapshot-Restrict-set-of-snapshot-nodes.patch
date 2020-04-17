@@ -1,0 +1,124 @@
+From 7a8aa6c734bb1c2927ad0cc1d10bcacb53cf4ae3 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Tue, 17 Sep 2019 12:26:23 +0200
+Subject: [PATCH] block/snapshot: Restrict set of snapshot nodes
+
+Nodes involved in internal snapshots were those that were returned by
+bdrv_next(), inserted and not read-only. bdrv_next() in turn returns all
+nodes that are either the root node of a BlockBackend or monitor-owned
+nodes.
+
+With the typical -drive use, this worked well enough. However, in the
+typical -blockdev case, the user defines one node per option, making all
+nodes monitor-owned nodes. This includes protocol nodes etc. which often
+are not snapshottable, so "savevm" only returns an error.
+
+Change the conditions so that internal snapshot still include all nodes
+that have a BlockBackend attached (we definitely want to snapshot
+anything attached to a guest device and probably also the built-in NBD
+server; snapshotting block job BlockBackends is more of an accident, but
+a preexisting one), but other monitor-owned nodes are only included if
+they have no parents.
+
+This makes internal snapshots usable again with typical -blockdev
+configurations.
+
+Cc: qemu-stable@nongnu.org
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+Reviewed-by: Peter Krempa <pkrempa@redhat.com>
+Tested-by: Peter Krempa <pkrempa@redhat.com>
+(cherry picked from commit 05f4aced658a02b02d3e89a6c7a2281008fcf26c)
+Signed-off-by: Michael Roth <mdroth@linux.vnet.ibm.com>
+---
+ block/snapshot.c | 26 +++++++++++++++++++-------
+ 1 file changed, 19 insertions(+), 7 deletions(-)
+
+diff --git a/block/snapshot.c b/block/snapshot.c
+index f2f48f926a..8081616ae9 100644
+--- a/block/snapshot.c
++++ b/block/snapshot.c
+@@ -31,6 +31,7 @@
+ #include "qapi/qmp/qerror.h"
+ #include "qapi/qmp/qstring.h"
+ #include "qemu/option.h"
++#include "sysemu/block-backend.h"
+
+ QemuOptsList internal_snapshot_opts = {
+     .name = "snapshot",
+@@ -384,6 +385,16 @@ int bdrv_snapshot_load_tmp_by_id_or_name(BlockDriverState *bs,
+     return ret;
+ }
+
++static bool bdrv_all_snapshots_includes_bs(BlockDriverState *bs)
++{
++    if (!bdrv_is_inserted(bs) || bdrv_is_read_only(bs)) {
++        return false;
++    }
++
++    /* Include all nodes that are either in use by a BlockBackend, or that
++     * aren't attached to any node, but owned by the monitor. */
++    return bdrv_has_blk(bs) || QLIST_EMPTY(&bs->parents);
++}
+
+ /* Group operations. All block drivers are involved.
+  * These functions will properly handle dataplane (take aio_context_acquire
+@@ -399,7 +410,7 @@ bool bdrv_all_can_snapshot(BlockDriverState **first_bad_bs)
+         AioContext *ctx = bdrv_get_aio_context(bs);
+
+         aio_context_acquire(ctx);
+-        if (bdrv_is_inserted(bs) && !bdrv_is_read_only(bs)) {
++        if (bdrv_all_snapshots_includes_bs(bs)) {
+             ok = bdrv_can_snapshot(bs);
+         }
+         aio_context_release(ctx);
+@@ -426,8 +437,9 @@ int bdrv_all_delete_snapshot(const char *name, BlockDriverState **first_bad_bs,
+         AioContext *ctx = bdrv_get_aio_context(bs);
+
+         aio_context_acquire(ctx);
+-        if (bdrv_can_snapshot(bs) &&
+-                bdrv_snapshot_find(bs, snapshot, name) >= 0) {
++        if (bdrv_all_snapshots_includes_bs(bs) &&
++            bdrv_snapshot_find(bs, snapshot, name) >= 0)
++        {
+             ret = bdrv_snapshot_delete(bs, snapshot->id_str,
+                                        snapshot->name, err);
+         }
+@@ -455,7 +467,7 @@ int bdrv_all_goto_snapshot(const char *name, BlockDriverState **first_bad_bs,
+         AioContext *ctx = bdrv_get_aio_context(bs);
+
+         aio_context_acquire(ctx);
+-        if (bdrv_can_snapshot(bs)) {
++        if (bdrv_all_snapshots_includes_bs(bs)) {
+             ret = bdrv_snapshot_goto(bs, name, errp);
+         }
+         aio_context_release(ctx);
+@@ -481,7 +493,7 @@ int bdrv_all_find_snapshot(const char *name, BlockDriverState **first_bad_bs)
+         AioContext *ctx = bdrv_get_aio_context(bs);
+
+         aio_context_acquire(ctx);
+-        if (bdrv_can_snapshot(bs)) {
++        if (bdrv_all_snapshots_includes_bs(bs)) {
+             err = bdrv_snapshot_find(bs, &sn, name);
+         }
+         aio_context_release(ctx);
+@@ -512,7 +524,7 @@ int bdrv_all_create_snapshot(QEMUSnapshotInfo *sn,
+         if (bs == vm_state_bs) {
+             sn->vm_state_size = vm_state_size;
+             err = bdrv_snapshot_create(bs, sn);
+-        } else if (bdrv_can_snapshot(bs)) {
++        } else if (bdrv_all_snapshots_includes_bs(bs)) {
+             sn->vm_state_size = 0;
+             err = bdrv_snapshot_create(bs, sn);
+         }
+@@ -538,7 +550,7 @@ BlockDriverState *bdrv_all_find_vmstate_bs(void)
+         bool found;
+
+         aio_context_acquire(ctx);
+-        found = bdrv_can_snapshot(bs);
++        found = bdrv_all_snapshots_includes_bs(bs) && bdrv_can_snapshot(bs);
+         aio_context_release(ctx);
+
+         if (found) {
+--
+2.23.0
