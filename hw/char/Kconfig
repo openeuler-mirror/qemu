@@ -46,3 +46,7 @@ config SCLPCONSOLE
 
 config TERMINAL3270
     bool
+
+config CPUFREQ
+   bool
+   default y
