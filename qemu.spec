@@ -105,6 +105,20 @@ Patch0092: target-arm-kvm-trivial-Clean-up-header-documentation.patch
 Patch0093: target-arm-kvm64-kvm64-cpus-have-timer-registers.patch
 Patch0094: target-arm-kvm-Implement-virtual-time-adjustment.patch
 Patch0095: target-arm-cpu-Add-the-kvm-no-adjvtime-CPU-property.patch
+Patch0096: hw-acpi-Make-ACPI-IO-address-space-configurable.patch
+Patch0097: hw-acpi-Do-not-create-memory-hotplug-method-when-han.patch
+Patch0098: hw-acpi-Add-ACPI-Generic-Event-Device-Support.patch
+Patch0099: hw-arm-virt-Add-memory-hotplug-framework.patch
+Patch0100: hw-arm-virt-Enable-device-memory-cold-hot-plug-with-.patch
+Patch0101: hw-arm-virt-acpi-build-Add-PC-DIMM-in-SRAT.patch
+Patch0102: hw-arm-Factor-out-powerdown-notifier-from-GPIO.patch
+Patch0103: hw-arm-Use-GED-for-system_powerdown-event.patch
+Patch0104: docs-specs-Add-ACPI-GED-documentation.patch
+Patch0105: tests-Update-ACPI-tables-list-for-upcoming-arm-virt-.patch
+Patch0106: tests-acpi-add-empty-files.patch
+Patch0107: tests-allow-empty-expected-files.patch
+Patch0108: tests-Add-bios-tests-to-arm-virt.patch
+Patch0109: tests-document-how-to-update-acpi-tables.patch
 
 
 BuildRequires: flex
@@ -451,6 +465,9 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Wed Apr 22 2020 Huawei Technologies Co., Ltd. <zhukeqian1@huawei.com>
+- backport patch to enable arm/virt memory hotplug
+
 * Wed Apr 22 2020 Huawei Technologies Co., Ltd. <fangying1@huawei.com>
 - backport patch to enable target/arm/kvm Adjust virtual time
 

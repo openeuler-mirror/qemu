@@ -1,0 +1,72 @@
+From e6b1fd7bfbfe116e9d5df590f7069336c1eb1983 Mon Sep 17 00:00:00 2001
+From: Shameer Kolothum <shameerali.kolothum.thodi@huawei.com>
+Date: Wed, 18 Sep 2019 14:06:29 +0100
+Subject: [PATCH] hw/arm: Factor out powerdown notifier from GPIO
+
+This is in preparation of using GED device for
+system_powerdown event. Make the powerdown notifier
+registration independent of create_gpio() fn.
+
+Signed-off-by: Shameer Kolothum <shameerali.kolothum.thodi@huawei.com>
+Reviewed-by: Eric Auger <eric.auger@redhat.com>
+Reviewed-by: Igor Mammedov <imammedo@redhat.com>
+Message-Id: <20190918130633.4872-8-shameerali.kolothum.thodi@huawei.com>
+Acked-by: Peter Maydell <peter.maydell@linaro.org>
+Reviewed-by: Michael S. Tsirkin <mst@redhat.com>
+Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+---
+ hw/arm/virt.c         | 12 ++++--------
+ include/hw/arm/virt.h |  1 +
+ 2 files changed, 5 insertions(+), 8 deletions(-)
+
+diff --git a/hw/arm/virt.c b/hw/arm/virt.c
+index ab33cce4b3..aaefa5578e 100644
+--- a/hw/arm/virt.c
++++ b/hw/arm/virt.c
+@@ -910,10 +910,6 @@ static void virt_powerdown_req(Notifier *n, void *opaque)
+     qemu_set_irq(qdev_get_gpio_in(gpio_key_dev, 0), 1);
+ }
+
+-static Notifier virt_system_powerdown_notifier = {
+-    .notify = virt_powerdown_req
+-};
+-
+ static void create_gpio(const VirtMachineState *vms, qemu_irq *pic)
+ {
+     char *nodename;
+@@ -954,10 +950,6 @@ static void create_gpio(const VirtMachineState *vms, qemu_irq *pic)
+                           KEY_POWER);
+     qemu_fdt_setprop_cells(vms->fdt, "/gpio-keys/poweroff",
+                            "gpios", phandle, 3, 0);
+-
+-    /* connect powerdown request */
+-    qemu_register_powerdown_notifier(&virt_system_powerdown_notifier);
+-
+     g_free(nodename);
+ }
+
+@@ -1856,6 +1848,10 @@ static void machvirt_init(MachineState *machine)
+         vms->acpi_dev = create_acpi_ged(vms, pic);
+     }
+
++     /* connect powerdown request */
++     vms->powerdown_notifier.notify = virt_powerdown_req;
++     qemu_register_powerdown_notifier(&vms->powerdown_notifier);
++
+     /* Create mmio transports, so the user can create virtio backends
+      * (which will be automatically plugged in to the transports). If
+      * no backend is created the transport will just sit harmlessly idle.
+diff --git a/include/hw/arm/virt.h b/include/hw/arm/virt.h
+index 0350285136..dcceb9c615 100644
+--- a/include/hw/arm/virt.h
++++ b/include/hw/arm/virt.h
+@@ -139,6 +139,7 @@ typedef struct {
+     int psci_conduit;
+     hwaddr highest_gpa;
+     DeviceState *acpi_dev;
++    Notifier powerdown_notifier;
+ } VirtMachineState;
+
+ #define VIRT_ECAM_ID(high) (high ? VIRT_HIGH_PCIE_ECAM : VIRT_PCIE_ECAM)
+--
+2.19.1
