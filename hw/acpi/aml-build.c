@@ -25,6 +25,7 @@
 #include "qemu/bswap.h"
 #include "qemu/bitops.h"
 #include "sysemu/numa.h"
+#include "sysemu/cpus.h"
 
 static GArray *build_alloc_array(void)
 {
@@ -49,6 +50,58 @@ static void build_append_byte(GArray *array, uint8_t val)
 static void build_append_array(GArray *array, GArray *val)
 {
     g_array_append_vals(array, val->data, val->len);
+}
+
+/*
+ * ACPI 6.2 Processor Properties Topology Table (PPTT)
+ */
+static void build_cpu_hierarchy(GArray *tbl, uint32_t flags,
+                                uint32_t parent, uint32_t id)
+{
+    build_append_byte(tbl, 0);            /* Type 0 - processor */
+    build_append_byte(tbl, 20);           /* Length, no private resources */
+    build_append_int_noprefix(tbl, 0, 2); /* Reserved */
+    build_append_int_noprefix(tbl, flags, 4);
+    build_append_int_noprefix(tbl, parent, 4);
+    build_append_int_noprefix(tbl, id, 4);
+    build_append_int_noprefix(tbl, 0, 4); /* Num private resources */
+}
+
+void build_pptt(GArray *table_data, BIOSLinker *linker, int possible_cpus)
+{
+    int pptt_start = table_data->len;
+    int uid = 0, cpus = 0, socket;
+    MachineState *ms = MACHINE(qdev_get_machine());
+    unsigned int smp_cores = ms->smp.cores;
+    unsigned int smp_threads = ms->smp.threads;
+
+    acpi_data_push(table_data, sizeof(AcpiTableHeader));
+
+    for (socket = 0; cpus < possible_cpus; socket++) {
+        uint32_t socket_offset = table_data->len - pptt_start;
+        int core;
+
+        build_cpu_hierarchy(table_data, 1, 0, socket);
+
+        for (core = 0; core < smp_cores; core++) {
+            uint32_t core_offset = table_data->len - pptt_start;
+            int thread;
+
+            if (smp_threads > 1) {
+                build_cpu_hierarchy(table_data, 0, socket_offset, core);
+                for (thread = 0; thread < smp_threads; thread++) {
+                    build_cpu_hierarchy(table_data, 2, core_offset, uid++);
+                }
+             } else {
+                build_cpu_hierarchy(table_data, 2, socket_offset, uid++);
+             }
+        }
+        cpus += smp_cores * smp_threads;
+    }
+
+    build_header(linker, table_data,
+                 (void *)(table_data->data + pptt_start), "PPTT",
+                 table_data->len - pptt_start, 1, NULL, NULL);
 }
 
 #define ACPI_NAMESEG_LEN 4

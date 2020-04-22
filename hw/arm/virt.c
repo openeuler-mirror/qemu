@@ -44,6 +44,7 @@
 #include "net/net.h"
 #include "sysemu/device_tree.h"
 #include "sysemu/numa.h"
+#include "sysemu/cpus.h"
 #include "sysemu/sysemu.h"
 #include "sysemu/kvm.h"
 #include "hw/loader.h"
@@ -312,7 +313,8 @@ static void fdt_add_cpu_nodes(const VirtMachineState *vms)
     int cpu;
     int addr_cells = 1;
     const MachineState *ms = MACHINE(vms);
-
+    unsigned int smp_cores = ms->smp.cores;
+    unsigned int smp_threads = ms->smp.threads;
     /*
      * From Documentation/devicetree/bindings/arm/cpus.txt
      *  On ARM v8 64-bit systems value should be set to 2,
@@ -368,7 +370,35 @@ static void fdt_add_cpu_nodes(const VirtMachineState *vms)
                 ms->possible_cpus->cpus[cs->cpu_index].props.node_id);
         }
 
+        qemu_fdt_setprop_cell(vms->fdt, nodename, "phandle",
+                              qemu_fdt_alloc_phandle(vms->fdt));
+
         g_free(nodename);
+    }
+
+    /* Add vcpu topology by fdt node cpu-map. */
+    qemu_fdt_add_subnode(vms->fdt, "/cpus/cpu-map");
+
+    for (cpu = vms->smp_cpus - 1; cpu >= 0; cpu--) {
+        char *cpu_path = g_strdup_printf("/cpus/cpu@%d", cpu);
+        char *map_path;
+
+        if (smp_threads > 1) {
+            map_path = g_strdup_printf(
+                           "/cpus/cpu-map/%s%d/%s%d/%s%d",
+                           "cluster", cpu / (smp_cores * smp_threads),
+                           "core", (cpu / smp_threads) % smp_cores,
+                           "thread", cpu % smp_threads);
+        } else {
+            map_path = g_strdup_printf(
+                           "/cpus/cpu-map/%s%d/%s%d",
+                           "cluster", cpu / smp_cores,
+                           "core", cpu % smp_cores);
+        }
+        qemu_fdt_add_path(vms->fdt, map_path);
+        qemu_fdt_setprop_phandle(vms->fdt, map_path, "cpu", cpu_path);
+        g_free(map_path);
+        g_free(cpu_path);
     }
 }
 

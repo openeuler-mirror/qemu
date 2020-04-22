@@ -524,6 +524,38 @@ int qemu_fdt_add_subnode(void *fdt, const char *name)
     return retval;
 }
 
+/**
+ * qemu_fdt_add_path
+ * @fdt: Flattened Device Tree
+ * @path: Flattened Device Tree node path
+ *
+ * qemu_fdt_add_path works like qemu_fdt_add_subnode, except it
+ * also recursively adds any missing parent nodes.
+ */
+int qemu_fdt_add_path(void *fdt, const char *path)
+{
+    char *parent;
+    int offset;
+
+    offset = fdt_path_offset(fdt, path);
+    if (offset < 0 && offset != -FDT_ERR_NOTFOUND) {
+        error_report("%s Couldn't find node %s: %s", __func__, path,
+                      fdt_strerror(offset));
+        exit(1);
+    }
+
+    if (offset != -FDT_ERR_NOTFOUND) {
+        return offset;
+    }
+
+    parent = g_strdup(path);
+    strrchr(parent, '/')[0] = '\0';
+    qemu_fdt_add_path(fdt, parent);
+    g_free(parent);
+
+    return qemu_fdt_add_subnode(fdt, path);
+}
+
 void qemu_fdt_dumpdtb(void *fdt, int size)
 {
     const char *dumpdtb = qemu_opt_get(qemu_get_machine_opts(), "dumpdtb");
