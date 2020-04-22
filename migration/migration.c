@@ -517,12 +517,6 @@ static void migration_incoming_setup(QEMUFile *f)
 {
     MigrationIncomingState *mis = migration_incoming_get_current();
 
-    if (multifd_load_setup() != 0) {
-        /* We haven't been able to create multifd threads
-           nothing better to do */
-        exit(EXIT_FAILURE);
-    }
-
     if (!mis->from_src_file) {
         mis->from_src_file = f;
     }
@@ -580,36 +574,41 @@ void migration_fd_process_incoming(QEMUFile *f)
 void migration_ioc_process_incoming(QIOChannel *ioc, Error **errp)
 {
     MigrationIncomingState *mis = migration_incoming_get_current();
-    bool start_migration;
+    Error *local_err = NULL;
+    int id = 0;
 
-    if (!mis->from_src_file) {
-        /* The first connection (multifd may have multiple) */
-        QEMUFile *f = qemu_fopen_channel_input(ioc);
+    if (migrate_use_multifd()) {
+        id = migration_recv_initial_packet(ioc, &local_err);
+    }
+    if (!migrate_use_multifd() || id == migrate_multifd_channels()) {
+        if (!mis->from_src_file) {
+            /* The migration connection (multifd may have multiple) */
+            QEMUFile *f = qemu_fopen_channel_input(ioc);
 
-        /* If it's a recovery, we're done */
-        if (postcopy_try_recover(f)) {
-            return;
+            /* If it's a recovery, we're done */
+            if (postcopy_try_recover(f)) {
+                return;
+            }
+
+            migration_incoming_setup(f);
         }
-
-        migration_incoming_setup(f);
-
-        /*
-         * Common migration only needs one channel, so we can start
-         * right now.  Multifd needs more than one channel, we wait.
-         */
-        start_migration = !migrate_use_multifd();
-    } else {
-        Error *local_err = NULL;
+    } else if (id >= 0) {
         /* Multiple connections */
         assert(migrate_use_multifd());
-        start_migration = multifd_recv_new_channel(ioc, &local_err);
+        multifd_recv_new_channel(ioc, id, &local_err);
         if (local_err) {
             error_propagate(errp, local_err);
             return;
         }
+    } else {
+        /* Bad connections */
+        multifd_recv_terminate_threads(local_err);
+        error_propagate(errp, local_err);
+        return;
     }
 
-    if (start_migration) {
+    /* Once we have all the channels we need, we can start migration */
+    if (migration_has_all_channels()) {
         migration_incoming_process();
     }
 }

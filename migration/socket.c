@@ -181,6 +181,12 @@ static void socket_start_incoming_migration(SocketAddress *saddr,
 
     qio_net_listener_set_name(listener, "migration-socket-listener");
 
+    if (multifd_load_setup() != 0) {
+        /* We haven't been able to create multifd threads
+           nothing better to do */
+        exit(EXIT_FAILURE);
+    }
+
     if (qio_net_listener_open_sync(listener, saddr, errp) < 0) {
         object_unref(OBJECT(listener));
         return;

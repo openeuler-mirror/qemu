@@ -339,4 +339,7 @@ int foreach_not_ignored_block(RAMBlockIterFunc func, void *opaque);
 void migration_make_urgent_request(void);
 void migration_consume_urgent_request(void);
 
+int migration_send_initial_packet(QIOChannel *c, uint8_t id, Error **errp);
+int migration_recv_initial_packet(QIOChannel *c, Error **errp);
+
 #endif

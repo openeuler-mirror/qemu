@@ -82,6 +82,15 @@ void migration_channel_connect(MigrationState *s,
                 return;
             }
         } else {
+            if (migrate_use_multifd()) {
+                /* multifd migration cannot distinguish migration IOChannel
+                 * from multifd IOChannels, so we need to send an initial packet
+                 * to show it is migration IOChannel
+                 */
+                migration_send_initial_packet(ioc,
+                                              migrate_multifd_channels(),
+                                              &error);
+            }
             QEMUFile *f = qemu_fopen_channel_output(ioc);
 
             qemu_mutex_lock(&s->qemu_file_lock);

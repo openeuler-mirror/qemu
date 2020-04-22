@@ -593,7 +593,7 @@ typedef struct {
     uint8_t id;
     uint8_t unused1[7];     /* Reserved for future use */
     uint64_t unused2[4];    /* Reserved for future use */
-} __attribute__((packed)) MultiFDInit_t;
+} __attribute__((packed)) MigrationInit_t;
 
 typedef struct {
     uint32_t magic;
@@ -702,26 +702,26 @@ typedef struct {
     QemuSemaphore sem_sync;
 } MultiFDRecvParams;
 
-static int multifd_send_initial_packet(MultiFDSendParams *p, Error **errp)
+int migration_send_initial_packet(QIOChannel *c, uint8_t id, Error **errp)
 {
-    MultiFDInit_t msg;
+    MigrationInit_t msg;
     int ret;
 
     msg.magic = cpu_to_be32(MULTIFD_MAGIC);
     msg.version = cpu_to_be32(MULTIFD_VERSION);
-    msg.id = p->id;
+    msg.id = id;
     memcpy(msg.uuid, &qemu_uuid.data, sizeof(msg.uuid));
 
-    ret = qio_channel_write_all(p->c, (char *)&msg, sizeof(msg), errp);
+    ret = qio_channel_write_all(c, (char *)&msg, sizeof(msg), errp);
     if (ret != 0) {
         return -1;
     }
     return 0;
 }
 
-static int multifd_recv_initial_packet(QIOChannel *c, Error **errp)
+int migration_recv_initial_packet(QIOChannel *c, Error **errp)
 {
-    MultiFDInit_t msg;
+    MigrationInit_t msg;
     int ret;
 
     ret = qio_channel_read_all(c, (char *)&msg, sizeof(msg), errp);
@@ -756,8 +756,8 @@ static int multifd_recv_initial_packet(QIOChannel *c, Error **errp)
     }
 
     if (msg.id > migrate_multifd_channels()) {
-        error_setg(errp, "multifd: received channel version %d "
-                   "expected %d", msg.version, MULTIFD_VERSION);
+        error_setg(errp, "multifd: received channel id %d "
+                   "expected [0-%d]", msg.id, migrate_multifd_channels());
         return -1;
     }
 
@@ -1111,7 +1111,7 @@ static void *multifd_send_thread(void *opaque)
     trace_multifd_send_thread_start(p->id);
     rcu_register_thread();
 
-    if (multifd_send_initial_packet(p, &local_err) < 0) {
+    if (migration_send_initial_packet(p->c, p->id, &local_err) < 0) {
         ret = -1;
         goto out;
     }
@@ -1255,7 +1255,7 @@ struct {
     uint64_t packet_num;
 } *multifd_recv_state;
 
-static void multifd_recv_terminate_threads(Error *err)
+void multifd_recv_terminate_threads(Error *err)
 {
     int i;
 
@@ -1470,21 +1470,10 @@ bool multifd_recv_all_channels_created(void)
  * - Return false and do not set @errp when correctly receiving the current one;
  * - Return false and set @errp when failing to receive the current channel.
  */
-bool multifd_recv_new_channel(QIOChannel *ioc, Error **errp)
+void multifd_recv_new_channel(QIOChannel *ioc, int id, Error **errp)
 {
     MultiFDRecvParams *p;
     Error *local_err = NULL;
-    int id;
-
-    id = multifd_recv_initial_packet(ioc, &local_err);
-    if (id < 0) {
-        multifd_recv_terminate_threads(local_err);
-        error_propagate_prepend(errp, local_err,
-                                "failed to receive packet"
-                                " via multifd channel %d: ",
-                                atomic_read(&multifd_recv_state->count));
-        return false;
-    }
 
     p = &multifd_recv_state->params[id];
     if (p->c != NULL) {
@@ -1492,7 +1481,7 @@ bool multifd_recv_new_channel(QIOChannel *ioc, Error **errp)
                    id);
         multifd_recv_terminate_threads(local_err);
         error_propagate(errp, local_err);
-        return false;
+        return;
     }
     p->c = ioc;
     object_ref(OBJECT(ioc));
@@ -1503,8 +1492,6 @@ bool multifd_recv_new_channel(QIOChannel *ioc, Error **errp)
     qemu_thread_create(&p->thread, p->name, multifd_recv_thread, p,
                        QEMU_THREAD_JOINABLE);
     atomic_inc(&multifd_recv_state->count);
-    return atomic_read(&multifd_recv_state->count) ==
-           migrate_multifd_channels();
 }
 
 /**
