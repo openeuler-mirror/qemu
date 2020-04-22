@@ -1,0 +1,66 @@
+From 6d287b3f1d961cc4adda1c6a452f41db84466f5a Mon Sep 17 00:00:00 2001
+From: Keqian Zhu <zhukeqian1@huawei.com>
+Date: Fri, 3 Apr 2020 16:16:18 +0800
+Subject: [PATCH] arm/virt: Add CPU hotplug framework
+
+Establish the CPU hotplug framework for arm/virt, we will add
+necessary code legs to this framework gradually to realize CPU
+hotplug finally.
+
+Signed-off-by: Keqian Zhu <zhukeqian1@huawei.com>
+Signed-off-by: Salil Mehta <salil.mehta@huawei.com>
+---
+ hw/arm/virt.c | 19 ++++++++++++++++++-
+ 1 file changed, 18 insertions(+), 1 deletion(-)
+
+diff --git a/hw/arm/virt.c b/hw/arm/virt.c
+index d09a5773df..0bd37af26c 100644
+--- a/hw/arm/virt.c
++++ b/hw/arm/virt.c
+@@ -2077,11 +2077,25 @@ out:
+     error_propagate(errp, local_err);
+ }
+
++static void virt_cpu_pre_plug(HotplugHandler *hotplug_dev,
++                              DeviceState *dev, Error **errp)
++{
++    /* Currently nothing to do */
++}
++
++static void virt_cpu_plug(HotplugHandler *hotplug_dev,
++                          DeviceState *dev, Error **errp)
++{
++    /* Currently nothing to do */
++}
++
+ static void virt_machine_device_pre_plug_cb(HotplugHandler *hotplug_dev,
+                                             DeviceState *dev, Error **errp)
+ {
+     if (object_dynamic_cast(OBJECT(dev), TYPE_PC_DIMM)) {
+         virt_memory_pre_plug(hotplug_dev, dev, errp);
++    } else if (object_dynamic_cast(OBJECT(dev), TYPE_CPU)) {
++        virt_cpu_pre_plug(hotplug_dev, dev, errp);
+     }
+ }
+
+@@ -2098,6 +2112,8 @@ static void virt_machine_device_plug_cb(HotplugHandler *hotplug_dev,
+     }
+     if (object_dynamic_cast(OBJECT(dev), TYPE_PC_DIMM)) {
+         virt_memory_plug(hotplug_dev, dev, errp);
++    } else if (object_dynamic_cast(OBJECT(dev), TYPE_CPU)) {
++        virt_cpu_plug(hotplug_dev, dev, errp);
+     }
+ }
+
+@@ -2112,7 +2128,8 @@ static HotplugHandler *virt_machine_get_hotplug_handler(MachineState *machine,
+                                                         DeviceState *dev)
+ {
+     if (object_dynamic_cast(OBJECT(dev), TYPE_SYS_BUS_DEVICE) ||
+-       (object_dynamic_cast(OBJECT(dev), TYPE_PC_DIMM))) {
++        object_dynamic_cast(OBJECT(dev), TYPE_PC_DIMM) ||
++        object_dynamic_cast(OBJECT(dev), TYPE_CPU)) {
+         return HOTPLUG_HANDLER(machine);
+     }
+
+--
+2.19.1

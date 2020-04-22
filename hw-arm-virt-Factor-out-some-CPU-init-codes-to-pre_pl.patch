@@ -1,0 +1,170 @@
+From 3a0af1446395e74476a763ca12713b28c099a144 Mon Sep 17 00:00:00 2001
+From: Keqian Zhu <zhukeqian1@huawei.com>
+Date: Mon, 6 Apr 2020 12:50:54 +0800
+Subject: [PATCH] hw/arm/virt: Factor out some CPU init codes to pre_plug hook
+
+The init path of hotplugged CPU is pre_plug/realize/plug, so we
+must move these init code in machvirt_init to pre_plug hook, to
+let them be shared by all CPUs.
+
+Signed-off-by: Keqian Zhu <zhukeqian1@huawei.com>
+Signed-off-by: Salil Mehta <salil.mehta@huawei.com>
+---
+ hw/arm/virt.c | 108 +++++++++++++++++++++++++++-----------------------
+ 1 file changed, 58 insertions(+), 50 deletions(-)
+
+diff --git a/hw/arm/virt.c b/hw/arm/virt.c
+index 64532b61b2..83f4887e57 100644
+--- a/hw/arm/virt.c
++++ b/hw/arm/virt.c
+@@ -196,6 +196,8 @@ static const char *valid_cpus[] = {
+     ARM_CPU_TYPE_NAME("max"),
+ };
+
++static MemoryRegion *secure_sysmem;
++
+ static bool cpu_type_valid(const char *cpu)
+ {
+     int i;
+@@ -1629,7 +1631,6 @@ static void machvirt_init(MachineState *machine)
+     MachineClass *mc = MACHINE_GET_CLASS(machine);
+     const CPUArchIdList *possible_cpus;
+     MemoryRegion *sysmem = get_system_memory();
+-    MemoryRegion *secure_sysmem = NULL;
+     int n, virt_max_cpus;
+     MemoryRegion *ram = g_new(MemoryRegion, 1);
+     bool firmware_loaded;
+@@ -1752,57 +1753,10 @@ static void machvirt_init(MachineState *machine)
+         }
+
+         cpuobj = object_new(possible_cpus->cpus[n].type);
+-        object_property_set_int(cpuobj, possible_cpus->cpus[n].arch_id,
+-                                "mp-affinity", NULL);
++        aarch64 &= object_property_get_bool(cpuobj, "aarch64", NULL);
+
+         cs = CPU(cpuobj);
+         cs->cpu_index = n;
+-
+-        numa_cpu_pre_plug(&possible_cpus->cpus[cs->cpu_index], DEVICE(cpuobj),
+-                          &error_fatal);
+-
+-        aarch64 &= object_property_get_bool(cpuobj, "aarch64", NULL);
+-
+-        if (!vms->secure) {
+-            object_property_set_bool(cpuobj, false, "has_el3", NULL);
+-        }
+-
+-        if (!vms->virt && object_property_find(cpuobj, "has_el2", NULL)) {
+-            object_property_set_bool(cpuobj, false, "has_el2", NULL);
+-        }
+-
+-        if (vms->psci_conduit != QEMU_PSCI_CONDUIT_DISABLED) {
+-            object_property_set_int(cpuobj, vms->psci_conduit,
+-                                    "psci-conduit", NULL);
+-
+-            /* Secondary CPUs start in PSCI powered-down state */
+-            if (n > 0) {
+-                object_property_set_bool(cpuobj, true,
+-                                         "start-powered-off", NULL);
+-            }
+-        }
+-
+-        if (vmc->kvm_no_adjvtime &&
+-            object_property_find(cpuobj, "kvm-no-adjvtime", NULL)) {
+-            object_property_set_bool(cpuobj, true, "kvm-no-adjvtime", NULL);
+-        }
+-
+-        if (vmc->no_pmu && object_property_find(cpuobj, "pmu", NULL)) {
+-            object_property_set_bool(cpuobj, false, "pmu", NULL);
+-        }
+-
+-        if (object_property_find(cpuobj, "reset-cbar", NULL)) {
+-            object_property_set_int(cpuobj, vms->memmap[VIRT_CPUPERIPHS].base,
+-                                    "reset-cbar", &error_abort);
+-        }
+-
+-        object_property_set_link(cpuobj, OBJECT(sysmem), "memory",
+-                                 &error_abort);
+-        if (vms->secure) {
+-            object_property_set_link(cpuobj, OBJECT(secure_sysmem),
+-                                     "secure-memory", &error_abort);
+-        }
+-
+         object_property_set_bool(cpuobj, true, "realized", &error_fatal);
+         object_unref(cpuobj);
+     }
+@@ -2089,10 +2043,16 @@ out:
+ static void virt_cpu_pre_plug(HotplugHandler *hotplug_dev,
+                               DeviceState *dev, Error **errp)
+ {
+-    CPUState *cs = CPU(dev);
+     ARMCPUTopoInfo topo;
++    Object *cpuobj = OBJECT(dev);
++    CPUState *cs = CPU(dev);
+     ARMCPU *cpu = ARM_CPU(dev);
+     MachineState *ms = MACHINE(hotplug_dev);
++    MachineClass *mc = MACHINE_GET_CLASS(hotplug_dev);
++    VirtMachineState *vms = VIRT_MACHINE(hotplug_dev);
++    VirtMachineClass *vmc = VIRT_MACHINE_GET_CLASS(hotplug_dev);
++    const CPUArchIdList *possible_cpus = mc->possible_cpu_arch_ids(ms);
++    MemoryRegion *sysmem = get_system_memory();
+     int smp_cores = ms->smp.cores;
+     int smp_threads = ms->smp.threads;
+
+@@ -2145,6 +2105,54 @@ static void virt_cpu_pre_plug(HotplugHandler *hotplug_dev,
+         return;
+     }
+     cpu->thread_id = topo.smt_id;
++
++    /* Init some properties */
++
++    object_property_set_int(cpuobj, possible_cpus->cpus[cs->cpu_index].arch_id,
++                            "mp-affinity", NULL);
++
++    numa_cpu_pre_plug(&possible_cpus->cpus[cs->cpu_index], DEVICE(cpuobj),
++                      &error_fatal);
++
++    if (!vms->secure) {
++        object_property_set_bool(cpuobj, false, "has_el3", NULL);
++    }
++
++    if (!vms->virt && object_property_find(cpuobj, "has_el2", NULL)) {
++        object_property_set_bool(cpuobj, false, "has_el2", NULL);
++    }
++
++    if (vms->psci_conduit != QEMU_PSCI_CONDUIT_DISABLED) {
++        object_property_set_int(cpuobj, vms->psci_conduit,
++                                "psci-conduit", NULL);
++
++        /* Secondary CPUs start in PSCI powered-down state */
++        if (cs->cpu_index > 0) {
++            object_property_set_bool(cpuobj, true,
++                                     "start-powered-off", NULL);
++        }
++    }
++
++    if (vmc->kvm_no_adjvtime &&
++        object_property_find(cpuobj, "kvm-no-adjvtime", NULL)) {
++        object_property_set_bool(cpuobj, true, "kvm-no-adjvtime", NULL);
++    }
++
++    if (vmc->no_pmu && object_property_find(cpuobj, "pmu", NULL)) {
++        object_property_set_bool(cpuobj, false, "pmu", NULL);
++    }
++
++    if (object_property_find(cpuobj, "reset-cbar", NULL)) {
++        object_property_set_int(cpuobj, vms->memmap[VIRT_CPUPERIPHS].base,
++                                "reset-cbar", &error_abort);
++    }
++
++    object_property_set_link(cpuobj, OBJECT(sysmem), "memory",
++                             &error_abort);
++    if (vms->secure) {
++        object_property_set_link(cpuobj, OBJECT(secure_sysmem),
++                                 "secure-memory", &error_abort);
++    }
+ }
+
+ static void virt_cpu_plug(HotplugHandler *hotplug_dev,
+--
+2.19.1

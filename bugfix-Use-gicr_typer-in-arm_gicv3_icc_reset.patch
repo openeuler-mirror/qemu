@@ -1,0 +1,44 @@
+From b9e4a4ff6f3292927adb1463777c86cd4063a6ef Mon Sep 17 00:00:00 2001
+From: Keqian Zhu <zhukeqian1@huawei.com>
+Date: Sat, 18 Apr 2020 12:10:11 +0800
+Subject: [PATCH] bugfix: Use gicr_typer in arm_gicv3_icc_reset
+
+The KVM_VGIC_ATTR macro expect the second parameter as gicr_typer,
+of which high 32bit is constructed by mp_affinity. For most case,
+the high 32bit of mp_affinity is zero, so it will always access the
+ICC_CTLR_EL1 of CPU0.
+
+Signed-off-by: Keqian Zhu <zhukeqian1@huawei.com>
+---
+ hw/intc/arm_gicv3_kvm.c | 4 +---
+ 1 file changed, 1 insertion(+), 3 deletions(-)
+
+diff --git a/hw/intc/arm_gicv3_kvm.c b/hw/intc/arm_gicv3_kvm.c
+index d9c72f85be..b1e74147ba 100644
+--- a/hw/intc/arm_gicv3_kvm.c
++++ b/hw/intc/arm_gicv3_kvm.c
+@@ -661,13 +661,11 @@ static void kvm_arm_gicv3_get(GICv3State *s)
+
+ static void arm_gicv3_icc_reset(CPUARMState *env, const ARMCPRegInfo *ri)
+ {
+-    ARMCPU *cpu;
+     GICv3State *s;
+     GICv3CPUState *c;
+
+     c = (GICv3CPUState *)env->gicv3state;
+     s = c->gic;
+-    cpu = ARM_CPU(c->cpu);
+
+     c->icc_pmr_el1 = 0;
+     c->icc_bpr[GICV3_G0] = GIC_MIN_BPR;
+@@ -684,7 +682,7 @@ static void arm_gicv3_icc_reset(CPUARMState *env, const ARMCPRegInfo *ri)
+
+     /* Initialize to actual HW supported configuration */
+     kvm_device_access(s->dev_fd, KVM_DEV_ARM_VGIC_GRP_CPU_SYSREGS,
+-                      KVM_VGIC_ATTR(ICC_CTLR_EL1, cpu->mp_affinity),
++                      KVM_VGIC_ATTR(ICC_CTLR_EL1, c->gicr_typer),
+                       &c->icc_ctlr_el1[GICV3_NS], false, &error_abort);
+
+     c->icc_ctlr_el1[GICV3_S] = c->icc_ctlr_el1[GICV3_NS];
+--
+2.19.1

@@ -1,0 +1,219 @@
+From cde57fcae2ed16a10e1ef7f2da0ec368883988ba Mon Sep 17 00:00:00 2001
+From: Keqian Zhu <zhukeqian1@huawei.com>
+Date: Mon, 6 Apr 2020 10:54:35 +0800
+Subject: [PATCH] arm/virt: Add CPU topology support
+
+The CPU topology specified by user (through -smp options) is used in
+ACPI PPTT. Now we will use this information to locate which CPU to
+plug or unplug.
+
+Signed-off-by: Keqian Zhu <zhukeqian1@huawei.com>
+Signed-off-by: Salil Mehta <salil.mehta@huawei.com>
+---
+ hw/arm/virt.c             | 68 +++++++++++++++++++++++++++++++++++++--
+ include/hw/arm/topology.h | 61 +++++++++++++++++++++++++++++++++++
+ target/arm/cpu.c          |  3 ++
+ target/arm/cpu.h          |  3 ++
+ 4 files changed, 133 insertions(+), 2 deletions(-)
+ create mode 100644 include/hw/arm/topology.h
+
+diff --git a/hw/arm/virt.c b/hw/arm/virt.c
+index 0bd37af26c..64532b61b2 100644
+--- a/hw/arm/virt.c
++++ b/hw/arm/virt.c
+@@ -36,6 +36,7 @@
+ #include "hw/sysbus.h"
+ #include "hw/arm/boot.h"
+ #include "hw/arm/primecell.h"
++#include "hw/arm/topology.h"
+ #include "hw/arm/virt.h"
+ #include "hw/block/flash.h"
+ #include "hw/vfio/vfio-calxeda-xgmac.h"
+@@ -2020,6 +2021,7 @@ static const CPUArchIdList *virt_possible_cpu_arch_ids(MachineState *ms)
+     int n;
+     unsigned int max_cpus = ms->smp.max_cpus;
+     VirtMachineState *vms = VIRT_MACHINE(ms);
++    ARMCPUTopoInfo topo;
+
+     if (ms->possible_cpus) {
+         assert(ms->possible_cpus->len == max_cpus);
+@@ -2031,10 +2033,17 @@ static const CPUArchIdList *virt_possible_cpu_arch_ids(MachineState *ms)
+     ms->possible_cpus->len = max_cpus;
+     for (n = 0; n < ms->possible_cpus->len; n++) {
+         ms->possible_cpus->cpus[n].type = ms->cpu_type;
++        ms->possible_cpus->cpus[n].vcpus_count = 1;
+         ms->possible_cpus->cpus[n].arch_id =
+             virt_cpu_mp_affinity(vms, n);
++
++        topo_ids_from_idx(n, ms->smp.cores, ms->smp.threads, &topo);
++        ms->possible_cpus->cpus[n].props.has_socket_id = true;
++        ms->possible_cpus->cpus[n].props.socket_id = topo.pkg_id;
++        ms->possible_cpus->cpus[n].props.has_core_id = true;
++        ms->possible_cpus->cpus[n].props.core_id = topo.core_id;
+         ms->possible_cpus->cpus[n].props.has_thread_id = true;
+-        ms->possible_cpus->cpus[n].props.thread_id = n;
++        ms->possible_cpus->cpus[n].props.thread_id = topo.smt_id;
+     }
+     return ms->possible_cpus;
+ }
+@@ -2080,7 +2089,62 @@ out:
+ static void virt_cpu_pre_plug(HotplugHandler *hotplug_dev,
+                               DeviceState *dev, Error **errp)
+ {
+-    /* Currently nothing to do */
++    CPUState *cs = CPU(dev);
++    ARMCPUTopoInfo topo;
++    ARMCPU *cpu = ARM_CPU(dev);
++    MachineState *ms = MACHINE(hotplug_dev);
++    int smp_cores = ms->smp.cores;
++    int smp_threads = ms->smp.threads;
++
++    /* if cpu idx is not set, set it based on socket/core/thread properties */
++    if (cs->cpu_index == UNASSIGNED_CPU_INDEX) {
++        int max_socket = ms->smp.max_cpus / smp_threads / smp_cores;
++        if (cpu->socket_id < 0 || cpu->socket_id >= max_socket) {
++            error_setg(errp, "Invalid CPU socket-id: %u must be in range 0:%u",
++                       cpu->socket_id, max_socket - 1);
++            return;
++        }
++        if (cpu->core_id < 0 || cpu->core_id >= smp_cores) {
++            error_setg(errp, "Invalid CPU core-id: %u must be in range 0:%u",
++                       cpu->core_id, smp_cores - 1);
++            return;
++        }
++        if (cpu->thread_id < 0 || cpu->thread_id >= smp_threads) {
++            error_setg(errp, "Invalid CPU thread-id: %u must be in range 0:%u",
++                       cpu->thread_id, smp_threads - 1);
++            return;
++        }
++
++        topo.pkg_id = cpu->socket_id;
++        topo.core_id = cpu->core_id;
++        topo.smt_id = cpu->thread_id;
++        cs->cpu_index = idx_from_topo_ids(smp_cores, smp_threads, &topo);
++    }
++
++    /* if 'address' properties socket-id/core-id/thread-id are not set, set them
++     * so that machine_query_hotpluggable_cpus would show correct values
++     */
++    topo_ids_from_idx(cs->cpu_index, smp_cores, smp_threads, &topo);
++    if (cpu->socket_id != -1 && cpu->socket_id != topo.pkg_id) {
++        error_setg(errp, "property socket-id: %u doesn't match set idx:"
++            " 0x%x (socket-id: %u)", cpu->socket_id, cs->cpu_index, topo.pkg_id);
++        return;
++    }
++    cpu->socket_id = topo.pkg_id;
++
++    if (cpu->core_id != -1 && cpu->core_id != topo.core_id) {
++        error_setg(errp, "property core-id: %u doesn't match set idx:"
++            " 0x%x (core-id: %u)", cpu->core_id, cs->cpu_index, topo.core_id);
++        return;
++    }
++    cpu->core_id = topo.core_id;
++
++    if (cpu->thread_id != -1 && cpu->thread_id != topo.smt_id) {
++        error_setg(errp, "property thread-id: %u doesn't match set idx:"
++            " 0x%x (thread-id: %u)", cpu->thread_id, cs->cpu_index, topo.smt_id);
++        return;
++    }
++    cpu->thread_id = topo.smt_id;
+ }
+
+ static void virt_cpu_plug(HotplugHandler *hotplug_dev,
+diff --git a/include/hw/arm/topology.h b/include/hw/arm/topology.h
+new file mode 100644
+index 0000000000..a3e5f436c5
+--- /dev/null
++++ b/include/hw/arm/topology.h
+@@ -0,0 +1,61 @@
++/*
++ * ARM CPU topology data structures and functions
++ *
++ * Copyright (c) 2020 HUAWEI TECHNOLOGIES CO.,LTD.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, see <http://www.gnu.org/licenses/>.
++ */
++
++#ifndef HW_ARM_TOPOLOGY_H
++#define HW_ARM_TOPOLOGY_H
++
++typedef struct ARMCPUTopoInfo {
++    unsigned pkg_id;
++    unsigned core_id;
++    unsigned smt_id;
++} ARMCPUTopoInfo;
++
++/* Calculate (contiguous) CPU index based on topology */
++static inline unsigned idx_from_topo_ids(unsigned nr_cores,
++                                         unsigned nr_threads,
++                                         const ARMCPUTopoInfo *topo)
++{
++    assert(nr_cores > 0);
++    assert(nr_threads > 0);
++    assert(topo != NULL);
++
++    return topo->pkg_id * nr_cores * nr_threads +
++           topo->core_id * nr_threads +
++           topo->smt_id;
++}
++
++/* Calculate thread/core/package topology
++ * based on (contiguous) CPU index
++ */
++static inline void topo_ids_from_idx(unsigned cpu_index,
++                                     unsigned nr_cores,
++                                     unsigned nr_threads,
++                                     ARMCPUTopoInfo *topo)
++{
++    assert(nr_cores > 0);
++    assert(nr_threads > 0);
++    assert(topo != NULL);
++
++    topo->smt_id = cpu_index % nr_threads;
++    topo->core_id = cpu_index / nr_threads % nr_cores;
++    topo->pkg_id = cpu_index / nr_threads / nr_cores;
++}
++
++#endif /* HW_ARM_TOPOLOGY_H */
++
+diff --git a/target/arm/cpu.c b/target/arm/cpu.c
+index 1ccb30e5eb..91f1e36cd8 100644
+--- a/target/arm/cpu.c
++++ b/target/arm/cpu.c
+@@ -2560,6 +2560,9 @@ static Property arm_cpu_properties[] = {
+     DEFINE_PROP_UINT64("mp-affinity", ARMCPU,
+                         mp_affinity, ARM64_AFFINITY_INVALID),
+     DEFINE_PROP_INT32("node-id", ARMCPU, node_id, CPU_UNSET_NUMA_NODE_ID),
++    DEFINE_PROP_INT32("socket-id", ARMCPU, socket_id, -1),
++    DEFINE_PROP_INT32("core-id", ARMCPU, core_id, -1),
++    DEFINE_PROP_INT32("thread-id", ARMCPU, thread_id, -1),
+     DEFINE_PROP_INT32("core-count", ARMCPU, core_count, -1),
+     DEFINE_PROP_END_OF_LIST()
+ };
+diff --git a/target/arm/cpu.h b/target/arm/cpu.h
+index e19531a77b..219c222b89 100644
+--- a/target/arm/cpu.h
++++ b/target/arm/cpu.h
+@@ -916,6 +916,9 @@ struct ARMCPU {
+     QLIST_HEAD(, ARMELChangeHook) el_change_hooks;
+
+     int32_t node_id; /* NUMA node this CPU belongs to */
++    int32_t socket_id;
++    int32_t core_id;
++    int32_t thread_id;
+
+     /* Used to synchronize KVM and QEMU in-kernel device levels */
+     uint8_t device_irq_level;
+--
+2.19.1

@@ -119,6 +119,34 @@ Patch0106: tests-acpi-add-empty-files.patch
 Patch0107: tests-allow-empty-expected-files.patch
 Patch0108: tests-Add-bios-tests-to-arm-virt.patch
 Patch0109: tests-document-how-to-update-acpi-tables.patch
+Patch0110: hw-arm-virt-Simplify-by-moving-the-gic-in-the-machin.patch
+Patch0111: bugfix-Use-gicr_typer-in-arm_gicv3_icc_reset.patch
+Patch0112: Typo-Correct-the-name-of-CPU-hotplug-memory-region.patch
+Patch0113: acpi-madt-Factor-out-the-building-of-MADT-GICC-struc.patch
+Patch0114: acpi-ged-Add-virt_madt_cpu_entry-to-madt_cpu-hook.patch
+Patch0115: arm-virt-acpi-Factor-out-CPPC-building-from-DSDT-CPU.patch
+Patch0116: acpi-cpu-Prepare-build_cpus_aml-for-arm-virt.patch
+Patch0117: acpi-ged-Extend-ACPI-GED-to-support-CPU-hotplug.patch
+Patch0118: arm-cpu-assign-arm_get_arch_id-handler-to-get_arch_i.patch
+Patch0119: arm-virt-Attach-ACPI-CPU-hotplug-support-to-virt.patch
+Patch0120: arm-virt-Add-CPU-hotplug-framework.patch
+Patch0121: arm-virt-Add-CPU-topology-support.patch
+Patch0122: test-numa-Adjust-aarch64-numa-test.patch
+Patch0123: hw-arm-virt-Factor-out-some-CPU-init-codes-to-pre_pl.patch
+Patch0124: hw-arm-boot-Add-manually-register-and-trigger-of-CPU.patch
+Patch0125: arm-virt-gic-Construct-irqs-connection-from-create_g.patch
+Patch0126: intc-gicv3_common-Factor-out-arm_gicv3_common_cpu_re.patch
+Patch0127: intc-gicv3_cpuif-Factor-out-gicv3_init_one_cpuif.patch
+Patch0128: intc-kvm_gicv3-Factor-out-kvm_arm_gicv3_cpu_realize.patch
+Patch0129: hw-intc-gicv3-Add-CPU-hotplug-realize-hook.patch
+Patch0130: accel-kvm-Add-pre-park-vCPU-support.patch
+Patch0131: intc-gicv3-Add-pre-sizing-capability-to-GICv3.patch
+Patch0132: acpi-madt-Add-pre-sizing-capability-to-MADT-GICC-str.patch
+Patch0133: arm-virt-Add-cpu_hotplug_enabled-field.patch
+Patch0134: arm-virt-acpi-Extend-cpufreq-to-support-max_cpus.patch
+Patch0135: arm-virt-Pre-sizing-MADT-GICC-PPTT-GICv3-and-Pre-par.patch
+Patch0136: arm-virt-Add-some-sanity-checks-in-cpu_pre_plug-hook.patch
+Patch0137: arm-virt-Start-up-CPU-hot-plug.patch
 
 
 BuildRequires: flex
@@ -465,6 +493,9 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Fri Apr 24 2020 Huawei Technologies Co., Ltd. <zhukeqian1@huawei.com>
+- arm/virt: Add CPU hotplug support
+
 * Wed Apr 22 2020 Huawei Technologies Co., Ltd. <zhukeqian1@huawei.com>
 - backport patch to enable arm/virt memory hotplug
 

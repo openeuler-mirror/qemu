@@ -1,0 +1,170 @@
+From 6bbfb186c8d66b745aeb08143d3198fcedc52d6c Mon Sep 17 00:00:00 2001
+From: Keqian Zhu <zhukeqian1@huawei.com>
+Date: Mon, 6 Apr 2020 11:26:35 +0800
+Subject: [PATCH] hw/intc/gicv3: Add CPU hotplug realize hook
+
+GICv3 exposes individual CPU realization capability through
+this hook. It will be used for hotplugged CPU.
+
+Signed-off-by: Keqian Zhu <zhukeqian1@huawei.com>
+Signed-off-by: Salil Mehta <salil.mehta@huawei.com>
+---
+ hw/intc/arm_gicv3.c                | 17 ++++++++++++++++-
+ hw/intc/arm_gicv3_common.c         |  8 ++++++++
+ hw/intc/arm_gicv3_kvm.c            | 11 +++++++++++
+ include/hw/intc/arm_gicv3.h        |  2 ++
+ include/hw/intc/arm_gicv3_common.h |  4 ++++
+ 5 files changed, 41 insertions(+), 1 deletion(-)
+
+diff --git a/hw/intc/arm_gicv3.c b/hw/intc/arm_gicv3.c
+index 2fe79f794d..cacef26546 100644
+--- a/hw/intc/arm_gicv3.c
++++ b/hw/intc/arm_gicv3.c
+@@ -361,6 +361,19 @@ static const MemoryRegionOps gic_ops[] = {
+     }
+ };
+
++static void gicv3_cpu_realize(GICv3State *s, int i)
++{
++    gicv3_init_one_cpuif(s, i);
++}
++
++static void arm_gicv3_cpu_hotplug_realize(GICv3State *s, int ncpu)
++{
++    ARMGICv3Class *agc = ARM_GICV3_GET_CLASS(s);
++
++    agc->parent_cpu_hotplug_realize(s, ncpu);
++    gicv3_cpu_realize(s, ncpu);
++}
++
+ static void arm_gic_realize(DeviceState *dev, Error **errp)
+ {
+     /* Device instance realize function for the GIC sysbus device */
+@@ -388,7 +401,7 @@ static void arm_gic_realize(DeviceState *dev, Error **errp)
+     }
+
+     for (i = 0; i < s->num_cpu; i++) {
+-        gicv3_init_one_cpuif(s, i);
++        gicv3_cpu_realize(s, i);
+     }
+ }
+
+@@ -398,6 +411,8 @@ static void arm_gicv3_class_init(ObjectClass *klass, void *data)
+     ARMGICv3CommonClass *agcc = ARM_GICV3_COMMON_CLASS(klass);
+     ARMGICv3Class *agc = ARM_GICV3_CLASS(klass);
+
++    agc->parent_cpu_hotplug_realize = agcc->cpu_hotplug_realize;
++    agcc->cpu_hotplug_realize = arm_gicv3_cpu_hotplug_realize;
+     agcc->post_load = arm_gicv3_post_load;
+     device_class_set_parent_realize(dc, arm_gic_realize, &agc->parent_realize);
+ }
+diff --git a/hw/intc/arm_gicv3_common.c b/hw/intc/arm_gicv3_common.c
+index 798f295d7c..8740a52c9f 100644
+--- a/hw/intc/arm_gicv3_common.c
++++ b/hw/intc/arm_gicv3_common.c
+@@ -313,6 +313,11 @@ static void arm_gicv3_common_cpu_realize(GICv3State *s, int ncpu)
+     gicv3_set_gicv3state(cpu, &s->cpu[ncpu]);
+ }
+
++static void arm_gicv3_common_cpu_hotplug_realize(GICv3State *s, int ncpu)
++{
++    arm_gicv3_common_cpu_realize(s, ncpu);
++}
++
+ static void arm_gicv3_common_realize(DeviceState *dev, Error **errp)
+ {
+     GICv3State *s = ARM_GICV3_COMMON(dev);
+@@ -357,6 +362,7 @@ static void arm_gicv3_common_realize(DeviceState *dev, Error **errp)
+
+     for (i = 0; i < s->num_cpu; i++) {
+         CPUState *cpu = qemu_get_cpu(i);
++
+         uint64_t cpu_affid;
+         int last;
+
+@@ -508,12 +514,14 @@ static Property arm_gicv3_common_properties[] = {
+ static void arm_gicv3_common_class_init(ObjectClass *klass, void *data)
+ {
+     DeviceClass *dc = DEVICE_CLASS(klass);
++    ARMGICv3CommonClass *agcc = ARM_GICV3_COMMON_CLASS(klass);
+     ARMLinuxBootIfClass *albifc = ARM_LINUX_BOOT_IF_CLASS(klass);
+
+     dc->reset = arm_gicv3_common_reset;
+     dc->realize = arm_gicv3_common_realize;
+     dc->props = arm_gicv3_common_properties;
+     dc->vmsd = &vmstate_gicv3;
++    agcc->cpu_hotplug_realize = arm_gicv3_common_cpu_hotplug_realize;
+     albifc->arm_linux_init = arm_gic_common_linux_init;
+ }
+
+diff --git a/hw/intc/arm_gicv3_kvm.c b/hw/intc/arm_gicv3_kvm.c
+index b2936938cb..f8d7be5479 100644
+--- a/hw/intc/arm_gicv3_kvm.c
++++ b/hw/intc/arm_gicv3_kvm.c
+@@ -78,6 +78,7 @@ typedef struct KVMARMGICv3Class {
+     ARMGICv3CommonClass parent_class;
+     DeviceRealize parent_realize;
+     void (*parent_reset)(DeviceState *dev);
++    CPUHotplugRealize parent_cpu_hotplug_realize;
+ } KVMARMGICv3Class;
+
+ static void kvm_arm_gicv3_set_irq(void *opaque, int irq, int level)
+@@ -768,6 +769,14 @@ static void kvm_arm_gicv3_cpu_realize(GICv3State *s, int ncpu)
+     define_arm_cp_regs(cpu, gicv3_cpuif_reginfo);
+ }
+
++static void kvm_arm_gicv3_cpu_hotplug_realize(GICv3State *s, int ncpu)
++{
++    KVMARMGICv3Class *kagcc = KVM_ARM_GICV3_GET_CLASS(s);
++
++    kagcc->parent_cpu_hotplug_realize(s, ncpu);
++    kvm_arm_gicv3_cpu_realize(s, ncpu);
++}
++
+ static void kvm_arm_gicv3_realize(DeviceState *dev, Error **errp)
+ {
+     GICv3State *s = KVM_ARM_GICV3(dev);
+@@ -884,6 +893,8 @@ static void kvm_arm_gicv3_class_init(ObjectClass *klass, void *data)
+     ARMGICv3CommonClass *agcc = ARM_GICV3_COMMON_CLASS(klass);
+     KVMARMGICv3Class *kgc = KVM_ARM_GICV3_CLASS(klass);
+
++    kgc->parent_cpu_hotplug_realize = agcc->cpu_hotplug_realize;
++    agcc->cpu_hotplug_realize = kvm_arm_gicv3_cpu_hotplug_realize;
+     agcc->pre_save = kvm_arm_gicv3_get;
+     agcc->post_load = kvm_arm_gicv3_put;
+     device_class_set_parent_realize(dc, kvm_arm_gicv3_realize,
+diff --git a/include/hw/intc/arm_gicv3.h b/include/hw/intc/arm_gicv3.h
+index 4a6fd85e22..98f2bdb7e9 100644
+--- a/include/hw/intc/arm_gicv3.h
++++ b/include/hw/intc/arm_gicv3.h
+@@ -26,6 +26,8 @@ typedef struct ARMGICv3Class {
+     ARMGICv3CommonClass parent_class;
+     /*< public >*/
+
++    CPUHotplugRealize parent_cpu_hotplug_realize;
++
+     DeviceRealize parent_realize;
+ } ARMGICv3Class;
+
+diff --git a/include/hw/intc/arm_gicv3_common.h b/include/hw/intc/arm_gicv3_common.h
+index 31ec9a1ae4..45cc50ed3b 100644
+--- a/include/hw/intc/arm_gicv3_common.h
++++ b/include/hw/intc/arm_gicv3_common.h
+@@ -286,11 +286,15 @@ GICV3_BITMAP_ACCESSORS(edge_trigger)
+ #define ARM_GICV3_COMMON_GET_CLASS(obj) \
+      OBJECT_GET_CLASS(ARMGICv3CommonClass, (obj), TYPE_ARM_GICV3_COMMON)
+
++typedef void (*CPUHotplugRealize)(GICv3State *s, int ncpu);
++
+ typedef struct ARMGICv3CommonClass {
+     /*< private >*/
+     SysBusDeviceClass parent_class;
+     /*< public >*/
+
++    CPUHotplugRealize cpu_hotplug_realize;
++
+     void (*pre_save)(GICv3State *s);
+     void (*post_load)(GICv3State *s);
+ } ARMGICv3CommonClass;
+--
+2.19.1

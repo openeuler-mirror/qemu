@@ -1,0 +1,61 @@
+From 31873c4c0454fb17654f57adece2bc396415f8bf Mon Sep 17 00:00:00 2001
+From: Keqian Zhu <zhukeqian1@huawei.com>
+Date: Fri, 10 Apr 2020 13:50:40 +0800
+Subject: [PATCH] arm/virt: Add cpu_hotplug_enabled field
+
+Some conditions must be satisfied to support CPU hotplug, including
+ACPI, GED, 64bit CPU, GICv3.
+
+Signed-off-by: Keqian Zhu <zhukeqian1@huawei.com>
+Signed-off-by: Salil Mehta <salil.mehta@huawei.com>
+---
+ hw/arm/virt.c         | 7 +++++++
+ include/hw/arm/virt.h | 1 +
+ 2 files changed, 8 insertions(+)
+
+diff --git a/hw/arm/virt.c b/hw/arm/virt.c
+index dda22194b5..304a4c2d31 100644
+--- a/hw/arm/virt.c
++++ b/hw/arm/virt.c
+@@ -1645,6 +1645,7 @@ static void machvirt_init(MachineState *machine)
+ {
+     VirtMachineState *vms = VIRT_MACHINE(machine);
+     VirtMachineClass *vmc = VIRT_MACHINE_GET_CLASS(machine);
++    MachineState *ms = MACHINE(machine);
+     MachineClass *mc = MACHINE_GET_CLASS(machine);
+     const CPUArchIdList *possible_cpus;
+     MemoryRegion *sysmem = get_system_memory();
+@@ -1655,6 +1656,7 @@ static void machvirt_init(MachineState *machine)
+     bool has_ged = !vmc->no_ged;
+     unsigned int smp_cpus = machine->smp.cpus;
+     unsigned int max_cpus = machine->smp.max_cpus;
++    ObjectClass *cpu_class;
+
+     /*
+      * In accelerated mode, the memory map is computed earlier in kvm_type()
+@@ -1760,6 +1762,11 @@ static void machvirt_init(MachineState *machine)
+
+     create_fdt(vms);
+
++    cpu_class = object_class_by_name(ms->cpu_type);
++    vms->cpu_hotplug_enabled = has_ged && firmware_loaded &&
++        acpi_enabled && vms->gic_version == 3 &&
++        !!object_class_dynamic_cast(cpu_class, TYPE_AARCH64_CPU);
++
+     possible_cpus = mc->possible_cpu_arch_ids(machine);
+     for (n = 0; n < possible_cpus->len; n++) {
+         Object *cpuobj;
+diff --git a/include/hw/arm/virt.h b/include/hw/arm/virt.h
+index beef4c8002..b4c53d920e 100644
+--- a/include/hw/arm/virt.h
++++ b/include/hw/arm/virt.h
+@@ -126,6 +126,7 @@ typedef struct {
+     bool highmem_ecam;
+     bool its;
+     bool virt;
++    bool cpu_hotplug_enabled;
+     int32_t gic_version;
+     VirtIOMMUType iommu;
+     struct arm_boot_info bootinfo;
+--
+2.19.1
