@@ -1,0 +1,50 @@
+From a7391f391336024986a5997e3beae8882c983ed0 Mon Sep 17 00:00:00 2001
+From: Keqian Zhu <zhukeqian1@huawei.com>
+Date: Fri, 10 Apr 2020 12:55:17 +0800
+Subject: [PATCH] intc/gicv3_common: Factor out arm_gicv3_common_cpu_realize
+
+The CPU object of hotplugged CPU will be defer-created (during
+hotplug session), so we must factor out realization code to let
+it can be applied to individual CPU.
+
+Signed-off-by: Keqian Zhu <zhukeqian1@huawei.com>
+Signed-off-by: Salil Mehta <salil.mehta@huawei.com>
+---
+ hw/intc/arm_gicv3_common.c | 15 +++++++++++----
+ 1 file changed, 11 insertions(+), 4 deletions(-)
+
+diff --git a/hw/intc/arm_gicv3_common.c b/hw/intc/arm_gicv3_common.c
+index 5edabb928f..798f295d7c 100644
+--- a/hw/intc/arm_gicv3_common.c
++++ b/hw/intc/arm_gicv3_common.c
+@@ -303,6 +303,16 @@ void gicv3_init_irqs_and_mmio(GICv3State *s, qemu_irq_handler handler,
+     }
+ }
+
++static void arm_gicv3_common_cpu_realize(GICv3State *s, int ncpu)
++{
++    CPUState *cpu = qemu_get_cpu(ncpu);
++
++    s->cpu[ncpu].cpu = cpu;
++    s->cpu[ncpu].gic = s;
++    /* Store GICv3CPUState in CPUARMState gicv3state pointer */
++    gicv3_set_gicv3state(cpu, &s->cpu[ncpu]);
++}
++
+ static void arm_gicv3_common_realize(DeviceState *dev, Error **errp)
+ {
+     GICv3State *s = ARM_GICV3_COMMON(dev);
+@@ -350,10 +360,7 @@ static void arm_gicv3_common_realize(DeviceState *dev, Error **errp)
+         uint64_t cpu_affid;
+         int last;
+
+-        s->cpu[i].cpu = cpu;
+-        s->cpu[i].gic = s;
+-        /* Store GICv3CPUState in CPUARMState gicv3state pointer */
+-        gicv3_set_gicv3state(cpu, &s->cpu[i]);
++        arm_gicv3_common_cpu_realize(s, i);
+
+         /* Pre-construct the GICR_TYPER:
+          * For our implementation:
+--
+2.19.1

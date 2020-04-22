@@ -1,0 +1,115 @@
+From de86ba0ff72a51b0c1cdbebf790869aea73ae9d3 Mon Sep 17 00:00:00 2001
+From: Keqian Zhu <zhukeqian1@huawei.com>
+Date: Thu, 9 Apr 2020 09:31:22 +0800
+Subject: [PATCH] hw/arm/boot: Add manually register and trigger of CPU reset
+
+We need to register and trigger CPU reset manually for hotplugged
+CPU. Besides, we gather CPU reset handlers of all CPUs because CPU
+reset should happen before GIC reset.
+
+Signed-off-by: Keqian Zhu <zhukeqian1@huawei.com>
+Signed-off-by: Salil Mehta <salil.mehta@huawei.com>
+---
+ hw/arm/boot.c          | 18 ++++++++++++++++++
+ hw/core/reset.c        | 25 +++++++++++++++++++++++++
+ include/hw/arm/boot.h  |  3 +++
+ include/sysemu/reset.h |  4 ++++
+ 4 files changed, 50 insertions(+)
+
+diff --git a/hw/arm/boot.c b/hw/arm/boot.c
+index fc4e021a38..3ab9de6456 100644
+--- a/hw/arm/boot.c
++++ b/hw/arm/boot.c
+@@ -789,6 +789,24 @@ static void do_cpu_reset(void *opaque)
+     }
+ }
+
++void cpu_hotplug_register_reset(int ncpu)
++{
++    CPUState *cpu_0 = qemu_get_cpu(0);
++    CPUState *cpu = qemu_get_cpu(ncpu);
++    QEMUResetEntry *entry = qemu_get_reset_entry(do_cpu_reset, cpu_0);
++
++    assert(entry);
++    /* Gather the reset handlers of all CPUs */
++    qemu_register_reset_after(entry, do_cpu_reset, cpu);
++}
++
++void cpu_hotplug_reset_manually(int ncpu)
++{
++    CPUState *cpu = qemu_get_cpu(ncpu);
++
++    do_cpu_reset(cpu);
++}
++
+ /**
+  * load_image_to_fw_cfg() - Load an image file into an fw_cfg entry identified
+  *                          by key.
+diff --git a/hw/core/reset.c b/hw/core/reset.c
+index 9c477f2bf5..0efaf2d76c 100644
+--- a/hw/core/reset.c
++++ b/hw/core/reset.c
+@@ -47,6 +47,31 @@ void qemu_register_reset(QEMUResetHandler *func, void *opaque)
+     QTAILQ_INSERT_TAIL(&reset_handlers, re, entry);
+ }
+
++QEMUResetEntry *qemu_get_reset_entry(QEMUResetHandler *func,
++                                     void *opaque)
++{
++    QEMUResetEntry *re;
++
++    QTAILQ_FOREACH(re, &reset_handlers, entry) {
++        if (re->func == func && re->opaque == opaque) {
++            return re;
++        }
++    }
++
++    return NULL;
++}
++
++void qemu_register_reset_after(QEMUResetEntry *entry,
++                               QEMUResetHandler *func,
++                               void *opaque)
++{
++    QEMUResetEntry *re = g_malloc0(sizeof(QEMUResetEntry));
++
++    re->func = func;
++    re->opaque = opaque;
++    QTAILQ_INSERT_AFTER(&reset_handlers, entry, re, entry);
++}
++
+ void qemu_unregister_reset(QEMUResetHandler *func, void *opaque)
+ {
+     QEMUResetEntry *re;
+diff --git a/include/hw/arm/boot.h b/include/hw/arm/boot.h
+index c48cc4c2bc..9452ccd1fa 100644
+--- a/include/hw/arm/boot.h
++++ b/include/hw/arm/boot.h
+@@ -118,6 +118,9 @@ struct arm_boot_info {
+     arm_endianness endianness;
+ };
+
++void cpu_hotplug_register_reset(int ncpu);
++void cpu_hotplug_reset_manually(int ncpu);
++
+ /**
+  * arm_load_kernel - Loads memory with everything needed to boot
+  *
+diff --git a/include/sysemu/reset.h b/include/sysemu/reset.h
+index 0b0d6d7598..f3ff26c637 100644
+--- a/include/sysemu/reset.h
++++ b/include/sysemu/reset.h
+@@ -2,7 +2,11 @@
+ #define QEMU_SYSEMU_RESET_H
+
+ typedef void QEMUResetHandler(void *opaque);
++typedef struct QEMUResetEntry QEMUResetEntry;
+
++QEMUResetEntry *qemu_get_reset_entry(QEMUResetHandler *func, void *opaque);
++void qemu_register_reset_after(QEMUResetEntry *entry,
++                               QEMUResetHandler *func, void *opaque);
+ void qemu_register_reset(QEMUResetHandler *func, void *opaque);
+ void qemu_unregister_reset(QEMUResetHandler *func, void *opaque);
+ void qemu_devices_reset(void);
+--
+2.19.1

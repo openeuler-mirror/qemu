@@ -1,0 +1,42 @@
+From d8e0b51447d8c64788cd7f9b0fa75c4ccb06f8eb Mon Sep 17 00:00:00 2001
+From: Keqian Zhu <zhukeqian1@huawei.com>
+Date: Fri, 10 Apr 2020 10:17:27 +0800
+Subject: [PATCH] arm/cpu: assign arm_get_arch_id handler to get_arch_id hook
+
+This hook will be called in get_cpu_status, which is called
+during cpu hotplug.
+
+Signed-off-by: Keqian Zhu <zhukeqian1@huawei.com>
+Signed-off-by: Salil Mehta <salil.mehta@huawei.com>
+---
+ target/arm/cpu.c | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/target/arm/cpu.c b/target/arm/cpu.c
+index 39bbe7e2d7..1ccb30e5eb 100644
+--- a/target/arm/cpu.c
++++ b/target/arm/cpu.c
+@@ -2575,6 +2575,13 @@ static gchar *arm_gdb_arch_name(CPUState *cs)
+     return g_strdup("arm");
+ }
+
++static int64_t arm_cpu_get_arch_id(CPUState *cs)
++{
++    ARMCPU *cpu = ARM_CPU(cs);
++
++    return cpu->mp_affinity;
++}
++
+ static void arm_cpu_class_init(ObjectClass *oc, void *data)
+ {
+     ARMCPUClass *acc = ARM_CPU_CLASS(oc);
+@@ -2596,6 +2603,7 @@ static void arm_cpu_class_init(ObjectClass *oc, void *data)
+     cc->synchronize_from_tb = arm_cpu_synchronize_from_tb;
+     cc->gdb_read_register = arm_cpu_gdb_read_register;
+     cc->gdb_write_register = arm_cpu_gdb_write_register;
++    cc->get_arch_id = arm_cpu_get_arch_id;
+ #ifndef CONFIG_USER_ONLY
+     cc->do_interrupt = arm_cpu_do_interrupt;
+     cc->get_phys_page_attrs_debug = arm_cpu_get_phys_page_attrs_debug;
+--
+2.19.1
