@@ -107,6 +107,7 @@ typedef struct {
     bool claim_edge_triggered_timers;
     bool smbios_old_sys_ver;
     bool no_highmem_ecam;
+    bool kvm_no_adjvtime;
 } VirtMachineClass;
 
 typedef struct {

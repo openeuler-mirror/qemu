@@ -231,6 +231,15 @@ bool kvm_arm_get_host_cpu_features(ARMHostCPUFeatures *ahcf);
 void kvm_arm_set_cpu_features_from_host(ARMCPU *cpu);
 
 /**
+ * kvm_arm_add_vcpu_properties:
+ * @obj: The CPU object to add the properties to
+ *
+ * Add all KVM specific CPU properties to the CPU object. These
+ * are the CPU properties with "kvm-" prefixed names.
+ */
+void kvm_arm_add_vcpu_properties(Object *obj);
+
+/**
  * kvm_arm_get_max_vm_ipa_size:
  * @ms: Machine state handle
  *
@@ -293,6 +302,8 @@ static inline void kvm_arm_set_cpu_features_from_host(ARMCPU *cpu)
     cpu->kvm_target = QEMU_KVM_ARM_TARGET_NONE;
     cpu->host_cpu_probe_failed = true;
 }
+
+static inline void kvm_arm_add_vcpu_properties(Object *obj) {}
 
 static inline int kvm_arm_get_max_vm_ipa_size(MachineState *ms)
 {
