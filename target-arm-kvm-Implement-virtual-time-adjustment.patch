@@ -1,0 +1,290 @@
+From 77ee224418fac859acecd9aca4d18555ced42db6 Mon Sep 17 00:00:00 2001
+From: Ying Fang <fangying1@huawei.com>
+Date: Tue, 21 Apr 2020 17:32:31 +0800
+Subject: [PATCH 3/4] target/arm/kvm: Implement virtual time adjustment
+
+When a VM is stopped (such as when it's paused) guest virtual time
+should stop counting. Otherwise, when the VM is resumed it will
+experience time jumps and its kernel may report soft lockups. Not
+counting virtual time while the VM is stopped has the side effect
+of making the guest's time appear to lag when compared with real
+time, and even with time derived from the physical counter. For
+this reason, this change, which is enabled by default, comes with
+a KVM CPU feature allowing it to be disabled, restoring legacy
+behavior.
+
+This patch only provides the implementation of the virtual time
+adjustment. A subsequent patch will provide the CPU property
+allowing the change to be enabled and disabled.
+
+Reported-by: Bijan Mottahedeh <bijan.mottahedeh@oracle.com>
+Signed-off-by: Andrew Jones <drjones@redhat.com>
+Message-id: 20200120101023.16030-6-drjones@redhat.com
+Reviewed-by: Peter Maydell <peter.maydell@linaro.org>
+Signed-off-by: Peter Maydell <peter.maydell@linaro.org>
+---
+ target/arm/cpu.h     |  7 ++++
+ target/arm/kvm.c     | 92 ++++++++++++++++++++++++++++++++++++++++++++
+ target/arm/kvm32.c   |  2 +
+ target/arm/kvm64.c   |  2 +
+ target/arm/kvm_arm.h | 37 ++++++++++++++++++
+ target/arm/machine.c |  7 ++++
+ 6 files changed, 147 insertions(+)
+
+diff --git a/target/arm/cpu.h b/target/arm/cpu.h
+index 94c990cd..e19531a7 100644
+--- a/target/arm/cpu.h
++++ b/target/arm/cpu.h
+@@ -816,6 +816,13 @@ struct ARMCPU {
+     /* KVM init features for this CPU */
+     uint32_t kvm_init_features[7];
+
++    /* KVM CPU state */
++
++    /* KVM virtual time adjustment */
++    bool kvm_adjvtime;
++    bool kvm_vtime_dirty;
++    uint64_t kvm_vtime;
++
+     /* Uniprocessor system with MP extensions */
+     bool mp_is_up;
+
+diff --git a/target/arm/kvm.c b/target/arm/kvm.c
+index cc7a46df..21fb7ecd 100644
+--- a/target/arm/kvm.c
++++ b/target/arm/kvm.c
+@@ -336,6 +336,22 @@ static int compare_u64(const void *a, const void *b)
+     return 0;
+ }
+
++/*
++ * cpreg_values are sorted in ascending order by KVM register ID
++ * (see kvm_arm_init_cpreg_list). This allows us to cheaply find
++ * the storage for a KVM register by ID with a binary search.
++ */
++static uint64_t *kvm_arm_get_cpreg_ptr(ARMCPU *cpu, uint64_t regidx)
++{
++    uint64_t *res;
++
++    res = bsearch(&regidx, cpu->cpreg_indexes, cpu->cpreg_array_len,
++                  sizeof(uint64_t), compare_u64);
++    assert(res);
++
++    return &cpu->cpreg_values[res - cpu->cpreg_indexes];
++}
++
+ /* Initialize the ARMCPU cpreg list according to the kernel's
+  * definition of what CPU registers it knows about (and throw away
+  * the previous TCG-created cpreg list).
+@@ -489,6 +505,23 @@ bool write_list_to_kvmstate(ARMCPU *cpu, int level)
+     return ok;
+ }
+
++void kvm_arm_cpu_pre_save(ARMCPU *cpu)
++{
++    /* KVM virtual time adjustment */
++    if (cpu->kvm_vtime_dirty) {
++        *kvm_arm_get_cpreg_ptr(cpu, KVM_REG_ARM_TIMER_CNT) = cpu->kvm_vtime;
++    }
++}
++
++void kvm_arm_cpu_post_load(ARMCPU *cpu)
++{
++    /* KVM virtual time adjustment */
++    if (cpu->kvm_adjvtime) {
++        cpu->kvm_vtime = *kvm_arm_get_cpreg_ptr(cpu, KVM_REG_ARM_TIMER_CNT);
++        cpu->kvm_vtime_dirty = true;
++    }
++}
++
+ void kvm_arm_reset_vcpu(ARMCPU *cpu)
+ {
+     int ret;
+@@ -556,6 +589,50 @@ int kvm_arm_sync_mpstate_to_qemu(ARMCPU *cpu)
+     return 0;
+ }
+
++void kvm_arm_get_virtual_time(CPUState *cs)
++{
++    ARMCPU *cpu = ARM_CPU(cs);
++    struct kvm_one_reg reg = {
++        .id = KVM_REG_ARM_TIMER_CNT,
++        .addr = (uintptr_t)&cpu->kvm_vtime,
++    };
++    int ret;
++
++    if (cpu->kvm_vtime_dirty) {
++        return;
++    }
++
++    ret = kvm_vcpu_ioctl(cs, KVM_GET_ONE_REG, &reg);
++    if (ret) {
++        error_report("Failed to get KVM_REG_ARM_TIMER_CNT");
++        abort();
++    }
++
++    cpu->kvm_vtime_dirty = true;
++}
++
++void kvm_arm_put_virtual_time(CPUState *cs)
++{
++    ARMCPU *cpu = ARM_CPU(cs);
++    struct kvm_one_reg reg = {
++        .id = KVM_REG_ARM_TIMER_CNT,
++        .addr = (uintptr_t)&cpu->kvm_vtime,
++    };
++    int ret;
++
++    if (!cpu->kvm_vtime_dirty) {
++        return;
++    }
++
++    ret = kvm_vcpu_ioctl(cs, KVM_SET_ONE_REG, &reg);
++    if (ret) {
++        error_report("Failed to set KVM_REG_ARM_TIMER_CNT");
++        abort();
++    }
++
++    cpu->kvm_vtime_dirty = false;
++}
++
+ int kvm_put_vcpu_events(ARMCPU *cpu)
+ {
+     CPUARMState *env = &cpu->env;
+@@ -667,6 +744,21 @@ MemTxAttrs kvm_arch_post_run(CPUState *cs, struct kvm_run *run)
+     return MEMTXATTRS_UNSPECIFIED;
+ }
+
++void kvm_arm_vm_state_change(void *opaque, int running, RunState state)
++{
++    CPUState *cs = opaque;
++    ARMCPU *cpu = ARM_CPU(cs);
++
++    if (running) {
++        if (cpu->kvm_adjvtime) {
++            kvm_arm_put_virtual_time(cs);
++        }
++    } else {
++        if (cpu->kvm_adjvtime) {
++            kvm_arm_get_virtual_time(cs);
++        }
++    }
++}
+
+ int kvm_arch_handle_exit(CPUState *cs, struct kvm_run *run)
+ {
+diff --git a/target/arm/kvm32.c b/target/arm/kvm32.c
+index 51f78f72..ee158830 100644
+--- a/target/arm/kvm32.c
++++ b/target/arm/kvm32.c
+@@ -195,6 +195,8 @@ int kvm_arch_init_vcpu(CPUState *cs)
+         return -EINVAL;
+     }
+
++    qemu_add_vm_change_state_handler(kvm_arm_vm_state_change, cs);
++
+     /* Determine init features for this CPU */
+     memset(cpu->kvm_init_features, 0, sizeof(cpu->kvm_init_features));
+     if (cpu->start_powered_off) {
+diff --git a/target/arm/kvm64.c b/target/arm/kvm64.c
+index f2f0a92e..4f0bf000 100644
+--- a/target/arm/kvm64.c
++++ b/target/arm/kvm64.c
+@@ -609,6 +609,8 @@ int kvm_arch_init_vcpu(CPUState *cs)
+         return -EINVAL;
+     }
+
++    qemu_add_vm_change_state_handler(kvm_arm_vm_state_change, cs);
++
+     /* Determine init features for this CPU */
+     memset(cpu->kvm_init_features, 0, sizeof(cpu->kvm_init_features));
+     if (cpu->start_powered_off) {
+diff --git a/target/arm/kvm_arm.h b/target/arm/kvm_arm.h
+index 32d97ce5..97560d4e 100644
+--- a/target/arm/kvm_arm.h
++++ b/target/arm/kvm_arm.h
+@@ -113,6 +113,23 @@ bool write_list_to_kvmstate(ARMCPU *cpu, int level);
+  */
+ bool write_kvmstate_to_list(ARMCPU *cpu);
+
++/**
++ * kvm_arm_cpu_pre_save:
++ * @cpu: ARMCPU
++ *
++ * Called after write_kvmstate_to_list() from cpu_pre_save() to update
++ * the cpreg list with KVM CPU state.
++ */
++void kvm_arm_cpu_pre_save(ARMCPU *cpu);
++
++/**
++ * kvm_arm_cpu_post_load:
++ * @cpu: ARMCPU
++ *
++ * Called from cpu_post_load() to update KVM CPU state from the cpreg list.
++ */
++void kvm_arm_cpu_post_load(ARMCPU *cpu);
++
+ /**
+  * kvm_arm_reset_vcpu:
+  * @cpu: ARMCPU
+@@ -241,6 +258,24 @@ int kvm_arm_sync_mpstate_to_kvm(ARMCPU *cpu);
+  */
+ int kvm_arm_sync_mpstate_to_qemu(ARMCPU *cpu);
+
++/**
++ * kvm_arm_get_virtual_time:
++ * @cs: CPUState
++ *
++ * Gets the VCPU's virtual counter and stores it in the KVM CPU state.
++ */
++void kvm_arm_get_virtual_time(CPUState *cs);
++
++/**
++ * kvm_arm_put_virtual_time:
++ * @cs: CPUState
++ *
++ * Sets the VCPU's virtual counter to the value stored in the KVM CPU state.
++ */
++void kvm_arm_put_virtual_time(CPUState *cs);
++
++void kvm_arm_vm_state_change(void *opaque, int running, RunState state);
++
+ int kvm_arm_vgic_probe(void);
+
+ void kvm_arm_pmu_set_irq(CPUState *cs, int irq);
+@@ -272,6 +307,8 @@ static inline int kvm_arm_vgic_probe(void)
+ static inline void kvm_arm_pmu_set_irq(CPUState *cs, int irq) {}
+ static inline void kvm_arm_pmu_init(CPUState *cs) {}
+
++static inline void kvm_arm_get_virtual_time(CPUState *cs) {}
++static inline void kvm_arm_put_virtual_time(CPUState *cs) {}
+ #endif
+
+ static inline const char *gic_class_name(void)
+diff --git a/target/arm/machine.c b/target/arm/machine.c
+index 3fd319a3..ee3c59a6 100644
+--- a/target/arm/machine.c
++++ b/target/arm/machine.c
+@@ -644,6 +644,12 @@ static int cpu_pre_save(void *opaque)
+             /* This should never fail */
+             abort();
+         }
++
++        /*
++         * kvm_arm_cpu_pre_save() must be called after
++         * write_kvmstate_to_list()
++         */
++        kvm_arm_cpu_pre_save(cpu);
+     } else {
+         if (!write_cpustate_to_list(cpu, false)) {
+             /* This should never fail. */
+@@ -746,6 +752,7 @@ static int cpu_post_load(void *opaque, int version_id)
+          * we're using it.
+          */
+         write_list_to_cpustate(cpu);
++        kvm_arm_cpu_post_load(cpu);
+     } else {
+         if (!write_list_to_cpustate(cpu)) {
+             return -1;
+--
+2.23.0
