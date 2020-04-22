@@ -1,0 +1,88 @@
+From c943416df54931cea8b19183fd7c4f2dbd86ec72 Mon Sep 17 00:00:00 2001
+From: "Michael S. Tsirkin" <mst@redhat.com>
+Date: Sun, 29 Sep 2019 10:54:12 -0400
+Subject: [PATCH] tests/acpi: add empty files
+
+Needed to make tests pass. Will replace with actual files.
+
+Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+---
+ tests/data/acpi/virt/APIC.memhp   | 0
+ tests/data/acpi/virt/APIC.numamem | 0
+ tests/data/acpi/virt/DSDT.memhp   | 0
+ tests/data/acpi/virt/DSDT.numamem | 0
+ tests/data/acpi/virt/FACP.memhp   | 0
+ tests/data/acpi/virt/FACP.numamem | 0
+ tests/data/acpi/virt/GTDT.memhp   | 0
+ tests/data/acpi/virt/GTDT.numamem | 0
+ tests/data/acpi/virt/MCFG.memhp   | 0
+ tests/data/acpi/virt/MCFG.numamem | 0
+ tests/data/acpi/virt/SLIT.memhp   | 0
+ tests/data/acpi/virt/SPCR.memhp   | 0
+ tests/data/acpi/virt/SPCR.numamem | 0
+ tests/data/acpi/virt/SRAT.memhp   | 0
+ tests/data/acpi/virt/SRAT.numamem | 0
+ 15 files changed, 0 insertions(+), 0 deletions(-)
+ create mode 100644 tests/data/acpi/virt/APIC.memhp
+ create mode 100644 tests/data/acpi/virt/APIC.numamem
+ create mode 100644 tests/data/acpi/virt/DSDT.memhp
+ create mode 100644 tests/data/acpi/virt/DSDT.numamem
+ create mode 100644 tests/data/acpi/virt/FACP.memhp
+ create mode 100644 tests/data/acpi/virt/FACP.numamem
+ create mode 100644 tests/data/acpi/virt/GTDT.memhp
+ create mode 100644 tests/data/acpi/virt/GTDT.numamem
+ create mode 100644 tests/data/acpi/virt/MCFG.memhp
+ create mode 100644 tests/data/acpi/virt/MCFG.numamem
+ create mode 100644 tests/data/acpi/virt/SLIT.memhp
+ create mode 100644 tests/data/acpi/virt/SPCR.memhp
+ create mode 100644 tests/data/acpi/virt/SPCR.numamem
+ create mode 100644 tests/data/acpi/virt/SRAT.memhp
+ create mode 100644 tests/data/acpi/virt/SRAT.numamem
+
+diff --git a/tests/data/acpi/virt/APIC.memhp b/tests/data/acpi/virt/APIC.memhp
+new file mode 100644
+index 0000000000..e69de29bb2
+diff --git a/tests/data/acpi/virt/APIC.numamem b/tests/data/acpi/virt/APIC.numamem
+new file mode 100644
+index 0000000000..e69de29bb2
+diff --git a/tests/data/acpi/virt/DSDT.memhp b/tests/data/acpi/virt/DSDT.memhp
+new file mode 100644
+index 0000000000..e69de29bb2
+diff --git a/tests/data/acpi/virt/DSDT.numamem b/tests/data/acpi/virt/DSDT.numamem
+new file mode 100644
+index 0000000000..e69de29bb2
+diff --git a/tests/data/acpi/virt/FACP.memhp b/tests/data/acpi/virt/FACP.memhp
+new file mode 100644
+index 0000000000..e69de29bb2
+diff --git a/tests/data/acpi/virt/FACP.numamem b/tests/data/acpi/virt/FACP.numamem
+new file mode 100644
+index 0000000000..e69de29bb2
+diff --git a/tests/data/acpi/virt/GTDT.memhp b/tests/data/acpi/virt/GTDT.memhp
+new file mode 100644
+index 0000000000..e69de29bb2
+diff --git a/tests/data/acpi/virt/GTDT.numamem b/tests/data/acpi/virt/GTDT.numamem
+new file mode 100644
+index 0000000000..e69de29bb2
+diff --git a/tests/data/acpi/virt/MCFG.memhp b/tests/data/acpi/virt/MCFG.memhp
+new file mode 100644
+index 0000000000..e69de29bb2
+diff --git a/tests/data/acpi/virt/MCFG.numamem b/tests/data/acpi/virt/MCFG.numamem
+new file mode 100644
+index 0000000000..e69de29bb2
+diff --git a/tests/data/acpi/virt/SLIT.memhp b/tests/data/acpi/virt/SLIT.memhp
+new file mode 100644
+index 0000000000..e69de29bb2
+diff --git a/tests/data/acpi/virt/SPCR.memhp b/tests/data/acpi/virt/SPCR.memhp
+new file mode 100644
+index 0000000000..e69de29bb2
+diff --git a/tests/data/acpi/virt/SPCR.numamem b/tests/data/acpi/virt/SPCR.numamem
+new file mode 100644
+index 0000000000..e69de29bb2
+diff --git a/tests/data/acpi/virt/SRAT.memhp b/tests/data/acpi/virt/SRAT.memhp
+new file mode 100644
+index 0000000000..e69de29bb2
+diff --git a/tests/data/acpi/virt/SRAT.numamem b/tests/data/acpi/virt/SRAT.numamem
+new file mode 100644
+index 0000000000..e69de29bb2
+--
+2.19.1
