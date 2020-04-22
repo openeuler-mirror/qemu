@@ -101,6 +101,10 @@ Patch0088: block-file-posix-Let-post-EOF-fallocate-serialize.patch
 Patch0089: block-posix-Always-allocate-the-first-block.patch
 Patch0090: block-create-Do-not-abort-if-a-block-driver-is-not-a.patch
 Patch0091: mirror-Keep-mirror_top_bs-drained-after-dropping-per.patch
+Patch0092: target-arm-kvm-trivial-Clean-up-header-documentation.patch
+Patch0093: target-arm-kvm64-kvm64-cpus-have-timer-registers.patch
+Patch0094: target-arm-kvm-Implement-virtual-time-adjustment.patch
+Patch0095: target-arm-cpu-Add-the-kvm-no-adjvtime-CPU-property.patch
 
 
 BuildRequires: flex
@@ -447,6 +451,9 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Wed Apr 22 2020 Huawei Technologies Co., Ltd. <fangying1@huawei.com>
+- backport patch to enable target/arm/kvm Adjust virtual time
+
 * Fri Apr 17 2020 Huawei Technologies Co., Ltd. <fangying1@huawei.com>
 - backport patch bundles from qemu stable v4.1.1
 

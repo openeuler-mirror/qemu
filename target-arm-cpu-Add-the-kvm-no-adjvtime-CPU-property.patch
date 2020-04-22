@@ -1,0 +1,152 @@
+From 860035652c7866b033762f6d90f81d5ddedf855c Mon Sep 17 00:00:00 2001
+From: Ying Fang <fangying1@huawei.com>
+Date: Wed, 22 Apr 2020 17:08:43 +0800
+Subject: [PATCH] target/arm/cpu: Add the kvm-no-adjvtime CPU property
+
+kvm-no-adjvtime is a KVM specific CPU property and a first of its
+kind. To accommodate it we also add kvm_arm_add_vcpu_properties()
+and a KVM specific CPU properties description to the CPU features
+document.
+
+Signed-off-by: Andrew Jones <drjones@redhat.com>
+Message-id: 20200120101023.16030-7-drjones@redhat.com
+Reviewed-by: Peter Maydell <peter.maydell@linaro.org>
+Signed-off-by: Peter Maydell <peter.maydell@linaro.org>
+
+diff --git a/hw/arm/virt.c b/hw/arm/virt.c
+index e9a2a959..cfda6cc5 100644
+--- a/hw/arm/virt.c
++++ b/hw/arm/virt.c
+@@ -1748,6 +1748,11 @@ static void machvirt_init(MachineState *machine)
+             }
+         }
+
++        if (vmc->kvm_no_adjvtime &&
++            object_property_find(cpuobj, "kvm-no-adjvtime", NULL)) {
++            object_property_set_bool(cpuobj, true, "kvm-no-adjvtime", NULL);
++        }
++
+         if (vmc->no_pmu && object_property_find(cpuobj, "pmu", NULL)) {
+             object_property_set_bool(cpuobj, false, "pmu", NULL);
+         }
+diff --git a/include/hw/arm/virt.h b/include/hw/arm/virt.h
+index 43a6ce91..a9d6977a 100644
+--- a/include/hw/arm/virt.h
++++ b/include/hw/arm/virt.h
+@@ -107,6 +107,7 @@ typedef struct {
+     bool claim_edge_triggered_timers;
+     bool smbios_old_sys_ver;
+     bool no_highmem_ecam;
++    bool kvm_no_adjvtime;
+ } VirtMachineClass;
+
+ typedef struct {
+diff --git a/target/arm/cpu.c b/target/arm/cpu.c
+index bc3da9a3..39bbe7e2 100644
+--- a/target/arm/cpu.c
++++ b/target/arm/cpu.c
+@@ -2441,6 +2441,7 @@ static void arm_max_initfn(Object *obj)
+
+     if (kvm_enabled()) {
+         kvm_arm_set_cpu_features_from_host(cpu);
++        kvm_arm_add_vcpu_properties(obj);
+     } else {
+         cortex_a15_initfn(obj);
+
+@@ -2629,6 +2630,7 @@ static void arm_host_initfn(Object *obj)
+     ARMCPU *cpu = ARM_CPU(obj);
+
+     kvm_arm_set_cpu_features_from_host(cpu);
++    kvm_arm_add_vcpu_properties(obj);
+     arm_cpu_post_init(obj);
+ }
+
+diff --git a/target/arm/cpu64.c b/target/arm/cpu64.c
+index dbf44b92..b30ca7c9 100644
+--- a/target/arm/cpu64.c
++++ b/target/arm/cpu64.c
+@@ -312,6 +312,7 @@ static void aarch64_max_initfn(Object *obj)
+
+     if (kvm_enabled()) {
+         kvm_arm_set_cpu_features_from_host(cpu);
++        kvm_arm_add_vcpu_properties(obj);
+     } else {
+         uint64_t t;
+         uint32_t u;
+diff --git a/target/arm/kvm.c b/target/arm/kvm.c
+index 21fb7ecd..327b3bc3 100644
+--- a/target/arm/kvm.c
++++ b/target/arm/kvm.c
+@@ -16,6 +16,8 @@
+ #include "qemu-common.h"
+ #include "qemu/timer.h"
+ #include "qemu/error-report.h"
++#include "qom/object.h"
++#include "qapi/error.h"
+ #include "sysemu/sysemu.h"
+ #include "sysemu/kvm.h"
+ #include "sysemu/kvm_int.h"
+@@ -162,6 +164,32 @@ void kvm_arm_set_cpu_features_from_host(ARMCPU *cpu)
+     env->features = arm_host_cpu_features.features;
+ }
+
++static bool kvm_no_adjvtime_get(Object *obj, Error **errp)
++{
++    return !ARM_CPU(obj)->kvm_adjvtime;
++}
++
++static void kvm_no_adjvtime_set(Object *obj, bool value, Error **errp)
++{
++    ARM_CPU(obj)->kvm_adjvtime = !value;
++}
++
++/* KVM VCPU properties should be prefixed with "kvm-". */
++void kvm_arm_add_vcpu_properties(Object *obj)
++{
++    if (!kvm_enabled()) {
++        return;
++    }
++
++    ARM_CPU(obj)->kvm_adjvtime = true;
++    object_property_add_bool(obj, "kvm-no-adjvtime", kvm_no_adjvtime_get,
++                             kvm_no_adjvtime_set, &error_abort);
++    object_property_set_description(obj, "kvm-no-adjvtime",
++                                    "Set on to disable the adjustment of "
++                                    "the virtual counter. VM stopped time "
++                                    "will be counted.", &error_abort);
++}
++
+ int kvm_arm_get_max_vm_ipa_size(MachineState *ms)
+ {
+     KVMState *s = KVM_STATE(ms->accelerator);
+diff --git a/target/arm/kvm_arm.h b/target/arm/kvm_arm.h
+index 97560d4e..0de5f83e 100644
+--- a/target/arm/kvm_arm.h
++++ b/target/arm/kvm_arm.h
+@@ -230,6 +230,15 @@ bool kvm_arm_get_host_cpu_features(ARMHostCPUFeatures *ahcf);
+  */
+ void kvm_arm_set_cpu_features_from_host(ARMCPU *cpu);
+
++/**
++ * kvm_arm_add_vcpu_properties:
++ * @obj: The CPU object to add the properties to
++ *
++ * Add all KVM specific CPU properties to the CPU object. These
++ * are the CPU properties with "kvm-" prefixed names.
++ */
++void kvm_arm_add_vcpu_properties(Object *obj);
++
+ /**
+  * kvm_arm_get_max_vm_ipa_size:
+  * @ms: Machine state handle
+@@ -294,6 +303,8 @@ static inline void kvm_arm_set_cpu_features_from_host(ARMCPU *cpu)
+     cpu->host_cpu_probe_failed = true;
+ }
+
++static inline void kvm_arm_add_vcpu_properties(Object *obj) {}
++
+ static inline int kvm_arm_get_max_vm_ipa_size(MachineState *ms)
+ {
+     return -ENOENT;
+--
+2.23.0
