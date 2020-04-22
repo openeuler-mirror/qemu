@@ -185,6 +185,8 @@ bool virt_is_acpi_enabled(VirtMachineState *vms);
 void virt_madt_cpu_entry(AcpiDeviceIf *adev, int uid,
                          const CPUArchIdList *cpu_list, GArray *entry,
                          bool force_enabled);
+void virt_acpi_dsdt_cpu_cppc(AcpiDeviceIf *adev, int uid,
+                             int num_cpu, Aml *dev);
 
 /* Return the number of used redistributor regions  */
 static inline int virt_gicv3_redist_region_count(VirtMachineState *vms)

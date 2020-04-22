@@ -120,8 +120,24 @@ static void acpi_dsdt_add_cppc(Aml *dev, uint64_t cpu_base, int *regs_offset)
     aml_append(dev, aml_name_decl("_CPC", cpc));
 }
 
-static void acpi_dsdt_add_cpus(Aml *scope, VirtMachineState *vms,
-                               const MemMapEntry *cppc_memmap)
+void virt_acpi_dsdt_cpu_cppc(AcpiDeviceIf *adev, int ncpu, int num_cpu, Aml *dev)
+{
+    VirtMachineState *vms = VIRT_MACHINE(qdev_get_machine());
+    const MemMapEntry *cppc_memmap = &vms->memmap[VIRT_CPUFREQ];
+
+    /*
+    * Append _CPC and _PSD to support CPU frequence show
+    * Check CPPC available by DESIRED_PERF register
+    */
+    if (cppc_regs_offset[DESIRED_PERF] != -1) {
+        acpi_dsdt_add_cppc(dev,
+                           cppc_memmap->base + ncpu * CPPC_REG_PER_CPU_STRIDE,
+                           cppc_regs_offset);
+        acpi_dsdt_add_psd(dev, num_cpu);
+    }
+}
+
+static void acpi_dsdt_add_cpus(Aml *scope, VirtMachineState *vms)
 {
     MachineState *ms = MACHINE(vms);
     uint16_t i;
@@ -131,16 +147,7 @@ static void acpi_dsdt_add_cpus(Aml *scope, VirtMachineState *vms,
         aml_append(dev, aml_name_decl("_HID", aml_string("ACPI0007")));
         aml_append(dev, aml_name_decl("_UID", aml_int(i)));
 
-        /*
-         * Append _CPC and _PSD to support CPU frequence show
-         * Check CPPC available by DESIRED_PERF register
-         */
-        if (cppc_regs_offset[DESIRED_PERF] != -1) {
-            acpi_dsdt_add_cppc(dev,
-                               cppc_memmap->base + i * CPPC_REG_PER_CPU_STRIDE,
-                               cppc_regs_offset);
-            acpi_dsdt_add_psd(dev, ms->smp.cpus);
-        }
+        virt_acpi_dsdt_cpu_cppc(NULL, i, ms->smp.cpus, dev);
 
         aml_append(scope, dev);
     }
@@ -940,7 +947,7 @@ build_dsdt(GArray *table_data, BIOSLinker *linker, VirtMachineState *vms)
      * the RTC ACPI device at all when using UEFI.
      */
     scope = aml_scope("\\_SB");
-    acpi_dsdt_add_cpus(scope, vms, &memmap[VIRT_CPUFREQ]);
+    acpi_dsdt_add_cpus(scope, vms);
     acpi_dsdt_add_uart(scope, &memmap[VIRT_UART],
                        (irqmap[VIRT_UART] + ARM_SPI_BASE));
     if (vmc->acpi_expose_flash) {

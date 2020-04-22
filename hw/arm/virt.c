@@ -702,6 +702,7 @@ static inline DeviceState *create_acpi_ged(VirtMachineState *vms)
 
     adevc = ACPI_DEVICE_IF_GET_CLASS(dev);
     adevc->madt_cpu = virt_madt_cpu_entry;
+    adevc->cpu_cppc = virt_acpi_dsdt_cpu_cppc;
 
     sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0, vms->memmap[VIRT_ACPI_GED].base);
     sysbus_mmio_map(SYS_BUS_DEVICE(dev), 1, vms->memmap[VIRT_PCDIMM_ACPI].base);
