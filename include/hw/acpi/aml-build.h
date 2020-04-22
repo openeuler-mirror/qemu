@@ -223,6 +223,52 @@ struct AcpiBuildTables {
     BIOSLinker *linker;
 } AcpiBuildTables;
 
+#ifdef __aarch64__
+/* Definitions of the hardcoded cache info*/
+
+typedef enum {
+    ARM_L1D_CACHE,
+    ARM_L1I_CACHE,
+    ARM_L2_CACHE,
+    ARM_L3_CACHE
+} ArmCacheType;
+
+/* L1 data cache: */
+#define ARM_L1DCACHE_SIZE 65536
+#define ARM_L1DCACHE_SET 256
+#define ARM_L1DCACHE_ASSOCIATIVITY 4
+#define ARM_L1DCACHE_ATTRIBUTES 2
+#define ARM_L1DCACHE_LINE_SIZE 64
+
+/* L1 instruction cache: */
+#define ARM_L1ICACHE_SIZE 65536
+#define ARM_L1ICACHE_SET 256
+#define ARM_L1ICACHE_ASSOCIATIVITY 4
+#define ARM_L1ICACHE_ATTRIBUTES 4
+#define ARM_L1ICACHE_LINE_SIZE 64
+
+/* Level 2 unified cache: */
+#define ARM_L2CACHE_SIZE 524288
+#define ARM_L2CACHE_SET 1024
+#define ARM_L2CACHE_ASSOCIATIVITY 8
+#define ARM_L2CACHE_ATTRIBUTES 10
+#define ARM_L2CACHE_LINE_SIZE 64
+
+/* Level 3 unified cache: */
+#define ARM_L3CACHE_SIZE 33554432
+#define ARM_L3CACHE_SET 2048
+#define ARM_L3CACHE_ASSOCIATIVITY 15
+#define ARM_L3CACHE_ATTRIBUTES 10
+#define ARM_L3CACHE_LINE_SIZE 128
+
+struct offset_status {
+    uint32_t parent;
+    uint32_t l2_offset;
+    uint32_t l1d_offset;
+    uint32_t l1i_offset;
+};
+
+#endif
 /**
  * init_aml_allocator:
  *
