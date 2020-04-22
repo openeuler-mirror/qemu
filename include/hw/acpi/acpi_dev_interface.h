@@ -3,6 +3,7 @@
 
 #include "qom/object.h"
 #include "hw/boards.h"
+#include "hw/acpi/aml-build.h"
 
 /* These values are part of guest ABI, and can not be changed */
 typedef enum {
@@ -55,5 +56,6 @@ typedef struct AcpiDeviceIfClass {
     void (*send_event)(AcpiDeviceIf *adev, AcpiEventStatusBits ev);
     void (*madt_cpu)(AcpiDeviceIf *adev, int uid,
                      const CPUArchIdList *apic_ids, GArray *entry);
+    void (*cpu_cppc)(AcpiDeviceIf *adev, int uid, int num_cpu, Aml *dev);
 } AcpiDeviceIfClass;
 #endif

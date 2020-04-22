@@ -157,6 +157,8 @@ typedef struct {
 void virt_acpi_setup(VirtMachineState *vms);
 void virt_madt_cpu_entry(AcpiDeviceIf *adev, int uid,
                          const CPUArchIdList *cpu_list, GArray *entry);
+void virt_acpi_dsdt_cpu_cppc(AcpiDeviceIf *adev, int uid,
+                             int num_cpu, Aml *dev);
 
 /* Return the number of used redistributor regions  */
 static inline int virt_gicv3_redist_region_count(VirtMachineState *vms)
