@@ -1,0 +1,57 @@
+From 5e99e1329fa52dce8ab784a960e64a3e19b429aa Mon Sep 17 00:00:00 2001
+From: Zhimin Feng <fengzhimin1@huawei.com>
+Date: Tue, 14 Jan 2020 17:43:09 +0800
+Subject: [PATCH 07/10] migration: Maybe VM is paused when migration is
+ cancelled
+
+If the migration is cancelled when it is in the completion phase,
+the migration state is set to MIGRATION_STATUS_CANCELLING.
+The VM maybe wait for the 'pause_sem' semaphore in migration_maybe_pause
+function, so that VM always is paused.
+
+Change-Id: Ib2f2f42ee1edbb14da269ee19ba1fe16dd363822
+Reported-by: Euler Robot <euler.robot@huawei.com>
+Signed-off-by: Zhimin Feng <fengzhimin1@huawei.com>
+Reviewed-by: Juan Quintela <quintela@redhat.com>
+Signed-off-by: Juan Quintela <quintela@redhat.com>
+---
+ migration/migration.c | 24 ++++++++++++++++--------
+ 1 file changed, 16 insertions(+), 8 deletions(-)
+
+diff --git a/migration/migration.c b/migration/migration.c
+index bea9b1d7..114c33a1 100644
+--- a/migration/migration.c
++++ b/migration/migration.c
+@@ -2731,14 +2731,22 @@ static int migration_maybe_pause(MigrationState *s,
+         /* This block intentionally left blank */
+     }
+
+-    qemu_mutex_unlock_iothread();
+-    migrate_set_state(&s->state, *current_active_state,
+-                      MIGRATION_STATUS_PRE_SWITCHOVER);
+-    qemu_sem_wait(&s->pause_sem);
+-    migrate_set_state(&s->state, MIGRATION_STATUS_PRE_SWITCHOVER,
+-                      new_state);
+-    *current_active_state = new_state;
+-    qemu_mutex_lock_iothread();
++    /*
++     * If the migration is cancelled when it is in the completion phase,
++     * the migration state is set to MIGRATION_STATUS_CANCELLING.
++     * So we don't need to wait a semaphore, otherwise we would always
++     * wait for the 'pause_sem' semaphore.
++     */
++    if (s->state != MIGRATION_STATUS_CANCELLING) {
++        qemu_mutex_unlock_iothread();
++        migrate_set_state(&s->state, *current_active_state,
++                          MIGRATION_STATUS_PRE_SWITCHOVER);
++        qemu_sem_wait(&s->pause_sem);
++        migrate_set_state(&s->state, MIGRATION_STATUS_PRE_SWITCHOVER,
++                          new_state);
++        *current_active_state = new_state;
++        qemu_mutex_lock_iothread();
++    }
+
+     return s->state == new_state ? 0 : -EINVAL;
+ }
+--
+2.19.1
