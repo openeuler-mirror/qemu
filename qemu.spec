@@ -47,7 +47,7 @@ Patch0034: tcp_emu-Fix-oob-access.patch
 Patch0035: slirp-use-correct-size-while-emulating-IRC-commands.patch
 Patch0036: slirp-use-correct-size-while-emulating-commands.patch
 Patch0037: tcp_emu-fix-unsafe-snprintf-usages.patch
-Patch0038: block-iscsi-use-MIN-between-mx_sb_len-and-sb_len_wr.patch 
+Patch0038: block-iscsi-use-MIN-between-mx_sb_len-and-sb_len_wr.patch
 Patch0039: monitor-fix-memory-leak-in-monitor_fdset_dup_fd_find.patch
 Patch0040: vhost-Fix-memory-region-section-comparison.patch
 Patch0041: memory-Align-MemoryRegionSections-fields.patch
@@ -63,6 +63,7 @@ Patch0050: pcie-Add-pcie-root-port-fast-plug-unplug-feature.patch
 Patch0051: pcie-Compat-with-devices-which-do-not-support-Link-W.patch
 Patch0052: aio-wait-delegate-polling-of-main-AioContext-if-BQL-not-held.patch
 Patch0053: async-use-explicit-memory-barriers.patch
+Patch0054: Fix-use-afte-free-in-ip_reass-CVE-2020-1983.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -398,7 +399,10 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
-* Sat Apr 11 4 2020 Huawei Technologies Co., Ltd. <fangying1@huawei.com>
+* Fri Apr 24 2020 Huawei Technologies Co., Ltd. <fangying1@huawei.com>
+- Fix use-afte-free in ip_reass() (CVE-2020-1983)
+
+* Sat Apr 11 2020 Huawei Technologies Co., Ltd. <fangying1@huawei.com>
 - aio-wait: delegate polling of main AioContext if BQL not held
 - async: use explicit memory barriers
 
