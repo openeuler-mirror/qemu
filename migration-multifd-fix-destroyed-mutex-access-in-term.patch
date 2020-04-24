@@ -1,0 +1,64 @@
+From 34d797aa134a33c1d67ca85d9d9f996d58162276 Mon Sep 17 00:00:00 2001
+From: Jiahui Cen <cenjiahui@huawei.com>
+Date: Wed, 23 Oct 2019 11:47:37 +0800
+Subject: [PATCH 09/10] migration/multifd: fix destroyed mutex access in
+ terminating multifd threads
+
+One multifd will lock all the other multifds' IOChannel mutex to inform them
+to quit by setting p->quit or shutting down p->c. In this senario, if some
+multifds had already been terminated and multifd_load_cleanup/multifd_save_cleanup
+had destroyed their mutex, it could cause destroyed mutex access when trying
+lock their mutex.
+
+Here is the coredump stack:
+    #0  0x00007f81a2794437 in raise () from /usr/lib64/libc.so.6
+    #1  0x00007f81a2795b28 in abort () from /usr/lib64/libc.so.6
+    #2  0x00007f81a278d1b6 in __assert_fail_base () from /usr/lib64/libc.so.6
+    #3  0x00007f81a278d262 in __assert_fail () from /usr/lib64/libc.so.6
+    #4  0x000055eb1bfadbd3 in qemu_mutex_lock_impl (mutex=0x55eb1e2d1988, file=<optimized out>, line=<optimized out>) at util/qemu-thread-posix.c:64
+    #5  0x000055eb1bb4564a in multifd_send_terminate_threads (err=<optimized out>) at migration/ram.c:1015
+    #6  0x000055eb1bb4bb7f in multifd_send_thread (opaque=0x55eb1e2d19f8) at migration/ram.c:1171
+    #7  0x000055eb1bfad628 in qemu_thread_start (args=0x55eb1e170450) at util/qemu-thread-posix.c:502
+    #8  0x00007f81a2b36df5 in start_thread () from /usr/lib64/libpthread.so.0
+    #9  0x00007f81a286048d in clone () from /usr/lib64/libc.so.6
+
+To fix it up, let's destroy the mutex after all the other multifd threads had
+been terminated.
+
+Change-Id: I4124d43e8558ba302052bdc53fdae7cfcf9d8687
+Signed-off-by: Jiahui Cen <cenjiahui@huawei.com>
+Signed-off-by: Ying Fang <fangying1@huawei.com>
+Reviewed-by: Juan Quintela <quintela@redhat.com>
+Signed-off-by: Juan Quintela <quintela@redhat.com>
+---
+ migration/ram.c | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/migration/ram.c b/migration/ram.c
+index 029f1cdf..d7d2d5ec 100644
+--- a/migration/ram.c
++++ b/migration/ram.c
+@@ -1033,6 +1033,10 @@ void multifd_save_cleanup(void)
+         if (p->running) {
+             qemu_thread_join(&p->thread);
+         }
++    }
++    for (i = 0; i < migrate_multifd_channels(); i++) {
++        MultiFDSendParams *p = &multifd_send_state->params[i];
++
+         socket_send_channel_destroy(p->c);
+         p->c = NULL;
+         qemu_mutex_destroy(&p->mutex);
+@@ -1306,6 +1310,10 @@ int multifd_load_cleanup(Error **errp)
+             qemu_sem_post(&p->sem_sync);
+             qemu_thread_join(&p->thread);
+         }
++    }
++    for (i = 0; i < migrate_multifd_channels(); i++) {
++        MultiFDRecvParams *p = &multifd_recv_state->params[i];
++
+         object_unref(OBJECT(p->c));
+         p->c = NULL;
+         qemu_mutex_destroy(&p->mutex);
+--
+2.19.1

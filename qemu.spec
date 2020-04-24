@@ -147,7 +147,16 @@ Patch0134: arm-virt-acpi-Extend-cpufreq-to-support-max_cpus.patch
 Patch0135: arm-virt-Pre-sizing-MADT-GICC-PPTT-GICv3-and-Pre-par.patch
 Patch0136: arm-virt-Add-some-sanity-checks-in-cpu_pre_plug-hook.patch
 Patch0137: arm-virt-Start-up-CPU-hot-plug.patch
-
+Patch0138: migration-always-initialise-ram_counters-for-a-new-m.patch
+Patch0139: migration-add-qemu_file_update_transfer-interface.patch
+Patch0140: migration-add-speed-limit-for-multifd-migration.patch
+Patch0141: migration-update-ram_counters-for-multifd-sync-packe.patch
+Patch0142: migration-Make-global-sem_sync-semaphore-by-channel.patch
+Patch0143: migration-multifd-fix-nullptr-access-in-terminating-m.patch
+Patch0144: migration-Maybe-VM-is-paused-when-migration-is-cance.patch
+Patch0145: migration-multifd-fix-potential-wrong-acception-orde.patch
+Patch0146: migration-multifd-fix-destroyed-mutex-access-in-term.patch
+Patch0147: migration-multifd-fix-nullptr-access-in-multifd_send.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -493,6 +502,9 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Fri Apr 24 2020 Huawei Technologies Co., Ltd. <zhengchuan@huawei.com>
+- migration: backport migration patches from upstream
+
 * Fri Apr 24 2020 Huawei Technologies Co., Ltd. <zhukeqian1@huawei.com>
 - arm/virt: Add CPU hotplug support
 
