@@ -64,6 +64,7 @@ Patch0051: pcie-Compat-with-devices-which-do-not-support-Link-W.patch
 Patch0052: aio-wait-delegate-polling-of-main-AioContext-if-BQL-not-held.patch
 Patch0053: async-use-explicit-memory-barriers.patch
 Patch0054: Fix-use-afte-free-in-ip_reass-CVE-2020-1983.patch
+Patch0055: nbd-Fix-regression-with-multiple-meta-contexts.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -399,6 +400,9 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Fri Apr 24 2020 backport nbd fix from qemu upstream
+- nbd: Fix regression with multiple meta contexts
+
 * Fri Apr 24 2020 Huawei Technologies Co., Ltd. <fangying1@huawei.com>
 - Fix use-afte-free in ip_reass() (CVE-2020-1983)
 
