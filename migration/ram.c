@@ -1112,6 +1112,7 @@ static void *multifd_send_thread(void *opaque)
     rcu_register_thread();
 
     if (multifd_send_initial_packet(p, &local_err) < 0) {
+        ret = -1;
         goto out;
     }
     /* initial packet */
@@ -1178,9 +1179,7 @@ out:
      * who pay attention to me.
      */
     if (ret != 0) {
-        if (flags & MULTIFD_FLAG_SYNC) {
-            qemu_sem_post(&p->sem_sync);
-        }
+        qemu_sem_post(&p->sem_sync);
         qemu_sem_post(&multifd_send_state->channels_ready);
     }
 
@@ -1279,7 +1278,9 @@ static void multifd_recv_terminate_threads(Error *err)
            - normal quit, i.e. everything went fine, just finished
            - error quit: We close the channels so the channel threads
              finish the qio_channel_read_all_eof() */
-        qio_channel_shutdown(p->c, QIO_CHANNEL_SHUTDOWN_BOTH, NULL);
+        if (p->c) {
+            qio_channel_shutdown(p->c, QIO_CHANNEL_SHUTDOWN_BOTH, NULL);
+        }
         qemu_mutex_unlock(&p->mutex);
     }
 }
