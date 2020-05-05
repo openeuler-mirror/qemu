@@ -1176,6 +1176,7 @@ static void *multifd_send_thread(void *opaque)
 out:
     if (local_err) {
         multifd_send_terminate_threads(local_err);
+        error_free(local_err);
     }
 
     /*
@@ -1427,6 +1428,7 @@ static void *multifd_recv_thread(void *opaque)
 
     if (local_err) {
         multifd_recv_terminate_threads(local_err);
+        error_free(local_err);
     }
     qemu_mutex_lock(&p->mutex);
     p->running = false;
