@@ -1,0 +1,68 @@
+From 3b172cd5a6e62be725c778b8397310462fe0a890 Mon Sep 17 00:00:00 2001
+From: "plai@redhat.com" <plai@redhat.com>
+Date: Thu, 7 May 2020 22:09:23 +0100
+Subject: [PATCH] target/i386: set the CPUID level to 0x14 on old machine-type
+
+RH-Author: plai@redhat.com
+Message-id: <20200507220923.13723-1-plai@redhat.com>
+Patchwork-id: 96347
+O-Subject: [RHEL8.2.1 AV qemu-kvm PATCH RESEND] target/i386: set the CPUID level to 0x14 on old machine-type
+Bugzilla: 1513681
+RH-Acked-by: Eduardo Habkost <ehabkost@redhat.com>
+RH-Acked-by: Igor Mammedov <imammedo@redhat.com>
+RH-Acked-by: Danilo de Paula <ddepaula@redhat.com>
+
+From: Luwei Kang <luwei.kang@intel.com>
+
+BZ https://bugzilla.redhat.com/show_bug.cgi?id=1513681
+Brew: http://brewweb.devel.redhat.com/brew/taskinfo?taskID=28146304
+Branch: rhel-av-8.2.1
+
+Tested on intel-icelake-y-01.ml3.eng.bos.redhat.com.
+
+The CPUID level need to be set to 0x14 manually on old
+machine-type if Intel PT is enabled in guest. E.g. the
+CPUID[0].EAX(level)=7 and CPUID[7].EBX[25](intel-pt)=1 when the
+Qemu with "-machine pc-i440fx-3.1 -cpu qemu64,+intel-pt" parameter.
+
+Some Intel PT capabilities are exposed by leaf 0x14 and the
+missing capabilities will cause some MSRs access failed.
+This patch add a warning message to inform the user to extend
+the CPUID level.
+
+Suggested-by: Eduardo Habkost <ehabkost@redhat.com>
+Signed-off-by: Luwei Kang <luwei.kang@intel.com>
+Message-Id: <1584031686-16444-1-git-send-email-luwei.kang@intel.com>
+Signed-off-by: Eduardo Habkost <ehabkost@redhat.com>
+(cherry picked from commit ddc2fc9e4e42ebce48b088963dc7fbd1c08d5f33)
+Signed-off-by: Paul Lai <plai@redhat.com>
+Signed-off-by: Danilo C. L. de Paula <ddepaula@redhat.com>
+---
+ target/i386/cpu.c | 11 ++++++++---
+ 1 file changed, 8 insertions(+), 3 deletions(-)
+
+diff --git a/target/i386/cpu.c b/target/i386/cpu.c
+index 6147cd419a..35a33db39a 100644
+--- a/target/i386/cpu.c
++++ b/target/i386/cpu.c
+@@ -6206,9 +6206,14 @@ static void x86_cpu_expand_features(X86CPU *cpu, Error **errp)
+         x86_cpu_adjust_feat_level(cpu, FEAT_XSAVE);
+ 
+         /* Intel Processor Trace requires CPUID[0x14] */
+-        if ((env->features[FEAT_7_0_EBX] & CPUID_7_0_EBX_INTEL_PT) &&
+-             kvm_enabled() && cpu->intel_pt_auto_level) {
+-            x86_cpu_adjust_level(cpu, &cpu->env.cpuid_min_level, 0x14);
++        if ((env->features[FEAT_7_0_EBX] & CPUID_7_0_EBX_INTEL_PT)) {
++            if (cpu->intel_pt_auto_level) {
++                x86_cpu_adjust_level(cpu, &cpu->env.cpuid_min_level, 0x14);
++            } else if (cpu->env.cpuid_min_level < 0x14) {
++                mark_unavailable_features(cpu, FEAT_7_0_EBX,
++                    CPUID_7_0_EBX_INTEL_PT,
++                    "Intel PT need CPUID leaf 0x14, please set by \"-cpu ...,+intel-pt,level=0x14\"");
++            }
+         }
+ 
+         /* CPU topology with multi-dies support requires CPUID[0x1F] */
+-- 
+2.27.0
+
