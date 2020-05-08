@@ -261,6 +261,8 @@ typedef struct CPUARMState {
     uint64_t elr_el[4]; /* AArch64 exception link regs  */
     uint64_t sp_el[4]; /* AArch64 banked stack pointers */
 
+    uint64_t vtimer; /* Timer tick when vcpu is stopped */
+
     /* System control coprocessor (cp15) */
     struct {
         uint32_t c0_cpuid;
