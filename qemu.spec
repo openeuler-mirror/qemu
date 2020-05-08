@@ -157,6 +157,7 @@ Patch0144: migration-Maybe-VM-is-paused-when-migration-is-cance.patch
 Patch0145: migration-multifd-fix-potential-wrong-acception-orde.patch
 Patch0146: migration-multifd-fix-destroyed-mutex-access-in-term.patch
 Patch0147: migration-multifd-fix-nullptr-access-in-multifd_send.patch
+Patch0148: vtimer-compat-cross-version-migration-from-v4.0.1.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -502,6 +503,9 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Fri May 8 2020 Huawei Technologies Co., Ltd. <zhengchuan@huawei.com>
+- vtimer: compat cross version migration from v4.0.1
+
 * Fri Apr 24 2020 Huawei Technologies Co., Ltd. <zhengchuan@huawei.com>
 - migration: backport migration patches from upstream
 
