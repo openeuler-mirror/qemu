@@ -1,0 +1,69 @@
+From 05d1fbd2390d441e5acb606dba3d308d506a8eb1 Mon Sep 17 00:00:00 2001
+From: Pan Nengyuan <pannengyuan@huawei.com>
+Date: Tue, 5 May 2020 11:44:20 +0800
+Subject: [PATCH 1/3] migration/ram: Do error_free after migrate_set_error to
+ avoid memleaks
+
+If local_err is not NULL, it use error_copy to set migrate error in
+multifd_send_terminate_threads. Thus, we should free it.
+
+Similarly, fix another leak in multifd_recv_thread.
+
+The leak stack:
+Direct leak of 96 byte(s) in 2 object(s) allocated from:
+    #0 0xfffdd97fe938 in __interceptor_calloc (/lib64/libasan.so.4+0xee938)
+    #1 0xfffdd85a8bb0 in g_malloc0 (/lib64/libglib-2.0.so.0+0x58bb0)
+    #2 0xaaadfc6e41c4 in error_setv util/error.c:61
+    #3 0xaaadfc6e4880 in error_setg_errno_internal util/error.c:109
+    #4 0xaaadfc6192a8 in qio_channel_socket_writev io/channel-socket.c:552
+    #5 0xaaadfc614604 in qio_channel_writev_all io/channel.c:171
+    #6 0xaaadfc6147ec in qio_channel_write_all io/channel.c:257
+    #7 0xaaadfbaec5fc in multifd_send_thread /usr/src/debug/qemu-4.1.0-4_asan.aarch64/migration/ram.c:1145
+    #8 0xaaadfc6db768 in qemu_thread_start util/qemu-thread-posix.c:502
+    #9 0xfffdd79a88c8  (/lib64/libpthread.so.0+0x88c8)
+    #10 0xfffdd78e9578  (/lib64/libc.so.6+0xd9578)
+
+Indirect leak of 104 byte(s) in 2 object(s) allocated from:
+    #0 0xfffdd97feb40 in realloc (/lib64/libasan.so.4+0xeeb40)
+    #1 0xfffdd78fa6e0 in __vasprintf_chk (/lib64/libc.so.6+0xea6e0)
+    #2 0xfffdd85ee710 in g_vasprintf (/lib64/libglib-2.0.so.0+0x9e710)
+    #3 0xfffdd85c45c4 in g_strdup_vprintf (/lib64/libglib-2.0.so.0+0x745c4)
+    #4 0xfffdd85c4674 in g_strdup_printf (/lib64/libglib-2.0.so.0+0x74674)
+    #5 0xaaadfc6e4214 in error_setv util/error.c:65
+    #6 0xaaadfc6e4880 in error_setg_errno_internal util/error.c:109
+    #7 0xaaadfc6192a8 in qio_channel_socket_writev io/channel-socket.c:552
+    #8 0xaaadfc614604 in qio_channel_writev_all io/channel.c:171
+    #9 0xaaadfc6147ec in qio_channel_write_all io/channel.c:257
+    #10 0xaaadfbaec5fc in multifd_send_thread /usr/src/debug/qemu-4.1.0-4_asan.aarch64/migration/ram.c:1145
+    #11 0xaaadfc6db768 in qemu_thread_start util/qemu-thread-posix.c:502
+    #12 0xfffdd79a88c8  (/lib64/libpthread.so.0+0x88c8)
+    #13 0xfffdd78e9578  (/lib64/libc.so.6+0xd9578)
+
+Reported-by: Euler Robot <euler.robot@huawei.com>
+Signed-off-by: Pan Nengyuan <pannengyuan@huawei.com>
+---
+ migration/ram.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/migration/ram.c b/migration/ram.c
+index 1858d66c..6baf1412 100644
+--- a/migration/ram.c
++++ b/migration/ram.c
+@@ -1176,6 +1176,7 @@ static void *multifd_send_thread(void *opaque)
+ out:
+     if (local_err) {
+         multifd_send_terminate_threads(local_err);
++        error_free(local_err);
+     }
+
+     /*
+@@ -1427,6 +1428,7 @@ static void *multifd_recv_thread(void *opaque)
+
+     if (local_err) {
+         multifd_recv_terminate_threads(local_err);
++        error_free(local_err);
+     }
+     qemu_mutex_lock(&p->mutex);
+     p->running = false;
+--
+2.23.0

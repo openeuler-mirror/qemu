@@ -158,6 +158,9 @@ Patch0145: migration-multifd-fix-potential-wrong-acception-orde.patch
 Patch0146: migration-multifd-fix-destroyed-mutex-access-in-term.patch
 Patch0147: migration-multifd-fix-nullptr-access-in-multifd_send.patch
 Patch0148: vtimer-compat-cross-version-migration-from-v4.0.1.patch
+Patch0149: migration-ram-Do-error_free-after-migrate_set_error-.patch
+Patch0150: migration-ram-fix-memleaks-in-multifd_new_send_chann.patch
+Patch0151: migration-rdma-fix-a-memleak-on-error-path-in-rdma_s.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -503,6 +506,11 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Sat May 9 2020 Huawei Technologies Co., Ltd. <pannengyuan@huawei.com>
+- migration/ram: do error_free after migrate_set_error to avoid memleaks.
+- migration/ram: fix memleaks in multifd_new_send_channel_async.
+- migration/rdma: fix a memleak on error path in rdma_start_incoming_migration.
+
 * Fri May 8 2020 Huawei Technologies Co., Ltd. <zhengchuan@huawei.com>
 - vtimer: compat cross version migration from v4.0.1
 

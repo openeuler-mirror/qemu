@@ -1,0 +1,43 @@
+From 8ae2e3b8be812bcbdeb6151c685026bcaedd4a4b Mon Sep 17 00:00:00 2001
+From: Pan Nengyuan <pannengyuan@huawei.com>
+Date: Sat, 9 May 2020 15:25:42 +0800
+Subject: [PATCH 3/3] migration/rdma: fix a memleak on error path in
+ rdma_start_incoming_migration
+
+'rdma->host' is malloced in qemu_rdma_data_init, but forgot to free on the error
+path in rdma_start_incoming_migration(), this patch fix that.
+
+Direct leak of 2 byte(s) in 1 object(s) allocated from:
+    #0 0xfffce56d34fb in __interceptor_malloc (/lib64/libasan.so.4+0xd34fb)
+    #1 0xfffce5158aa3 in g_malloc (/lib64/libglib-2.0.so.0+0x58aa3)
+    #2 0xfffce5174213 in g_strdup (/lib64/libglib-2.0.so.0+0x74213)
+    #3 0xaaad7c569ddf in qemu_rdma_data_init /Images/qemu/migration/rdma.c:2647
+    #4 0xaaad7c57c99f in rdma_start_incoming_migration /Images/qemu/migration/rdma.c:4020
+    #5 0xaaad7c52b35f in qemu_start_incoming_migration /Images/qemu/migration/migration.c:371
+    #6 0xaaad7be173bf in qemu_init /Images/qemu/softmmu/vl.c:4464
+    #7 0xaaad7bb29843 in main /Images/qemu/softmmu/main.c:48
+    #8 0xfffce3713f5f in __libc_start_main (/lib64/libc.so.6+0x23f5f)
+    #9 0xaaad7bb2bf73  (/Images/qemu/build/aarch64-softmmu/qemu-system-aarch64+0x8fbf73)
+
+Reported-by: Euler Robot <euler.robot@huawei.com>
+Signed-off-by: Pan Nengyuan <pannengyuan@huawei.com>
+---
+ migration/rdma.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/migration/rdma.c b/migration/rdma.c
+index 3036221e..b5fdb6a7 100644
+--- a/migration/rdma.c
++++ b/migration/rdma.c
+@@ -4068,6 +4068,9 @@ void rdma_start_incoming_migration(const char *host_port, Error **errp)
+     return;
+ err:
+     error_propagate(errp, local_err);
++    if (rdma) {
++        g_free(rdma->host);
++    }
+     g_free(rdma);
+     g_free(rdma_return_path);
+ }
+--
+2.23.0
