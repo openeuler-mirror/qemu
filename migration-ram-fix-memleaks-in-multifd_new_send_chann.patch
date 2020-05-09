@@ -1,0 +1,54 @@
+From 4d456b243a41a8e91535b2820fd6ed4f6fb4a194 Mon Sep 17 00:00:00 2001
+From: Pan Nengyuan <pannengyuan@huawei.com>
+Date: Tue, 5 May 2020 15:50:54 +0800
+Subject: [PATCH 2/3] migration/ram: fix memleaks in
+ multifd_new_send_channel_async
+
+When error happen in multifd_new_send_channel_async, 'sioc' will not be used
+to create the multifd_send_thread. Let's free it to avoid a memleak. And also
+do error_free after migrate_set_error() to avoid another leak in the same place.
+
+The leak stack:
+Direct leak of 2160 byte(s) in 6 object(s) allocated from:
+    #0 0xfffdd97fe754 in malloc (/lib64/libasan.so.4+0xee754)
+    #1 0xfffdd85a8b48 in g_malloc (/lib64/libglib-2.0.so.0+0x58b48)
+    #2 0xaaadfc4e2b10 in object_new_with_type qom/object.c:634
+    #3 0xaaadfc619468 in qio_channel_socket_new io/channel-socket.c:56
+    #4 0xaaadfc3d3e74 in socket_send_channel_create migration/socket.c:37
+    #5 0xaaadfbaed6f4 in multifd_save_setup /usr/src/debug/qemu-4.1.0-4_asan.aarch64/migration/ram.c:1255
+    #6 0xaaadfc3d2f78 in migrate_fd_connect migration/migration.c:3359
+    #7 0xaaadfc3d6240 in migration_channel_connect migration/channel.c:101
+    #8 0xaaadfc3d3590 in socket_outgoing_migration migration/socket.c:108
+    #9 0xaaadfc625a64 in qio_task_complete io/task.c:195
+    #10 0xaaadfc625ed0 in qio_task_thread_result io/task.c:111
+    #11 0xfffdd859edec  (/lib64/libglib-2.0.so.0+0x4edec)
+    #12 0xfffdd85a2a78 in g_main_context_dispatch (/lib64/libglib-2.0.so.0+0x52a78)
+    #13 0xaaadfc6d3b84 in glib_pollfds_poll util/main-loop.c:218
+    #14 0xaaadfc6d3b84 in os_host_main_loop_wait util/main-loop.c:241
+    #15 0xaaadfc6d3b84 in main_loop_wait util/main-loop.c:517
+    #16 0xaaadfbf9206c in main_loop /usr/src/debug/qemu-4.1.0-4_asan.aarch64/vl.c:1791
+    #17 0xaaadfba1b124 in main /usr/src/debug/qemu-4.1.0-4_asan.aarch64/vl.c:4473
+    #18 0xfffdd7833f5c in __libc_start_main (/lib64/libc.so.6+0x23f5c)
+    #19 0xaaadfba26360  (/usr/libexec/qemu-kvm+0x886360)
+
+Reported-by: Euler Robot <euler.robot@huawei.com>
+Signed-off-by: Pan Nengyuan <pannengyuan@huawei.com>
+---
+ migration/ram.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/migration/ram.c b/migration/ram.c
+index 6baf1412..840e3548 100644
+--- a/migration/ram.c
++++ b/migration/ram.c
+@@ -1215,6 +1215,8 @@ static void multifd_new_send_channel_async(QIOTask *task, gpointer opaque)
+          * its status.
+          */
+         p->quit = true;
++        object_unref(OBJECT(sioc));
++        error_free(local_err);
+     } else {
+         p->c = QIO_CHANNEL(sioc);
+         qio_channel_set_delay(p->c, false);
+--
+2.23.0
