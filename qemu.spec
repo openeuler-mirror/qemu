@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 6
+Release: 7
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY
@@ -161,6 +161,7 @@ Patch0148: vtimer-compat-cross-version-migration-from-v4.0.1.patch
 Patch0149: migration-ram-Do-error_free-after-migrate_set_error-.patch
 Patch0150: migration-ram-fix-memleaks-in-multifd_new_send_chann.patch
 Patch0151: migration-rdma-fix-a-memleak-on-error-path-in-rdma_s.patch
+Patch0152: arm-virt-Support-CPU-cold-plug.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -506,6 +507,9 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Tue May 12 2020 Huawei Technologies Co., Ltd. <zhukeqian1@huawei.com>
+- arm/virt: Support CPU cold plug
+
 * Sat May 9 2020 Huawei Technologies Co., Ltd. <pannengyuan@huawei.com>
 - migration/ram: do error_free after migrate_set_error to avoid memleaks.
 - migration/ram: fix memleaks in multifd_new_send_channel_async.
