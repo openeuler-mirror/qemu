@@ -1,0 +1,41 @@
+From 3cd6df0b9e7d7b544673ce9a63b405e236d8265b Mon Sep 17 00:00:00 2001
+From: Keqian Zhu <zhukeqian1@huawei.com>
+Date: Fri, 10 Apr 2020 10:05:54 +0800
+Subject: [PATCH] acpi/ged: Add virt_madt_cpu_entry to madt_cpu hook
+
+In build_cpus_aml, we will invoke this hook to build _MAT
+aml mehtod for cpus.
+
+Signed-off-by: Keqian Zhu <zhukeqian1@huawei.com>
+Signed-off-by: Salil Mehta <salil.mehta@huawei.com>
+---
+ hw/acpi/generic_event_device.c         | 1 +
+ include/hw/acpi/generic_event_device.h | 1 +
+ 2 files changed, 2 insertions(+)
+
+diff --git a/hw/acpi/generic_event_device.c b/hw/acpi/generic_event_device.c
+index 9cee90cc70..b834ae3ff6 100644
+--- a/hw/acpi/generic_event_device.c
++++ b/hw/acpi/generic_event_device.c
+@@ -288,6 +288,7 @@ static void acpi_ged_class_init(ObjectClass *class, void *data)
+     hc->plug = acpi_ged_device_plug_cb;
+
+     adevc->send_event = acpi_ged_send_event;
++    adevc->madt_cpu = virt_madt_cpu_entry;
+ }
+
+ static const TypeInfo acpi_ged_info = {
+diff --git a/include/hw/acpi/generic_event_device.h b/include/hw/acpi/generic_event_device.h
+index d157eac088..f99efad7a3 100644
+--- a/include/hw/acpi/generic_event_device.h
++++ b/include/hw/acpi/generic_event_device.h
+@@ -61,6 +61,7 @@
+
+ #include "hw/sysbus.h"
+ #include "hw/acpi/memory_hotplug.h"
++#include "hw/arm/virt.h"
+
+ #define ACPI_POWER_BUTTON_DEVICE "PWRB"
+
+--
+2.19.1

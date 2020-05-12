@@ -1,0 +1,50 @@
+From c0b35d87de345bd3b59a44c604b247a0497f2fc0 Mon Sep 17 00:00:00 2001
+From: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Date: Fri, 11 Oct 2019 12:07:07 +0300
+Subject: [PATCH] hbitmap: handle set/reset with zero length
+
+Passing zero length to these functions leads to unpredicted results.
+Zero-length set/reset may occur in active-mirror, on zero-length write
+(which is unlikely, but not guaranteed to never happen).
+
+Let's just do nothing on zero-length request.
+
+Signed-off-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Message-id: 20191011090711.19940-2-vsementsov@virtuozzo.com
+Reviewed-by: Max Reitz <mreitz@redhat.com>
+Cc: qemu-stable@nongnu.org
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+(cherry picked from commit fed33bd175f663cc8c13f8a490a4f35a19756cfe)
+Signed-off-by: Michael Roth <mdroth@linux.vnet.ibm.com>
+---
+ util/hbitmap.c | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/util/hbitmap.c b/util/hbitmap.c
+index 71c6ba2c52..c059313b9e 100644
+--- a/util/hbitmap.c
++++ b/util/hbitmap.c
+@@ -387,6 +387,10 @@ void hbitmap_set(HBitmap *hb, uint64_t start, uint64_t count)
+     uint64_t first, n;
+     uint64_t last = start + count - 1;
+
++    if (count == 0) {
++        return;
++    }
++
+     trace_hbitmap_set(hb, start, count,
+                       start >> hb->granularity, last >> hb->granularity);
+
+@@ -478,6 +482,10 @@ void hbitmap_reset(HBitmap *hb, uint64_t start, uint64_t count)
+     uint64_t last = start + count - 1;
+     uint64_t gran = 1ULL << hb->granularity;
+
++    if (count == 0) {
++        return;
++    }
++
+     assert(QEMU_IS_ALIGNED(start, gran));
+     assert(QEMU_IS_ALIGNED(count, gran) || (start + count == hb->orig_size));
+
+--
+2.23.0

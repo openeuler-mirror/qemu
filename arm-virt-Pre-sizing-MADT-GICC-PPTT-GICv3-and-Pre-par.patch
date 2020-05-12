@@ -1,0 +1,124 @@
+From bf47ef282bfe8b0a98e1f87d8708051ffa7192a1 Mon Sep 17 00:00:00 2001
+From: Keqian Zhu <zhukeqian1@huawei.com>
+Date: Fri, 10 Apr 2020 13:55:11 +0800
+Subject: [PATCH] arm/virt: Pre-sizing MADT-GICC PPTT GICv3 and Pre-park KVM
+ vCPU
+
+Establish all pre-sizing facilities based on cpu_hotplug_enabled
+field.
+
+Signed-off-by: Keqian Zhu <zhukeqian1@huawei.com>
+Signed-off-by: Salil Mehta <salil.mehta@huawei.com>
+---
+ hw/arm/virt-acpi-build.c | 12 +++++++++++-
+ hw/arm/virt.c            | 14 ++++++++++++--
+ target/arm/kvm.c         |  6 +++---
+ 3 files changed, 26 insertions(+), 6 deletions(-)
+
+diff --git a/hw/arm/virt-acpi-build.c b/hw/arm/virt-acpi-build.c
+index efac788ba1..2cfac7b84f 100644
+--- a/hw/arm/virt-acpi-build.c
++++ b/hw/arm/virt-acpi-build.c
+@@ -736,6 +736,9 @@ build_madt(GArray *table_data, BIOSLinker *linker, VirtMachineState *vms)
+     gicd->base_address = cpu_to_le64(memmap[VIRT_GIC_DIST].base);
+     gicd->version = vms->gic_version;
+
++    if (vms->cpu_hotplug_enabled) {
++        num_cpu = ms->smp.max_cpus;
++    }
+     for (i = 0; i < num_cpu; i++) {
+         virt_madt_cpu_entry(NULL, i, possible_cpus, table_data);
+     }
+@@ -902,9 +905,11 @@ static
+ void virt_acpi_build(VirtMachineState *vms, AcpiBuildTables *tables)
+ {
+     VirtMachineClass *vmc = VIRT_MACHINE_GET_CLASS(vms);
++    MachineState *ms = MACHINE(vms);
+     GArray *table_offsets;
+     unsigned dsdt, xsdt;
+     GArray *tables_blob = tables->table_data;
++    int num_cpus;
+
+     table_offsets = g_array_new(false, true /* clear */,
+                                         sizeof(uint32_t));
+@@ -923,7 +928,12 @@ void virt_acpi_build(VirtMachineState *vms, AcpiBuildTables *tables)
+
+     acpi_add_table(table_offsets, tables_blob);
+
+-    build_pptt(tables_blob, tables->linker, vms->smp_cpus);
++    if (vms->cpu_hotplug_enabled) {
++        num_cpus = ms->smp.max_cpus;
++    } else {
++        num_cpus = ms->smp.cpus;
++    }
++    build_pptt(tables_blob, tables->linker, num_cpus);
+
+     acpi_add_table(table_offsets, tables_blob);
+     build_madt(tables_blob, tables->linker, vms);
+diff --git a/hw/arm/virt.c b/hw/arm/virt.c
+index 304a4c2d31..983084c459 100644
+--- a/hw/arm/virt.c
++++ b/hw/arm/virt.c
+@@ -767,6 +767,9 @@ static void create_gic(VirtMachineState *vms)
+     unsigned int smp_cpus = ms->smp.cpus;
+     uint32_t nb_redist_regions = 0;
+
++    if (vms->cpu_hotplug_enabled) {
++        num_cpus = ms->smp.max_cpus;
++    }
+     assert(num_cpus >= smp_cpus);
+
+     gictype = (type == 3) ? gicv3_class_name() : gic_class_name();
+@@ -1772,8 +1775,15 @@ static void machvirt_init(MachineState *machine)
+         Object *cpuobj;
+         CPUState *cs;
+
++        if (kvm_enabled() && vms->cpu_hotplug_enabled) {
++            if (kvm_create_parked_vcpu(n) < 0) {
++                error_report("mach-virt: Create KVM parked vCPU failed");
++                exit(1);
++            }
++        }
++
+         if (n >= smp_cpus) {
+-            break;
++            continue;
+         }
+
+         cpuobj = object_new(possible_cpus->cpus[n].type);
+@@ -1857,7 +1867,7 @@ static void machvirt_init(MachineState *machine)
+     vms->bootinfo.kernel_filename = machine->kernel_filename;
+     vms->bootinfo.kernel_cmdline = machine->kernel_cmdline;
+     vms->bootinfo.initrd_filename = machine->initrd_filename;
+-    vms->bootinfo.nb_cpus = smp_cpus;
++    vms->bootinfo.nb_cpus = vms->cpu_hotplug_enabled ? max_cpus : smp_cpus;
+     vms->bootinfo.board_id = -1;
+     vms->bootinfo.loader_start = vms->memmap[VIRT_MEM].base;
+     vms->bootinfo.get_dtb = machvirt_dtb;
+diff --git a/target/arm/kvm.c b/target/arm/kvm.c
+index 327b3bc338..4f131f687d 100644
+--- a/target/arm/kvm.c
++++ b/target/arm/kvm.c
+@@ -202,7 +202,7 @@ int kvm_arm_get_max_vm_ipa_size(MachineState *ms)
+ int kvm_arch_init(MachineState *ms, KVMState *s)
+ {
+     int ret = 0;
+-    unsigned int smp_cpus = ms->smp.cpus;
++    unsigned int max_cpus = ms->smp.max_cpus;
+     /* For ARM interrupt delivery is always asynchronous,
+      * whether we are using an in-kernel VGIC or not.
+      */
+@@ -216,9 +216,9 @@ int kvm_arch_init(MachineState *ms, KVMState *s)
+
+     cap_has_mp_state = kvm_check_extension(s, KVM_CAP_MP_STATE);
+
+-    if (smp_cpus > 256 &&
++    if (max_cpus > 256 &&
+         !kvm_check_extension(s, KVM_CAP_ARM_IRQ_LINE_LAYOUT_2)) {
+-        error_report("Using more than 256 vcpus requires a host kernel "
++        error_report("Using more than max 256 vcpus requires a host kernel "
+                      "with KVM_CAP_ARM_IRQ_LINE_LAYOUT_2");
+         ret = -EINVAL;
+     }
+--
+2.19.1

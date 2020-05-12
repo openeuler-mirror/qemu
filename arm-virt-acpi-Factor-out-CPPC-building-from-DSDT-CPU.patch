@@ -1,0 +1,121 @@
+From 2fdece10dac6161cb6c1f0f05247391aa3269eed Mon Sep 17 00:00:00 2001
+From: Keqian Zhu <zhukeqian1@huawei.com>
+Date: Wed, 22 Apr 2020 15:58:27 +0800
+Subject: [PATCH] arm/virt/acpi: Factor out CPPC building from DSDT CPU aml
+
+When CPU hotplug is enabled, we will use build_cpus_aml instead of
+acpi_dsdt_add_cpus, so factor out CPPC building and we can reuse it
+in build_cpus_aml.
+
+Signed-off-by: Keqian Zhu <zhukeqian1@huawei.com>
+---
+ hw/acpi/generic_event_device.c       |  1 +
+ hw/arm/virt-acpi-build.c             | 33 +++++++++++++++++-----------
+ include/hw/acpi/acpi_dev_interface.h |  2 ++
+ include/hw/arm/virt.h                |  2 ++
+ 4 files changed, 25 insertions(+), 13 deletions(-)
+
+diff --git a/hw/acpi/generic_event_device.c b/hw/acpi/generic_event_device.c
+index b834ae3ff6..82139b4314 100644
+--- a/hw/acpi/generic_event_device.c
++++ b/hw/acpi/generic_event_device.c
+@@ -289,6 +289,7 @@ static void acpi_ged_class_init(ObjectClass *class, void *data)
+
+     adevc->send_event = acpi_ged_send_event;
+     adevc->madt_cpu = virt_madt_cpu_entry;
++    adevc->cpu_cppc = virt_acpi_dsdt_cpu_cppc;
+ }
+
+ static const TypeInfo acpi_ged_info = {
+diff --git a/hw/arm/virt-acpi-build.c b/hw/arm/virt-acpi-build.c
+index 4b6aace433..8b68a15d76 100644
+--- a/hw/arm/virt-acpi-build.c
++++ b/hw/arm/virt-acpi-build.c
+@@ -111,8 +111,24 @@ static void acpi_dsdt_add_cppc(Aml *dev, uint64_t cpu_base, int *regs_offset)
+     aml_append(dev, aml_name_decl("_CPC", cpc));
+ }
+
+-static void acpi_dsdt_add_cpus(Aml *scope, int smp_cpus,
+-                               const MemMapEntry *cppc_memmap)
++void virt_acpi_dsdt_cpu_cppc(AcpiDeviceIf *adev, int ncpu, int num_cpu, Aml *dev)
++{
++    VirtMachineState *vms = VIRT_MACHINE(qdev_get_machine());
++    const MemMapEntry *cppc_memmap = &vms->memmap[VIRT_CPUFREQ];
++
++    /*
++    * Append _CPC and _PSD to support CPU frequence show
++    * Check CPPC available by DESIRED_PERF register
++    */
++    if (cppc_regs_offset[DESIRED_PERF] != -1) {
++        acpi_dsdt_add_cppc(dev,
++                           cppc_memmap->base + ncpu * CPPC_REG_PER_CPU_STRIDE,
++                           cppc_regs_offset);
++        acpi_dsdt_add_psd(dev, num_cpu);
++    }
++}
++
++static void acpi_dsdt_add_cpus(Aml *scope, int smp_cpus, VirtMachineState *vms)
+ {
+     uint16_t i;
+
+@@ -121,16 +137,7 @@ static void acpi_dsdt_add_cpus(Aml *scope, int smp_cpus,
+         aml_append(dev, aml_name_decl("_HID", aml_string("ACPI0007")));
+         aml_append(dev, aml_name_decl("_UID", aml_int(i)));
+
+-        /*
+-         * Append _CPC and _PSD to support CPU frequence show
+-         * Check CPPC available by DESIRED_PERF register
+-         */
+-        if (cppc_regs_offset[DESIRED_PERF] != -1) {
+-            acpi_dsdt_add_cppc(dev,
+-                               cppc_memmap->base + i * CPPC_REG_PER_CPU_STRIDE,
+-                               cppc_regs_offset);
+-            acpi_dsdt_add_psd(dev, smp_cpus);
+-        }
++        virt_acpi_dsdt_cpu_cppc(NULL, i, smp_cpus, dev);
+
+         aml_append(scope, dev);
+     }
+@@ -810,7 +817,7 @@ build_dsdt(GArray *table_data, BIOSLinker *linker, VirtMachineState *vms)
+      * the RTC ACPI device at all when using UEFI.
+      */
+     scope = aml_scope("\\_SB");
+-    acpi_dsdt_add_cpus(scope, vms->smp_cpus, &memmap[VIRT_CPUFREQ]);
++    acpi_dsdt_add_cpus(scope, vms->smp_cpus, vms);
+     acpi_dsdt_add_uart(scope, &memmap[VIRT_UART],
+                        (irqmap[VIRT_UART] + ARM_SPI_BASE));
+     acpi_dsdt_add_flash(scope, &memmap[VIRT_FLASH]);
+diff --git a/include/hw/acpi/acpi_dev_interface.h b/include/hw/acpi/acpi_dev_interface.h
+index adcb3a816c..2952914569 100644
+--- a/include/hw/acpi/acpi_dev_interface.h
++++ b/include/hw/acpi/acpi_dev_interface.h
+@@ -3,6 +3,7 @@
+
+ #include "qom/object.h"
+ #include "hw/boards.h"
++#include "hw/acpi/aml-build.h"
+
+ /* These values are part of guest ABI, and can not be changed */
+ typedef enum {
+@@ -55,5 +56,6 @@ typedef struct AcpiDeviceIfClass {
+     void (*send_event)(AcpiDeviceIf *adev, AcpiEventStatusBits ev);
+     void (*madt_cpu)(AcpiDeviceIf *adev, int uid,
+                      const CPUArchIdList *apic_ids, GArray *entry);
++    void (*cpu_cppc)(AcpiDeviceIf *adev, int uid, int num_cpu, Aml *dev);
+ } AcpiDeviceIfClass;
+ #endif
+diff --git a/include/hw/arm/virt.h b/include/hw/arm/virt.h
+index 6b1f10b231..cbdea7ff32 100644
+--- a/include/hw/arm/virt.h
++++ b/include/hw/arm/virt.h
+@@ -157,6 +157,8 @@ typedef struct {
+ void virt_acpi_setup(VirtMachineState *vms);
+ void virt_madt_cpu_entry(AcpiDeviceIf *adev, int uid,
+                          const CPUArchIdList *cpu_list, GArray *entry);
++void virt_acpi_dsdt_cpu_cppc(AcpiDeviceIf *adev, int uid,
++                             int num_cpu, Aml *dev);
+
+ /* Return the number of used redistributor regions  */
+ static inline int virt_gicv3_redist_region_count(VirtMachineState *vms)
+--
+2.19.1

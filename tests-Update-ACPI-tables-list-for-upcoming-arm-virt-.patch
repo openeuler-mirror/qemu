@@ -1,0 +1,44 @@
+From 27e2533e43f0ab2b8a60f1902f58f8752581ea9f Mon Sep 17 00:00:00 2001
+From: Shameer Kolothum <shameerali.kolothum.thodi@huawei.com>
+Date: Wed, 18 Sep 2019 14:06:32 +0100
+Subject: [PATCH] tests: Update ACPI tables list for upcoming arm/virt tests
+
+This is in preparation to add numamem and memhp tests to
+arm/virt platform. The bios-tables-test-allowed-diff.h
+is updated with a list of expected ACPI tables that needs to be
+present in tests/data/acpi/virt folder.
+
+Signed-off-by: Shameer Kolothum <shameerali.kolothum.thodi@huawei.com>
+Message-Id: <20190918130633.4872-11-shameerali.kolothum.thodi@huawei.com>
+Acked-by: Peter Maydell <peter.maydell@linaro.org>
+Reviewed-by: Michael S. Tsirkin <mst@redhat.com>
+Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+Reviewed-by: Igor Mammedov <imammedo@redhat.com>
+---
+ tests/bios-tables-test-allowed-diff.h | 13 +++++++++++++
+ 1 file changed, 13 insertions(+)
+
+diff --git a/tests/bios-tables-test-allowed-diff.h b/tests/bios-tables-test-allowed-diff.h
+index 32a401ae35..3776dd2f3d 100644
+--- a/tests/bios-tables-test-allowed-diff.h
++++ b/tests/bios-tables-test-allowed-diff.h
+@@ -1,4 +1,17 @@
+ /* List of comma-separated changed AML files to ignore */
+ "tests/data/acpi/virt/DSDT",
++"tests/data/acpi/virt/APIC.memhp",
++"tests/data/acpi/virt/APIC.numamem",
+ "tests/data/acpi/virt/DSDT.memhp",
+ "tests/data/acpi/virt/DSDT.numamem",
++"tests/data/acpi/virt/FACP.memhp",
++"tests/data/acpi/virt/FACP.numamem",
++"tests/data/acpi/virt/GTDT.memhp",
++"tests/data/acpi/virt/GTDT.numamem",
++"tests/data/acpi/virt/MCFG.memhp",
++"tests/data/acpi/virt/MCFG.numamem",
++"tests/data/acpi/virt/SLIT.memhp",
++"tests/data/acpi/virt/SPCR.memhp",
++"tests/data/acpi/virt/SPCR.numamem",
++"tests/data/acpi/virt/SRAT.memhp",
++"tests/data/acpi/virt/SRAT.numamem",
+--
+2.19.1

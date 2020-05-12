@@ -1,0 +1,35 @@
+From e93040851d683f1f7750acfa0e862b4405678f24 Mon Sep 17 00:00:00 2001
+From: Zheng Chuan <zhengchuan@huawei.com>
+Date: Fri, 24 Apr 2020 11:50:41 +0800
+Subject: [PATCH 04/10] migration: update ram_counters for multifd sync packet
+
+Multifd sync will send MULTIFD_FLAG_SYNC flag info to destination, add
+these bytes to ram_counters record.
+
+Change-Id: I885166f412f58e74de40ea6ffec1c35e82ae4619
+Signed-off-by: Ivan Ren <ivanren@tencent.com>
+Suggested-by: Wei Yang <richardw.yang@linux.intel.com>
+Message-Id: <1564464816-21804-4-git-send-email-ivanren@tencent.com>
+Reviewed-by: Juan Quintela <quintela@redhat.com>
+Signed-off-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+---
+ migration/ram.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/migration/ram.c b/migration/ram.c
+index 88ddd2bb..c75716bb 100644
+--- a/migration/ram.c
++++ b/migration/ram.c
+@@ -1085,6 +1085,10 @@ static void multifd_send_sync_main(RAMState *rs)
+         p->flags |= MULTIFD_FLAG_SYNC;
+         p->pending_job++;
+         qemu_file_update_transfer(rs->f, p->packet_len);
++        ram_counters.multifd_bytes += p->packet_len;
++        ram_counters.transferred += p->packet_len;
++        ram_counters.multifd_bytes += p->packet_len;
++        ram_counters.transferred += p->packet_len;
+         qemu_mutex_unlock(&p->mutex);
+         qemu_sem_post(&p->sem);
+     }
+--
+2.19.1

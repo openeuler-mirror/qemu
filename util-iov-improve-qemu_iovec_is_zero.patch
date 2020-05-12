@@ -1,0 +1,102 @@
+From b3b76fc643912d2c86b13caff30a1151f2958702 Mon Sep 17 00:00:00 2001
+From: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Date: Tue, 4 Jun 2019 19:15:04 +0300
+Subject: [PATCH] util/iov: improve qemu_iovec_is_zero
+
+We'll need to check a part of qiov soon, so implement it now.
+
+Optimization with align down to 4 * sizeof(long) is dropped due to:
+1. It is strange: it aligns length of the buffer, but where is a
+   guarantee that buffer pointer is aligned itself?
+2. buffer_is_zero() is a better place for optimizations and it has
+   them.
+
+Signed-off-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+Message-id: 20190604161514.262241-3-vsementsov@virtuozzo.com
+Message-Id: <20190604161514.262241-3-vsementsov@virtuozzo.com>
+Signed-off-by: Stefan Hajnoczi <stefanha@redhat.com>
+(cherry picked from commit f76889e7b947d896db51be8a4d9c941c2f70365a)
+*prereq for 292d06b9
+Signed-off-by: Michael Roth <mdroth@linux.vnet.ibm.com>
+---
+ block/io.c         |  2 +-
+ include/qemu/iov.h |  2 +-
+ util/iov.c         | 31 +++++++++++++++++++------------
+ 3 files changed, 21 insertions(+), 14 deletions(-)
+
+diff --git a/block/io.c b/block/io.c
+index 06305c6ea6..dccf687acc 100644
+--- a/block/io.c
++++ b/block/io.c
+@@ -1715,7 +1715,7 @@ static int coroutine_fn bdrv_aligned_pwritev(BdrvChild *child,
+
+     if (!ret && bs->detect_zeroes != BLOCKDEV_DETECT_ZEROES_OPTIONS_OFF &&
+         !(flags & BDRV_REQ_ZERO_WRITE) && drv->bdrv_co_pwrite_zeroes &&
+-        qemu_iovec_is_zero(qiov)) {
++        qemu_iovec_is_zero(qiov, 0, qiov->size)) {
+         flags |= BDRV_REQ_ZERO_WRITE;
+         if (bs->detect_zeroes == BLOCKDEV_DETECT_ZEROES_OPTIONS_UNMAP) {
+             flags |= BDRV_REQ_MAY_UNMAP;
+diff --git a/include/qemu/iov.h b/include/qemu/iov.h
+index f3787a0cf7..29957c8a72 100644
+--- a/include/qemu/iov.h
++++ b/include/qemu/iov.h
+@@ -212,7 +212,7 @@ void qemu_iovec_concat(QEMUIOVector *dst,
+ size_t qemu_iovec_concat_iov(QEMUIOVector *dst,
+                              struct iovec *src_iov, unsigned int src_cnt,
+                              size_t soffset, size_t sbytes);
+-bool qemu_iovec_is_zero(QEMUIOVector *qiov);
++bool qemu_iovec_is_zero(QEMUIOVector *qiov, size_t qiov_offeset, size_t bytes);
+ void qemu_iovec_destroy(QEMUIOVector *qiov);
+ void qemu_iovec_reset(QEMUIOVector *qiov);
+ size_t qemu_iovec_to_buf(QEMUIOVector *qiov, size_t offset,
+diff --git a/util/iov.c b/util/iov.c
+index 366ff9cdd1..9ac0261853 100644
+--- a/util/iov.c
++++ b/util/iov.c
+@@ -451,23 +451,30 @@ void qemu_iovec_init_extended(
+ }
+
+ /*
+- * Check if the contents of the iovecs are all zero
++ * Check if the contents of subrange of qiov data is all zeroes.
+  */
+-bool qemu_iovec_is_zero(QEMUIOVector *qiov)
++bool qemu_iovec_is_zero(QEMUIOVector *qiov, size_t offset, size_t bytes)
+ {
+-    int i;
+-    for (i = 0; i < qiov->niov; i++) {
+-        size_t offs = QEMU_ALIGN_DOWN(qiov->iov[i].iov_len, 4 * sizeof(long));
+-        uint8_t *ptr = qiov->iov[i].iov_base;
+-        if (offs && !buffer_is_zero(qiov->iov[i].iov_base, offs)) {
++    struct iovec *iov;
++    size_t current_offset;
++
++    assert(offset + bytes <= qiov->size);
++
++    iov = iov_skip_offset(qiov->iov, offset, &current_offset);
++
++    while (bytes) {
++        uint8_t *base = (uint8_t *)iov->iov_base + current_offset;
++        size_t len = MIN(iov->iov_len - current_offset, bytes);
++
++        if (!buffer_is_zero(base, len)) {
+             return false;
+         }
+-        for (; offs < qiov->iov[i].iov_len; offs++) {
+-            if (ptr[offs]) {
+-                return false;
+-            }
+-        }
++
++        current_offset = 0;
++        bytes -= len;
++        iov++;
+     }
++
+     return true;
+ }
+
+--
+2.23.0

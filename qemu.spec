@@ -1,6 +1,6 @@
 Name: qemu
-Version: 4.0.1
-Release: 11
+Version: 4.1.0
+Release: 6
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY
@@ -10,61 +10,157 @@ Source1: 80-kvm.rules
 Source2: 99-qemu-guest-agent.rules
 Source3: bridge.conf
 
-Patch0001: qxl-check-release-info-object.patch
-Patch0002: ARM64-record-vtimer-tick-when-cpu-is-stopped.patch
-Patch0003: pl011-reset-read-FIFO-when-UARTTIMSC-0-UARTICR-0xfff.patch
-Patch0004: pl031-support-rtc-timer-property-for-pl031.patch
-Patch0005: vhost-cancel-migration-when-vhost-user-restarted.patch
-Patch0006: qcow2-fix-memory-leak-in-qcow2_read_extensions.patch
-Patch0007: hw-arm-expose-host-CPU-frequency-info-to-guest.patch
-Patch0008: qemu-bridge-helper-restrict-interface-name-to-IFNAMS.patch
-Patch0009: qemu-bridge-helper-move-repeating-code-in-parse_acl.patch
-Patch0010: smbios-Add-missing-member-of-type-4-for-smbios-3.0.patch
-Patch0011: hw-arm-virt-Introduce-cpu-topology-support.patch
-Patch0012: hw-arm64-add-vcpu-cache-info-support.patch
-Patch0013: xhci-Fix-memory-leak-in-xhci_address_slot.patch
-Patch0014: xhci-Fix-memory-leak-in-xhci_kick_epctx.patch
-Patch0015: ehci-fix-queue-dev-null-ptr-dereference.patch
-Patch0016: memory-unref-the-memory-region-in-simplify-flatview.patch
-Patch0017: util-async-hold-AioContext-ref-to-prevent-use-after-free.patch
-Patch0018: vhost-user-scsi-prevent-using-uninitialized-vqs.patch
-Patch0019: cpu-add-Kunpeng-920-cpu-support.patch
-Patch0020: cpu-parse-feature-to-avoid-failure.patch
-Patch0021: cpu-add-Cortex-A72-processor-kvm-target-support.patch
-Patch0022: vnc-fix-memory-leak-when-vnc-disconnect.patch
-Patch0023: pcie-disable-the-PCI_EXP_LINKSTA_DLLA-cap.patch
-Patch0024: linux-headers-update-against-KVM-ARM-Fix-256-vcpus.patch
-Patch0025: intc-arm_gic-Support-IRQ-injection-for-more-than-256.patch
-Patch0026: ARM-KVM-Check-KVM_CAP_ARM_IRQ_LINE_LAYOUT_2-for-smp_.patch
-Patch0027: 9pfs-local-Fix-possible-memory-leak-in-local_link.patch
-Patch0028: scsi-disk-define-props-in-scsi_block_disk-to-avoid-memleaks.patch
-Patch0029: arm-translate-a64-fix-uninitialized-variable-warning.patch
-Patch0030: nbd-fix-uninitialized-variable-warning.patch
-Patch0031: xhci-Fix-memory-leak-in-xhci_kick_epctx-when-poweroff.patch
-Patch0032: block-fix-memleaks-in-bdrv_refresh_filename.patch
-Patch0033: iscsi-Cap-block-count-from-GET-LBA-STATUS-CVE-2020-1.patch
-Patch0034: tcp_emu-Fix-oob-access.patch
-Patch0035: slirp-use-correct-size-while-emulating-IRC-commands.patch
-Patch0036: slirp-use-correct-size-while-emulating-commands.patch
-Patch0037: tcp_emu-fix-unsafe-snprintf-usages.patch
-Patch0038: block-iscsi-use-MIN-between-mx_sb_len-and-sb_len_wr.patch
-Patch0039: monitor-fix-memory-leak-in-monitor_fdset_dup_fd_find.patch
+Patch0001: pl011-reset-read-FIFO-when-UARTTIMSC-0-UARTICR-0xfff.patch
+Patch0002: pl031-support-rtc-timer-property-for-pl031.patch
+Patch0003: vhost-cancel-migration-when-vhost-user-restarted.patch
+Patch0004: qcow2-fix-memory-leak-in-qcow2_read_extensions.patch
+Patch0005: bios-tables-test-prepare-to-change-ARM-virt-ACPI-DSDT.patch
+Patch0006: hw-arm-expose-host-CPU-frequency-info-to-guest.patch
+Patch0007: smbios-Add-missing-member-of-type-4-for-smbios-3.0.patch
+Patch0008: tests-bios-tables-test-disable-this-testcase.patch
+Patch0009: hw-arm-virt-Introduce-cpu-topology-support.patch
+Patch0010: hw-arm64-add-vcpu-cache-info-support.patch
+Patch0011: xhci-Fix-memory-leak-in-xhci_address_slot.patch
+Patch0012: xhci-Fix-memory-leak-in-xhci_kick_epctx.patch
+Patch0013: ehci-fix-queue-dev-null-ptr-dereference.patch
+Patch0014: util-async-hold-AioContext-ref-to-prevent-use-after-free.patch
+Patch0015: vhost-user-scsi-prevent-using-uninitialized-vqs.patch
+Patch0016: cpu-add-Kunpeng-920-cpu-support.patch
+Patch0017: cpu-parse-feature-to-avoid-failure.patch
+Patch0018: cpu-add-Cortex-A72-processor-kvm-target-support.patch
+Patch0019: pcie-disable-the-PCI_EXP_LINKSTA_DLLA-cap.patch
+Patch0020: vnc-fix-memory-leak-when-vnc-disconnect.patch
+Patch0021: linux-headers-update-against-KVM-ARM-Fix-256-vcpus.patch
+Patch0022: intc-arm_gic-Support-IRQ-injection-for-more-than-256.patch
+Patch0023: ARM-KVM-Check-KVM_CAP_ARM_IRQ_LINE_LAYOUT_2-for-smp.patch
+Patch0024: 9pfs-local-Fix-possible-memory-leak-in-local_link.patch
+Patch0025: scsi-disk-define-props-in-scsi_block_disk-to-avoid-memleaks.patch
+Patch0026: arm-translate-a64-fix-uninitialized-variable-warning.patch
+Patch0027: nbd-fix-uninitialized-variable-warning.patch
+Patch0028: xhci-Fix-memory-leak-in-xhci_kick_epctx-when-poweroff.patch
+Patch0029: block-fix-memleaks-in-bdrv_refresh_filename.patch
+Patch0030: iscsi-Cap-block-count-from-GET-LBA-STATUS-CVE-2020-1.patch
+Patch0031: tcp_emu-Fix-oob-access.patch
+Patch0032: slirp-use-correct-size-while-emulating-IRC-commands.patch
+Patch0033: slirp-use-correct-size-while-emulating-commands.patch
+Patch0034: util-add-slirp_fmt-helpers.patch
+Patch0035: tcp_emu-fix-unsafe-snprintf-usages.patch
+Patch0036: block-iscsi-use-MIN-between-mx_sb_len-and-sb_len_wr.patch
+Patch0037: monitor-fix-memory-leak-in-monitor_fdset_dup_fd_find.patch
+Patch0038: memory-Align-MemoryRegionSections-fields.patch
+Patch0039: memory-Provide-an-equality-function-for-MemoryRegion.patch
 Patch0040: vhost-Fix-memory-region-section-comparison.patch
-Patch0041: memory-Align-MemoryRegionSections-fields.patch
-Patch0042: memory-Provide-an-equality-function-for-MemoryRegion.patch
-Patch0043: file-posix-Handle-undetectable-alignment.patch
-Patch0044: block-backup-fix-max_transfer-handling-for-copy_rang.patch
-Patch0045: block-backup-fix-backup_cow_with_offload-for-last-cl.patch
-Patch0046: qcow2-Limit-total-allocation-range-to-INT_MAX.patch
-Patch0047: mirror-Do-not-dereference-invalid-pointers.patch
-Patch0048: COLO-compare-Fix-incorrect-if-logic.patch
-Patch0049: qcow2-bitmap-Fix-uint64_t-left-shift-overflow.patch
-Patch0050: pcie-Add-pcie-root-port-fast-plug-unplug-feature.patch
-Patch0051: pcie-Compat-with-devices-which-do-not-support-Link-W.patch
-Patch0052: aio-wait-delegate-polling-of-main-AioContext-if-BQL-not-held.patch
-Patch0053: async-use-explicit-memory-barriers.patch
-Patch0054: Fix-use-afte-free-in-ip_reass-CVE-2020-1983.patch
-Patch0055: nbd-Fix-regression-with-multiple-meta-contexts.patch
+Patch0041: file-posix-Handle-undetectable-alignment.patch
+Patch0042: block-backup-fix-max_transfer-handling-for-copy_rang.patch
+Patch0043: block-backup-fix-backup_cow_with_offload-for-last-cl.patch
+Patch0044: qcow2-Limit-total-allocation-range-to-INT_MAX.patch
+Patch0045: mirror-Do-not-dereference-invalid-pointers.patch
+Patch0046: COLO-compare-Fix-incorrect-if-logic.patch
+Patch0047: qcow2-bitmap-Fix-uint64_t-left-shift-overflow.patch
+Patch0048: pcie-Add-pcie-root-port-fast-plug-unplug-feature.patch
+Patch0049: pcie-Compat-with-devices-which-do-not-support-Link-W.patch
+Patch0050: aio-wait-delegate-polling-of-main-AioContext-if-BQL-not-held.patch
+Patch0051: async-use-explicit-memory-barriers.patch
+Patch0052: dma-helpers-ensure-AIO-callback-is-invoked-after-can.patch
+Patch0053: Revert-ide-ahci-Check-for-ECANCELED-in-aio-callbacks.patch
+Patch0054: pc-Don-t-make-die-id-mandatory-unless-necessary.patch
+Patch0055: block-file-posix-Reduce-xfsctl-use.patch
+Patch0056: pr-manager-Fix-invalid-g_free-crash-bug.patch
+Patch0057: x86-do-not-advertise-die-id-in-query-hotpluggbale-cp.patch
+Patch0058: vpc-Return-0-from-vpc_co_create-on-success.patch
+Patch0059: target-arm-Free-TCG-temps-in-trans_VMOV_64_sp.patch
+Patch0060: target-arm-Don-t-abort-on-M-profile-exception-return.patch
+Patch0061: libvhost-user-fix-SLAVE_SEND_FD-handling.patch
+Patch0062: qcow2-Fix-the-calculation-of-the-maximum-L2-cache-si.patch
+Patch0063: block-nfs-tear-down-aio-before-nfs_close.patch
+Patch0064: blockjob-update-nodes-head-while-removing-all-bdrv.patch
+Patch0065: block-qcow2-Fix-corruption-introduced-by-commit-8ac0.patch
+Patch0066: coroutine-Add-qemu_co_mutex_assert_locked.patch
+Patch0067: qcow2-Fix-corruption-bug-in-qcow2_detect_metadata_pr.patch
+Patch0068: hw-arm-boot.c-Set-NSACR.-CP11-CP10-for-NS-kernel-boo.patch
+Patch0069: make-release-pull-in-edk2-submodules-so-we-can-build.patch
+Patch0070: roms-Makefile.edk2-don-t-pull-in-submodules-when-bui.patch
+Patch0071: block-snapshot-Restrict-set-of-snapshot-nodes.patch
+Patch0072: vhost-user-save-features-if-the-char-dev-is-closed.patch
+Patch0073: hw-core-loader-Fix-possible-crash-in-rom_copy.patch
+Patch0074: ui-Fix-hanging-up-Cocoa-display-on-macOS-10.15-Catal.patch
+Patch0075: virtio-new-post_load-hook.patch
+Patch0076: virtio-net-prevent-offloads-reset-on-migration.patch
+Patch0077: util-hbitmap-strict-hbitmap_reset.patch
+Patch0078: hbitmap-handle-set-reset-with-zero-length.patch
+Patch0079: target-arm-Allow-reading-flags-from-FPSCR-for-M-prof.patch
+Patch0080: scsi-lsi-exit-infinite-loop-while-executing-script-C.patch
+Patch0081: virtio-blk-Cancel-the-pending-BH-when-the-dataplane-.patch
+Patch0082: qcow2-Fix-QCOW2_COMPRESSED_SECTOR_MASK.patch
+Patch0083: util-iov-introduce-qemu_iovec_init_extended.patch
+Patch0084: util-iov-improve-qemu_iovec_is_zero.patch
+Patch0085: block-io-refactor-padding.patch
+Patch0086: block-Make-wait-mark-serialising-requests-public.patch
+Patch0087: block-Add-bdrv_co_get_self_request.patch
+Patch0088: block-file-posix-Let-post-EOF-fallocate-serialize.patch
+Patch0089: block-posix-Always-allocate-the-first-block.patch
+Patch0090: block-create-Do-not-abort-if-a-block-driver-is-not-a.patch
+Patch0091: mirror-Keep-mirror_top_bs-drained-after-dropping-per.patch
+Patch0092: target-arm-kvm-trivial-Clean-up-header-documentation.patch
+Patch0093: target-arm-kvm64-kvm64-cpus-have-timer-registers.patch
+Patch0094: target-arm-kvm-Implement-virtual-time-adjustment.patch
+Patch0095: target-arm-cpu-Add-the-kvm-no-adjvtime-CPU-property.patch
+Patch0096: hw-acpi-Make-ACPI-IO-address-space-configurable.patch
+Patch0097: hw-acpi-Do-not-create-memory-hotplug-method-when-han.patch
+Patch0098: hw-acpi-Add-ACPI-Generic-Event-Device-Support.patch
+Patch0099: hw-arm-virt-Add-memory-hotplug-framework.patch
+Patch0100: hw-arm-virt-Enable-device-memory-cold-hot-plug-with-.patch
+Patch0101: hw-arm-virt-acpi-build-Add-PC-DIMM-in-SRAT.patch
+Patch0102: hw-arm-Factor-out-powerdown-notifier-from-GPIO.patch
+Patch0103: hw-arm-Use-GED-for-system_powerdown-event.patch
+Patch0104: docs-specs-Add-ACPI-GED-documentation.patch
+Patch0105: tests-Update-ACPI-tables-list-for-upcoming-arm-virt-.patch
+Patch0106: tests-acpi-add-empty-files.patch
+Patch0107: tests-allow-empty-expected-files.patch
+Patch0108: tests-Add-bios-tests-to-arm-virt.patch
+Patch0109: tests-document-how-to-update-acpi-tables.patch
+Patch0110: hw-arm-virt-Simplify-by-moving-the-gic-in-the-machin.patch
+Patch0111: bugfix-Use-gicr_typer-in-arm_gicv3_icc_reset.patch
+Patch0112: Typo-Correct-the-name-of-CPU-hotplug-memory-region.patch
+Patch0113: acpi-madt-Factor-out-the-building-of-MADT-GICC-struc.patch
+Patch0114: acpi-ged-Add-virt_madt_cpu_entry-to-madt_cpu-hook.patch
+Patch0115: arm-virt-acpi-Factor-out-CPPC-building-from-DSDT-CPU.patch
+Patch0116: acpi-cpu-Prepare-build_cpus_aml-for-arm-virt.patch
+Patch0117: acpi-ged-Extend-ACPI-GED-to-support-CPU-hotplug.patch
+Patch0118: arm-cpu-assign-arm_get_arch_id-handler-to-get_arch_i.patch
+Patch0119: arm-virt-Attach-ACPI-CPU-hotplug-support-to-virt.patch
+Patch0120: arm-virt-Add-CPU-hotplug-framework.patch
+Patch0121: arm-virt-Add-CPU-topology-support.patch
+Patch0122: test-numa-Adjust-aarch64-numa-test.patch
+Patch0123: hw-arm-virt-Factor-out-some-CPU-init-codes-to-pre_pl.patch
+Patch0124: hw-arm-boot-Add-manually-register-and-trigger-of-CPU.patch
+Patch0125: arm-virt-gic-Construct-irqs-connection-from-create_g.patch
+Patch0126: intc-gicv3_common-Factor-out-arm_gicv3_common_cpu_re.patch
+Patch0127: intc-gicv3_cpuif-Factor-out-gicv3_init_one_cpuif.patch
+Patch0128: intc-kvm_gicv3-Factor-out-kvm_arm_gicv3_cpu_realize.patch
+Patch0129: hw-intc-gicv3-Add-CPU-hotplug-realize-hook.patch
+Patch0130: accel-kvm-Add-pre-park-vCPU-support.patch
+Patch0131: intc-gicv3-Add-pre-sizing-capability-to-GICv3.patch
+Patch0132: acpi-madt-Add-pre-sizing-capability-to-MADT-GICC-str.patch
+Patch0133: arm-virt-Add-cpu_hotplug_enabled-field.patch
+Patch0134: arm-virt-acpi-Extend-cpufreq-to-support-max_cpus.patch
+Patch0135: arm-virt-Pre-sizing-MADT-GICC-PPTT-GICv3-and-Pre-par.patch
+Patch0136: arm-virt-Add-some-sanity-checks-in-cpu_pre_plug-hook.patch
+Patch0137: arm-virt-Start-up-CPU-hot-plug.patch
+Patch0138: migration-always-initialise-ram_counters-for-a-new-m.patch
+Patch0139: migration-add-qemu_file_update_transfer-interface.patch
+Patch0140: migration-add-speed-limit-for-multifd-migration.patch
+Patch0141: migration-update-ram_counters-for-multifd-sync-packe.patch
+Patch0142: migration-Make-global-sem_sync-semaphore-by-channel.patch
+Patch0143: migration-multifd-fix-nullptr-access-in-terminating-m.patch
+Patch0144: migration-Maybe-VM-is-paused-when-migration-is-cance.patch
+Patch0145: migration-multifd-fix-potential-wrong-acception-orde.patch
+Patch0146: migration-multifd-fix-destroyed-mutex-access-in-term.patch
+Patch0147: migration-multifd-fix-nullptr-access-in-multifd_send.patch
+Patch0148: vtimer-compat-cross-version-migration-from-v4.0.1.patch
+Patch0149: migration-ram-Do-error_free-after-migrate_set_error-.patch
+Patch0150: migration-ram-fix-memleaks-in-multifd_new_send_chann.patch
+Patch0151: migration-rdma-fix-a-memleak-on-error-path-in-rdma_s.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -251,7 +347,9 @@ install -D -m 0644 %{_sourcedir}/99-qemu-guest-agent.rules %{buildroot}%{_udevdi
 mkdir -p %{buildroot}%{_localstatedir}/log
 touch %{buildroot}%{_localstatedir}/log/qga-fsfreeze-hook.log
 
+# For qemu docs package
 %global qemudocdir %{_docdir}/%{name}
+rm -rf %{buildroot}%{qemudocdir}/specs
 install -D -p -m 0644 -t %{buildroot}%{qemudocdir} Changelog README COPYING COPYING.LIB LICENSE
 chmod -x %{buildroot}%{_mandir}/man1/*
 
@@ -265,6 +363,9 @@ rm -rf %{buildroot}%{_datadir}/%{name}/sgabios.bin
 rm -rf %{buildroot}%{_datadir}/%{name}/multiboot.bin
 rm -rf %{buildroot}%{_datadir}/%{name}/linuxboot_dma.bin
 rm -rf %{buildroot}%{_datadir}/%{name}/pvh.bin
+%endif
+%ifarch x86_64
+rm -rf %{buildroot}%{_datadir}/%{name}/vgabios-ati.bin
 %endif
 rm -rf %{buildroot}%{_datadir}/%{name}/openbios-*
 rm -rf %{buildroot}%{_datadir}/%{name}/slof.bin
@@ -281,6 +382,11 @@ rm -rf %{buildroot}%{_datadir}/%{name}/skiboot.lid
 rm -rf %{buildroot}%{_datadir}/%{name}/spapr-*
 rm -rf %{buildroot}%{_datadir}/%{name}/u-boot*
 rm -rf %{buildroot}%{_bindir}/ivshmem*
+rm -f %{buildroot}%{_datadir}/%{name}/edk2*
+rm -rf %{buildroot}%{_datadir}/%{name}/firmware
+rm -rf %{buildroot}%{_datadir}/%{name}/opensbi*
+rm -rf %{buildroot}%{_datadir}/%{name}/qemu-nsis.bmp
+
 
 for f in %{buildroot}%{_bindir}/* %{buildroot}%{_libdir}/* \
          %{buildroot}%{_libexecdir}/*; do
@@ -400,99 +506,123 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
-* Fri Apr 24 2020 backport nbd fix from qemu upstream
-- nbd: Fix regression with multiple meta contexts
+* Sat May 9 2020 Huawei Technologies Co., Ltd. <pannengyuan@huawei.com>
+- migration/ram: do error_free after migrate_set_error to avoid memleaks.
+- migration/ram: fix memleaks in multifd_new_send_channel_async.
+- migration/rdma: fix a memleak on error path in rdma_start_incoming_migration.
 
-* Fri Apr 24 2020 Huawei Technologies Co., Ltd. <fangying1@huawei.com>
-- Fix use-afte-free in ip_reass() (CVE-2020-1983)
+* Fri May 8 2020 Huawei Technologies Co., Ltd. <zhengchuan@huawei.com>
+- vtimer: compat cross version migration from v4.0.1
 
-* Sat Apr 11 2020 Huawei Technologies Co., Ltd. <fangying1@huawei.com>
+* Fri Apr 24 2020 Huawei Technologies Co., Ltd. <zhengchuan@huawei.com>
+- migration: backport migration patches from upstream
+
+* Fri Apr 24 2020 Huawei Technologies Co., Ltd. <zhukeqian1@huawei.com>
+- arm/virt: Add CPU hotplug support
+
+* Wed Apr 22 2020 Huawei Technologies Co., Ltd. <zhukeqian1@huawei.com>
+- backport patch to enable arm/virt memory hotplug
+
+* Wed Apr 22 2020 Huawei Technologies Co., Ltd. <fangying1@huawei.com>
+- backport patch to enable target/arm/kvm Adjust virtual time
+
+* Fri Apr 17 2020 Huawei Technologies Co., Ltd. <fangying1@huawei.com>
+- backport patch bundles from qemu stable v4.1.1
+
+* Thu Apr 16 2020 Huawei Technologies Co., Ltd. <fangying1@huawei.com>
 - aio-wait: delegate polling of main AioContext if BQL not held
 - async: use explicit memory barriers
 
-* Wed Mar 18 2020 Huawei Technologies Co., Ltd. <fangying1@huawei.com>
+* Thu Apr 16 2020 Huawei Technologies Co., Ltd. <fangying1@huawei.com>
 - pcie: Add pcie-root-port fast plug/unplug feature
-- pcie: Compat with devices which do not support Link Width
+- pcie: Compat with devices which do not support Link Width, such as ioh3420
 
-* Tue Mar 17 2020 Huawei Technologies Co., Ltd. <zhang.zhanghailiang@huawei.com>
-- Put linuxboot_dma.bin and pvh.bin in x86 package
+* Thu Apr 16 2020 Huawei Technologies Co., Ltd. <fangying1@huawei.com>
+- qcow2-bitmap: Fix uint64_t left-shift overflow
 
-* Mon Mar 16 2020 backport some bug fix patches from upstream
-- Patch from number 0040 to 0049 are picked from stable-4.1.1
+* Thu Apr 16 2020 Huawei Technologies Co., Ltd. <fangying1@huawei.com>
+- COLO-compare: Fix incorrect `if` logic
 
-* Mon Mar 16 2020 Huawei Technologies Co., Ltd. <kuhn.chenqun@huawei.com>
-- moniter: fix memleak in monitor_fdset_dup_fd_find_remove
+* Thu Apr 16 2020 Huawei Technologies Co., Ltd. <fangying1@huawei.com>
+- block/backup: fix max_transfer handling for copy_range
+- block/backup: fix backup_cow_with_offload for last cluster
+- qcow2: Limit total allocation range to INT_MAX
+- mirror: Do not dereference invalid pointers
+
+* Thu Apr 16 2020 Huawei Technologies Co., Ltd. <fangying1@huawei.com>
+- file-posix: Handle undetectable alignment
+
+* Thu Apr 16 2020 Huawei Technologies Co., Ltd. <fangying1@huawei.com>
+- vhost: Fix memory region section comparison
+- memory: Provide an equality function for MemoryRegionSections
+- memory: Align MemoryRegionSections fields
+
+* Thu Apr 16 2020 Huawei Technologies Co., Ltd. <fangying1@huawei.com>
 - block/iscsi: use MIN() between mx_sb_len and sb_len_wr
+- moniter: fix memleak in monitor_fdset_dup_fd_find_remove
 
-* Wed Mar 11 2020 backport from qemu upstream
-- tcp_emu: Fix oob access
-- slirp: use correct size while emulating IRC commands
-- slirp: use correct size while emulating commands
+* Thu Apr 16 2020 Huawei Technologies Co., Ltd. <fangying1@huawei.com>
 - tcp_emu: fix unsafe snprintf() usages
-
-* Mon Mar 9 2020 backport from qemu upstream
+- util: add slirp_fmt() helpers
+- slirp: use correct size while emulating commands
+- slirp: use correct size while emulating IRC commands
+- tcp_emu: Fix oob access
 - iscsi: Cap block count from GET LBA STATUS (CVE-2020-1711)
 
-* Thu Feb  6 2020 Huawei Technologies Co., Ltd. <zhang.zhanghailiang@huawei.com>
-- spec: remove fno-inline option for configure
-
-* Thu Jan 16 2020 Huawei Technologies Co., Ltd. <pannengyuan@huawei.com>
+* Thu Apr 16 2020 Huawei Technologies Co., Ltd. <fangying1@huawei.com>
+- 9pfs: local: Fix possible memory leak in local_link()
+- scsi-disk: define props in scsi_block_disk to avoid memleaks
+- arm/translate-a64: fix uninitialized variable warning
+- block: fix memleaks in bdrv_refresh_filename
+- vnc: fix memory leak when vnc disconnect
 - block: fix memleaks in bdrv_refresh_filename
 
-* Mon Jan 13 2020 Huawei Technologies Co., Ltd. <fangying1@huawei.com>
-- 9pfs: Fix a possible memory leak in local_link
-- scsi-disk: disk define props in scsi_block to avoid memleaks
-- arm/translate-a64: fix uninitialized variable warning
-- nbd: fix uninitialized variable warning
-- xhci: Fix memory leak in xhci_kick_epctx when poweroff
+* Thu Apr 16 2020 Huawei Technologies Co., Ltd. <fangying1@huawei.com>
+- linux headers: update against "KVM/ARM: Fix >256 vcpus"
+- intc/arm_gic: Support IRQ injection for more than 256 vcpus
+- ARM: KVM: Check KVM_CAP_ARM_IRQ_LINE_LAYOUT_2 for smp_cpus >
 
-* Mon Jan  6 2020 backport from qemu upstream
-- linux headers: update against "KVM/ARM: Fix >256 vcp
-- intc/arm_gic: Support IRQ injection for more than 256 vpus
-- ARM: KVM: Check KVM_CAP_ARM_IRQ_LINE_LAYOUT_2 for smp_cpus > 256
+* Thu Apr 16 2020 Huawei Technologies Co., Ltd. <fangying1@huawei.com>
+- vnc: fix memory leak when vnc disconnect
 
-* Thu Dec 12 2019 backport from qemu upstream v4.0.1 release
-- tpm: Exit in reset when backend indicates failure
-- tpm_emulator: Translate TPM error codes to strings
+* Thu Apr 16 2020 Huawei Technologies Co., Ltd. <fangying1@huawei.com>
+- pcie: disable the PCI_EXP_LINKSTA_DLLA cap for pcie-root-port by default
 
-* Thu Oct 17 2019 backport from qemu upstream
-- vnc-fix-memory-leak-when-vnc-disconnect.patch
+* Thu Apr 16 2020 Huawei Technologies Co., Ltd. <fangying1@huawei.com>
+- cpu: add Kunpeng-920 cpu support
+- cpu: parse +/- feature to avoid failure
+- cpu: add Cortex-A72 processor kvm target support
 
-* Mon Sep  9 2019 backport from qemu upstream
-- ehci-fix-queue-dev-null-ptr-dereference.patch
-- memory-unref-the-memory-region-in-simplify-flatview.patch
-- util-async-hold-AioContext-ref-to-prevent-use-after-.patch
-- vhost-user-scsi-prevent-using-uninitialized-vqs.patch
+* Thu Apr 16 2020 Huawei Technologies Co., Ltd. <fangying1@huawei.com>
+- vhost-user-scsi: prevent using uninitialized vqs
 
-* Fri Aug 30 2019 Huawei Technologies Co., Ltd. <fangying1@huawei.com>
+* Thu Apr 16 2020 Huawei Technologies Co., Ltd. <fangying1@huawei.com>
+- util/async: hold AioContext ref to prevent use-after-free
+
+* Thu Apr 16 2020 Huawei Technologies Co., Ltd. <fangying1@huawei.com>
 - xhci: Fix memory leak in xhci_address_slot
 - xhci: Fix memory leak in xhci_kick_epctx
+- ehci: fix queue->dev null ptr dereference
 
-* Wed Aug 7 2019 Huawei Technologies Co., Ltd. <zhang.zhanghailiang@huawei.com>
+* Thu Apr 16 2020 Huawei Technologies Co., Ltd. <fangying1@huawei.com>
+- tests/bios-tables-test: disable this testcase
 - hw/arm/virt: Introduce cpu topology support
 - hw/arm64: add vcpu cache info support
 
-* Tue Aug 6 2019 Huawei Technologies Co., Ltd. <zhang.zhanghailiang@huawei.com>
-- Update release version to 4.0.0-2
-
-* Mon Aug 5 2019 Huawei Technologies Co., Ltd. <zhang.zhanghailiang@huawei.com>
-- enable make check
+* Wed Apr 15 2020 Huawei Technologies Co., Ltd. <fangying1@huawei.com>
 - smbios: Add missing member of type 4 for smbios 3.0
 
-* Mon Aug 5 2019 fix CVE-2019-13164
-- qemu-bridge-helper: restrict interface name to IFNAMSIZ
-- qemu-bridge-helper: move repeating code in parse_acl_file
+* Wed Apr 15 2020 Huawei Technologies Co., Ltd. <fangying1@huawei.com>
+- bios-tables-test: prepare to change ARM virt ACPI DSDT
+- arm64: Add the cpufreq device to show cpufreq info to guest
 
-* Tue Jul 30 2019 Huawei Technologies Co., Ltd. <zhang.zhanghailiang@huawei.com
+* Wed Apr 15 2020 Huawei Technologies Co., Ltd. <fangying1@huawei.com>
 - qcow2: fix memory leak in qcow2_read_extensions
-- hw/arm: expose host CPU frequency info to guest
 
-* Fri Jul 26 2019 Huawei Technologies Co., Ltd. <fangying1@huawei.com>
-- vhost: cancel migration when vhost-user restarted
+* Wed Apr 15 2020 Huawei Technologies Co., Ltd. <fangying1@huawei.com>
+- pl011: reset read FIFIO when UARTTIMSC=0 & UARTICR=0xff
 - pl031: support rtc-timer property for pl031
-- pl011: reset read FIFO when UARTTIMSC=0 & UARTICR=0xffff
-- ARM64: record vtimer tick when cpu is stopped
+- vhost: cancel migration when vhost-user restarted
 
-* Tue Jul 23 2019 openEuler Buildteam <buildteam@openeuler.org> - version-release
+* Mon Apr 13 2020 openEuler Buildteam <buildteam@openeuler.org> - version-release
 - Package init
-

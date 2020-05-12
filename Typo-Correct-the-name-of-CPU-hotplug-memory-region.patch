@@ -1,0 +1,27 @@
+From 843f593280b93e03bb7b0d0001da7488d61f13f6 Mon Sep 17 00:00:00 2001
+From: Keqian Zhu <zhukeqian1@huawei.com>
+Date: Mon, 6 Apr 2020 08:55:17 +0800
+Subject: [PATCH] Typo: Correct the name of CPU hotplug memory region
+
+Replace "acpi-mem-hotplug" with "acpi-cpu-hotplug"
+
+Signed-off-by: Keqian Zhu <zhukeqian1@huawei.com>
+---
+ hw/acpi/cpu.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/hw/acpi/cpu.c b/hw/acpi/cpu.c
+index 7a90c8f82d..0c0bfe479a 100644
+--- a/hw/acpi/cpu.c
++++ b/hw/acpi/cpu.c
+@@ -203,7 +203,7 @@ void cpu_hotplug_hw_init(MemoryRegion *as, Object *owner,
+         state->devs[i].arch_id = id_list->cpus[i].arch_id;
+     }
+     memory_region_init_io(&state->ctrl_reg, owner, &cpu_hotplug_ops, state,
+-                          "acpi-mem-hotplug", ACPI_CPU_HOTPLUG_REG_LEN);
++                          "acpi-cpu-hotplug", ACPI_CPU_HOTPLUG_REG_LEN);
+     memory_region_add_subregion(as, base_addr, &state->ctrl_reg);
+ }
+
+--
+2.19.1

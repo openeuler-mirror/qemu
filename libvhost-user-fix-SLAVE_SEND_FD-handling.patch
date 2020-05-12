@@ -1,0 +1,42 @@
+From 28a9a3558a427493049723fff390add7026653eb Mon Sep 17 00:00:00 2001
+From: Johannes Berg <johannes.berg@intel.com>
+Date: Tue, 3 Sep 2019 23:04:22 +0300
+Subject: [PATCH] libvhost-user: fix SLAVE_SEND_FD handling
+
+It doesn't look like this could possibly work properly since
+VHOST_USER_PROTOCOL_F_SLAVE_SEND_FD is defined to 10, but the
+dev->protocol_features has a bitmap. I suppose the peer this
+was tested with also supported VHOST_USER_PROTOCOL_F_LOG_SHMFD,
+in which case the test would always be false, but nevertheless
+the code seems wrong.
+
+Use has_feature() to fix this.
+
+Fixes: d84599f56c82 ("libvhost-user: support host notifier")
+Signed-off-by: Johannes Berg <johannes.berg@intel.com>
+Message-Id: <20190903200422.11693-1-johannes@sipsolutions.net>
+Reviewed-by: Tiwei Bie <tiwei.bie@intel.com>
+Reviewed-by: Michael S. Tsirkin <mst@redhat.com>
+Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+(cherry picked from commit 8726b70b449896f1211f869ec4f608904f027207)
+Signed-off-by: Michael Roth <mdroth@linux.vnet.ibm.com>
+---
+ contrib/libvhost-user/libvhost-user.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/contrib/libvhost-user/libvhost-user.c b/contrib/libvhost-user/libvhost-user.c
+index 4b36e35a82..cb5f5770e4 100644
+--- a/contrib/libvhost-user/libvhost-user.c
++++ b/contrib/libvhost-user/libvhost-user.c
+@@ -1097,7 +1097,8 @@ bool vu_set_queue_host_notifier(VuDev *dev, VuVirtq *vq, int fd,
+
+     vmsg.fd_num = fd_num;
+
+-    if ((dev->protocol_features & VHOST_USER_PROTOCOL_F_SLAVE_SEND_FD) == 0) {
++    if (!has_feature(dev->protocol_features,
++                     VHOST_USER_PROTOCOL_F_SLAVE_SEND_FD)) {
+         return false;
+     }
+
+--
+2.23.0

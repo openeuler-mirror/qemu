@@ -1,0 +1,196 @@
+From 6cd7281c73ca462b2f27969f1e28f1afd3ebe82d Mon Sep 17 00:00:00 2001
+From: Shameer Kolothum <shameerali.kolothum.thodi@huawei.com>
+Date: Wed, 18 Sep 2019 14:06:23 +0100
+Subject: [PATCH] hw/acpi: Make ACPI IO address space configurable
+
+This is in preparation for adding support for ARM64 platforms
+where it doesn't use port mapped IO for ACPI IO space. We are
+making changes so that MMIO region can be accommodated
+and board can pass the base address into the aml build function.
+
+Also move few MEMORY_* definitions to header so that other memory
+hotplug event signalling mechanisms (eg. Generic Event Device on
+HW-reduced acpi platforms) can use the same from their respective
+event handler code.
+
+Signed-off-by: Shameer Kolothum <shameerali.kolothum.thodi@huawei.com>
+Reviewed-by: Eric Auger <eric.auger@redhat.com>
+Reviewed-by: Igor Mammedov <imammedo@redhat.com>
+Message-Id: <20190918130633.4872-2-shameerali.kolothum.thodi@huawei.com>
+Acked-by: Peter Maydell <peter.maydell@linaro.org>
+Reviewed-by: Michael S. Tsirkin <mst@redhat.com>
+Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+---
+ hw/acpi/memory_hotplug.c         | 33 ++++++++++++++------------------
+ hw/i386/acpi-build.c             |  7 ++++++-
+ hw/i386/pc.c                     |  3 +++
+ include/hw/acpi/memory_hotplug.h |  9 +++++++--
+ include/hw/i386/pc.h             |  3 +++
+ 5 files changed, 33 insertions(+), 22 deletions(-)
+
+diff --git a/hw/acpi/memory_hotplug.c b/hw/acpi/memory_hotplug.c
+index 297812d5f7..9a515c0484 100644
+--- a/hw/acpi/memory_hotplug.c
++++ b/hw/acpi/memory_hotplug.c
+@@ -29,12 +29,7 @@
+ #define MEMORY_SLOT_PROXIMITY_METHOD "MPXM"
+ #define MEMORY_SLOT_EJECT_METHOD     "MEJ0"
+ #define MEMORY_SLOT_NOTIFY_METHOD    "MTFY"
+-#define MEMORY_SLOT_SCAN_METHOD      "MSCN"
+ #define MEMORY_HOTPLUG_DEVICE        "MHPD"
+-#define MEMORY_HOTPLUG_IO_LEN         24
+-#define MEMORY_DEVICES_CONTAINER     "\\_SB.MHPC"
+-
+-static uint16_t memhp_io_base;
+
+ static ACPIOSTInfo *acpi_memory_device_status(int slot, MemStatus *mdev)
+ {
+@@ -209,7 +204,7 @@ static const MemoryRegionOps acpi_memory_hotplug_ops = {
+ };
+
+ void acpi_memory_hotplug_init(MemoryRegion *as, Object *owner,
+-                              MemHotplugState *state, uint16_t io_base)
++                              MemHotplugState *state, hwaddr io_base)
+ {
+     MachineState *machine = MACHINE(qdev_get_machine());
+
+@@ -218,12 +213,10 @@ void acpi_memory_hotplug_init(MemoryRegion *as, Object *owner,
+         return;
+     }
+
+-    assert(!memhp_io_base);
+-    memhp_io_base = io_base;
+     state->devs = g_malloc0(sizeof(*state->devs) * state->dev_count);
+     memory_region_init_io(&state->io, owner, &acpi_memory_hotplug_ops, state,
+                           "acpi-mem-hotplug", MEMORY_HOTPLUG_IO_LEN);
+-    memory_region_add_subregion(as, memhp_io_base, &state->io);
++    memory_region_add_subregion(as, io_base, &state->io);
+ }
+
+ /**
+@@ -342,7 +335,8 @@ const VMStateDescription vmstate_memory_hotplug = {
+
+ void build_memory_hotplug_aml(Aml *table, uint32_t nr_mem,
+                               const char *res_root,
+-                              const char *event_handler_method)
++                              const char *event_handler_method,
++                              AmlRegionSpace rs, hwaddr memhp_io_base)
+ {
+     int i;
+     Aml *ifctx;
+@@ -351,10 +345,6 @@ void build_memory_hotplug_aml(Aml *table, uint32_t nr_mem,
+     Aml *mem_ctrl_dev;
+     char *mhp_res_path;
+
+-    if (!memhp_io_base) {
+-        return;
+-    }
+-
+     mhp_res_path = g_strdup_printf("%s." MEMORY_HOTPLUG_DEVICE, res_root);
+     mem_ctrl_dev = aml_device("%s", mhp_res_path);
+     {
+@@ -365,14 +355,19 @@ void build_memory_hotplug_aml(Aml *table, uint32_t nr_mem,
+             aml_name_decl("_UID", aml_string("Memory hotplug resources")));
+
+         crs = aml_resource_template();
+-        aml_append(crs,
+-            aml_io(AML_DECODE16, memhp_io_base, memhp_io_base, 0,
+-                   MEMORY_HOTPLUG_IO_LEN)
+-        );
++        if (rs == AML_SYSTEM_IO) {
++            aml_append(crs,
++                aml_io(AML_DECODE16, memhp_io_base, memhp_io_base, 0,
++                       MEMORY_HOTPLUG_IO_LEN)
++            );
++        } else {
++            aml_append(crs, aml_memory32_fixed(memhp_io_base,
++                            MEMORY_HOTPLUG_IO_LEN, AML_READ_WRITE));
++        }
+         aml_append(mem_ctrl_dev, aml_name_decl("_CRS", crs));
+
+         aml_append(mem_ctrl_dev, aml_operation_region(
+-            MEMORY_HOTPLUG_IO_REGION, AML_SYSTEM_IO,
++            MEMORY_HOTPLUG_IO_REGION, rs,
+             aml_int(memhp_io_base), MEMORY_HOTPLUG_IO_LEN)
+         );
+
+diff --git a/hw/i386/acpi-build.c b/hw/i386/acpi-build.c
+index f3fdfefcd5..749218561a 100644
+--- a/hw/i386/acpi-build.c
++++ b/hw/i386/acpi-build.c
+@@ -1871,7 +1871,12 @@ build_dsdt(GArray *table_data, BIOSLinker *linker,
+         build_cpus_aml(dsdt, machine, opts, pm->cpu_hp_io_base,
+                        "\\_SB.PCI0", "\\_GPE._E02");
+     }
+-    build_memory_hotplug_aml(dsdt, nr_mem, "\\_SB.PCI0", "\\_GPE._E03");
++
++    if (pcms->memhp_io_base && nr_mem) {
++        build_memory_hotplug_aml(dsdt, nr_mem, "\\_SB.PCI0",
++                                 "\\_GPE._E03", AML_SYSTEM_IO,
++                                 pcms->memhp_io_base);
++    }
+
+     scope =  aml_scope("_GPE");
+     {
+diff --git a/hw/i386/pc.c b/hw/i386/pc.c
+index d011733ff7..8a914130b0 100644
+--- a/hw/i386/pc.c
++++ b/hw/i386/pc.c
+@@ -1936,6 +1936,9 @@ void pc_memory_init(PCMachineState *pcms,
+
+     /* Init default IOAPIC address space */
+     pcms->ioapic_as = &address_space_memory;
++
++    /* Init ACPI memory hotplug IO base address */
++    pcms->memhp_io_base = ACPI_MEMORY_HOTPLUG_BASE;
+ }
+
+ /*
+diff --git a/include/hw/acpi/memory_hotplug.h b/include/hw/acpi/memory_hotplug.h
+index 77c65765d6..dfe9cf3fde 100644
+--- a/include/hw/acpi/memory_hotplug.h
++++ b/include/hw/acpi/memory_hotplug.h
+@@ -5,6 +5,10 @@
+ #include "hw/acpi/acpi.h"
+ #include "hw/acpi/aml-build.h"
+
++#define MEMORY_SLOT_SCAN_METHOD      "MSCN"
++#define MEMORY_DEVICES_CONTAINER     "\\_SB.MHPC"
++#define MEMORY_HOTPLUG_IO_LEN         24
++
+ /**
+  * MemStatus:
+  * @is_removing: the memory device in slot has been requested to be ejected.
+@@ -29,7 +33,7 @@ typedef struct MemHotplugState {
+ } MemHotplugState;
+
+ void acpi_memory_hotplug_init(MemoryRegion *as, Object *owner,
+-                              MemHotplugState *state, uint16_t io_base);
++                              MemHotplugState *state, hwaddr io_base);
+
+ void acpi_memory_plug_cb(HotplugHandler *hotplug_dev, MemHotplugState *mem_st,
+                          DeviceState *dev, Error **errp);
+@@ -48,5 +52,6 @@ void acpi_memory_ospm_status(MemHotplugState *mem_st, ACPIOSTInfoList ***list);
+
+ void build_memory_hotplug_aml(Aml *table, uint32_t nr_mem,
+                               const char *res_root,
+-                              const char *event_handler_method);
++                              const char *event_handler_method,
++                              AmlRegionSpace rs, hwaddr memhp_io_base);
+ #endif
+diff --git a/include/hw/i386/pc.h b/include/hw/i386/pc.h
+index 859b64c51d..49b47535cf 100644
+--- a/include/hw/i386/pc.h
++++ b/include/hw/i386/pc.h
+@@ -69,6 +69,9 @@ struct PCMachineState {
+     /* Address space used by IOAPIC device. All IOAPIC interrupts
+      * will be translated to MSI messages in the address space. */
+     AddressSpace *ioapic_as;
++
++    /* ACPI Memory hotplug IO base address */
++    hwaddr memhp_io_base;
+ };
+
+ #define PC_MACHINE_ACPI_DEVICE_PROP "acpi-device"
+--
+2.19.1

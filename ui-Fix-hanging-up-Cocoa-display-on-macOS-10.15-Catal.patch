@@ -1,0 +1,62 @@
+From 6705b9344f8d6f134f612c2e35e87cdda5aa6284 Mon Sep 17 00:00:00 2001
+From: Hikaru Nishida <hikarupsp@gmail.com>
+Date: Tue, 15 Oct 2019 10:07:34 +0900
+Subject: [PATCH] ui: Fix hanging up Cocoa display on macOS 10.15 (Catalina)
+
+macOS API documentation says that before applicationDidFinishLaunching
+is called, any events will not be processed. However, some events are
+fired before it is called in macOS Catalina. This causes deadlock of
+iothread_lock in handleEvent while it will be released after the
+app_started_sem is posted.
+This patch avoids processing events before the app_started_sem is
+posted to prevent this deadlock.
+
+Buglink: https://bugs.launchpad.net/qemu/+bug/1847906
+Signed-off-by: Hikaru Nishida <hikarupsp@gmail.com>
+Message-id: 20191015010734.85229-1-hikarupsp@gmail.com
+Signed-off-by: Gerd Hoffmann <kraxel@redhat.com>
+(cherry picked from commit dff742ad27efa474ec04accdbf422c9acfd3e30e)
+Signed-off-by: Michael Roth <mdroth@linux.vnet.ibm.com>
+---
+ ui/cocoa.m | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
+
+diff --git a/ui/cocoa.m b/ui/cocoa.m
+index c2984028c5..3026ead621 100644
+--- a/ui/cocoa.m
++++ b/ui/cocoa.m
+@@ -132,6 +132,7 @@ NSArray * supportedImageFileTypes;
+
+ static QemuSemaphore display_init_sem;
+ static QemuSemaphore app_started_sem;
++static bool allow_events;
+
+ // Utility functions to run specified code block with iothread lock held
+ typedef void (^CodeBlock)(void);
+@@ -727,6 +728,16 @@ QemuCocoaView *cocoaView;
+
+ - (bool) handleEvent:(NSEvent *)event
+ {
++    if(!allow_events) {
++        /*
++         * Just let OSX have all events that arrive before
++         * applicationDidFinishLaunching.
++         * This avoids a deadlock on the iothread lock, which cocoa_display_init()
++         * will not drop until after the app_started_sem is posted. (In theory
++         * there should not be any such events, but OSX Catalina now emits some.)
++         */
++        return false;
++    }
+     return bool_with_iothread_lock(^{
+         return [self handleEventLocked:event];
+     });
+@@ -1154,6 +1165,7 @@ QemuCocoaView *cocoaView;
+ - (void)applicationDidFinishLaunching: (NSNotification *) note
+ {
+     COCOA_DEBUG("QemuCocoaAppController: applicationDidFinishLaunching\n");
++    allow_events = true;
+     /* Tell cocoa_display_init to proceed */
+     qemu_sem_post(&app_started_sem);
+ }
+--
+2.23.0

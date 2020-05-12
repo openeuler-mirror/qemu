@@ -1,0 +1,88 @@
+From 73a5bf472921068e6db10e7e325b7ac46f111834 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Mon, 29 Jul 2019 18:36:05 -0400
+Subject: [PATCH] Revert "ide/ahci: Check for -ECANCELED in aio callbacks"
+
+This reverts commit 0d910cfeaf2076b116b4517166d5deb0fea76394.
+
+It's not correct to just ignore an error code in a callback; we need to
+handle that error and possible report failure to the guest so that they
+don't wait indefinitely for an operation that will now never finish.
+
+This ought to help cases reported by Nutanix where iSCSI returns a
+legitimate -ECANCELED for certain operations which should be propagated
+normally.
+
+Reported-by: Shaju Abraham <shaju.abraham@nutanix.com>
+Signed-off-by: John Snow <jsnow@redhat.com>
+Message-id: 20190729223605.7163-1-jsnow@redhat.com
+Signed-off-by: John Snow <jsnow@redhat.com>
+(cherry picked from commit 8ec41c4265714255d5a138f8b538faf3583dcff6)
+Signed-off-by: Michael Roth <mdroth@linux.vnet.ibm.com>
+---
+ hw/ide/ahci.c |  3 ---
+ hw/ide/core.c | 14 --------------
+ 2 files changed, 17 deletions(-)
+
+diff --git a/hw/ide/ahci.c b/hw/ide/ahci.c
+index 00ba422a48..6aaf66534a 100644
+--- a/hw/ide/ahci.c
++++ b/hw/ide/ahci.c
+@@ -1023,9 +1023,6 @@ static void ncq_cb(void *opaque, int ret)
+     IDEState *ide_state = &ncq_tfs->drive->port.ifs[0];
+
+     ncq_tfs->aiocb = NULL;
+-    if (ret == -ECANCELED) {
+-        return;
+-    }
+
+     if (ret < 0) {
+         bool is_read = ncq_tfs->cmd == READ_FPDMA_QUEUED;
+diff --git a/hw/ide/core.c b/hw/ide/core.c
+index 6afadf894f..8e1624f7ce 100644
+--- a/hw/ide/core.c
++++ b/hw/ide/core.c
+@@ -722,9 +722,6 @@ static void ide_sector_read_cb(void *opaque, int ret)
+     s->pio_aiocb = NULL;
+     s->status &= ~BUSY_STAT;
+
+-    if (ret == -ECANCELED) {
+-        return;
+-    }
+     if (ret != 0) {
+         if (ide_handle_rw_error(s, -ret, IDE_RETRY_PIO |
+                                 IDE_RETRY_READ)) {
+@@ -840,10 +837,6 @@ static void ide_dma_cb(void *opaque, int ret)
+     uint64_t offset;
+     bool stay_active = false;
+
+-    if (ret == -ECANCELED) {
+-        return;
+-    }
+-
+     if (ret == -EINVAL) {
+         ide_dma_error(s);
+         return;
+@@ -975,10 +968,6 @@ static void ide_sector_write_cb(void *opaque, int ret)
+     IDEState *s = opaque;
+     int n;
+
+-    if (ret == -ECANCELED) {
+-        return;
+-    }
+-
+     s->pio_aiocb = NULL;
+     s->status &= ~BUSY_STAT;
+
+@@ -1058,9 +1047,6 @@ static void ide_flush_cb(void *opaque, int ret)
+
+     s->pio_aiocb = NULL;
+
+-    if (ret == -ECANCELED) {
+-        return;
+-    }
+     if (ret < 0) {
+         /* XXX: What sector number to set here? */
+         if (ide_handle_rw_error(s, -ret, IDE_RETRY_FLUSH)) {
+--
+2.23.0

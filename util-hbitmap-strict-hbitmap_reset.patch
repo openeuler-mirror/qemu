@@ -1,0 +1,77 @@
+From fcd7cba6acb7344aca70f5f8ec16626e817b35a5 Mon Sep 17 00:00:00 2001
+From: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Date: Tue, 6 Aug 2019 18:26:11 +0300
+Subject: [PATCH] util/hbitmap: strict hbitmap_reset
+
+hbitmap_reset has an unobvious property: it rounds requested region up.
+It may provoke bugs, like in recently fixed write-blocking mode of
+mirror: user calls reset on unaligned region, not keeping in mind that
+there are possible unrelated dirty bytes, covered by rounded-up region
+and information of this unrelated "dirtiness" will be lost.
+
+Make hbitmap_reset strict: assert that arguments are aligned, allowing
+only one exception when @start + @count == hb->orig_size. It's needed
+to comfort users of hbitmap_next_dirty_area, which cares about
+hb->orig_size.
+
+Signed-off-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Reviewed-by: Max Reitz <mreitz@redhat.com>
+Message-Id: <20190806152611.280389-1-vsementsov@virtuozzo.com>
+[Maintainer edit: Max's suggestions from on-list. --js]
+[Maintainer edit: Eric's suggestion for aligned macro. --js]
+Signed-off-by: John Snow <jsnow@redhat.com>
+(cherry picked from commit 48557b138383aaf69c2617ca9a88bfb394fc50ec)
+*prereq for fed33bd175f663cc8c13f8a490a4f35a19756cfe
+Signed-off-by: Michael Roth <mdroth@linux.vnet.ibm.com>
+---
+ include/qemu/hbitmap.h | 5 +++++
+ tests/test-hbitmap.c   | 2 +-
+ util/hbitmap.c         | 4 ++++
+ 3 files changed, 10 insertions(+), 1 deletion(-)
+
+diff --git a/include/qemu/hbitmap.h b/include/qemu/hbitmap.h
+index 4afbe6292e..1bf944ca3d 100644
+--- a/include/qemu/hbitmap.h
++++ b/include/qemu/hbitmap.h
+@@ -132,6 +132,11 @@ void hbitmap_set(HBitmap *hb, uint64_t start, uint64_t count);
+  * @count: Number of bits to reset.
+  *
+  * Reset a consecutive range of bits in an HBitmap.
++ * @start and @count must be aligned to bitmap granularity. The only exception
++ * is resetting the tail of the bitmap: @count may be equal to hb->orig_size -
++ * @start, in this case @count may be not aligned. The sum of @start + @count is
++ * allowed to be greater than hb->orig_size, but only if @start < hb->orig_size
++ * and @start + @count = ALIGN_UP(hb->orig_size, granularity).
+  */
+ void hbitmap_reset(HBitmap *hb, uint64_t start, uint64_t count);
+
+diff --git a/tests/test-hbitmap.c b/tests/test-hbitmap.c
+index 592d8219db..2be56d1597 100644
+--- a/tests/test-hbitmap.c
++++ b/tests/test-hbitmap.c
+@@ -423,7 +423,7 @@ static void test_hbitmap_granularity(TestHBitmapData *data,
+     hbitmap_test_check(data, 0);
+     hbitmap_test_set(data, 0, 3);
+     g_assert_cmpint(hbitmap_count(data->hb), ==, 4);
+-    hbitmap_test_reset(data, 0, 1);
++    hbitmap_test_reset(data, 0, 2);
+     g_assert_cmpint(hbitmap_count(data->hb), ==, 2);
+ }
+
+diff --git a/util/hbitmap.c b/util/hbitmap.c
+index bcc0acdc6a..71c6ba2c52 100644
+--- a/util/hbitmap.c
++++ b/util/hbitmap.c
+@@ -476,6 +476,10 @@ void hbitmap_reset(HBitmap *hb, uint64_t start, uint64_t count)
+     /* Compute range in the last layer.  */
+     uint64_t first;
+     uint64_t last = start + count - 1;
++    uint64_t gran = 1ULL << hb->granularity;
++
++    assert(QEMU_IS_ALIGNED(start, gran));
++    assert(QEMU_IS_ALIGNED(count, gran) || (start + count == hb->orig_size));
+
+     trace_hbitmap_reset(hb, start, count,
+                         start >> hb->granularity, last >> hb->granularity);
+--
+2.23.0
