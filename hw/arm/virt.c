@@ -2093,22 +2093,9 @@ static void virt_cpu_pre_plug(HotplugHandler *hotplug_dev,
     int smp_cores = ms->smp.cores;
     int smp_threads = ms->smp.threads;
 
-    /* Some hotplug capability checks */
-
     if (!object_dynamic_cast(OBJECT(cpu), ms->cpu_type)) {
         error_setg(errp, "Invalid CPU type, expected cpu type: '%s'",
                    ms->cpu_type);
-        return;
-    }
-
-    if (dev->hotplugged && !vms->acpi_dev) {
-        error_setg(errp, "CPU hotplug is disabled: missing acpi device.");
-        return;
-    }
-
-    if (dev->hotplugged && !vms->cpu_hotplug_enabled) {
-        error_setg(errp, "CPU hotplug is disabled: "
-                         "should use AArch64 CPU and GICv3.");
         return;
     }
 
@@ -2135,6 +2122,20 @@ static void virt_cpu_pre_plug(HotplugHandler *hotplug_dev,
         topo.core_id = cpu->core_id;
         topo.smt_id = cpu->thread_id;
         cs->cpu_index = idx_from_topo_ids(smp_cores, smp_threads, &topo);
+    }
+
+    /* Some hotplug capability checks */
+    if (cs->cpu_index >= ms->smp.cpus) {
+        if (!vms->acpi_dev) {
+            error_setg(errp, "CPU cold/hot plug is disabled: "
+                             "missing acpi device.");
+            return;
+        }
+        if (!vms->cpu_hotplug_enabled) {
+            error_setg(errp, "CPU cold/hot plug is disabled: "
+                             "should use AArch64 CPU and GICv3.");
+            return;
+        }
     }
 
     /* if 'address' properties socket-id/core-id/thread-id are not set, set them
@@ -2237,7 +2238,8 @@ static void virt_cpu_plug(HotplugHandler *hotplug_dev,
     ARMGICv3CommonClass *agcc;
     Error *local_err = NULL;
 
-    if (dev->hotplugged) {
+    /* For CPU that is cold/hot plugged */
+    if (ncpu >= ms->smp.cpus) {
         /* Realize GIC related parts of CPU */
         assert(vms->gic_version == 3);
         gicv3 = ARM_GICV3_COMMON(vms->gic);
@@ -2250,10 +2252,10 @@ static void virt_cpu_plug(HotplugHandler *hotplug_dev,
         cpu_hotplug_register_reset(ncpu);
         cpu_hotplug_reset_manually(ncpu);
         cpu_synchronize_post_reset(cs);
+    }
 
-        if (kvm_enabled()) {
-            resume_all_vcpus();
-        }
+    if (dev->hotplugged && kvm_enabled()) {
+        resume_all_vcpus();
     }
 
     if (vms->acpi_dev) {
