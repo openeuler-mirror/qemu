@@ -3,6 +3,8 @@ From: Xu Yandong <xuyandong2@huawei.com>
 Date: Wed, 28 Aug 2019 01:36:21 -0400
 Subject: [PATCH] cpu: add Kunpeng-920 cpu support
 
+Add the Kunpeng-920 CPU model.
+
 Signed-off-by: Xu Yandong <xuyandong2@huawei.com>
 ---
  hw/arm/virt.c      |  1 +
@@ -28,7 +30,7 @@ index 228906f2..5581d5e1 100644
 @@ -258,6 +258,26 @@ static void aarch64_a72_initfn(Object *obj)
      define_arm_cp_regs(cpu, cortex_a72_a57_a53_cp_reginfo);
  }
- 
+
 +static void aarch64_kunpeng_920_initfn(Object *obj)
 +{
 +    ARMCPU *cpu = ARM_CPU(obj);
@@ -60,6 +62,5 @@ index 228906f2..5581d5e1 100644
      { .name = "max",                .initfn = aarch64_max_initfn },
      { .name = NULL }
  };
--- 
+--
 2.19.1
-

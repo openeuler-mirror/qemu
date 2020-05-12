@@ -1,0 +1,64 @@
+From e3a7ec839fa4f823666d726989c375dcf73348a4 Mon Sep 17 00:00:00 2001
+From: Ying Fang <fangying1@huawei.com>
+Date: Wed, 15 Apr 2020 16:14:50 +0800
+Subject: [PATCH] ARM: KVM: Check KVM_CAP_ARM_IRQ_LINE_LAYOUT_2 for smp_cpus >
+ 256
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Host kernel within [4.18, 5.3] report an erroneous KVM_MAX_VCPUS=512
+for ARM. The actual capability to instantiate more than 256 vcpus
+was fixed in 5.4 with the upgrade of the KVM_IRQ_LINE ABI to support
+vcpu id encoded on 12 bits instead of 8 and a redistributor consuming
+a single KVM IO device instead of 2.
+
+So let's check this capability when attempting to use more than 256
+vcpus within any ARM kvm accelerated machine.
+
+Signed-off-by: Eric Auger <eric.auger@redhat.com>
+Reviewed-by: Richard Henderson <richard.henderson@linaro.org>
+Reviewed-by: Andrew Jones <drjones@redhat.com>
+Acked-by: Marc Zyngier <maz@kernel.org>
+Message-id: 20191003154640.22451-4-eric.auger@redhat.com
+Signed-off-by: Peter Maydell <peter.maydell@linaro.org>
+(cherry-picked from commit fff9f5558d0e0813d4f80bfe1602acf225eca4fd)
+[yu: Use the legacy smp_cpus instead of ms->smp.cpus, as we don't have
+    ¦struct CpuTopology in MachineState at that time. See commit
+    ¦edeeec911702 for details.]
+Signed-off-by: Zenghui Yu <yuzenghui@huawei.com>
+---
+ target/arm/kvm.c | 11 ++++++++++-
+ 1 file changed, 10 insertions(+), 1 deletion(-)
+
+diff --git a/target/arm/kvm.c b/target/arm/kvm.c
+index 50e86f8b..cc7a46df 100644
+--- a/target/arm/kvm.c
++++ b/target/arm/kvm.c
+@@ -173,6 +173,8 @@ int kvm_arm_get_max_vm_ipa_size(MachineState *ms)
+
+ int kvm_arch_init(MachineState *ms, KVMState *s)
+ {
++    int ret = 0;
++    unsigned int smp_cpus = ms->smp.cpus;
+     /* For ARM interrupt delivery is always asynchronous,
+      * whether we are using an in-kernel VGIC or not.
+      */
+@@ -186,7 +188,14 @@ int kvm_arch_init(MachineState *ms, KVMState *s)
+
+     cap_has_mp_state = kvm_check_extension(s, KVM_CAP_MP_STATE);
+
+-    return 0;
++    if (smp_cpus > 256 &&
++        !kvm_check_extension(s, KVM_CAP_ARM_IRQ_LINE_LAYOUT_2)) {
++        error_report("Using more than 256 vcpus requires a host kernel "
++                     "with KVM_CAP_ARM_IRQ_LINE_LAYOUT_2");
++        ret = -EINVAL;
++    }
++
++    return ret;
+ }
+
+ unsigned long kvm_arch_vcpu_id(CPUState *cpu)
+--
+2.23.0

@@ -1,6 +1,6 @@
-From 123b4eb3cb7b9b4e3e0705a9b5f974b37d3b8431 Mon Sep 17 00:00:00 2001
-From: zhanghailiang <zhang.zhanghailiang@huawei.com>
-Date: Mon, 5 Aug 2019 15:04:31 +0800
+From 73fc4af05ebe12d77915e6b3c85c48f5e0c432f3 Mon Sep 17 00:00:00 2001
+From: Ying Fang <fangying1@huawei.com>
+Date: Wed, 22 Apr 2020 19:23:27 +0800
 Subject: [PATCH] hw/arm/virt: Introduce cpu topology support
 
 Add topology support for guest vcpu by cpu-map in dtb when the guest is booted
@@ -11,13 +11,13 @@ Signed-off-by: zhanghailiang <zhang.zhanghailiang@huawei.com>
 (picked-from https://patchwork.ozlabs.org/cover/939301/ which is pushed by
 Andrew Jones <drjones@redhat.com>)
 ---
- device_tree.c                | 32 +++++++++++++++++++++++
- hw/acpi/aml-build.c          | 50 ++++++++++++++++++++++++++++++++++++
+ device_tree.c                | 32 ++++++++++++++++++++++
+ hw/acpi/aml-build.c          | 53 ++++++++++++++++++++++++++++++++++++
  hw/arm/virt-acpi-build.c     |  4 +++
- hw/arm/virt.c                | 29 +++++++++++++++++++++
+ hw/arm/virt.c                | 32 +++++++++++++++++++++-
  include/hw/acpi/aml-build.h  |  2 ++
  include/sysemu/device_tree.h |  1 +
- 6 files changed, 118 insertions(+)
+ 6 files changed, 123 insertions(+), 1 deletion(-)
 
 diff --git a/device_tree.c b/device_tree.c
 index f8b46b3c..03906a14 100644
@@ -26,7 +26,7 @@ index f8b46b3c..03906a14 100644
 @@ -524,6 +524,38 @@ int qemu_fdt_add_subnode(void *fdt, const char *name)
      return retval;
  }
- 
+
 +/**
 + * qemu_fdt_add_path
 + * @fdt: Flattened Device Tree
@@ -63,7 +63,7 @@ index f8b46b3c..03906a14 100644
  {
      const char *dumpdtb = qemu_opt_get(qemu_get_machine_opts(), "dumpdtb");
 diff --git a/hw/acpi/aml-build.c b/hw/acpi/aml-build.c
-index 73f97751..9d39ad10 100644
+index 73f97751..f2c8c28f 100644
 --- a/hw/acpi/aml-build.c
 +++ b/hw/acpi/aml-build.c
 @@ -25,6 +25,7 @@
@@ -71,13 +71,13 @@ index 73f97751..9d39ad10 100644
  #include "qemu/bitops.h"
  #include "sysemu/numa.h"
 +#include "sysemu/cpus.h"
- 
+
  static GArray *build_alloc_array(void)
  {
-@@ -51,6 +52,55 @@ static void build_append_array(GArray *array, GArray *val)
+@@ -51,6 +52,58 @@ static void build_append_array(GArray *array, GArray *val)
      g_array_append_vals(array, val->data, val->len);
  }
- 
+
 +/*
 + * ACPI 6.2 Processor Properties Topology Table (PPTT)
 + */
@@ -97,6 +97,9 @@ index 73f97751..9d39ad10 100644
 +{
 +    int pptt_start = table_data->len;
 +    int uid = 0, cpus = 0, socket;
++    MachineState *ms = MACHINE(qdev_get_machine());
++    unsigned int smp_cores = ms->smp.cores;
++    unsigned int smp_threads = ms->smp.threads;
 +
 +    acpi_data_push(table_data, sizeof(AcpiTableHeader));
 +
@@ -128,28 +131,28 @@ index 73f97751..9d39ad10 100644
 +}
 +
  #define ACPI_NAMESEG_LEN 4
- 
+
  static void
 diff --git a/hw/arm/virt-acpi-build.c b/hw/arm/virt-acpi-build.c
-index 33a8e2e3..18653e6d 100644
+index 29494ebd..fe54411f 100644
 --- a/hw/arm/virt-acpi-build.c
 +++ b/hw/arm/virt-acpi-build.c
-@@ -870,6 +870,10 @@ void virt_acpi_build(VirtMachineState *vms, AcpiBuildTables *tables)
+@@ -848,6 +848,10 @@ void virt_acpi_build(VirtMachineState *vms, AcpiBuildTables *tables)
      acpi_add_table(table_offsets, tables_blob);
      build_fadt_rev5(tables_blob, tables->linker, vms, dsdt);
- 
+
 +    acpi_add_table(table_offsets, tables_blob);
 +
 +    build_pptt(tables_blob, tables->linker, vms->smp_cpus);
 +
      acpi_add_table(table_offsets, tables_blob);
      build_madt(tables_blob, tables->linker, vms);
- 
+
 diff --git a/hw/arm/virt.c b/hw/arm/virt.c
-index 57a78b16..16700a2e 100644
+index 0fa355ba..272455bc 100644
 --- a/hw/arm/virt.c
 +++ b/hw/arm/virt.c
-@@ -42,6 +42,7 @@
+@@ -44,6 +44,7 @@
  #include "net/net.h"
  #include "sysemu/device_tree.h"
  #include "sysemu/numa.h"
@@ -157,10 +160,20 @@ index 57a78b16..16700a2e 100644
  #include "sysemu/sysemu.h"
  #include "sysemu/kvm.h"
  #include "hw/loader.h"
-@@ -364,8 +365,36 @@ static void fdt_add_cpu_nodes(const VirtMachineState *vms)
+@@ -312,7 +313,8 @@ static void fdt_add_cpu_nodes(const VirtMachineState *vms)
+     int cpu;
+     int addr_cells = 1;
+     const MachineState *ms = MACHINE(vms);
+-
++    unsigned int smp_cores = ms->smp.cores;
++    unsigned int smp_threads = ms->smp.threads;
+     /*
+      * From Documentation/devicetree/bindings/arm/cpus.txt
+      *  On ARM v8 64-bit systems value should be set to 2,
+@@ -368,8 +370,36 @@ static void fdt_add_cpu_nodes(const VirtMachineState *vms)
                  ms->possible_cpus->cpus[cs->cpu_index].props.node_id);
          }
- 
+
 +        qemu_fdt_setprop_cell(vms->fdt, nodename, "phandle",
 +                              qemu_fdt_alloc_phandle(vms->fdt));
 +
@@ -192,7 +205,7 @@ index 57a78b16..16700a2e 100644
 +        g_free(cpu_path);
 +    }
  }
- 
+
  static void fdt_add_its_gic_node(VirtMachineState *vms)
 diff --git a/include/hw/acpi/aml-build.h b/include/hw/acpi/aml-build.h
 index 375335ab..bfb0b100 100644
@@ -201,11 +214,11 @@ index 375335ab..bfb0b100 100644
 @@ -417,6 +417,8 @@ build_append_gas_from_struct(GArray *table, const struct AcpiGenericAddress *s)
  void build_srat_memory(AcpiSratMemoryAffinity *numamem, uint64_t base,
                         uint64_t len, int node, MemoryAffinityFlags flags);
- 
+
 +void build_pptt(GArray *table_data, BIOSLinker *linker, int possible_cpus);
 +
  void build_slit(GArray *table_data, BIOSLinker *linker);
- 
+
  void build_fadt(GArray *tbl, BIOSLinker *linker, const AcpiFadtData *f,
 diff --git a/include/sysemu/device_tree.h b/include/sysemu/device_tree.h
 index c16fd69b..d62fc873 100644
@@ -216,9 +229,8 @@ index c16fd69b..d62fc873 100644
  int qemu_fdt_nop_node(void *fdt, const char *node_path);
  int qemu_fdt_add_subnode(void *fdt, const char *name);
 +int qemu_fdt_add_path(void *fdt, const char *path);
- 
+
  #define qemu_fdt_setprop_cells(fdt, node_path, property, ...)                 \
      do {                                                                      \
--- 
-2.19.1
-
+--
+2.23.0

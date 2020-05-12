@@ -1,6 +1,6 @@
-From 0f7224535cdfec549cd43a5ae4ccde936f50ee95 Mon Sep 17 00:00:00 2001
+From 585634894f511bc1821cef54494bf2d9abc109c9 Mon Sep 17 00:00:00 2001
 From: Samuel Thibault <samuel.thibault@ens-lyon.org>
-Date: Wed, 11 Mar 2020 17:33:46 +0800
+Date: Tue, 14 Apr 2020 18:04:33 +0800
 Subject: [PATCH] tcp_emu: Fix oob access
 
 The main loop only checks for one available byte, while we sometimes
@@ -10,29 +10,28 @@ need two bytes.
  1 file changed, 6 insertions(+)
 
 diff --git a/slirp/src/tcp_subr.c b/slirp/src/tcp_subr.c
-index fde9207b..4608942f 100644
+index d6dd133a..9c94c03a 100644
 --- a/slirp/src/tcp_subr.c
 +++ b/slirp/src/tcp_subr.c
-@@ -895,6 +895,9 @@ tcp_emu(struct socket *so, struct mbuf *m)
- 				break;
- 
- 			 case 5:
-+				if (bptr == m->m_data + m->m_len - 1)
-+					return 1; /* We need two bytes */
-+
- 				/*
- 				 * The difference between versions 1.0 and
- 				 * 2.0 is here. For future versions of
-@@ -910,6 +913,9 @@ tcp_emu(struct socket *so, struct mbuf *m)
- 				/* This is the field containing the port
- 				 * number that RA-player is listening to.
- 				 */
-+				if (bptr == m->m_data + m->m_len - 1)
-+					return 1; /* We need two bytes */
-+
- 				lport = (((uint8_t*)bptr)[0] << 8)
- 				+ ((uint8_t *)bptr)[1];
- 				if (lport < 6970)
--- 
-2.21.1 (Apple Git-122.3)
+@@ -886,6 +886,9 @@ int tcp_emu(struct socket *so, struct mbuf *m)
+                 break;
 
+             case 5:
++                if (bptr == m->m_data + m->m_len - 1)
++                    return 1; /* We need two bytes */
++
+                 /*
+                  * The difference between versions 1.0 and
+                  * 2.0 is here. For future versions of
+@@ -901,6 +904,9 @@ int tcp_emu(struct socket *so, struct mbuf *m)
+                 /* This is the field containing the port
+                  * number that RA-player is listening to.
+                  */
++                if (bptr == m->m_data + m->m_len - 1)
++                    return 1; /* We need two bytes */
++
+                 lport = (((uint8_t *)bptr)[0] << 8) + ((uint8_t *)bptr)[1];
+                 if (lport < 6970)
+                     lport += 256; /* don't know why */
+--
+2.23.0
