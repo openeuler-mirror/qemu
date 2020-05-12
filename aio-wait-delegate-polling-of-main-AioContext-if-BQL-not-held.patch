@@ -1,8 +1,7 @@
-From a2bae876b7f694b12073bac8ad6668e4d975ad88 Mon Sep 17 00:00:00 2001
-From: Ying Fang <fangying1@huawei.com>
-Date: Fri, 10 Apr 2020 16:08:19 +0000
-Subject: [PATCH 1/2] aio-wait: delegate polling of main AioContext if BQL not
- held
+From 929d29ec7bf9dd6ec3802bea2148a041ff30d59b Mon Sep 17 00:00:00 2001
+From: Paolo Bonzini <pbonzini@redhat.com>
+Date: Tue, 14 Apr 2020 21:17:09 +0800
+Subject: [PATCH] aio-wait: delegate polling of main AioContext if BQL not held
 
 Any thread that is not a iothread returns NULL for qemu_get_current_aio_context().
 As a result, it would also return true for
@@ -20,8 +19,6 @@ The function is moved to aio-wait.h because it is mostly used
 there and to avoid a circular reference between main-loop.h
 and block/aio.h.
 
-upstream_url: https://patchwork.kernel.org/patch/11482099/
-
 Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
 Message-Id: <20200407140746.8041-5-pbonzini@redhat.com>
 Signed-off-by: Stefan Hajnoczi <stefanha@redhat.com>
@@ -31,21 +28,21 @@ Signed-off-by: Stefan Hajnoczi <stefanha@redhat.com>
  2 files changed, 32 insertions(+), 19 deletions(-)
 
 diff --git a/include/block/aio-wait.h b/include/block/aio-wait.h
-index afd0ff7e..d349e7e3 100644
+index afeeb18f..716d2639 100644
 --- a/include/block/aio-wait.h
 +++ b/include/block/aio-wait.h
 @@ -26,6 +26,7 @@
  #define QEMU_AIO_WAIT_H
- 
+
  #include "block/aio.h"
 +#include "qemu/main-loop.h"
- 
+
  /**
   * AioWait:
 @@ -124,4 +125,25 @@ void aio_wait_kick(void);
   */
  void aio_wait_bh_oneshot(AioContext *ctx, QEMUBHFunc *cb, void *opaque);
- 
+
 +/**
 + * in_aio_context_home_thread:
 + * @ctx: the aio context
@@ -67,14 +64,14 @@ index afd0ff7e..d349e7e3 100644
 +    }
 +}
 +
- #endif /* QEMU_AIO_WAIT */
+ #endif /* QEMU_AIO_WAIT_H */
 diff --git a/include/block/aio.h b/include/block/aio.h
-index 0ca25dfe..c527893b 100644
+index 6b0d52f7..9d28e247 100644
 --- a/include/block/aio.h
 +++ b/include/block/aio.h
-@@ -61,12 +61,16 @@ struct AioContext {
+@@ -60,12 +60,16 @@ struct AioContext {
      QLIST_HEAD(, AioHandler) aio_handlers;
- 
+
      /* Used to avoid unnecessary event_notifier_set calls in aio_notify;
 -     * accessed with atomic primitives.  If this field is 0, everything
 -     * (file descriptors, bottom halves, timers) will be re-evaluated
@@ -95,10 +92,10 @@ index 0ca25dfe..c527893b 100644
       *
       * Bit 0 is reserved for GSource usage of the AioContext, and is 1
       * between a call to aio_ctx_prepare and the next call to aio_ctx_check.
-@@ -581,19 +585,6 @@ void aio_co_enter(AioContext *ctx, struct Coroutine *co);
+@@ -580,19 +584,6 @@ void aio_co_enter(AioContext *ctx, struct Coroutine *co);
   */
  AioContext *qemu_get_current_aio_context(void);
- 
+
 -/**
 - * in_aio_context_home_thread:
 - * @ctx: the aio context
@@ -115,6 +112,5 @@ index 0ca25dfe..c527893b 100644
  /**
   * aio_context_setup:
   * @ctx: the aio context
--- 
-2.25.2
-
+--
+2.23.0

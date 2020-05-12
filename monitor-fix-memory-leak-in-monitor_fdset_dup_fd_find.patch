@@ -1,6 +1,6 @@
-From 6f7a7f18f4460b0891eabbe1ca69e599216427b7 Mon Sep 17 00:00:00 2001
+From 117082ef493e62e6e2cd972b309e0cd72682ab02 Mon Sep 17 00:00:00 2001
 From: Chen Qun <kuhn.chenqun@huawei.com>
-Date: Mon, 16 Mar 2020 14:26:06 +0800
+Date: Tue, 14 Apr 2020 19:50:59 +0800
 Subject: [PATCH] moniter: fix memleak in monitor_fdset_dup_fd_find_remove
 
 When remove dup_fd in monitor_fdset_dup_fd_find_remove function,
@@ -25,14 +25,14 @@ Reported-by: Euler Robot <euler.robot@huawei.com>
 Signed-off-by: Chen Qun <kuhn.chenqun@huawei.com>
 (cherry picked from commit a661614de18c89f58cad3fc1bb8aab44e820183a)
 ---
- monitor.c | 1 +
+ monitor/misc.c | 1 +
  1 file changed, 1 insertion(+)
 
-diff --git a/monitor.c b/monitor.c
-index 4807bbe..b5b15b5 100644
---- a/monitor.c
-+++ b/monitor.c
-@@ -2596,6 +2596,7 @@ static int monitor_fdset_dup_fd_find_remove(int dup_fd, bool remove)
+diff --git a/monitor/misc.c b/monitor/misc.c
+index 00338c00..0d6369ba 100644
+--- a/monitor/misc.c
++++ b/monitor/misc.c
+@@ -1746,6 +1746,7 @@ static int64_t monitor_fdset_dup_fd_find_remove(int dup_fd, bool remove)
              if (mon_fdset_fd_dup->fd == dup_fd) {
                  if (remove) {
                      QLIST_REMOVE(mon_fdset_fd_dup, next);
@@ -40,6 +40,5 @@ index 4807bbe..b5b15b5 100644
                      if (QLIST_EMPTY(&mon_fdset->dup_fds)) {
                          monitor_fdset_cleanup(mon_fdset);
                      }
--- 
-1.8.3.1
-
+--
+2.23.0

@@ -1,57 +1,60 @@
-From 773b25c55c7428b64d21b23a6b08fc629a665ca5 Mon Sep 17 00:00:00 2001
-From: zhanghailiang <zhang.zhanghailiang@huawei.com>
-Date: Mon, 29 Jul 2019 09:54:43 +0800
-Subject: [PATCH] hw/arm: expose host CPU frequency info to guest
+From b70d020dba72283d7b16a77c377512c84aab5f81 Mon Sep 17 00:00:00 2001
+From: Ying Fang <fangying1@huawei.com>
+Date: Mon, 20 Apr 2020 10:38:12 +0800
+Subject: [PATCH] arm64: Add the cpufreq device to show cpufreq info to guest
 
-On ARM64, CPU frequency is fetched by ACPI CPPC, so we add virtual
-CPPC registers and ACPI _CPC objects.
+On ARM64 platform, cpu frequency is retrieved via ACPI CPPC.
+A virtual cpufreq device based on ACPI CPPC is created to
+present cpu frequency info to the guest.
 
-The default frequency is set to the nominal frequency of Hi1616, which
-will not support CPPC in future. On Hi1620 we are fetching the value
-from Host CPPC sys file.
+The default frequency is set to host cpu nominal frequency,
+which is obtained from the host CPPC sysfs. Other performance
+data are set to the same value, since we don't support guest
+performance scaling here.
 
-All performance data are set to the same value for we don't support
-guest initiating performance scaling.
-
-We don't emulate performance counters and simply return 1 for all
-counter readings, and guest Linux should fall back to use the desired
+Performance counters are also not emulated and they simply
+return 1 if read, and guest should fallback to use desired
 performance value as the current performance.
 
-Signed-off-by: Heyi Guo <guoheyi@huawei.com>
-Signed-off-by: zhanghailiang <zhang.zhanghailiang@huawei.com>
+Guest kernel version above 4.18 is required to make it work.
+
+This series is backported from:
+https://patchwork.kernel.org/cover/11379943/
+
+Signed-off-by: Ying Fang <fangying1@huawei.com>
 ---
  default-configs/aarch64-softmmu.mak |   1 +
  hw/acpi/Makefile.objs               |   1 +
  hw/acpi/aml-build.c                 |  22 +++
- hw/acpi/cpufreq.c                   | 278 ++++++++++++++++++++++++++++
+ hw/acpi/cpufreq.c                   | 287 ++++++++++++++++++++++++++++
  hw/arm/virt-acpi-build.c            |  78 +++++++-
  hw/arm/virt.c                       |  13 ++
  hw/char/Kconfig                     |   4 +
  include/hw/acpi/acpi-defs.h         |  38 ++++
  include/hw/acpi/aml-build.h         |   3 +
  include/hw/arm/virt.h               |   1 +
- 10 files changed, 437 insertions(+), 2 deletions(-)
+ 10 files changed, 446 insertions(+), 2 deletions(-)
  create mode 100644 hw/acpi/cpufreq.c
 
 diff --git a/default-configs/aarch64-softmmu.mak b/default-configs/aarch64-softmmu.mak
-index 4ea9add0..37399c14 100644
+index 958b1e08..0a030e85 100644
 --- a/default-configs/aarch64-softmmu.mak
 +++ b/default-configs/aarch64-softmmu.mak
-@@ -10,3 +10,4 @@ CONFIG_XLNX_ZYNQMP=y
+@@ -6,3 +6,4 @@ include arm-softmmu.mak
  CONFIG_XLNX_ZYNQMP_ARM=y
  CONFIG_XLNX_VERSAL=y
- CONFIG_ARM_SMMUV3=y
+ CONFIG_SBSA_REF=y
 +CONFIG_CPUFREQ=y
 diff --git a/hw/acpi/Makefile.objs b/hw/acpi/Makefile.objs
-index 2d46e378..60979db9 100644
+index 9bb2101e..1a720c38 100644
 --- a/hw/acpi/Makefile.objs
 +++ b/hw/acpi/Makefile.objs
-@@ -12,6 +12,7 @@ common-obj-y += acpi_interface.o
- common-obj-y += bios-linker-loader.o
- common-obj-y += aml-build.o
+@@ -13,6 +13,7 @@ common-obj-y += bios-linker-loader.o
+ common-obj-y += aml-build.o utils.o
+ common-obj-$(CONFIG_ACPI_PCI) += pci.o
  common-obj-$(CONFIG_TPM) += tpm.o
 +common-obj-$(CONFIG_CPUFREQ) += cpufreq.o
- 
+
  common-obj-$(CONFIG_IPMI) += ipmi.o
  common-obj-$(call lnot,$(CONFIG_IPMI)) += ipmi-stub.o
 diff --git a/hw/acpi/aml-build.c b/hw/acpi/aml-build.c
@@ -61,7 +64,7 @@ index 555c24f2..73f97751 100644
 @@ -1369,6 +1369,28 @@ Aml *aml_sleep(uint64_t msec)
      return var;
  }
- 
+
 +/* ACPI 5.0b: 6.4.3.7 Generic Register Descriptor */
 +Aml *aml_generic_register(AmlRegionSpace rs, uint8_t reg_width,
 +                          uint8_t reg_offset, AmlAccessType type, uint64_t addr)
@@ -89,10 +92,10 @@ index 555c24f2..73f97751 100644
      int hi, lo;
 diff --git a/hw/acpi/cpufreq.c b/hw/acpi/cpufreq.c
 new file mode 100644
-index 00000000..c123a22b
+index 00000000..d02a25a6
 --- /dev/null
 +++ b/hw/acpi/cpufreq.c
-@@ -0,0 +1,278 @@
+@@ -0,0 +1,287 @@
 +/*
 + * ACPI CPPC register device
 + *
@@ -124,6 +127,7 @@ index 00000000..c123a22b
 +#include "hw/acpi/acpi-defs.h"
 +#include "qemu/cutils.h"
 +#include "qemu/error-report.h"
++#include "hw/boards.h"
 +
 +#define TYPE_CPUFREQ "cpufreq"
 +#define CPUFREQ(obj) OBJECT_CHECK(CpuhzState, (obj), TYPE_CPUFREQ)
@@ -188,6 +192,9 @@ index 00000000..c123a22b
 +    CpuhzState *s = (CpuhzState *)opaque;
 +    uint64_t r;
 +    uint64_t n;
++
++    MachineState *ms = MACHINE(qdev_get_machine());
++    unsigned int smp_cpus = ms->smp.cpus;
 +
 +    if (offset >= smp_cpus * CPPC_REG_PER_CPU_STRIDE) {
 +        warn_report("cpufreq_read: offset 0x%lx out of range", offset);
@@ -258,6 +265,8 @@ index 00000000..c123a22b
 +                           uint64_t value, unsigned size)
 +{
 +    uint64_t n;
++    MachineState *ms = MACHINE(qdev_get_machine());
++    unsigned int smp_cpus = ms->smp.cpus;
 +
 +    if (offset >= smp_cpus * CPPC_REG_PER_CPU_STRIDE) {
 +        error_printf("cpufreq_write: offset 0x%lx out of range", offset);
@@ -339,6 +348,9 @@ index 00000000..c123a22b
 +    SysBusDevice *sbd = SYS_BUS_DEVICE(obj);
 +    CpuhzState *s = CPUFREQ(obj);
 +
++    MachineState *ms = MACHINE(qdev_get_machine());
++    unsigned int smp_cpus = ms->smp.cpus;
++
 +    s->reg_size = smp_cpus * CPPC_REG_PER_CPU_STRIDE;
 +    if (s->reg_size > MAX_SUPPORT_SPACE) {
 +        error_report("Required space 0x%x excesses the max support 0x%x",
@@ -372,7 +384,7 @@ index 00000000..c123a22b
 +type_init(cpufreq_register_types)
 +
 diff --git a/hw/arm/virt-acpi-build.c b/hw/arm/virt-acpi-build.c
-index bf9c0bc2..33a8e2e3 100644
+index 0afb3727..29494ebd 100644
 --- a/hw/arm/virt-acpi-build.c
 +++ b/hw/arm/virt-acpi-build.c
 @@ -45,11 +45,73 @@
@@ -380,10 +392,10 @@ index bf9c0bc2..33a8e2e3 100644
  #include "sysemu/numa.h"
  #include "kvm_arm.h"
 +#include "hw/acpi/acpi-defs.h"
- 
+
  #define ARM_SPI_BASE 32
  #define ACPI_POWER_BUTTON_DEVICE "PWRB"
- 
+
 -static void acpi_dsdt_add_cpus(Aml *scope, int smp_cpus)
 +static void acpi_dsdt_add_psd(Aml *dev, int cpus)
 +{
@@ -449,7 +461,7 @@ index bf9c0bc2..33a8e2e3 100644
 +                               const MemMapEntry *cppc_memmap)
  {
      uint16_t i;
- 
+
 @@ -57,6 +119,18 @@ static void acpi_dsdt_add_cpus(Aml *scope, int smp_cpus)
          Aml *dev = aml_device("C%.03X", i);
          aml_append(dev, aml_name_decl("_HID", aml_string("ACPI0007")));
@@ -469,7 +481,7 @@ index bf9c0bc2..33a8e2e3 100644
          aml_append(scope, dev);
      }
  }
-@@ -740,7 +814,7 @@ build_dsdt(GArray *table_data, BIOSLinker *linker, VirtMachineState *vms)
+@@ -718,7 +792,7 @@ build_dsdt(GArray *table_data, BIOSLinker *linker, VirtMachineState *vms)
       * the RTC ACPI device at all when using UEFI.
       */
      scope = aml_scope("\\_SB");
@@ -479,10 +491,10 @@ index bf9c0bc2..33a8e2e3 100644
                         (irqmap[VIRT_UART] + ARM_SPI_BASE));
      acpi_dsdt_add_flash(scope, &memmap[VIRT_FLASH]);
 diff --git a/hw/arm/virt.c b/hw/arm/virt.c
-index ce2664a3..ec6f00ab 100644
+index d9496c93..0fa355ba 100644
 --- a/hw/arm/virt.c
 +++ b/hw/arm/virt.c
-@@ -132,6 +132,7 @@ static const MemMapEntry base_memmap[] = {
+@@ -135,6 +135,7 @@ static const MemMapEntry base_memmap[] = {
      [VIRT_SECURE_UART] =        { 0x09040000, 0x00001000 },
      [VIRT_SMMU] =               { 0x09050000, 0x00020000 },
      [VIRT_MMIO] =               { 0x0a000000, 0x00000200 },
@@ -490,10 +502,10 @@ index ce2664a3..ec6f00ab 100644
      /* ...repeating for a total of NUM_VIRTIO_TRANSPORTS, each of that size */
      [VIRT_PLATFORM_BUS] =       { 0x0c000000, 0x02000000 },
      [VIRT_SECURE_MEM] =         { 0x0e000000, 0x01000000 },
-@@ -725,6 +726,16 @@ static void create_uart(const VirtMachineState *vms, qemu_irq *pic, int uart,
+@@ -731,6 +732,16 @@ static void create_uart(const VirtMachineState *vms, qemu_irq *pic, int uart,
      g_free(nodename);
  }
- 
+
 +static void create_cpufreq(const VirtMachineState *vms, MemoryRegion *mem)
 +{
 +    hwaddr base = vms->memmap[VIRT_CPUFREQ].base;
@@ -507,21 +519,21 @@ index ce2664a3..ec6f00ab 100644
  static void create_rtc(const VirtMachineState *vms, qemu_irq *pic)
  {
      char *nodename;
-@@ -1618,6 +1629,8 @@ static void machvirt_init(MachineState *machine)
- 
+@@ -1682,6 +1693,8 @@ static void machvirt_init(MachineState *machine)
+
      create_uart(vms, pic, VIRT_UART, sysmem, serial_hd(0));
- 
+
 +    create_cpufreq(vms, sysmem);
 +
      if (vms->secure) {
          create_secure_ram(vms, secure_sysmem);
          create_uart(vms, pic, VIRT_SECURE_UART, secure_sysmem, serial_hd(1));
 diff --git a/hw/char/Kconfig b/hw/char/Kconfig
-index 6360c9ff..8cc3ae2a 100644
+index 40e7a8b8..2f61bf53 100644
 --- a/hw/char/Kconfig
 +++ b/hw/char/Kconfig
-@@ -40,3 +40,7 @@ config SCLPCONSOLE
- 
+@@ -46,3 +46,7 @@ config SCLPCONSOLE
+
  config TERMINAL3270
      bool
 +
@@ -529,13 +541,13 @@ index 6360c9ff..8cc3ae2a 100644
 +   bool
 +   default y
 diff --git a/include/hw/acpi/acpi-defs.h b/include/hw/acpi/acpi-defs.h
-index f9aa4bd3..b4899a32 100644
+index 57a3f58b..39ae91d3 100644
 --- a/include/hw/acpi/acpi-defs.h
 +++ b/include/hw/acpi/acpi-defs.h
-@@ -652,4 +652,42 @@ struct AcpiIortRC {
+@@ -634,4 +634,42 @@ struct AcpiIortRC {
  } QEMU_PACKED;
  typedef struct AcpiIortRC AcpiIortRC;
- 
+
 +/*
 + * CPPC register definition from kernel header
 + * include/acpi/cppc_acpi.h
@@ -586,11 +598,11 @@ index 1a563ad7..375335ab 100644
 +Aml *aml_generic_register(AmlRegionSpace rs, uint8_t reg_width,
 +                          uint8_t reg_offset, AmlAccessType type,
 +                          uint64_t addr);
- 
+
  /* Block AML object primitives */
  Aml *aml_scope(const char *name_format, ...) GCC_FMT_ATTR(1, 2);
 diff --git a/include/hw/arm/virt.h b/include/hw/arm/virt.h
-index 507517c6..8465f9bd 100644
+index a7209420..43a6ce91 100644
 --- a/include/hw/arm/virt.h
 +++ b/include/hw/arm/virt.h
 @@ -66,6 +66,7 @@ enum {
@@ -601,6 +613,5 @@ index 507517c6..8465f9bd 100644
      VIRT_MMIO,
      VIRT_RTC,
      VIRT_FW_CFG,
--- 
+--
 2.19.1
-

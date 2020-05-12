@@ -1,6 +1,6 @@
-From 1db8bcc0ec91bb4374b3ffdd03da3c4ede381fb5 Mon Sep 17 00:00:00 2001
-From: =?UTF-8?q?Marc-Andr=C3=A9=20Lureau?= <marcandre.lureau@redhat.com>
-Date: Wed, 11 Mar 2020 18:52:07 +0800
+From 220a52fda279038d46c25d39a372154ff9b024d2 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Marc-Andr=C3=A9=20Lureauls?= <marcandre.lureau@redhat.com>
+Date: Tue, 14 Apr 2020 19:06:35 +0800
 Subject: [PATCH] tcp_emu: fix unsafe snprintf() usages
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
@@ -28,67 +28,76 @@ Signed-off-by: default avatarMarc-André Lureau <marcandre.lureau@redhat.com>
 Reviewed-by: Samuel Thibault's avatarSamuel Thibault <samuel.thibault@ens-lyon.org>
 Message-Id: <20200127092414.169796-7-marcandre.lureau@redhat.com>
 ---
- slirp/src/tcp_subr.c | 12 ++++++------
- 1 file changed, 6 insertions(+), 6 deletions(-)
+ slirp/src/tcp_subr.c | 15 +++++++--------
+ 1 file changed, 7 insertions(+), 8 deletions(-)
 
 diff --git a/slirp/src/tcp_subr.c b/slirp/src/tcp_subr.c
-index e898fd03..88dadc76 100644
+index 019b637a..6c1b17bd 100644
 --- a/slirp/src/tcp_subr.c
 +++ b/slirp/src/tcp_subr.c
-@@ -707,7 +707,7 @@ tcp_emu(struct socket *so, struct mbuf *m)
- 			n4 =  (laddr & 0xff);
- 
- 			m->m_len = bptr - m->m_data; /* Adjust length */
--                        m->m_len += snprintf(bptr, M_FREEROOM(m),
-+                        m->m_len += slirp_fmt(bptr, M_FREEROOM(m),
-                                              "ORT %d,%d,%d,%d,%d,%d\r\n%s",
-                                              n1, n2, n3, n4, n5, n6, x==7?buff:"");
- 			return 1;
-@@ -740,7 +740,7 @@ tcp_emu(struct socket *so, struct mbuf *m)
- 			n4 =  (laddr & 0xff);
- 
- 			m->m_len = bptr - m->m_data; /* Adjust length */
--			m->m_len += snprintf(bptr, M_FREEROOM(m),
-+			m->m_len += slirp_fmt(bptr, M_FREEROOM(m),
-                                              "27 Entering Passive Mode (%d,%d,%d,%d,%d,%d)\r\n%s",
-                                              n1, n2, n3, n4, n5, n6, x==7?buff:"");
- 
-@@ -766,7 +766,7 @@ tcp_emu(struct socket *so, struct mbuf *m)
- 		if (m->m_data[m->m_len-1] == '\0' && lport != 0 &&
- 		    (so = tcp_listen(slirp, INADDR_ANY, 0, so->so_laddr.s_addr,
- 		                     htons(lport), SS_FACCEPTONCE)) != NULL)
--                    m->m_len = snprintf(m->m_data, M_ROOM(m),
-+                    m->m_len = slirp_fmt0(m->m_data, M_ROOM(m),
- 					"%d", ntohs(so->so_fport)) + 1;
- 		return 1;
- 
-@@ -786,7 +786,7 @@ tcp_emu(struct socket *so, struct mbuf *m)
- 				return 1;
- 			}
- 			m->m_len = bptr - m->m_data; /* Adjust length */
--                        m->m_len += snprintf(bptr, M_FREEROOM(m),
-+                        m->m_len += slirp_fmt(bptr, M_FREEROOM(m),
-                                              "DCC CHAT chat %lu %u%c\n",
-                                              (unsigned long)ntohl(so->so_faddr.s_addr),
-                                              ntohs(so->so_fport), 1);
-@@ -797,7 +797,7 @@ tcp_emu(struct socket *so, struct mbuf *m)
- 				return 1;
- 			}
- 			m->m_len = bptr - m->m_data; /* Adjust length */
--                        m->m_len += snprintf(bptr, M_FREEROOM(m),
-+                        m->m_len += slirp_fmt(bptr, M_FREEROOM(m),
-                                              "DCC SEND %s %lu %u %u%c\n", buff,
-                                              (unsigned long)ntohl(so->so_faddr.s_addr),
-                                              ntohs(so->so_fport), n1, 1);
-@@ -808,7 +808,7 @@ tcp_emu(struct socket *so, struct mbuf *m)
- 				return 1;
- 			}
- 			m->m_len = bptr - m->m_data; /* Adjust length */
--                        m->m_len += snprintf(bptr, M_FREEROOM(m),
-+                        m->m_len += slirp_fmt(bptr, M_FREEROOM(m),
-                                              "DCC MOVE %s %lu %u %u%c\n", buff,
-                                              (unsigned long)ntohl(so->so_faddr.s_addr),
-                                              ntohs(so->so_fport), n1, 1);
--- 
-2.21.1 (Apple Git-122.3)
+@@ -655,8 +655,7 @@ int tcp_emu(struct socket *so, struct mbuf *m)
+                 NTOHS(n1);
+                 NTOHS(n2);
+                 m_inc(m, snprintf(NULL, 0, "%d,%d\r\n", n1, n2) + 1);
+-                m->m_len = snprintf(m->m_data, M_ROOM(m), "%d,%d\r\n", n1, n2);
+-                assert(m->m_len < M_ROOM(m));
++                m->m_len = slirp_fmt(m->m_data, M_ROOM(m), "%d,%d\r\n", n1, n2);
+             } else {
+                 *eol = '\r';
+             }
+@@ -696,7 +695,7 @@ int tcp_emu(struct socket *so, struct mbuf *m)
+             n4 = (laddr & 0xff);
 
+             m->m_len = bptr - m->m_data; /* Adjust length */
+-            m->m_len += snprintf(bptr, M_FREEROOM(m),
++            m->m_len += slirp_fmt(bptr, M_FREEROOM(m),
+                                  "ORT %d,%d,%d,%d,%d,%d\r\n%s", n1, n2, n3, n4,
+                                  n5, n6, x == 7 ? buff : "");
+             return 1;
+@@ -732,7 +731,7 @@ int tcp_emu(struct socket *so, struct mbuf *m)
+
+             m->m_len = bptr - m->m_data; /* Adjust length */
+             m->m_len +=
+-                snprintf(bptr, M_FREEROOM(m),
++                slirp_fmt(bptr, M_FREEROOM(m),
+                          "27 Entering Passive Mode (%d,%d,%d,%d,%d,%d)\r\n%s",
+                          n1, n2, n3, n4, n5, n6, x == 7 ? buff : "");
+
+@@ -759,7 +758,7 @@ int tcp_emu(struct socket *so, struct mbuf *m)
+             (so = tcp_listen(slirp, INADDR_ANY, 0, so->so_laddr.s_addr,
+                              htons(lport), SS_FACCEPTONCE)) != NULL)
+             m->m_len =
+-                snprintf(m->m_data, M_ROOM(m),
++                slirp_fmt0(m->m_data, M_ROOM(m),
+                             "%d", ntohs(so->so_fport)) + 1;
+         return 1;
+
+@@ -779,7 +778,7 @@ int tcp_emu(struct socket *so, struct mbuf *m)
+                 return 1;
+             }
+             m->m_len = bptr - m->m_data; /* Adjust length */
+-            m->m_len += snprintf(bptr, M_FREEROOM(m),
++            m->m_len += slirp_fmt(bptr, M_FREEROOM(m),
+                                  "DCC CHAT chat %lu %u%c\n",
+                                  (unsigned long)ntohl(so->so_faddr.s_addr),
+                                  ntohs(so->so_fport), 1);
+@@ -791,7 +790,7 @@ int tcp_emu(struct socket *so, struct mbuf *m)
+             }
+             m->m_len = bptr - m->m_data; /* Adjust length */
+             m->m_len +=
+-                snprintf(bptr, M_FREEROOM(m),
++                slirp_fmt(bptr, M_FREEROOM(m),
+                          "DCC SEND %s %lu %u %u%c\n", buff,
+                          (unsigned long)ntohl(so->so_faddr.s_addr),
+                          ntohs(so->so_fport), n1, 1);
+@@ -803,7 +802,7 @@ int tcp_emu(struct socket *so, struct mbuf *m)
+             }
+             m->m_len = bptr - m->m_data; /* Adjust length */
+             m->m_len +=
+-                snprintf(bptr, M_FREEROOM(m),
++                slirp_fmt(bptr, M_FREEROOM(m),
+                          "DCC MOVE %s %lu %u %u%c\n", buff,
+                          (unsigned long)ntohl(so->so_faddr.s_addr),
+                          ntohs(so->so_fport), n1, 1);
+--
+2.23.0
