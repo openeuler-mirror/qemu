@@ -162,6 +162,7 @@ Patch0149: migration-ram-Do-error_free-after-migrate_set_error-.patch
 Patch0150: migration-ram-fix-memleaks-in-multifd_new_send_chann.patch
 Patch0151: migration-rdma-fix-a-memleak-on-error-path-in-rdma_s.patch
 Patch0152: arm-virt-Support-CPU-cold-plug.patch
+Patch0153: ide-Fix-incorrect-handling-of-some-PRDTs-in-ide_dma_.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -507,6 +508,9 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Fri May 15 2020 Huawei Technologies Co., Ltd. <fangying1@huawei.com>
+- ide: Fix incorrect handling of some PRDTs in ide_dma_cb()
+
 * Tue May 12 2020 Huawei Technologies Co., Ltd. <zhukeqian1@huawei.com>
 - arm/virt: Support CPU cold plug
 
