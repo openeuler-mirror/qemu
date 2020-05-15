@@ -164,6 +164,7 @@ Patch0151: migration-rdma-fix-a-memleak-on-error-path-in-rdma_s.patch
 Patch0152: arm-virt-Support-CPU-cold-plug.patch
 Patch0153: ide-Fix-incorrect-handling-of-some-PRDTs-in-ide_dma_.patch
 Patch0154: ati-vga-Fix-checks-in-ati_2d_blt-to-avoid-crash.patch
+Patch0155: slirp-tftp-restrict-relative-path-access.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -512,6 +513,7 @@ getent passwd qemu >/dev/null || \
 * Fri May 15 2020 Huawei Technologies Co., Ltd. <fangying1@huawei.com>
 - ide: Fix incorrect handling of some PRDTs in ide_dma_cb()
 - ati-vga: Fix checks in ati_2d_blt() to avoid crash
+- slirp: tftp: restrict relative path access
 
 * Tue May 12 2020 Huawei Technologies Co., Ltd. <zhukeqian1@huawei.com>
 - arm/virt: Support CPU cold plug
