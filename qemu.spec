@@ -167,6 +167,7 @@ Patch0154: ati-vga-Fix-checks-in-ati_2d_blt-to-avoid-crash.patch
 Patch0155: slirp-tftp-restrict-relative-path-access.patch
 Patch0156: ip_reass-Fix-use-after-free.patch
 Patch0157: bt-use-size_t-type-for-length-parameters-instead-of-.patch
+Patch0158: log-Add-some-logs-on-VM-runtime-path.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -515,6 +516,7 @@ getent passwd qemu >/dev/null || \
 * Fri May 22 2020 Huawei Technologies Co., Ltd. <fangying1@huawei.com>
 - ip_reass: Fix use after free 
 - bt: use size_t type for length parameters instead of int
+- log: Add some logs on VM runtime path
 
 * Fri May 15 2020 Huawei Technologies Co., Ltd. <fangying1@huawei.com>
 - ide: Fix incorrect handling of some PRDTs in ide_dma_cb()
