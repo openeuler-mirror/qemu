@@ -95,7 +95,7 @@ struct bt_hid_device_s {
     int data_type;
     int intr_state;
     struct {
-        int len;
+        size_t len;
         uint8_t buffer[1024];
     } dataother, datain, dataout, feature, intrdataout;
     enum {
@@ -168,7 +168,7 @@ static void bt_hid_disconnect(struct bt_hid_device_s *s)
 }
 
 static void bt_hid_send_data(struct bt_l2cap_conn_params_s *ch, int type,
-                const uint8_t *data, int len)
+                const uint8_t *data, size_t len)
 {
     uint8_t *pkt, hdr = (BT_DATA << 4) | type;
     int plen;
@@ -189,7 +189,7 @@ static void bt_hid_send_data(struct bt_l2cap_conn_params_s *ch, int type,
 }
 
 static void bt_hid_control_transaction(struct bt_hid_device_s *s,
-                const uint8_t *data, int len)
+                const uint8_t *data, size_t len)
 {
     uint8_t type, parameter;
     int rlen, ret = -1;
@@ -361,7 +361,7 @@ static void bt_hid_control_transaction(struct bt_hid_device_s *s,
         bt_hid_send_handshake(s, ret);
 }
 
-static void bt_hid_control_sdu(void *opaque, const uint8_t *data, int len)
+static void bt_hid_control_sdu(void *opaque, const uint8_t *data, size_t len)
 {
     struct bt_hid_device_s *hid = opaque;
 
@@ -387,7 +387,7 @@ static void bt_hid_datain(HIDState *hs)
                         hid->datain.buffer, hid->datain.len);
 }
 
-static void bt_hid_interrupt_sdu(void *opaque, const uint8_t *data, int len)
+static void bt_hid_interrupt_sdu(void *opaque, const uint8_t *data, size_t len)
 {
     struct bt_hid_device_s *hid = opaque;
 

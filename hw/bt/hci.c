@@ -31,7 +31,7 @@
 
 struct bt_hci_s {
     uint8_t *(*evt_packet)(void *opaque);
-    void (*evt_submit)(void *opaque, int len);
+    void (*evt_submit)(void *opaque, size_t len);
     void *opaque;
     uint8_t evt_buf[256];
 
@@ -61,7 +61,7 @@ struct bt_hci_s {
         struct bt_hci_master_link_s {
             struct bt_link_s *link;
             void (*lmp_acl_data)(struct bt_link_s *link,
-                            const uint8_t *data, int start, int len);
+                            const uint8_t *data, int start, size_t len);
             QEMUTimer *acl_mode_timer;
         } handle[HCI_HANDLES_MAX];
         uint32_t role_bmp;
@@ -433,7 +433,7 @@ static const uint8_t bt_event_reserved_mask[8] = {
 };
 
 
-static void null_hci_send(struct HCIInfo *hci, const uint8_t *data, int len)
+static void null_hci_send(struct HCIInfo *hci, const uint8_t *data, size_t len)
 {
 }
 
@@ -451,13 +451,13 @@ struct HCIInfo null_hci = {
 
 
 static inline uint8_t *bt_hci_event_start(struct bt_hci_s *hci,
-                int evt, int len)
+                int evt, size_t len)
 {
     uint8_t *packet, mask;
     int mask_byte;
 
     if (len > 255) {
-        error_report("%s: HCI event params too long (%ib)", __func__, len);
+        error_report("%s: HCI event params too long (%zub)", __func__, len);
         exit(-1);
     }
 
@@ -474,7 +474,7 @@ static inline uint8_t *bt_hci_event_start(struct bt_hci_s *hci,
 }
 
 static inline void bt_hci_event(struct bt_hci_s *hci, int evt,
-                void *params, int len)
+                void *params, size_t len)
 {
     uint8_t *packet = bt_hci_event_start(hci, evt, len);
 
@@ -499,7 +499,7 @@ static inline void bt_hci_event_status(struct bt_hci_s *hci, int status)
 }
 
 static inline void bt_hci_event_complete(struct bt_hci_s *hci,
-                void *ret, int len)
+                void *ret, size_t len)
 {
     uint8_t *packet = bt_hci_event_start(hci, EVT_CMD_COMPLETE,
                     len + EVT_CMD_COMPLETE_SIZE);
@@ -1476,7 +1476,7 @@ static inline void bt_hci_event_num_comp_pkts(struct bt_hci_s *hci,
 }
 
 static void bt_submit_hci(struct HCIInfo *info,
-                const uint8_t *data, int length)
+                const uint8_t *data, size_t length)
 {
     struct bt_hci_s *hci = hci_from_info(info);
     uint16_t cmd;
@@ -1970,7 +1970,7 @@ static void bt_submit_hci(struct HCIInfo *info,
         break;
 
     short_hci:
-        error_report("%s: HCI packet too short (%iB)", __func__, length);
+        error_report("%s: HCI packet too short (%zuB)", __func__, length);
         bt_hci_event_status(hci, HCI_INVALID_PARAMETERS);
         break;
     }
@@ -1981,7 +1981,7 @@ static void bt_submit_hci(struct HCIInfo *info,
  * know that a packet contained the last fragment of the SDU when the next
  * SDU starts.  */
 static inline void bt_hci_lmp_acl_data(struct bt_hci_s *hci, uint16_t handle,
-                const uint8_t *data, int start, int len)
+                const uint8_t *data, int start, size_t len)
 {
     struct hci_acl_hdr *pkt = (void *) hci->acl_buf;
 
@@ -1989,7 +1989,7 @@ static inline void bt_hci_lmp_acl_data(struct bt_hci_s *hci, uint16_t handle,
     /* TODO: avoid memcpy'ing */
 
     if (len + HCI_ACL_HDR_SIZE > sizeof(hci->acl_buf)) {
-        error_report("%s: can't take ACL packets %i bytes long",
+        error_report("%s: can't take ACL packets %zu bytes long",
                      __func__, len);
         return;
     }
@@ -2003,7 +2003,7 @@ static inline void bt_hci_lmp_acl_data(struct bt_hci_s *hci, uint16_t handle,
 }
 
 static void bt_hci_lmp_acl_data_slave(struct bt_link_s *btlink,
-                const uint8_t *data, int start, int len)
+                const uint8_t *data, int start, size_t len)
 {
     struct bt_hci_link_s *link = (struct bt_hci_link_s *) btlink;
 
@@ -2012,14 +2012,14 @@ static void bt_hci_lmp_acl_data_slave(struct bt_link_s *btlink,
 }
 
 static void bt_hci_lmp_acl_data_host(struct bt_link_s *link,
-                const uint8_t *data, int start, int len)
+                const uint8_t *data, int start, size_t len)
 {
     bt_hci_lmp_acl_data(hci_from_device(link->host),
                     link->handle, data, start, len);
 }
 
 static void bt_submit_acl(struct HCIInfo *info,
-                const uint8_t *data, int length)
+                const uint8_t *data, size_t length)
 {
     struct bt_hci_s *hci = hci_from_info(info);
     uint16_t handle;
@@ -2027,7 +2027,7 @@ static void bt_submit_acl(struct HCIInfo *info,
     struct bt_link_s *link;
 
     if (length < HCI_ACL_HDR_SIZE) {
-        error_report("%s: ACL packet too short (%iB)", __func__, length);
+        error_report("%s: ACL packet too short (%zuB)", __func__, length);
         return;
     }
 
@@ -2045,7 +2045,7 @@ static void bt_submit_acl(struct HCIInfo *info,
     handle &= ~HCI_HANDLE_OFFSET;
 
     if (datalen > length) {
-        error_report("%s: ACL packet too short (%iB < %iB)",
+        error_report("%s: ACL packet too short (%zuB < %iB)",
                      __func__, length, datalen);
         return;
     }
@@ -2087,7 +2087,7 @@ static void bt_submit_acl(struct HCIInfo *info,
 }
 
 static void bt_submit_sco(struct HCIInfo *info,
-                const uint8_t *data, int length)
+                const uint8_t *data, size_t length)
 {
     struct bt_hci_s *hci = hci_from_info(info);
     uint16_t handle;
@@ -2106,7 +2106,7 @@ static void bt_submit_sco(struct HCIInfo *info,
     }
 
     if (datalen > length) {
-        error_report("%s: SCO packet too short (%iB < %iB)",
+        error_report("%s: SCO packet too short (%zuB < %iB)",
                      __func__, length, datalen);
         return;
     }
@@ -2127,7 +2127,7 @@ static uint8_t *bt_hci_evt_packet(void *opaque)
     return s->evt_buf;
 }
 
-static void bt_hci_evt_submit(void *opaque, int len)
+static void bt_hci_evt_submit(void *opaque, size_t len)
 {
     /* TODO: notify upper layer */
     struct bt_hci_s *s = opaque;
