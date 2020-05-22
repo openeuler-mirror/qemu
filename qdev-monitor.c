@@ -34,6 +34,7 @@
 #include "qemu/qemu-print.h"
 #include "sysemu/block-backend.h"
 #include "migration/misc.h"
+#include "qemu/log.h"
 
 /*
  * Aliases were a bad idea from the start.  Let's keep them
@@ -586,6 +587,7 @@ DeviceState *qdev_device_add(QemuOpts *opts, Error **errp)
     if (path != NULL) {
         bus = qbus_find(path, errp);
         if (!bus) {
+            error_setg(errp, "can not find bus for %s", driver);
             return NULL;
         }
         if (!object_dynamic_cast(OBJECT(bus), dc->bus_type)) {
@@ -627,6 +629,8 @@ DeviceState *qdev_device_add(QemuOpts *opts, Error **errp)
 
     /* set properties */
     if (qemu_opt_foreach(opts, set_property, dev, &err)) {
+        error_setg(errp, "the bus %s -driver %s set property failed",
+                   bus ? bus->name : "None", driver);
         goto err_del_dev;
     }
 
@@ -636,6 +640,8 @@ DeviceState *qdev_device_add(QemuOpts *opts, Error **errp)
         dev->opts = NULL;
         goto err_del_dev;
     }
+    qemu_log("add qdev %s:%s success\n", driver,
+             qemu_opts_id(opts) ? qemu_opts_id(opts) : "none");
     return dev;
 
 err_del_dev:
