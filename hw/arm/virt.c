@@ -2492,6 +2492,7 @@ static void virt_machine_4_0_options(MachineClass *mc)
     compat_props_add(mc->compat_props, hw_compat_4_0, hw_compat_4_0_len);
     vmc->no_ged = true;
     mc->auto_enable_numa_with_memhp = false;
+    vmc->kvm_no_adjvtime = true;
 }
 DEFINE_VIRT_MACHINE(4, 0)
 
