@@ -1066,34 +1066,6 @@ void cpu_synchronize_all_pre_loadvm(void)
     }
 }
 
-#ifdef __aarch64__
-static bool kvm_adjvtime_enabled(CPUState *cs)
-{
-    ARMCPU *cpu = ARM_CPU(cs);
-    return cpu->kvm_adjvtime == true;
-}
-
-static void get_vcpu_timer_tick(CPUState *cs)
-{
-    CPUARMState *env = &ARM_CPU(cs)->env;
-    int err;
-    struct kvm_one_reg reg;
-    uint64_t timer_tick;
-
-    reg.id = KVM_REG_ARM_TIMER_CNT;
-    reg.addr = (uintptr_t) &timer_tick;
-
-    err = kvm_vcpu_ioctl(cs, KVM_GET_ONE_REG, &reg);
-    if (err < 0) {
-        error_report("get vcpu tick failed, ret = %d", err);
-        env->vtimer = 0;
-        return;
-    }
-    env->vtimer = timer_tick;
-    return;
-}
-#endif
-
 static int do_vm_stop(RunState state, bool send_stop)
 {
     int ret = 0;
@@ -1101,17 +1073,6 @@ static int do_vm_stop(RunState state, bool send_stop)
     if (runstate_is_running()) {
         cpu_disable_ticks();
         pause_all_vcpus();
-#ifdef __aarch64__
-        /* vtimer adjust is used in openEuler qemu-4.0.1, however kvm_adjvtime
-         * is introduced in openEuler qemu-4.1.0. To maintain the compatibility
-         * and enable cross version migration, let's enable vtimer adjust only
-         * if kvm_adjvtime is not enabled, otherwise there may be conflicts
-         * between vtimer adjust and kvm_adjvtime.
-         */
-        if (first_cpu && !kvm_adjvtime_enabled(first_cpu)) {
-            get_vcpu_timer_tick(first_cpu);
-        }
-#endif
         runstate_set(state);
         vm_state_notify(0, state);
         if (send_stop) {
@@ -1957,46 +1918,11 @@ void cpu_resume(CPUState *cpu)
     qemu_cpu_kick(cpu);
 }
 
-#ifdef __aarch64__
-
-static void set_vcpu_timer_tick(CPUState *cs)
-{
-    CPUARMState *env = &ARM_CPU(cs)->env;
-
-    if (env->vtimer == 0) {
-        return;
-    }
-
-    int err;
-    struct kvm_one_reg reg;
-    uint64_t timer_tick = env->vtimer;
-    env->vtimer = 0;
-
-    reg.id = KVM_REG_ARM_TIMER_CNT;
-    reg.addr = (uintptr_t) &timer_tick;
-
-    err = kvm_vcpu_ioctl(cs, KVM_SET_ONE_REG, &reg);
-    if (err < 0) {
-        error_report("Set vcpu tick failed, ret = %d", err);
-        return;
-    }
-    return;
-}
-#endif
-
 void resume_all_vcpus(void)
 {
     CPUState *cpu;
 
     qemu_clock_enable(QEMU_CLOCK_VIRTUAL, true);
-#ifdef __aarch64__
-    /* Enable vtimer adjust only if kvm_adjvtime is not enabled, otherwise
-     * there may be conflicts between vtimer adjust and kvm_adjvtime.
-     */
-    if (first_cpu && !kvm_adjvtime_enabled(first_cpu)) {
-        set_vcpu_timer_tick(first_cpu);
-    }
-#endif
     CPU_FOREACH(cpu) {
         cpu_resume(cpu);
     }
