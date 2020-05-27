@@ -1,0 +1,80 @@
+From 79d722679731233ccb1aa775d896a4bf21e13d44 Mon Sep 17 00:00:00 2001
+From: Ying Fang <fangying1@huawei.com>
+Date: Wed, 27 May 2020 10:02:06 +0800
+Subject: [PATCH] migration: Compat virtual timer adjust for v4.0.1 and v4.1.0
+
+Vtimer adjust is used in openEuler qemu-4.0.1, however kvm_adjvtime
+is introduced in openEuler qemu-4.1.0. To maintain the compatibility
+and enable cross version migration, let's enable vtimer adjust only
+if kvm_adjvtime is not enabled, otherwise there may be conflicts
+between vtimer adjust and kvm_adjvtime.
+
+After this modification:
+1: openEuler qemu-4.0.1 use vtimer as the default virtual timer
+2: openEuler qemu-4.1.0 use kvm_adjvtime as the defaut virtual timer
+
+Migration from openEuler qemu-4.0.1 to openEuler qemu-4.1.0 will
+be ok, but migration path from upstream qemu-4.0.1 to openEuler
+qemu-4..0.1 will be broken.
+
+Since openEuler qemu-4.1.0, kvm_adjvtime is used as the default
+virtual timer. So please upgrade to openEuler qemu-4.1.0 and
+use the virt-4.1 machine.
+
+Signed-off-by: Ying Fang <fangying1@huawei.com>
+
+diff --git a/cpus.c b/cpus.c
+index b9aa51f8..6a28bdef 100644
+--- a/cpus.c
++++ b/cpus.c
+@@ -1067,6 +1067,12 @@ void cpu_synchronize_all_pre_loadvm(void)
+ }
+ 
+ #ifdef __aarch64__
++static bool kvm_adjvtime_enabled(CPUState *cs)
++{
++    ARMCPU *cpu = ARM_CPU(cs);
++    return cpu->kvm_adjvtime == true;
++}
++
+ static void get_vcpu_timer_tick(CPUState *cs)
+ {
+     CPUARMState *env = &ARM_CPU(cs)->env;
+@@ -1096,7 +1102,13 @@ static int do_vm_stop(RunState state, bool send_stop)
+         cpu_disable_ticks();
+         pause_all_vcpus();
+ #ifdef __aarch64__
+-        if (first_cpu) {
++        /* vtimer adjust is used in openEuler qemu-4.0.1, however kvm_adjvtime
++         * is introduced in openEuler qemu-4.1.0. To maintain the compatibility
++         * and enable cross version migration, let's enable vtimer adjust only
++         * if kvm_adjvtime is not enabled, otherwise there may be conflicts
++         * between vtimer adjust and kvm_adjvtime.
++         */
++        if (first_cpu && !kvm_adjvtime_enabled(first_cpu)) {
+             get_vcpu_timer_tick(first_cpu);
+         }
+ #endif
+@@ -1946,6 +1958,7 @@ void cpu_resume(CPUState *cpu)
+ }
+ 
+ #ifdef __aarch64__
++
+ static void set_vcpu_timer_tick(CPUState *cs)
+ {
+     CPUARMState *env = &ARM_CPU(cs)->env;
+@@ -1977,7 +1990,10 @@ void resume_all_vcpus(void)
+ 
+     qemu_clock_enable(QEMU_CLOCK_VIRTUAL, true);
+ #ifdef __aarch64__
+-    if (first_cpu) {
++    /* Enable vtimer adjust only if kvm_adjvtime is not enabled, otherwise
++     * there may be conflicts between vtimer adjust and kvm_adjvtime.
++     */
++    if (first_cpu && !kvm_adjvtime_enabled(first_cpu)) {
+         set_vcpu_timer_tick(first_cpu);
+     }
+ #endif
+-- 
+2.23.0
+
