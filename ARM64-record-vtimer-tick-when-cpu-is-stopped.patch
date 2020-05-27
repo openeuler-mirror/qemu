@@ -1,0 +1,134 @@
+From 4646a24045cf53f2cc5e0ef1974da88ef50ef676 Mon Sep 17 00:00:00 2001
+From: Ying Fang <fangying1@huawei.com>
+Date: Wed, 27 May 2020 11:54:31 +0800
+Subject: [PATCH] ARM64: record vtimer tick when cpu is stopped
+
+The vtimer kick still increases even if the vcpu is stopped when VM has
+save/restore or suspend/resume operation. This will cause guest watchdog
+soft-lockup if the VM has lots of memory in use.
+
+Signed-off-by: Hao Hong <honghao5@huawei.com>
+Signed-off-by: Haibin Wang <wanghaibin.wang@huawei.com>
+Signed-off-by: Ying Fang <fangying1@huawei.com>
+---
+ cpus.c               | 58 ++++++++++++++++++++++++++++++++++++++++++++
+ target/arm/cpu.h     |  2 ++
+ target/arm/machine.c |  1 +
+ 3 files changed, 61 insertions(+)
+
+diff --git a/cpus.c b/cpus.c
+index 927a00aa..b9aa51f8 100644
+--- a/cpus.c
++++ b/cpus.c
+@@ -1066,6 +1066,28 @@ void cpu_synchronize_all_pre_loadvm(void)
+     }
+ }
+ 
++#ifdef __aarch64__
++static void get_vcpu_timer_tick(CPUState *cs)
++{
++    CPUARMState *env = &ARM_CPU(cs)->env;
++    int err;
++    struct kvm_one_reg reg;
++    uint64_t timer_tick;
++
++    reg.id = KVM_REG_ARM_TIMER_CNT;
++    reg.addr = (uintptr_t) &timer_tick;
++
++    err = kvm_vcpu_ioctl(cs, KVM_GET_ONE_REG, &reg);
++    if (err < 0) {
++        error_report("get vcpu tick failed, ret = %d", err);
++        env->vtimer = 0;
++        return;
++    }
++    env->vtimer = timer_tick;
++    return;
++}
++#endif
++
+ static int do_vm_stop(RunState state, bool send_stop)
+ {
+     int ret = 0;
+@@ -1073,6 +1095,11 @@ static int do_vm_stop(RunState state, bool send_stop)
+     if (runstate_is_running()) {
+         cpu_disable_ticks();
+         pause_all_vcpus();
++#ifdef __aarch64__
++        if (first_cpu) {
++            get_vcpu_timer_tick(first_cpu);
++        }
++#endif
+         runstate_set(state);
+         vm_state_notify(0, state);
+         if (send_stop) {
+@@ -1918,11 +1945,42 @@ void cpu_resume(CPUState *cpu)
+     qemu_cpu_kick(cpu);
+ }
+ 
++#ifdef __aarch64__
++static void set_vcpu_timer_tick(CPUState *cs)
++{
++    CPUARMState *env = &ARM_CPU(cs)->env;
++
++    if (env->vtimer == 0) {
++        return;
++    }
++
++    int err;
++    struct kvm_one_reg reg;
++    uint64_t timer_tick = env->vtimer;
++    env->vtimer = 0;
++
++    reg.id = KVM_REG_ARM_TIMER_CNT;
++    reg.addr = (uintptr_t) &timer_tick;
++
++    err = kvm_vcpu_ioctl(cs, KVM_SET_ONE_REG, &reg);
++    if (err < 0) {
++        error_report("Set vcpu tick failed, ret = %d", err);
++        return;
++    }
++    return;
++}
++#endif
++
+ void resume_all_vcpus(void)
+ {
+     CPUState *cpu;
+ 
+     qemu_clock_enable(QEMU_CLOCK_VIRTUAL, true);
++#ifdef __aarch64__
++    if (first_cpu) {
++        set_vcpu_timer_tick(first_cpu);
++    }
++#endif
+     CPU_FOREACH(cpu) {
+         cpu_resume(cpu);
+     }
+diff --git a/target/arm/cpu.h b/target/arm/cpu.h
+index 86eb79cd..aec6a214 100644
+--- a/target/arm/cpu.h
++++ b/target/arm/cpu.h
+@@ -262,6 +262,8 @@ typedef struct CPUARMState {
+     uint64_t sp_el[4]; /* AArch64 banked stack pointers */
+ 
+ 
++    uint64_t vtimer; /* Timer tick when vcpu stop */
++
+     /* System control coprocessor (cp15) */
+     struct {
+         uint32_t c0_cpuid;
+diff --git a/target/arm/machine.c b/target/arm/machine.c
+index ee3c59a6..ec28b839 100644
+--- a/target/arm/machine.c
++++ b/target/arm/machine.c
+@@ -814,6 +814,7 @@ const VMStateDescription vmstate_arm_cpu = {
+         VMSTATE_UINT32(env.exception.syndrome, ARMCPU),
+         VMSTATE_UINT32(env.exception.fsr, ARMCPU),
+         VMSTATE_UINT64(env.exception.vaddress, ARMCPU),
++        VMSTATE_UINT64(env.vtimer, ARMCPU),
+         VMSTATE_TIMER_PTR(gt_timer[GTIMER_PHYS], ARMCPU),
+         VMSTATE_TIMER_PTR(gt_timer[GTIMER_VIRT], ARMCPU),
+         {
+-- 
+2.23.0
+
