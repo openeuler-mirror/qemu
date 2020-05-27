@@ -168,6 +168,7 @@ Patch0155: slirp-tftp-restrict-relative-path-access.patch
 Patch0156: ip_reass-Fix-use-after-free.patch
 Patch0157: bt-use-size_t-type-for-length-parameters-instead-of-.patch
 Patch0158: log-Add-some-logs-on-VM-runtime-path.patch
+Patch0159: Revert-vtimer-compat-cross-version-migration-from-v4.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -513,6 +514,9 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Wed May 27 2020 Huawei Technologies Co., Ltd. <fangying1@huawei.com>
+- Revert: "vtimer: compat cross version migration from v4.0.1"
+
 * Fri May 22 2020 Huawei Technologies Co., Ltd. <fangying1@huawei.com>
 - ip_reass: Fix use after free 
 - bt: use size_t type for length parameters instead of int
