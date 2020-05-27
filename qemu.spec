@@ -172,6 +172,7 @@ Patch0159: Revert-vtimer-compat-cross-version-migration-from-v4.patch
 Patch0160: ARM64-record-vtimer-tick-when-cpu-is-stopped.patch
 Patch0161: hw-arm-virt-add-missing-compat-for-kvm-no-adjvtime.patch
 Patch0162: migration-Compat-virtual-timer-adjust-for-v4.0.1-and.patch
+Patch0163: vtimer-Drop-vtimer-virtual-timer-adjust.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -522,6 +523,7 @@ getent passwd qemu >/dev/null || \
 - ARM64: record vtimer tick when cpu is stopped
 - hw/arm/virt: add missing compat for kvm-no-adjvtime
 - migration: Compat virtual timer adjust for v4.0.1 and v4.1.0
+- vtimer: Drop vtimer virtual timer adjust
 
 * Fri May 22 2020 Huawei Technologies Co., Ltd. <fangying1@huawei.com>
 - ip_reass: Fix use after free 
