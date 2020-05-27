@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 9
+Release: 10
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY
@@ -168,6 +168,10 @@ Patch0155: slirp-tftp-restrict-relative-path-access.patch
 Patch0156: ip_reass-Fix-use-after-free.patch
 Patch0157: bt-use-size_t-type-for-length-parameters-instead-of-.patch
 Patch0158: log-Add-some-logs-on-VM-runtime-path.patch
+Patch0159: Revert-vtimer-compat-cross-version-migration-from-v4.patch
+Patch0160: ARM64-record-vtimer-tick-when-cpu-is-stopped.patch
+Patch0161: hw-arm-virt-add-missing-compat-for-kvm-no-adjvtime.patch
+Patch0162: migration-Compat-virtual-timer-adjust-for-v4.0.1-and.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -513,6 +517,12 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Wed May 27 2020 Huawei Technologies Co., Ltd. <fangying1@huawei.com>
+- Revert: "vtimer: compat cross version migration from v4.0.1"
+- ARM64: record vtimer tick when cpu is stopped
+- hw/arm/virt: add missing compat for kvm-no-adjvtime
+- migration: Compat virtual timer adjust for v4.0.1 and v4.1.0
+
 * Fri May 22 2020 Huawei Technologies Co., Ltd. <fangying1@huawei.com>
 - ip_reass: Fix use after free 
 - bt: use size_t type for length parameters instead of int
