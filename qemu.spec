@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 12
+Release: 13
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY
@@ -173,7 +173,7 @@ Patch0160: ARM64-record-vtimer-tick-when-cpu-is-stopped.patch
 Patch0161: hw-arm-virt-add-missing-compat-for-kvm-no-adjvtime.patch
 Patch0162: migration-Compat-virtual-timer-adjust-for-v4.0.1-and.patch
 Patch0163: vtimer-Drop-vtimer-virtual-timer-adjust.patch
-Patch0164: target-arm-cpu64-cpu64-cpus-have-timer-reigster.patch
+Patch0164: target-arm-Add-the-kvm_adjvtime-vcpu-property-for-Co.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -519,8 +519,8 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
-* Thu May 28 2020Huawei Technologies Co., Ltd. <zhang.zhanghailiang@huawei.com>
-- target/arm/cpu64: cpu64 cpus have timer reigster
+* Fri May 29 Huawei Technologies Co., Ltd <fangying1@huawei.com>
+- target/arm: Add the kvm_adjvtime vcpu property for Cortex-A72
 
 * Wed May 27 2020 Huawei Technologies Co., Ltd. <fangying1@huawei.com>
 - Revert: "vtimer: compat cross version migration from v4.0.1"
@@ -530,7 +530,7 @@ getent passwd qemu >/dev/null || \
 - vtimer: Drop vtimer virtual timer adjust
 
 * Fri May 22 2020 Huawei Technologies Co., Ltd. <fangying1@huawei.com>
-- ip_reass: Fix use after free 
+- ip_reass: Fix use after free
 - bt: use size_t type for length parameters instead of int
 - log: Add some logs on VM runtime path
 
