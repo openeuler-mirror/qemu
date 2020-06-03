@@ -1,0 +1,51 @@
+From 0b66aef5389d622434128fc7db9abd2cd4724b51 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Wed, 3 Jun 2020 16:03:19 +0100
+Subject: [PATCH] backup: Improve error for bdrv_getlength() failure
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20200603160325.67506-6-kwolf@redhat.com>
+Patchwork-id: 97103
+O-Subject: [RHEL-AV-8.2.1 qemu-kvm PATCH v2 05/11] backup: Improve error for bdrv_getlength() failure
+Bugzilla: 1778593
+RH-Acked-by: Eric Blake <eblake@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefano Garzarella <sgarzare@redhat.com>
+
+bdrv_get_device_name() will be an empty string with modern management
+tools that don't use -drive. Use bdrv_get_device_or_node_name() instead
+so that the node name is used if the BlockBackend is anonymous.
+
+While at it, start with upper case to make the message consistent with
+the rest of the function.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Reviewed-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Reviewed-by: Alberto Garcia <berto@igalia.com>
+Message-Id: <20200430142755.315494-3-kwolf@redhat.com>
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit 58226634c4b02af7b10862f7fbd3610a344bfb7f)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Danilo C. L. de Paula <ddepaula@redhat.com>
+---
+ block/backup.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/block/backup.c b/block/backup.c
+index 8761f1f9a7..88354dcb32 100644
+--- a/block/backup.c
++++ b/block/backup.c
+@@ -613,8 +613,8 @@ BlockJob *backup_job_create(const char *job_id, BlockDriverState *bs,
+ 
+     len = bdrv_getlength(bs);
+     if (len < 0) {
+-        error_setg_errno(errp, -len, "unable to get length for '%s'",
+-                         bdrv_get_device_name(bs));
++        error_setg_errno(errp, -len, "Unable to get length for '%s'",
++                         bdrv_get_device_or_node_name(bs));
+         goto error;
+     }
+ 
+-- 
+2.27.0
+
