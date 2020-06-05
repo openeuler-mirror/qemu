@@ -1,0 +1,108 @@
+From a3097eed8b642dc6fe891112340821e869b90cc2 Mon Sep 17 00:00:00 2001
+From: Keqian Zhu <zhukeqian1@huawei.com>
+Date: Mon, 13 Jan 2020 19:02:20 +0800
+Subject: [PATCH] acpi/madt: Factor out the building of MADT GICC struct
+
+To realize CPU hotplug, the cpus aml within ACPI DSDT should contain
+_MAT mathod, which is equal to the GICC struct in ACPI MADT. Factor
+out the GICC building code from ACPI MADT and reuse it in build_cpus_aml.
+
+Signed-off-by: Keqian Zhu <zhukeqian1@huawei.com>
+Signed-off-by: Salil Mehta <salil.mehta@huawei.com>
+---
+ hw/arm/virt-acpi-build.c | 51 +++++++++++++++++++++++-----------------
+ include/hw/arm/virt.h    |  3 +++
+ 2 files changed, 32 insertions(+), 22 deletions(-)
+
+diff --git a/hw/arm/virt-acpi-build.c b/hw/arm/virt-acpi-build.c
+index f48733d9f2..4b6aace433 100644
+--- a/hw/arm/virt-acpi-build.c
++++ b/hw/arm/virt-acpi-build.c
+@@ -664,6 +664,34 @@ build_gtdt(GArray *table_data, BIOSLinker *linker, VirtMachineState *vms)
+                  table_data->len - gtdt_start, 2, NULL, NULL);
+ }
+
++void virt_madt_cpu_entry(AcpiDeviceIf *adev, int uid,
++                         const CPUArchIdList *possible_cpus, GArray *entry)
++{
++    VirtMachineState *vms = VIRT_MACHINE(qdev_get_machine());
++    const MemMapEntry *memmap = vms->memmap;
++    AcpiMadtGenericCpuInterface *gicc = acpi_data_push(entry, sizeof(*gicc));
++    ARMCPU *armcpu = ARM_CPU(qemu_get_cpu(uid));
++
++    gicc->type = ACPI_APIC_GENERIC_CPU_INTERFACE;
++    gicc->length = sizeof(*gicc);
++    if (vms->gic_version == 2) {
++        gicc->base_address = cpu_to_le64(memmap[VIRT_GIC_CPU].base);
++        gicc->gich_base_address = cpu_to_le64(memmap[VIRT_GIC_HYP].base);
++        gicc->gicv_base_address = cpu_to_le64(memmap[VIRT_GIC_VCPU].base);
++    }
++    gicc->cpu_interface_number = cpu_to_le32(uid);
++    gicc->arm_mpidr = cpu_to_le64(armcpu->mp_affinity);
++    gicc->uid = cpu_to_le32(uid);
++    gicc->flags = cpu_to_le32(ACPI_MADT_GICC_ENABLED);
++
++    if (arm_feature(&armcpu->env, ARM_FEATURE_PMU)) {
++        gicc->performance_interrupt = cpu_to_le32(PPI(VIRTUAL_PMU_IRQ));
++    }
++    if (vms->virt) {
++        gicc->vgic_interrupt = cpu_to_le32(PPI(ARCH_GIC_MAINT_IRQ));
++    }
++}
++
+ /* MADT */
+ static void
+ build_madt(GArray *table_data, BIOSLinker *linker, VirtMachineState *vms)
+@@ -686,28 +714,7 @@ build_madt(GArray *table_data, BIOSLinker *linker, VirtMachineState *vms)
+     gicd->version = vms->gic_version;
+
+     for (i = 0; i < vms->smp_cpus; i++) {
+-        AcpiMadtGenericCpuInterface *gicc = acpi_data_push(table_data,
+-                                                           sizeof(*gicc));
+-        ARMCPU *armcpu = ARM_CPU(qemu_get_cpu(i));
+-
+-        gicc->type = ACPI_APIC_GENERIC_CPU_INTERFACE;
+-        gicc->length = sizeof(*gicc);
+-        if (vms->gic_version == 2) {
+-            gicc->base_address = cpu_to_le64(memmap[VIRT_GIC_CPU].base);
+-            gicc->gich_base_address = cpu_to_le64(memmap[VIRT_GIC_HYP].base);
+-            gicc->gicv_base_address = cpu_to_le64(memmap[VIRT_GIC_VCPU].base);
+-        }
+-        gicc->cpu_interface_number = cpu_to_le32(i);
+-        gicc->arm_mpidr = cpu_to_le64(armcpu->mp_affinity);
+-        gicc->uid = cpu_to_le32(i);
+-        gicc->flags = cpu_to_le32(ACPI_MADT_GICC_ENABLED);
+-
+-        if (arm_feature(&armcpu->env, ARM_FEATURE_PMU)) {
+-            gicc->performance_interrupt = cpu_to_le32(PPI(VIRTUAL_PMU_IRQ));
+-        }
+-        if (vms->virt) {
+-            gicc->vgic_interrupt = cpu_to_le32(PPI(ARCH_GIC_MAINT_IRQ));
+-        }
++        virt_madt_cpu_entry(NULL, i, NULL, table_data);
+     }
+
+     if (vms->gic_version == 3) {
+diff --git a/include/hw/arm/virt.h b/include/hw/arm/virt.h
+index 3dfefca93b..6b1f10b231 100644
+--- a/include/hw/arm/virt.h
++++ b/include/hw/arm/virt.h
+@@ -37,6 +37,7 @@
+ #include "hw/block/flash.h"
+ #include "sysemu/kvm.h"
+ #include "hw/intc/arm_gicv3_common.h"
++#include "hw/acpi/acpi_dev_interface.h"
+
+ #define NUM_GICV2M_SPIS       64
+ #define NUM_VIRTIO_TRANSPORTS 32
+@@ -154,6 +155,8 @@ typedef struct {
+     OBJECT_CLASS_CHECK(VirtMachineClass, klass, TYPE_VIRT_MACHINE)
+
+ void virt_acpi_setup(VirtMachineState *vms);
++void virt_madt_cpu_entry(AcpiDeviceIf *adev, int uid,
++                         const CPUArchIdList *cpu_list, GArray *entry);
+
+ /* Return the number of used redistributor regions  */
+ static inline int virt_gicv3_redist_region_count(VirtMachineState *vms)
+--
+2.19.1

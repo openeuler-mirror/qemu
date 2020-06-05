@@ -1,0 +1,66 @@
+From 84f22c728520792f1010074e0d5ac2ec8e2e372c Mon Sep 17 00:00:00 2001
+From: Maxim Levitsky <mlevitsk@redhat.com>
+Date: Sun, 15 Sep 2019 23:36:53 +0300
+Subject: [PATCH] block/qcow2: Fix corruption introduced by commit 8ac0f15f335
+
+This fixes subtle corruption introduced by luks threaded encryption
+in commit 8ac0f15f335
+
+Bugzilla: https://bugzilla.redhat.com/show_bug.cgi?id=1745922
+
+The corruption happens when we do a write that
+   * writes to two or more unallocated clusters at once
+   * doesn't fully cover the first sector
+   * doesn't fully cover the last sector
+   * uses luks encryption
+
+In this case, when allocating the new clusters we COW both areas
+prior to the write and after the write, and we encrypt them.
+
+The above mentioned commit accidentally made it so we encrypt the
+second COW area using the physical cluster offset of the first area.
+
+The problem is that offset_in_cluster in do_perform_cow_encrypt
+can be larger that the cluster size, thus cluster_offset
+will no longer point to the start of the cluster at which encrypted
+area starts.
+
+Next patch in this series will refactor the code to avoid all these
+assumptions.
+
+In the bugreport that was triggered by rebasing a luks image to new,
+zero filled base, which lot of such writes, and causes some files
+with zero areas to contain garbage there instead.
+But as described above it can happen elsewhere as well
+
+Signed-off-by: Maxim Levitsky <mlevitsk@redhat.com>
+Reviewed-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Message-id: 20190915203655.21638-2-mlevitsk@redhat.com
+Reviewed-by: Max Reitz <mreitz@redhat.com>
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+(cherry picked from commit 38e7d54bdc518b5a05a922467304bcace2396945)
+Signed-off-by: Michael Roth <mdroth@linux.vnet.ibm.com>
+---
+ block/qcow2-cluster.c | 7 ++++---
+ 1 file changed, 4 insertions(+), 3 deletions(-)
+
+diff --git a/block/qcow2-cluster.c b/block/qcow2-cluster.c
+index cc5609e27a..760564c8fb 100644
+--- a/block/qcow2-cluster.c
++++ b/block/qcow2-cluster.c
+@@ -473,9 +473,10 @@ static bool coroutine_fn do_perform_cow_encrypt(BlockDriverState *bs,
+         assert((offset_in_cluster & ~BDRV_SECTOR_MASK) == 0);
+         assert((bytes & ~BDRV_SECTOR_MASK) == 0);
+         assert(s->crypto);
+-        if (qcow2_co_encrypt(bs, cluster_offset,
+-                             src_cluster_offset + offset_in_cluster,
+-                             buffer, bytes) < 0) {
++        if (qcow2_co_encrypt(bs,
++                start_of_cluster(s, cluster_offset + offset_in_cluster),
++                src_cluster_offset + offset_in_cluster,
++                buffer, bytes) < 0) {
+             return false;
+         }
+     }
+--
+2.23.0

@@ -1,7 +1,7 @@
-From 19d56f560879081de411f359417eaaa2998c9e3a Mon Sep 17 00:00:00 2001
+From 4d8f2885b3f1219c3df2cf1a00dc0c55b23ee715 Mon Sep 17 00:00:00 2001
 From: Raphael Norwitz <raphael.norwitz@nutanix.com>
-Date: Tue, 11 Jun 2019 17:35:17 -0700
-Subject: [PATCH 5/5] vhost-user-scsi: prevent using uninitialized vqs
+Date: Tue, 14 Apr 2020 21:39:05 +0800
+Subject: [PATCH] vhost-user-scsi: prevent using uninitialized vqs
 
 Of the 3 virtqueues, seabios only sets cmd, leaving ctrl
 and event without a physical address. This can cause
@@ -26,18 +26,17 @@ Signed-off-by: Stefan Hajnoczi <stefanha@redhat.com>
  1 file changed, 1 insertion(+), 1 deletion(-)
 
 diff --git a/hw/scsi/vhost-user-scsi.c b/hw/scsi/vhost-user-scsi.c
-index 8b1e687..241631f 100644
+index fcee67d5..affc2431 100644
 --- a/hw/scsi/vhost-user-scsi.c
 +++ b/hw/scsi/vhost-user-scsi.c
-@@ -90,7 +90,7 @@ static void vhost_user_scsi_realize(DeviceState *dev, Error **errp)
+@@ -91,7 +91,7 @@ static void vhost_user_scsi_realize(DeviceState *dev, Error **errp)
      }
- 
+
      vsc->dev.nvqs = 2 + vs->conf.num_queues;
 -    vsc->dev.vqs = g_new(struct vhost_virtqueue, vsc->dev.nvqs);
 +    vsc->dev.vqs = g_new0(struct vhost_virtqueue, vsc->dev.nvqs);
      vsc->dev.vq_index = 0;
      vsc->dev.backend_features = 0;
- 
--- 
-1.8.3.1
-
+     vqs = vsc->dev.vqs;
+--
+2.23.0

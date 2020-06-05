@@ -1,0 +1,204 @@
+From 05d22b55133db1a2526cfe305102e075e883b5e2 Mon Sep 17 00:00:00 2001
+From: Keqian Zhu <zhukeqian1@huawei.com>
+Date: Fri, 3 Apr 2020 15:41:01 +0800
+Subject: [PATCH] acpi/ged: Extend ACPI GED to support CPU hotplug
+
+This adds a new GED event called ACPI_GED_CPU_HOTPLUG_EVT.
+The basic workflow is that: GED sends this event to guest,
+then ACPI driver in guest will call _EVT method of GED aml,
+then _EVT will call CSCN method in cpus aml to get status of
+all cpus.
+
+The status of cpus is maintained by CPUHotplugState in GED and
+is made accessable to guest through memory region.
+
+This also adds migration support to CPUHotplugState.
+
+Signed-off-by: Keqian Zhu <zhukeqian1@huawei.com>
+Signed-off-by: Salil Mehta <salil.mehta@huawei.com>
+---
+ docs/specs/acpi_hw_reduced_hotplug.rst |  3 ++-
+ hw/acpi/cpu.c                          |  1 -
+ hw/acpi/generic_event_device.c         | 35 ++++++++++++++++++++++++++
+ hw/arm/Kconfig                         |  1 +
+ include/hw/acpi/cpu.h                  |  2 ++
+ include/hw/acpi/generic_event_device.h |  4 +++
+ 6 files changed, 44 insertions(+), 2 deletions(-)
+
+diff --git a/docs/specs/acpi_hw_reduced_hotplug.rst b/docs/specs/acpi_hw_reduced_hotplug.rst
+index 911a98255b..deb481555d 100644
+--- a/docs/specs/acpi_hw_reduced_hotplug.rst
++++ b/docs/specs/acpi_hw_reduced_hotplug.rst
+@@ -63,7 +63,8 @@ GED IO interface (4 byte access)
+     bits:
+        0: Memory hotplug event
+        1: System power down event
+-    2-31: Reserved
++       2: CPU hotplug event
++    3-31: Reserved
+
+ **write_access:**
+
+diff --git a/hw/acpi/cpu.c b/hw/acpi/cpu.c
+index 72ad1fcff2..cb6bb67f3c 100644
+--- a/hw/acpi/cpu.c
++++ b/hw/acpi/cpu.c
+@@ -6,7 +6,6 @@
+ #include "trace.h"
+ #include "sysemu/numa.h"
+
+-#define ACPI_CPU_HOTPLUG_REG_LEN 12
+ #define ACPI_CPU_SELECTOR_OFFSET_WR 0
+ #define ACPI_CPU_FLAGS_OFFSET_RW 4
+ #define ACPI_CPU_CMD_OFFSET_WR 5
+diff --git a/hw/acpi/generic_event_device.c b/hw/acpi/generic_event_device.c
+index 82139b4314..478a4ee87c 100644
+--- a/hw/acpi/generic_event_device.c
++++ b/hw/acpi/generic_event_device.c
+@@ -23,6 +23,7 @@
+ static const uint32_t ged_supported_events[] = {
+     ACPI_GED_MEM_HOTPLUG_EVT,
+     ACPI_GED_PWR_DOWN_EVT,
++    ACPI_GED_CPU_HOTPLUG_EVT,
+ };
+
+ /*
+@@ -110,6 +111,9 @@ void build_ged_aml(Aml *table, const char *name, HotplugHandler *hotplug_dev,
+                            aml_notify(aml_name(ACPI_POWER_BUTTON_DEVICE),
+                                       aml_int(0x80)));
+                 break;
++            case ACPI_GED_CPU_HOTPLUG_EVT:
++                aml_append(if_ctx, aml_call0("\\_SB.CPUS.CSCN"));
++                break;
+             default:
+                 /*
+                  * Please make sure all the events in ged_supported_events[]
+@@ -176,6 +180,8 @@ static void acpi_ged_device_plug_cb(HotplugHandler *hotplug_dev,
+
+     if (object_dynamic_cast(OBJECT(dev), TYPE_PC_DIMM)) {
+             acpi_memory_plug_cb(hotplug_dev, &s->memhp_state, dev, errp);
++    } else if (object_dynamic_cast(OBJECT(dev), TYPE_CPU)) {
++        acpi_cpu_plug_cb(hotplug_dev, &s->cpuhp_state, dev, errp);
+     } else {
+         error_setg(errp, "virt: device plug request for unsupported device"
+                    " type: %s", object_get_typename(OBJECT(dev)));
+@@ -192,6 +198,8 @@ static void acpi_ged_send_event(AcpiDeviceIf *adev, AcpiEventStatusBits ev)
+         sel = ACPI_GED_MEM_HOTPLUG_EVT;
+     } else if (ev & ACPI_POWER_DOWN_STATUS) {
+         sel = ACPI_GED_PWR_DOWN_EVT;
++    } else if (ev & ACPI_CPU_HOTPLUG_STATUS) {
++        sel = ACPI_GED_CPU_HOTPLUG_EVT;
+     } else {
+         /* Unknown event. Return without generating interrupt. */
+         warn_report("GED: Unsupported event %d. No irq injected", ev);
+@@ -224,6 +232,16 @@ static const VMStateDescription vmstate_memhp_state = {
+     }
+ };
+
++static const VMStateDescription vmstate_cpuhp_state = {
++    .name = "acpi-ged/cpuhp",
++    .version_id = 1,
++    .minimum_version_id = 1,
++    .fields      = (VMStateField[]) {
++        VMSTATE_CPU_HOTPLUG(cpuhp_state, AcpiGedState),
++        VMSTATE_END_OF_LIST()
++    }
++};
++
+ static const VMStateDescription vmstate_ged_state = {
+     .name = "acpi-ged-state",
+     .version_id = 1,
+@@ -244,6 +262,7 @@ static const VMStateDescription vmstate_acpi_ged = {
+     },
+     .subsections = (const VMStateDescription * []) {
+         &vmstate_memhp_state,
++        &vmstate_cpuhp_state,
+         NULL
+     }
+ };
+@@ -254,6 +273,7 @@ static void acpi_ged_initfn(Object *obj)
+     AcpiGedState *s = ACPI_GED(dev);
+     SysBusDevice *sbd = SYS_BUS_DEVICE(obj);
+     GEDState *ged_st = &s->ged_state;
++    MachineClass *mc;
+
+     memory_region_init_io(&ged_st->io, obj, &ged_ops, ged_st,
+                           TYPE_ACPI_GED, ACPI_GED_EVT_SEL_LEN);
+@@ -273,6 +293,21 @@ static void acpi_ged_initfn(Object *obj)
+      sysbus_init_mmio(sbd, &s->container_memhp);
+      acpi_memory_hotplug_init(&s->container_memhp, OBJECT(dev),
+                               &s->memhp_state, 0);
++
++    mc = MACHINE_GET_CLASS(qdev_get_machine());
++    if (!mc->possible_cpu_arch_ids) {
++        /*
++         * MachineClass should support possible_cpu_arch_ids in
++         * cpu_hotplug_hw_init below.
++         */
++        return;
++    }
++
++    memory_region_init(&s->container_cpuhp, OBJECT(dev), "cpuhp container",
++                       ACPI_CPU_HOTPLUG_REG_LEN);
++    sysbus_init_mmio(sbd, &s->container_cpuhp);
++    cpu_hotplug_hw_init(&s->container_cpuhp, OBJECT(dev),
++                        &s->cpuhp_state, 0);
+ }
+
+ static void acpi_ged_class_init(ObjectClass *class, void *data)
+diff --git a/hw/arm/Kconfig b/hw/arm/Kconfig
+index ad7f7c089b..15e18b0a48 100644
+--- a/hw/arm/Kconfig
++++ b/hw/arm/Kconfig
+@@ -24,6 +24,7 @@ config ARM_VIRT
+     select DIMM
+     select ACPI_MEMORY_HOTPLUG
+     select ACPI_HW_REDUCED
++    select ACPI_CPU_HOTPLUG
+
+ config CHEETAH
+     bool
+diff --git a/include/hw/acpi/cpu.h b/include/hw/acpi/cpu.h
+index a30ec84a4f..e726414459 100644
+--- a/include/hw/acpi/cpu.h
++++ b/include/hw/acpi/cpu.h
+@@ -17,6 +17,8 @@
+ #include "hw/acpi/aml-build.h"
+ #include "hw/hotplug.h"
+
++#define ACPI_CPU_HOTPLUG_REG_LEN 12
++
+ typedef struct AcpiCpuStatus {
+     struct CPUState *cpu;
+     uint64_t arch_id;
+diff --git a/include/hw/acpi/generic_event_device.h b/include/hw/acpi/generic_event_device.h
+index f99efad7a3..e702ff1e18 100644
+--- a/include/hw/acpi/generic_event_device.h
++++ b/include/hw/acpi/generic_event_device.h
+@@ -62,6 +62,7 @@
+ #include "hw/sysbus.h"
+ #include "hw/acpi/memory_hotplug.h"
+ #include "hw/arm/virt.h"
++#include "hw/acpi/cpu.h"
+
+ #define ACPI_POWER_BUTTON_DEVICE "PWRB"
+
+@@ -83,6 +84,7 @@
+  */
+ #define ACPI_GED_MEM_HOTPLUG_EVT   0x1
+ #define ACPI_GED_PWR_DOWN_EVT      0x2
++#define ACPI_GED_CPU_HOTPLUG_EVT   0x4
+
+ typedef struct GEDState {
+     MemoryRegion io;
+@@ -93,6 +95,8 @@ typedef struct AcpiGedState {
+     SysBusDevice parent_obj;
+     MemHotplugState memhp_state;
+     MemoryRegion container_memhp;
++    CPUHotplugState cpuhp_state;
++    MemoryRegion container_cpuhp;
+     GEDState ged_state;
+     uint32_t ged_event_bitmap;
+     qemu_irq irq;
+--
+2.19.1

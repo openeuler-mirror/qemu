@@ -1,0 +1,144 @@
+From c057499f90af4be8b26f57f8755aca0ddfcf9467 Mon Sep 17 00:00:00 2001
+From: Ying Fang <fangying1@huawei.com>
+Date: Tue, 21 Apr 2020 16:52:07 +0800
+Subject: [PATCH 1/4] target/arm/kvm: trivial: Clean up header documentation
+
+Signed-off-by: Andrew Jones <drjones@redhat.com>
+Message-id: 20200120101023.16030-2-drjones@redhat.com
+Reviewed-by: Peter Maydell <peter.maydell@linaro.org>
+Signed-off-by: Peter Maydell <peter.maydell@linaro.org>
+---
+ target/arm/kvm_arm.h | 38 +++++++++++++++++++++++---------------
+ 1 file changed, 23 insertions(+), 15 deletions(-)
+
+diff --git a/target/arm/kvm_arm.h b/target/arm/kvm_arm.h
+index a9f3ccab..32d97ce5 100644
+--- a/target/arm/kvm_arm.h
++++ b/target/arm/kvm_arm.h
+@@ -61,8 +61,8 @@ void kvm_arm_register_device(MemoryRegion *mr, uint64_t devid, uint64_t group,
+ int kvm_arm_init_cpreg_list(ARMCPU *cpu);
+
+ /**
+- * kvm_arm_reg_syncs_via_cpreg_list
+- * regidx: KVM register index
++ * kvm_arm_reg_syncs_via_cpreg_list:
++ * @regidx: KVM register index
+  *
+  * Return true if this KVM register should be synchronized via the
+  * cpreg list of arbitrary system registers, false if it is synchronized
+@@ -71,8 +71,8 @@ int kvm_arm_init_cpreg_list(ARMCPU *cpu);
+ bool kvm_arm_reg_syncs_via_cpreg_list(uint64_t regidx);
+
+ /**
+- * kvm_arm_cpreg_level
+- * regidx: KVM register index
++ * kvm_arm_cpreg_level:
++ * @regidx: KVM register index
+  *
+  * Return the level of this coprocessor/system register.  Return value is
+  * either KVM_PUT_RUNTIME_STATE, KVM_PUT_RESET_STATE, or KVM_PUT_FULL_STATE.
+@@ -134,6 +134,8 @@ void kvm_arm_init_serror_injection(CPUState *cs);
+  * @cpu: ARMCPU
+  *
+  * Get VCPU related state from kvm.
++ *
++ * Returns: 0 if success else < 0 error code
+  */
+ int kvm_get_vcpu_events(ARMCPU *cpu);
+
+@@ -142,6 +144,8 @@ int kvm_get_vcpu_events(ARMCPU *cpu);
+  * @cpu: ARMCPU
+  *
+  * Put VCPU related state to kvm.
++ *
++ * Returns: 0 if success else < 0 error code
+  */
+ int kvm_put_vcpu_events(ARMCPU *cpu);
+
+@@ -191,10 +195,12 @@ typedef struct ARMHostCPUFeatures {
+
+ /**
+  * kvm_arm_get_host_cpu_features:
+- * @ahcc: ARMHostCPUClass to fill in
++ * @ahcf: ARMHostCPUClass to fill in
+  *
+  * Probe the capabilities of the host kernel's preferred CPU and fill
+  * in the ARMHostCPUClass struct accordingly.
++ *
++ * Returns true on success and false otherwise.
+  */
+ bool kvm_arm_get_host_cpu_features(ARMHostCPUFeatures *ahcf);
+
+@@ -208,26 +214,30 @@ bool kvm_arm_get_host_cpu_features(ARMHostCPUFeatures *ahcf);
+ void kvm_arm_set_cpu_features_from_host(ARMCPU *cpu);
+
+ /**
+- * kvm_arm_get_max_vm_ipa_size - Returns the number of bits in the
+- * IPA address space supported by KVM
+- *
++ * kvm_arm_get_max_vm_ipa_size:
+  * @ms: Machine state handle
++ *
++ * Returns the number of bits in the IPA address space supported by KVM
+  */
+ int kvm_arm_get_max_vm_ipa_size(MachineState *ms);
+
+ /**
+- * kvm_arm_sync_mpstate_to_kvm
++ * kvm_arm_sync_mpstate_to_kvm:
+  * @cpu: ARMCPU
+  *
+  * If supported set the KVM MP_STATE based on QEMU's model.
++ *
++ * Returns 0 on success and -1 on failure.
+  */
+ int kvm_arm_sync_mpstate_to_kvm(ARMCPU *cpu);
+
+ /**
+- * kvm_arm_sync_mpstate_to_qemu
++ * kvm_arm_sync_mpstate_to_qemu:
+  * @cpu: ARMCPU
+  *
+  * If supported get the MP_STATE from KVM and store in QEMU's model.
++ *
++ * Returns 0 on success and aborts on failure.
+  */
+ int kvm_arm_sync_mpstate_to_qemu(ARMCPU *cpu);
+
+@@ -241,7 +251,8 @@ int kvm_arm_set_irq(int cpu, int irqtype, int irq, int level);
+
+ static inline void kvm_arm_set_cpu_features_from_host(ARMCPU *cpu)
+ {
+-    /* This should never actually be called in the "not KVM" case,
++    /*
++     * This should never actually be called in the "not KVM" case,
+      * but set up the fields to indicate an error anyway.
+      */
+     cpu->kvm_target = QEMU_KVM_ARM_TARGET_NONE;
+@@ -310,23 +321,20 @@ bool kvm_arm_handle_debug(CPUState *cs, struct kvm_debug_exit_arch *debug_exit);
+  *
+  * Return: TRUE if any hardware breakpoints in use.
+  */
+-
+ bool kvm_arm_hw_debug_active(CPUState *cs);
+
+ /**
+  * kvm_arm_copy_hw_debug_data:
+- *
+  * @ptr: kvm_guest_debug_arch structure
+  *
+  * Copy the architecture specific debug registers into the
+  * kvm_guest_debug ioctl structure.
+  */
+ struct kvm_guest_debug_arch;
+-
+ void kvm_arm_copy_hw_debug_data(struct kvm_guest_debug_arch *ptr);
+
+ /**
+- * its_class_name
++ * its_class_name:
+  *
+  * Return the ITS class name to use depending on whether KVM acceleration
+  * and KVM CAP_SIGNAL_MSI are supported
+--
+2.23.0

@@ -1,6 +1,6 @@
-From 66e2f47a01ffcaafe11acae0a191efd1805f86c6 Mon Sep 17 00:00:00 2001
+From 662aa4f1d168b32335a4dc40782e816329afcac0 Mon Sep 17 00:00:00 2001
 From: Prasad J Pandit <pjp@fedoraproject.org>
-Date: Wed, 11 Mar 2020 18:27:22 +0800
+Date: Tue, 14 Apr 2020 18:36:12 +0800
 Subject: [PATCH] slirp: use correct size while emulating commands
 
 While emulating services in tcp_emu(), it uses 'mbuf' size
@@ -10,42 +10,40 @@ Signed-off-by: default avatarPrasad J Pandit <pjp@fedoraproject.org>
 Signed-off-by: Samuel Thibault's avatarSamuel Thibault <samuel.thibault@ens-lyon.org>
 Message-Id: <20200109094228.79764-3-ppandit@redhat.com>
 ---
- slirp/src/tcp_subr.c | 8 ++++----
- 1 file changed, 4 insertions(+), 4 deletions(-)
+ slirp/src/tcp_subr.c | 7 ++++---
+ 1 file changed, 4 insertions(+), 3 deletions(-)
 
 diff --git a/slirp/src/tcp_subr.c b/slirp/src/tcp_subr.c
-index 2053b11b..e898fd03 100644
+index 2a15b16a..019b637a 100644
 --- a/slirp/src/tcp_subr.c
 +++ b/slirp/src/tcp_subr.c
-@@ -707,7 +707,7 @@ tcp_emu(struct socket *so, struct mbuf *m)
- 			n4 =  (laddr & 0xff);
- 
- 			m->m_len = bptr - m->m_data; /* Adjust length */
--                        m->m_len += snprintf(bptr, m->m_size - m->m_len,
-+                        m->m_len += snprintf(bptr, M_FREEROOM(m),
-                                              "ORT %d,%d,%d,%d,%d,%d\r\n%s",
-                                              n1, n2, n3, n4, n5, n6, x==7?buff:"");
- 			return 1;
-@@ -740,7 +740,7 @@ tcp_emu(struct socket *so, struct mbuf *m)
- 			n4 =  (laddr & 0xff);
- 
- 			m->m_len = bptr - m->m_data; /* Adjust length */
--			m->m_len += snprintf(bptr, m->m_size - m->m_len,
-+			m->m_len += snprintf(bptr, M_FREEROOM(m),
-                                              "27 Entering Passive Mode (%d,%d,%d,%d,%d,%d)\r\n%s",
-                                              n1, n2, n3, n4, n5, n6, x==7?buff:"");
- 
-@@ -766,8 +766,8 @@ tcp_emu(struct socket *so, struct mbuf *m)
- 		if (m->m_data[m->m_len-1] == '\0' && lport != 0 &&
- 		    (so = tcp_listen(slirp, INADDR_ANY, 0, so->so_laddr.s_addr,
- 		                     htons(lport), SS_FACCEPTONCE)) != NULL)
--                    m->m_len = snprintf(m->m_data, m->m_size, "%d",
--                                        ntohs(so->so_fport)) + 1;
-+                    m->m_len = snprintf(m->m_data, M_ROOM(m),
-+					"%d", ntohs(so->so_fport)) + 1;
- 		return 1;
- 
- 	 case EMU_IRC:
--- 
-2.21.1 (Apple Git-122.3)
+@@ -696,7 +696,7 @@ int tcp_emu(struct socket *so, struct mbuf *m)
+             n4 = (laddr & 0xff);
 
+             m->m_len = bptr - m->m_data; /* Adjust length */
+-            m->m_len += snprintf(bptr, m->m_size - m->m_len,
++            m->m_len += snprintf(bptr, M_FREEROOM(m),
+                                  "ORT %d,%d,%d,%d,%d,%d\r\n%s", n1, n2, n3, n4,
+                                  n5, n6, x == 7 ? buff : "");
+             return 1;
+@@ -732,7 +732,7 @@ int tcp_emu(struct socket *so, struct mbuf *m)
+
+             m->m_len = bptr - m->m_data; /* Adjust length */
+             m->m_len +=
+-                snprintf(bptr, m->m_size - m->m_len,
++                snprintf(bptr, M_FREEROOM(m),
+                          "27 Entering Passive Mode (%d,%d,%d,%d,%d,%d)\r\n%s",
+                          n1, n2, n3, n4, n5, n6, x == 7 ? buff : "");
+
+@@ -759,7 +759,8 @@ int tcp_emu(struct socket *so, struct mbuf *m)
+             (so = tcp_listen(slirp, INADDR_ANY, 0, so->so_laddr.s_addr,
+                              htons(lport), SS_FACCEPTONCE)) != NULL)
+             m->m_len =
+-                snprintf(m->m_data, m->m_size, "%d", ntohs(so->so_fport)) + 1;
++                snprintf(m->m_data, M_ROOM(m),
++                            "%d", ntohs(so->so_fport)) + 1;
+         return 1;
+
+     case EMU_IRC:
+--
+2.23.0

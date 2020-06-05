@@ -1,0 +1,50 @@
+From 7572495245a437da717e6829a9ce852cc3f229c9 Mon Sep 17 00:00:00 2001
+From: Zheng Chuan <zhengchuan@huawei.com>
+Date: Mon, 20 Apr 2020 15:13:47 +0800
+Subject: [PATCH 02/10] migration: add qemu_file_update_transfer interface
+
+Add qemu_file_update_transfer for just update bytes_xfer for speed
+limitation. This will be used for further migration feature such as
+multifd migration.
+
+Change-Id: I969aa15305c961254b6fb9805b0ed2d65826cc5d
+Signed-off-by: Ivan Ren <ivanren@tencent.com>
+Reviewed-by: Wei Yang <richardw.yang@linux.intel.com>
+Reviewed-by: Juan Quintela <quintela@redhat.com>
+Message-Id: <1564464816-21804-2-git-send-email-ivanren@tencent.com>
+Signed-off-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+---
+ migration/qemu-file.c | 5 +++++
+ migration/qemu-file.h | 1 +
+ 2 files changed, 6 insertions(+)
+
+diff --git a/migration/qemu-file.c b/migration/qemu-file.c
+index 04315855..18f48052 100644
+--- a/migration/qemu-file.c
++++ b/migration/qemu-file.c
+@@ -615,6 +615,11 @@ void qemu_file_reset_rate_limit(QEMUFile *f)
+     f->bytes_xfer = 0;
+ }
+
++void qemu_file_update_transfer(QEMUFile *f, int64_t len)
++{
++    f->bytes_xfer += len;
++}
++
+ void qemu_put_be16(QEMUFile *f, unsigned int v)
+ {
+     qemu_put_byte(f, v >> 8);
+diff --git a/migration/qemu-file.h b/migration/qemu-file.h
+index 13baf896..5de9fa2e 100644
+--- a/migration/qemu-file.h
++++ b/migration/qemu-file.h
+@@ -147,6 +147,7 @@ int qemu_peek_byte(QEMUFile *f, int offset);
+ void qemu_file_skip(QEMUFile *f, int size);
+ void qemu_update_position(QEMUFile *f, size_t size);
+ void qemu_file_reset_rate_limit(QEMUFile *f);
++void qemu_file_update_transfer(QEMUFile *f, int64_t len);
+ void qemu_file_set_rate_limit(QEMUFile *f, int64_t new_rate);
+ int64_t qemu_file_get_rate_limit(QEMUFile *f);
+ void qemu_file_set_error(QEMUFile *f, int ret);
+--
+2.19.1

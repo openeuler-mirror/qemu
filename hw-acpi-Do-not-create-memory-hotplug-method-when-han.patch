@@ -1,0 +1,46 @@
+From 7a08983315bf4d624966a89112259e2b4949de91 Mon Sep 17 00:00:00 2001
+From: Samuel Ortiz <sameo@linux.intel.com>
+Date: Wed, 18 Sep 2019 14:06:24 +0100
+Subject: [PATCH] hw/acpi: Do not create memory hotplug method when handler is
+ not defined
+
+With Hardware-reduced ACPI, the GED device will manage ACPI
+hotplug entirely. As a consequence, make the memory specific
+events AML generation optional. The code will only be added
+when the method name is not NULL.
+
+Signed-off-by: Samuel Ortiz <sameo@linux.intel.com>
+Signed-off-by: Shameer Kolothum <shameerali.kolothum.thodi@huawei.com>
+Reviewed-by: Eric Auger <eric.auger@redhat.com>
+Reviewed-by: Igor Mammedov <imammedo@redhat.com>
+Message-Id: <20190918130633.4872-3-shameerali.kolothum.thodi@huawei.com>
+Acked-by: Peter Maydell <peter.maydell@linaro.org>
+Reviewed-by: Michael S. Tsirkin <mst@redhat.com>
+Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+---
+ hw/acpi/memory_hotplug.c | 10 ++++++----
+ 1 file changed, 6 insertions(+), 4 deletions(-)
+
+diff --git a/hw/acpi/memory_hotplug.c b/hw/acpi/memory_hotplug.c
+index 9a515c0484..8b30356c1a 100644
+--- a/hw/acpi/memory_hotplug.c
++++ b/hw/acpi/memory_hotplug.c
+@@ -711,10 +711,12 @@ void build_memory_hotplug_aml(Aml *table, uint32_t nr_mem,
+     }
+     aml_append(table, dev_container);
+
+-    method = aml_method(event_handler_method, 0, AML_NOTSERIALIZED);
+-    aml_append(method,
+-        aml_call0(MEMORY_DEVICES_CONTAINER "." MEMORY_SLOT_SCAN_METHOD));
+-    aml_append(table, method);
++    if (event_handler_method) {
++        method = aml_method(event_handler_method, 0, AML_NOTSERIALIZED);
++        aml_append(method, aml_call0(MEMORY_DEVICES_CONTAINER "."
++                                     MEMORY_SLOT_SCAN_METHOD));
++        aml_append(table, method);
++    }
+
+     g_free(mhp_res_path);
+ }
+--
+2.19.1

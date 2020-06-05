@@ -1,8 +1,11 @@
 From ba1ca232cfa2ca273c610beda40bee2143f11964 Mon Sep 17 00:00:00 2001
-From: rpm-build <rpm-build>
+From: Xu Yandong <xuyandong2@huawei.com>
 Date: Tue, 3 Sep 2019 16:27:39 +0800
 Subject: [PATCH] cpu: parse +/- feature to avoid failure
 
+To avoid cpu feature parse failuer, +/- feature is added.
+
+Signed-off-by: Xu Yandong <xuyandong2@huawei.com>
 ---
  target/arm/cpu64.c | 38 ++++++++++++++++++++++++++++++++++++++
  1 file changed, 38 insertions(+)

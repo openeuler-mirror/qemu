@@ -1,0 +1,27 @@
+From 427975fbc87c3d999ee4d13b65a95ba496c148d6 Mon Sep 17 00:00:00 2001
+From: Ying Fang <fangying1@huawei.com>
+Date: Fri, 29 May 2020 11:02:44 +0800
+Subject: [PATCH] target/arm: Add the kvm_adjvtime vcpu property for Cortex-A72
+
+Add the kvm_adjvtime vcpu property for ARM Cortex-A72 cpu model,
+so that virtual time adjust will be enabled for it.
+
+Signed-off-by: Ying Fang <fangying1@huawei.com>
+
+diff --git a/target/arm/cpu64.c b/target/arm/cpu64.c
+index b30ca7c9..15f4ee92 100644
+--- a/target/arm/cpu64.c
++++ b/target/arm/cpu64.c
+@@ -257,6 +257,9 @@ static void aarch64_a72_initfn(Object *obj)
+     cpu->gic_vpribits = 5;
+     cpu->gic_vprebits = 5;
+     define_arm_cp_regs(cpu, cortex_a72_a57_a53_cp_reginfo);
++    if(kvm_enabled()) {
++        kvm_arm_add_vcpu_properties(obj);
++    }
+ }
+ 
+ static void aarch64_kunpeng_920_initfn(Object *obj)
+-- 
+2.23.0
+

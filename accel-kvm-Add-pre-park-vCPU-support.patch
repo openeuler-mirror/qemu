@@ -1,0 +1,63 @@
+From 135119d2e82e99adc67346572c761fbe54d73e4a Mon Sep 17 00:00:00 2001
+From: Keqian Zhu <zhukeqian1@huawei.com>
+Date: Fri, 10 Apr 2020 13:04:40 +0800
+Subject: [PATCH] accel/kvm: Add pre-park vCPU support
+
+For that KVM do not support dynamic adjustment of vCPU count,
+we must pre-park all possible vCPU at start.
+
+Signed-off-by: Keqian Zhu <zhukeqian1@huawei.com>
+Signed-off-by: Salil Mehta <salil.mehta@huawei.com>
+---
+ accel/kvm/kvm-all.c  | 23 +++++++++++++++++++++++
+ include/sysemu/kvm.h |  1 +
+ 2 files changed, 24 insertions(+)
+
+diff --git a/accel/kvm/kvm-all.c b/accel/kvm/kvm-all.c
+index f450f25295..84edbe8bb1 100644
+--- a/accel/kvm/kvm-all.c
++++ b/accel/kvm/kvm-all.c
+@@ -339,6 +339,29 @@ err:
+     return ret;
+ }
+
++int kvm_create_parked_vcpu(unsigned long vcpu_id)
++{
++    KVMState *s = kvm_state;
++    struct KVMParkedVcpu *vcpu = NULL;
++    int ret;
++
++    DPRINTF("kvm_create_parked_vcpu\n");
++
++    ret = kvm_vm_ioctl(s, KVM_CREATE_VCPU, (void *)vcpu_id);
++    if (ret < 0) {
++        DPRINTF("kvm_create_vcpu failed\n");
++        goto err;
++    }
++
++    vcpu = g_malloc0(sizeof(*vcpu));
++    vcpu->vcpu_id = vcpu_id;
++    vcpu->kvm_fd = ret;
++    QLIST_INSERT_HEAD(&s->kvm_parked_vcpus, vcpu, node);
++
++err:
++    return ret;
++}
++
+ static int kvm_get_vcpu(KVMState *s, unsigned long vcpu_id)
+ {
+     struct KVMParkedVcpu *cpu;
+diff --git a/include/sysemu/kvm.h b/include/sysemu/kvm.h
+index acd90aebb6..565adb4e2c 100644
+--- a/include/sysemu/kvm.h
++++ b/include/sysemu/kvm.h
+@@ -216,6 +216,7 @@ int kvm_has_many_ioeventfds(void);
+ int kvm_has_gsi_routing(void);
+ int kvm_has_intx_set_mask(void);
+
++int kvm_create_parked_vcpu(unsigned long vcpu_id);
+ int kvm_init_vcpu(CPUState *cpu);
+ int kvm_cpu_exec(CPUState *cpu);
+ int kvm_destroy_vcpu(CPUState *cpu);
+--
+2.19.1

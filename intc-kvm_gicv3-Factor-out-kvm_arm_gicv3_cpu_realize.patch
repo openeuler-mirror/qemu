@@ -1,0 +1,45 @@
+From f45964c7e0df4ef17457a9ea92bfd255064139e1 Mon Sep 17 00:00:00 2001
+From: Keqian Zhu <zhukeqian1@huawei.com>
+Date: Fri, 10 Apr 2020 12:49:12 +0800
+Subject: [PATCH] intc/kvm_gicv3: Factor out kvm_arm_gicv3_cpu_realize
+
+The CPU object of hotplugged CPU will be defer-created (during
+hotplug session), so we must factor out realization code to let
+it can be applied to individual CPU.
+
+Signed-off-by: Keqian Zhu <zhukeqian1@huawei.com>
+Signed-off-by: Salil Mehta <salil.mehta@huawei.com>
+---
+ hw/intc/arm_gicv3_kvm.c | 10 +++++++---
+ 1 file changed, 7 insertions(+), 3 deletions(-)
+
+diff --git a/hw/intc/arm_gicv3_kvm.c b/hw/intc/arm_gicv3_kvm.c
+index b1e74147ba..b2936938cb 100644
+--- a/hw/intc/arm_gicv3_kvm.c
++++ b/hw/intc/arm_gicv3_kvm.c
+@@ -761,6 +761,12 @@ static void vm_change_state_handler(void *opaque, int running,
+     }
+ }
+
++static void kvm_arm_gicv3_cpu_realize(GICv3State *s, int ncpu)
++{
++    ARMCPU *cpu = ARM_CPU(qemu_get_cpu(ncpu));
++
++    define_arm_cp_regs(cpu, gicv3_cpuif_reginfo);
++}
+
+ static void kvm_arm_gicv3_realize(DeviceState *dev, Error **errp)
+ {
+@@ -791,9 +797,7 @@ static void kvm_arm_gicv3_realize(DeviceState *dev, Error **errp)
+     }
+
+     for (i = 0; i < s->num_cpu; i++) {
+-        ARMCPU *cpu = ARM_CPU(qemu_get_cpu(i));
+-
+-        define_arm_cp_regs(cpu, gicv3_cpuif_reginfo);
++        kvm_arm_gicv3_cpu_realize(s, i);
+     }
+
+     /* Try to create the device via the device control API */
+--
+2.19.1

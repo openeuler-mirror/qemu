@@ -1,0 +1,60 @@
+From 725dfa851f8e1de8653f41a4bd38c7f98757eb40 Mon Sep 17 00:00:00 2001
+From: Igor Mammedov <imammedo@redhat.com>
+Date: Mon, 2 Sep 2019 08:02:22 -0400
+Subject: [PATCH] x86: do not advertise die-id in query-hotpluggbale-cpus if
+ '-smp dies' is not set
+
+Commit 176d2cda0 (i386/cpu: Consolidate die-id validity in smp context) added
+new 'die-id' topology property to CPUs and exposed it via QMP command
+query-hotpluggable-cpus, which broke -device/device_add cpu-foo for existing
+users that do not support die-id/dies yet. That's would be fine if it happened
+to new machine type only but it also happened to old machine types,
+which breaks migration from old QEMU to the new one, for example following CLI:
+
+  OLD-QEMU -M pc-i440fx-4.0 -smp 1,max_cpus=2 \
+           -device qemu64-x86_64-cpu,socket-id=1,core-id=0,thread-id
+is not able to start with new QEMU, complaining about invalid die-id.
+
+After discovering regression, the patch
+   "pc: Don't make die-id mandatory unless necessary"
+makes die-id optional so old CLI would work.
+
+However it's not enough as new QEMU still exposes die-id via query-hotpluggbale-cpus
+QMP command, so the users that started old machine type on new QEMU, using all
+properties (including die-id) received from QMP command (as required), won't be
+able to start old QEMU using the same properties since it doesn't support die-id.
+
+Fix it by hiding die-id in query-hotpluggbale-cpus for all machine types in case
+'-smp dies' is not provided on CLI or -smp dies = 1', in which case smp_dies == 1
+and APIC ID is calculated in default way (as it was before DIE support) so we won't
+need compat code as in both cases the topology provided to guest via CPUID is the same.
+
+Signed-off-by: Igor Mammedov <imammedo@redhat.com>
+Message-Id: <20190902120222.6179-1-imammedo@redhat.com>
+Reviewed-by: Eduardo Habkost <ehabkost@redhat.com>
+Signed-off-by: Eduardo Habkost <ehabkost@redhat.com>
+(cherry picked from commit c6c1bb89fb46f3b88f832e654cf5a6f7941aac51)
+Signed-off-by: Michael Roth <mdroth@linux.vnet.ibm.com>
+---
+ hw/i386/pc.c | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/hw/i386/pc.c b/hw/i386/pc.c
+index 947f81070f..d011733ff7 100644
+--- a/hw/i386/pc.c
++++ b/hw/i386/pc.c
+@@ -2887,8 +2887,10 @@ static const CPUArchIdList *pc_possible_cpu_arch_ids(MachineState *ms)
+                                  ms->smp.threads, &topo);
+         ms->possible_cpus->cpus[i].props.has_socket_id = true;
+         ms->possible_cpus->cpus[i].props.socket_id = topo.pkg_id;
+-        ms->possible_cpus->cpus[i].props.has_die_id = true;
+-        ms->possible_cpus->cpus[i].props.die_id = topo.die_id;
++        if (pcms->smp_dies > 1) {
++            ms->possible_cpus->cpus[i].props.has_die_id = true;
++            ms->possible_cpus->cpus[i].props.die_id = topo.die_id;
++        }
+         ms->possible_cpus->cpus[i].props.has_core_id = true;
+         ms->possible_cpus->cpus[i].props.core_id = topo.core_id;
+         ms->possible_cpus->cpus[i].props.has_thread_id = true;
+--
+2.23.0

@@ -1,0 +1,24 @@
+From 2892a4b1f7dfc75e06d0ce770d44a062b6334eb0 Mon Sep 17 00:00:00 2001
+From: Ying Fang <fangying1@huawei.com>
+Date: Wed, 15 Apr 2020 17:03:54 +0800
+Subject: [PATCH] bios-tables-test: prepare to change ARM virt ACPI DSDT
+
+We will change ARM virt ACPI DSDT table in order to add the cpufreq device,
+which use ACPI CPPC to show CPU frequency info to guest.
+
+Signed-off-by: Ying Fang <fangying1@huawei.com>
+---
+ tests/bios-tables-test-allowed-diff.h | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/tests/bios-tables-test-allowed-diff.h b/tests/bios-tables-test-allowed-diff.h
+index dfb8523c..32a401ae 100644
+--- a/tests/bios-tables-test-allowed-diff.h
++++ b/tests/bios-tables-test-allowed-diff.h
+@@ -1 +1,4 @@
+ /* List of comma-separated changed AML files to ignore */
++"tests/data/acpi/virt/DSDT",
++"tests/data/acpi/virt/DSDT.memhp",
++"tests/data/acpi/virt/DSDT.numamem",
+--
+2.23.0

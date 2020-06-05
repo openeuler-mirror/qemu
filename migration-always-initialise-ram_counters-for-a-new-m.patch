@@ -1,0 +1,125 @@
+From af2aa4f553565ae6b2248204c154748f38ec4746 Mon Sep 17 00:00:00 2001
+From: Ivan Ren <ivanren@tencent.com>
+Date: Fri, 2 Aug 2019 18:18:41 +0800
+Subject: [PATCH 01/10] migration: always initialise ram_counters for a new
+ migration
+
+This patch fix a multifd migration bug in migration speed calculation, this
+problem can be reproduced as follows:
+1. start a vm and give a heavy memory write stress to prevent the vm be
+   successfully migrated to destination
+2. begin a migration with multifd
+3. migrate for a long time [actually, this can be measured by transferred bytes]
+4. migrate cancel
+5. begin a new migration with multifd, the migration will directly run into
+   migration_completion phase
+
+Reason as follows:
+
+Migration update bandwidth and s->threshold_size in function
+migration_update_counters after BUFFER_DELAY time:
+
+    current_bytes = migration_total_bytes(s);
+    transferred = current_bytes - s->iteration_initial_bytes;
+    time_spent = current_time - s->iteration_start_time;
+    bandwidth = (double)transferred / time_spent;
+    s->threshold_size = bandwidth * s->parameters.downtime_limit;
+
+In multifd migration, migration_total_bytes function return
+qemu_ftell(s->to_dst_file) + ram_counters.multifd_bytes.
+s->iteration_initial_bytes will be initialized to 0 at every new migration,
+but ram_counters is a global variable, and history migration data will be
+accumulated. So if the ram_counters.multifd_bytes is big enough, it may lead
+pending_size >= s->threshold_size become false in migration_iteration_run
+after the first migration_update_counters.
+
+Change-Id: Ib153d8676a5b82650bfb1156060e09f0d29f3ac6
+Signed-off-by: Ivan Ren <ivanren@tencent.com>
+Reviewed-by: Juan Quintela <quintela@redhat.com>
+Reviewed-by: Wei Yang <richardw.yang@linux.intel.com>
+Suggested-by: Wei Yang <richardw.yang@linux.intel.com>
+Message-Id: <1564741121-1840-1-git-send-email-ivanren@tencent.com>
+Signed-off-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+---
+ migration/migration.c | 25 +++++++++++++++++++------
+ migration/savevm.c    |  1 +
+ 2 files changed, 20 insertions(+), 6 deletions(-)
+
+diff --git a/migration/migration.c b/migration/migration.c
+index 8a607fe1..bea9b1d7 100644
+--- a/migration/migration.c
++++ b/migration/migration.c
+@@ -1908,6 +1908,11 @@ static bool migrate_prepare(MigrationState *s, bool blk, bool blk_inc,
+     }
+
+     migrate_init(s);
++    /*
++     * set ram_counters memory to zero for a
++     * new migration
++     */
++    memset(&ram_counters, 0, sizeof(ram_counters));
+
+     return true;
+ }
+@@ -3025,6 +3030,17 @@ static void migration_calculate_complete(MigrationState *s)
+     }
+ }
+
++static void update_iteration_initial_status(MigrationState *s)
++{
++    /*
++     * Update these three fields at the same time to avoid mismatch info lead
++     * wrong speed calculation.
++     */
++    s->iteration_start_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
++    s->iteration_initial_bytes = migration_total_bytes(s);
++    s->iteration_initial_pages = ram_get_total_transferred_pages();
++}
++
+ static void migration_update_counters(MigrationState *s,
+                                       int64_t current_time)
+ {
+@@ -3060,9 +3076,7 @@ static void migration_update_counters(MigrationState *s,
+
+     qemu_file_reset_rate_limit(s->to_dst_file);
+
+-    s->iteration_start_time = current_time;
+-    s->iteration_initial_bytes = current_bytes;
+-    s->iteration_initial_pages = ram_get_total_transferred_pages();
++    update_iteration_initial_status(s);
+
+     trace_migrate_transferred(transferred, time_spent,
+                               bandwidth, s->threshold_size);
+@@ -3186,7 +3200,7 @@ static void *migration_thread(void *opaque)
+     rcu_register_thread();
+
+     object_ref(OBJECT(s));
+-    s->iteration_start_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
++    update_iteration_initial_status(s);
+
+     qemu_savevm_state_header(s->to_dst_file);
+
+@@ -3251,8 +3265,7 @@ static void *migration_thread(void *opaque)
+              * the local variables. This is important to avoid
+              * breaking transferred_bytes and bandwidth calculation
+              */
+-            s->iteration_start_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
+-            s->iteration_initial_bytes = 0;
++            update_iteration_initial_status(s);
+         }
+
+         current_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
+diff --git a/migration/savevm.c b/migration/savevm.c
+index 79ed44d4..480c511b 100644
+--- a/migration/savevm.c
++++ b/migration/savevm.c
+@@ -1424,6 +1424,7 @@ static int qemu_savevm_state(QEMUFile *f, Error **errp)
+     }
+
+     migrate_init(ms);
++    memset(&ram_counters, 0, sizeof(ram_counters));
+     ms->to_dst_file = f;
+
+     qemu_mutex_unlock_iothread();
+--
+2.19.1

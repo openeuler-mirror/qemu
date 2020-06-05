@@ -1,0 +1,80 @@
+From 01be50603be4f17af4318a7a3fe58dcc6dab1b31 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Philippe=20Mathieu-Daud=C3=A9?= <philmd@redhat.com>
+Date: Fri, 16 Aug 2019 19:15:03 +0200
+Subject: [PATCH] virtio-blk: Cancel the pending BH when the dataplane is reset
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+When 'system_reset' is called, the main loop clear the memory
+region cache before the BH has a chance to execute. Later when
+the deferred function is called, some assumptions that were
+made when scheduling them are no longer true when they actually
+execute.
+
+This is what happens using a virtio-blk device (fresh RHEL7.8 install):
+
+ $ (sleep 12.3; echo system_reset; sleep 12.3; echo system_reset; sleep 1; echo q) \
+   | qemu-system-x86_64 -m 4G -smp 8 -boot menu=on \
+     -device virtio-blk-pci,id=image1,drive=drive_image1 \
+     -drive file=/var/lib/libvirt/images/rhel78.qcow2,if=none,id=drive_image1,format=qcow2,cache=none \
+     -device virtio-net-pci,netdev=net0,id=nic0,mac=52:54:00:c4:e7:84 \
+     -netdev tap,id=net0,script=/bin/true,downscript=/bin/true,vhost=on \
+     -monitor stdio -serial null -nographic
+  (qemu) system_reset
+  (qemu) system_reset
+  (qemu) qemu-system-x86_64: hw/virtio/virtio.c:225: vring_get_region_caches: Assertion `caches != NULL' failed.
+  Aborted
+
+  (gdb) bt
+  Thread 1 (Thread 0x7f109c17b680 (LWP 10939)):
+  #0  0x00005604083296d1 in vring_get_region_caches (vq=0x56040a24bdd0) at hw/virtio/virtio.c:227
+  #1  0x000056040832972b in vring_avail_flags (vq=0x56040a24bdd0) at hw/virtio/virtio.c:235
+  #2  0x000056040832d13d in virtio_should_notify (vdev=0x56040a240630, vq=0x56040a24bdd0) at hw/virtio/virtio.c:1648
+  #3  0x000056040832d1f8 in virtio_notify_irqfd (vdev=0x56040a240630, vq=0x56040a24bdd0) at hw/virtio/virtio.c:1662
+  #4  0x00005604082d213d in notify_guest_bh (opaque=0x56040a243ec0) at hw/block/dataplane/virtio-blk.c:75
+  #5  0x000056040883dc35 in aio_bh_call (bh=0x56040a243f10) at util/async.c:90
+  #6  0x000056040883dccd in aio_bh_poll (ctx=0x560409161980) at util/async.c:118
+  #7  0x0000560408842af7 in aio_dispatch (ctx=0x560409161980) at util/aio-posix.c:460
+  #8  0x000056040883e068 in aio_ctx_dispatch (source=0x560409161980, callback=0x0, user_data=0x0) at util/async.c:261
+  #9  0x00007f10a8fca06d in g_main_context_dispatch () at /lib64/libglib-2.0.so.0
+  #10 0x0000560408841445 in glib_pollfds_poll () at util/main-loop.c:215
+  #11 0x00005604088414bf in os_host_main_loop_wait (timeout=0) at util/main-loop.c:238
+  #12 0x00005604088415c4 in main_loop_wait (nonblocking=0) at util/main-loop.c:514
+  #13 0x0000560408416b1e in main_loop () at vl.c:1923
+  #14 0x000056040841e0e8 in main (argc=20, argv=0x7ffc2c3f9c58, envp=0x7ffc2c3f9d00) at vl.c:4578
+
+Fix this by cancelling the BH when the virtio dataplane is stopped.
+
+[This is version of the patch was modified as discussed with Philippe on
+the mailing list thread.
+--Stefan]
+
+Reported-by: Yihuang Yu <yihyu@redhat.com>
+Suggested-by: Stefan Hajnoczi <stefanha@redhat.com>
+Fixes: https://bugs.launchpad.net/qemu/+bug/1839428
+Signed-off-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+Message-Id: <20190816171503.24761-1-philmd@redhat.com>
+Signed-off-by: Stefan Hajnoczi <stefanha@redhat.com>
+(cherry picked from commit ebb6ff25cd888a52a64a9adc3692541c6d1d9a42)
+Signed-off-by: Michael Roth <mdroth@linux.vnet.ibm.com>
+---
+ hw/block/dataplane/virtio-blk.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/hw/block/dataplane/virtio-blk.c b/hw/block/dataplane/virtio-blk.c
+index 158c78f852..5fea76df85 100644
+--- a/hw/block/dataplane/virtio-blk.c
++++ b/hw/block/dataplane/virtio-blk.c
+@@ -297,6 +297,9 @@ void virtio_blk_data_plane_stop(VirtIODevice *vdev)
+         virtio_bus_cleanup_host_notifier(VIRTIO_BUS(qbus), i);
+     }
+
++    qemu_bh_cancel(s->bh);
++    notify_guest_bh(s); /* final chance to notify guest */
++
+     /* Clean up guest notifier (irq) */
+     k->set_guest_notifiers(qbus->parent, nvqs, false);
+
+--
+2.23.0

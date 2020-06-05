@@ -1,0 +1,181 @@
+From 0c83403e6e3ab21a01941be4ec57b02388eeb9c4 Mon Sep 17 00:00:00 2001
+From: Ying Fang <fangying1@huawei.com>
+Date: Fri, 22 May 2020 18:56:09 +0800
+Subject: [PATCH] log: Add some logs on VM runtime path
+
+Add logs on VM runtime path, to make it easier to do trouble shooting.
+
+Signed-off-by: Ying Fang <fangying1@huawei.com>
+
+diff --git a/hw/virtio/virtio-pci.c b/hw/virtio/virtio-pci.c
+index f6d2223..b4b0ed2 100644
+--- a/hw/virtio/virtio-pci.c
++++ b/hw/virtio/virtio-pci.c
+@@ -32,6 +32,7 @@
+ #include "qemu/range.h"
+ #include "hw/virtio/virtio-bus.h"
+ #include "qapi/visitor.h"
++#include "qemu/log.h"
+ 
+ #define VIRTIO_PCI_REGION_SIZE(dev)     VIRTIO_PCI_CONFIG_OFF(msix_present(dev))
+ 
+@@ -1659,7 +1660,9 @@ static void virtio_pci_device_unplugged(DeviceState *d)
+     VirtIOPCIProxy *proxy = VIRTIO_PCI(d);
+     bool modern = virtio_pci_modern(proxy);
+     bool modern_pio = proxy->flags & VIRTIO_PCI_FLAG_MODERN_PIO_NOTIFY;
++    VirtIODevice *vdev = virtio_bus_get_device(&proxy->bus);
+ 
++    qemu_log("unplug device name: %s\n", !vdev ? "NULL" : vdev->name);
+     virtio_pci_stop_ioeventfd(proxy);
+ 
+     if (modern) {
+diff --git a/hw/virtio/virtio.c b/hw/virtio/virtio.c
+index 7c3822c..79c2dcf 100644
+--- a/hw/virtio/virtio.c
++++ b/hw/virtio/virtio.c
+@@ -1172,7 +1172,14 @@ int virtio_set_status(VirtIODevice *vdev, uint8_t val)
+         k->set_status(vdev, val);
+     }
+     vdev->status = val;
+-
++    if (val) {
++        qemu_log("%s device status is %d that means %s\n",
++                 vdev->name, val,
++                 (val & VIRTIO_CONFIG_S_DRIVER_OK) ? "DRIVER OK" :
++                 (val & VIRTIO_CONFIG_S_DRIVER) ? "DRIVER" :
++                 (val & VIRTIO_CONFIG_S_ACKNOWLEDGE) ? "ACKNOWLEDGE" :
++                 (val & VIRTIO_CONFIG_S_FAILED) ? "FAILED" : "UNKNOWN");
++    }
+     return 0;
+ }
+ 
+@@ -1614,8 +1621,11 @@ VirtQueue *virtio_add_queue(VirtIODevice *vdev, int queue_size,
+             break;
+     }
+ 
+-    if (i == VIRTIO_QUEUE_MAX || queue_size > VIRTQUEUE_MAX_SIZE)
++    if (i == VIRTIO_QUEUE_MAX || queue_size > VIRTQUEUE_MAX_SIZE) {
++        qemu_log("unacceptable queue_size (%d) or num (%d)\n",
++                 queue_size, i);
+         abort();
++    }
+ 
+     vdev->vq[i].vring.num = queue_size;
+     vdev->vq[i].vring.num_default = queue_size;
+diff --git a/monitor/monitor.c b/monitor/monitor.c
+index 3ef2817..6f726e8 100644
+--- a/monitor/monitor.c
++++ b/monitor/monitor.c
+@@ -28,6 +28,7 @@
+ #include "qapi/qapi-emit-events.h"
+ #include "qapi/qmp/qdict.h"
+ #include "qapi/qmp/qstring.h"
++#include "qapi/qmp/qjson.h"
+ #include "qemu/error-report.h"
+ #include "qemu/option.h"
+ #include "sysemu/qtest.h"
+@@ -254,6 +255,7 @@ static void monitor_qapi_event_emit(QAPIEvent event, QDict *qdict)
+ {
+     Monitor *mon;
+     MonitorQMP *qmp_mon;
++    QString *json;
+ 
+     trace_monitor_protocol_event_emit(event, qdict);
+     QTAILQ_FOREACH(mon, &mon_list, entry) {
+@@ -264,6 +266,13 @@ static void monitor_qapi_event_emit(QAPIEvent event, QDict *qdict)
+         qmp_mon = container_of(mon, MonitorQMP, common);
+         if (qmp_mon->commands != &qmp_cap_negotiation_commands) {
+             qmp_send_response(qmp_mon, qdict);
++            json = qobject_to_json(QOBJECT(qdict));
++            if (json) {
++                if (!strstr(json->string, "RTC_CHANGE")) {
++                    qemu_log("%s\n", qstring_get_str(json));
++                }
++                qobject_unref(json);
++            }
+         }
+     }
+ }
+diff --git a/qapi/qmp-dispatch.c b/qapi/qmp-dispatch.c
+index e2c366e..6dfdad5 100644
+--- a/qapi/qmp-dispatch.c
++++ b/qapi/qmp-dispatch.c
+@@ -17,7 +17,9 @@
+ #include "qapi/qmp/qdict.h"
+ #include "qapi/qmp/qjson.h"
+ #include "qapi/qmp/qbool.h"
++#include "qapi/qmp/qstring.h"
+ #include "sysemu/sysemu.h"
++#include "qemu/log.h"
+ 
+ static QDict *qmp_dispatch_check_obj(const QObject *request, bool allow_oob,
+                                      Error **errp)
+@@ -83,6 +85,7 @@ static QObject *do_qmp_dispatch(QmpCommandList *cmds, QObject *request,
+     const char *command;
+     QDict *args, *dict;
+     QmpCommand *cmd;
++    QString *json;
+     QObject *ret = NULL;
+ 
+     dict = qmp_dispatch_check_obj(request, allow_oob, errp);
+@@ -128,6 +131,19 @@ static QObject *do_qmp_dispatch(QmpCommandList *cmds, QObject *request,
+         qobject_ref(args);
+     }
+ 
++    json = qobject_to_json(QOBJECT(args));
++    if (json) {
++        if ((strcmp(command, "query-block-jobs") != 0)
++            && (strcmp(command, "query-migrate") != 0)
++            && (strcmp(command, "query-blockstats") != 0)
++            && (strcmp(command, "query-balloon") != 0)
++            && (strcmp(command, "set_password") != 0)) {
++                qemu_log("qmp_cmd_name: %s, arguments: %s\n",
++                         command, qstring_get_str(json));
++        }
++        qobject_unref(json);
++    }
++
+     cmd->fn(args, &ret, &local_err);
+     if (local_err) {
+         error_propagate(errp, local_err);
+diff --git a/qdev-monitor.c b/qdev-monitor.c
+index 58222c2..c6c1d3f 100644
+--- a/qdev-monitor.c
++++ b/qdev-monitor.c
+@@ -34,6 +34,7 @@
+ #include "qemu/qemu-print.h"
+ #include "sysemu/block-backend.h"
+ #include "migration/misc.h"
++#include "qemu/log.h"
+ 
+ /*
+  * Aliases were a bad idea from the start.  Let's keep them
+@@ -586,6 +587,7 @@ DeviceState *qdev_device_add(QemuOpts *opts, Error **errp)
+     if (path != NULL) {
+         bus = qbus_find(path, errp);
+         if (!bus) {
++            error_setg(errp, "can not find bus for %s", driver);
+             return NULL;
+         }
+         if (!object_dynamic_cast(OBJECT(bus), dc->bus_type)) {
+@@ -627,6 +629,8 @@ DeviceState *qdev_device_add(QemuOpts *opts, Error **errp)
+ 
+     /* set properties */
+     if (qemu_opt_foreach(opts, set_property, dev, &err)) {
++        error_setg(errp, "the bus %s -driver %s set property failed",
++                   bus ? bus->name : "None", driver);
+         goto err_del_dev;
+     }
+ 
+@@ -636,6 +640,8 @@ DeviceState *qdev_device_add(QemuOpts *opts, Error **errp)
+         dev->opts = NULL;
+         goto err_del_dev;
+     }
++    qemu_log("add qdev %s:%s success\n", driver,
++             qemu_opts_id(opts) ? qemu_opts_id(opts) : "none");
+     return dev;
+ 
+ err_del_dev:
+-- 
+1.8.3.1
+

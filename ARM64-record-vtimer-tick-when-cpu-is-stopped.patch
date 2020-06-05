@@ -1,6 +1,6 @@
-From d2fd6d1a5200b9a58863839d21d291cd4f76ac31 Mon Sep 17 00:00:00 2001
+From 4646a24045cf53f2cc5e0ef1974da88ef50ef676 Mon Sep 17 00:00:00 2001
 From: Ying Fang <fangying1@huawei.com>
-Date: Mon, 29 Jul 2019 15:47:27 +0800
+Date: Wed, 27 May 2020 11:54:31 +0800
 Subject: [PATCH] ARM64: record vtimer tick when cpu is stopped
 
 The vtimer kick still increases even if the vcpu is stopped when VM has
@@ -17,10 +17,10 @@ Signed-off-by: Ying Fang <fangying1@huawei.com>
  3 files changed, 61 insertions(+)
 
 diff --git a/cpus.c b/cpus.c
-index e83f72b4..f6ec48a2 100644
+index 927a00aa..b9aa51f8 100644
 --- a/cpus.c
 +++ b/cpus.c
-@@ -1063,6 +1063,28 @@ void cpu_synchronize_all_pre_loadvm(void)
+@@ -1066,6 +1066,28 @@ void cpu_synchronize_all_pre_loadvm(void)
      }
  }
  
@@ -49,7 +49,7 @@ index e83f72b4..f6ec48a2 100644
  static int do_vm_stop(RunState state, bool send_stop)
  {
      int ret = 0;
-@@ -1070,6 +1092,11 @@ static int do_vm_stop(RunState state, bool send_stop)
+@@ -1073,6 +1095,11 @@ static int do_vm_stop(RunState state, bool send_stop)
      if (runstate_is_running()) {
          cpu_disable_ticks();
          pause_all_vcpus();
@@ -61,7 +61,7 @@ index e83f72b4..f6ec48a2 100644
          runstate_set(state);
          vm_state_notify(0, state);
          if (send_stop) {
-@@ -1909,11 +1936,42 @@ void cpu_resume(CPUState *cpu)
+@@ -1918,11 +1945,42 @@ void cpu_resume(CPUState *cpu)
      qemu_cpu_kick(cpu);
  }
  
@@ -105,12 +105,12 @@ index e83f72b4..f6ec48a2 100644
          cpu_resume(cpu);
      }
 diff --git a/target/arm/cpu.h b/target/arm/cpu.h
-index d4d28369..e107e395 100644
+index 86eb79cd..aec6a214 100644
 --- a/target/arm/cpu.h
 +++ b/target/arm/cpu.h
-@@ -270,6 +270,8 @@ typedef struct CPUARMState {
-     uint64_t elr_el[4]; /* AArch64 exception link regs  */
+@@ -262,6 +262,8 @@ typedef struct CPUARMState {
      uint64_t sp_el[4]; /* AArch64 banked stack pointers */
+ 
  
 +    uint64_t vtimer; /* Timer tick when vcpu stop */
 +
@@ -118,10 +118,10 @@ index d4d28369..e107e395 100644
      struct {
          uint32_t c0_cpuid;
 diff --git a/target/arm/machine.c b/target/arm/machine.c
-index b2925496..d64a0057 100644
+index ee3c59a6..ec28b839 100644
 --- a/target/arm/machine.c
 +++ b/target/arm/machine.c
-@@ -792,6 +792,7 @@ const VMStateDescription vmstate_arm_cpu = {
+@@ -814,6 +814,7 @@ const VMStateDescription vmstate_arm_cpu = {
          VMSTATE_UINT32(env.exception.syndrome, ARMCPU),
          VMSTATE_UINT32(env.exception.fsr, ARMCPU),
          VMSTATE_UINT64(env.exception.vaddress, ARMCPU),

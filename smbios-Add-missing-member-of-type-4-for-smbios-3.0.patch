@@ -1,21 +1,19 @@
-From e52fdbd850b49304c5bbd5f19c9f518b80efef42 Mon Sep 17 00:00:00 2001
-From: zhanghailiang <zhang.zhanghailiang@huawei.com>
-Date: Wed, 31 Jul 2019 15:40:55 +0800
+From 2b8ad77678da175cb92c902955cb85827e661de3 Mon Sep 17 00:00:00 2001
+From: Ying Fang <fangying1@huawei.com>
+Date: Tue, 14 Apr 2020 14:53:44 +0800
 Subject: [PATCH] smbios: Add missing member of type 4 for smbios 3.0
 
 According to smbios 3.0 spec, for processor information (type 4),
-it adds three new members (Core Count 2, Core enabled 2, thread count 2) for 3.0,
-
-Without this three members, we can not get correct cpu frequency from dmi,
+it adds three new members (Core Count 2, Core enabled 2, thread count 2) for 3.0, Without this three members, we can not get correct cpu frequency from dmi,
 Because it will failed to check the length of Processor Infomation in DMI.
 
 The corresponding codes in kernel is like:
-	if (dm->type == DMI_ENTRY_PROCESSOR &&
-	    dm->length >= DMI_ENTRY_PROCESSOR_MIN_LENGTH) {
-		u16 val = (u16)get_unaligned((const u16 *)
-				(dmi_data + DMI_PROCESSOR_MAX_SPEED));
-		*mhz = val > *mhz ? val : *mhz;
-	}
+    if (dm->type == DMI_ENTRY_PROCESSOR &&
+        dm->length >= DMI_ENTRY_PROCESSOR_MIN_LENGTH) {
+        u16 val = (u16)get_unaligned((const u16 *)
+                (dmi_data + DMI_PROCESSOR_MAX_SPEED));
+        *mhz = val > *mhz ? val : *mhz;
+    }
 
 Signed-off-by: zhanghailiang <zhang.zhanghailiang@huawei.com>
 ---
@@ -24,11 +22,11 @@ Signed-off-by: zhanghailiang <zhang.zhanghailiang@huawei.com>
  2 files changed, 6 insertions(+), 1 deletion(-)
 
 diff --git a/hw/smbios/smbios.c b/hw/smbios/smbios.c
-index 47be9071..b11ec6e3 100644
+index 7bcd67b0..51b00d44 100644
 --- a/hw/smbios/smbios.c
 +++ b/hw/smbios/smbios.c
-@@ -600,7 +600,9 @@ static void smbios_build_type_4_table(unsigned instance)
-     t->thread_count = smp_threads;
+@@ -603,7 +603,9 @@ static void smbios_build_type_4_table(MachineState *ms, unsigned instance)
+     t->thread_count = ms->smp.threads;
      t->processor_characteristics = cpu_to_le16(0x02); /* Unknown */
      t->processor_family2 = cpu_to_le16(0x01); /* Other */
 -
@@ -39,7 +37,7 @@ index 47be9071..b11ec6e3 100644
      smbios_type4_count++;
  }
 diff --git a/include/hw/firmware/smbios.h b/include/hw/firmware/smbios.h
-index 6fef32a3..70eb7304 100644
+index 02a0ced0..6887bca4 100644
 --- a/include/hw/firmware/smbios.h
 +++ b/include/hw/firmware/smbios.h
 @@ -193,6 +193,9 @@ struct smbios_type_4 {
@@ -50,8 +48,7 @@ index 6fef32a3..70eb7304 100644
 +    uint16_t enabledcorecount2;
 +    uint16_t threadcount2;
  } QEMU_PACKED;
- 
- /* SMBIOS type 11 - OEM strings */
--- 
-2.19.1
 
+ /* SMBIOS type 11 - OEM strings */
+--
+2.23.0

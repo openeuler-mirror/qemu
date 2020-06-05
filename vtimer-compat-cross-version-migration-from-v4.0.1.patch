@@ -1,0 +1,41 @@
+From aec34c33730c36b34e4442548885463f57100e13 Mon Sep 17 00:00:00 2001
+From: Ying Fang <fangying1@huawei.com>
+Date: Fri, 8 May 2020 11:25:28 +0800
+Subject: [PATCH] vtimer: compat cross version migration from v4.0.1
+
+vtimer feature was added to qemu v4.0.1 to record timer tick when vcpu
+is stopped. However this feature is discared and the new virtual time
+adjustment is introduced.
+
+This patch add the missing vtimer parameter to ARMCPUState in order
+to compat cross version migration fromm v4.0.1 openEuler 2003 lts release.
+
+Singed-off-by: Ying Fang <fangying1@huawei.com>
+
+diff --git a/target/arm/cpu.h b/target/arm/cpu.h
+index 219c222b..2609113d 100644
+--- a/target/arm/cpu.h
++++ b/target/arm/cpu.h
+@@ -261,6 +261,8 @@ typedef struct CPUARMState {
+     uint64_t elr_el[4]; /* AArch64 exception link regs  */
+     uint64_t sp_el[4]; /* AArch64 banked stack pointers */
+
++    uint64_t vtimer; /* Timer tick when vcpu is stopped */
++
+     /* System control coprocessor (cp15) */
+     struct {
+         uint32_t c0_cpuid;
+diff --git a/target/arm/machine.c b/target/arm/machine.c
+index ee3c59a6..ec28b839 100644
+--- a/target/arm/machine.c
++++ b/target/arm/machine.c
+@@ -814,6 +814,7 @@ const VMStateDescription vmstate_arm_cpu = {
+         VMSTATE_UINT32(env.exception.syndrome, ARMCPU),
+         VMSTATE_UINT32(env.exception.fsr, ARMCPU),
+         VMSTATE_UINT64(env.exception.vaddress, ARMCPU),
++        VMSTATE_UINT64(env.vtimer, ARMCPU),
+         VMSTATE_TIMER_PTR(gt_timer[GTIMER_PHYS], ARMCPU),
+         VMSTATE_TIMER_PTR(gt_timer[GTIMER_VIRT], ARMCPU),
+         {
+--
+2.23.0
