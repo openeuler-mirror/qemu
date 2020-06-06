@@ -598,7 +598,7 @@ static void raise_mmu_exception(CPURISCVState *env, target_ulong address,
         }
         break;
     case MMU_DATA_LOAD:
-        if (riscv_cpu_virt_enabled(env) && !first_stage) {
+        if ((riscv_cpu_virt_enabled(env) || riscv_cpu_two_stage_lookup(env)) && !first_stage) {
             cs->exception_index = RISCV_EXCP_LOAD_GUEST_ACCESS_FAULT;
         } else {
             cs->exception_index = page_fault_exceptions ?
@@ -606,7 +606,7 @@ static void raise_mmu_exception(CPURISCVState *env, target_ulong address,
         }
         break;
     case MMU_DATA_STORE:
-        if (riscv_cpu_virt_enabled(env) && !first_stage) {
+        if ((riscv_cpu_virt_enabled(env) || riscv_cpu_two_stage_lookup(env)) && !first_stage) {
             cs->exception_index = RISCV_EXCP_STORE_GUEST_AMO_ACCESS_FAULT;
         } else {
             cs->exception_index = page_fault_exceptions ?
@@ -892,13 +892,17 @@ void riscv_cpu_do_interrupt(CPUState *cs)
         if (riscv_has_ext(env, RVH)) {
             target_ulong hdeleg = async ? env->hideleg : env->hedeleg;
 
-            if (riscv_cpu_virt_enabled(env) && tval) {
+            if ((riscv_cpu_virt_enabled(env) ||
+                riscv_cpu_two_stage_lookup(env)) && tval) {
                 /*
                  * If we are writing a guest virtual address to stval, set
                  * this to 1. If we are trapping to VS we will set this to 0
                  * later.
                  */
                 env->hstatus = set_field(env->hstatus, HSTATUS_GVA, 1);
+            } else {
+                /* For other HS-mode traps, we set this to 0. */
+                env->hstatus = set_field(env->hstatus, HSTATUS_GVA, 0);
             }
 
             if (riscv_cpu_virt_enabled(env) && ((hdeleg >> cause) & 1) &&
@@ -927,9 +931,11 @@ void riscv_cpu_do_interrupt(CPUState *cs)
                 riscv_cpu_set_force_hs_excep(env, 0);
             } else {
                 /* Trap into HS mode */
-                env->hstatus = set_field(env->hstatus, HSTATUS_SPV,
-                                         riscv_cpu_virt_enabled(env));
-
+                if (!riscv_cpu_two_stage_lookup(env)) {
+                    env->hstatus = set_field(env->hstatus, HSTATUS_SPV,
+                                             riscv_cpu_virt_enabled(env));
+                }
+                riscv_cpu_set_two_stage_lookup(env, false);
                 htval = env->guest_phys_fault_addr;
             }
         }

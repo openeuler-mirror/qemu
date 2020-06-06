@@ -244,25 +244,25 @@ target_ulong helper_hyp_load(CPURISCVState *env, target_ulong address,
 
         switch (memop) {
         case MO_SB:
-            pte = cpu_ldsb_data(env, address);
+            pte = cpu_ldsb_data_ra(env, address, GETPC());
             break;
         case MO_UB:
-            pte = cpu_ldub_data(env, address);
+            pte = cpu_ldub_data_ra(env, address, GETPC());
             break;
         case MO_TESW:
-            pte = cpu_ldsw_data(env, address);
+            pte = cpu_ldsw_data_ra(env, address, GETPC());
             break;
         case MO_TEUW:
-            pte = cpu_lduw_data(env, address);
+            pte = cpu_lduw_data_ra(env, address, GETPC());
             break;
         case MO_TESL:
-            pte = cpu_ldl_data(env, address);
+            pte = cpu_ldl_data_ra(env, address, GETPC());
             break;
         case MO_TEUL:
-            pte = cpu_ldl_data(env, address);
+            pte = cpu_ldl_data_ra(env, address, GETPC());
             break;
         case MO_TEQ:
-            pte = cpu_ldq_data(env, address);
+            pte = cpu_ldq_data_ra(env, address, GETPC());
             break;
         default:
             g_assert_not_reached();
@@ -293,18 +293,18 @@ void helper_hyp_store(CPURISCVState *env, target_ulong address,
         switch (memop) {
         case MO_SB:
         case MO_UB:
-            cpu_stb_data(env, address, val);
+            cpu_stb_data_ra(env, address, val, GETPC());
             break;
         case MO_TESW:
         case MO_TEUW:
-            cpu_stw_data(env, address, val);
+            cpu_stw_data_ra(env, address, val, GETPC());
             break;
         case MO_TESL:
         case MO_TEUL:
-            cpu_stl_data(env, address, val);
+            cpu_stl_data_ra(env, address, val, GETPC());
             break;
         case MO_TEQ:
-            cpu_stq_data(env, address, val);
+            cpu_stq_data_ra(env, address, val, GETPC());
             break;
         default:
             g_assert_not_reached();
@@ -335,10 +335,10 @@ target_ulong helper_hyp_x_load(CPURISCVState *env, target_ulong address,
 
         switch (memop) {
         case MO_TEUL:
-            pte = cpu_ldub_data(env, address);
+            pte = cpu_ldub_data_ra(env, address, GETPC());
             break;
         case MO_TEUW:
-            pte = cpu_lduw_data(env, address);
+            pte = cpu_lduw_data_ra(env, address, GETPC());
             break;
         default:
             g_assert_not_reached();
