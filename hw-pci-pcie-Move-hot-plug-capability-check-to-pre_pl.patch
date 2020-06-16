@@ -1,0 +1,68 @@
+From 86f70ed090478cc3b569b3606eb2723a0baadb52 Mon Sep 17 00:00:00 2001
+From: Julia Suvorova <jusual@redhat.com>
+Date: Tue, 16 Jun 2020 12:25:36 -0400
+Subject: [PATCH] hw/pci/pcie: Move hot plug capability check to pre_plug
+ callback
+
+RH-Author: Julia Suvorova <jusual@redhat.com>
+Message-id: <20200616122536.1027685-1-jusual@redhat.com>
+Patchwork-id: 97548
+O-Subject: [RHEL-AV-8.2.1 qemu-kvm PATCH 1/1] hw/pci/pcie: Move hot plug capability check to pre_plug callback
+Bugzilla: 1820531
+RH-Acked-by: Danilo de Paula <ddepaula@redhat.com>
+RH-Acked-by: Auger Eric <eric.auger@redhat.com>
+RH-Acked-by: Sergio Lopez Pascual <slp@redhat.com>
+
+BZ: https://bugzilla.redhat.com/show_bug.cgi?id=1820531
+BRANCH: rhel-av-8.2.1
+UPSTREAM: merged
+BREW: 29422092
+
+Check for hot plug capability earlier to avoid removing devices attached
+during the initialization process.
+
+Run qemu with an unattached drive:
+  -drive file=$FILE,if=none,id=drive0 \
+  -device pcie-root-port,id=rp0,slot=3,bus=pcie.0,hotplug=off
+Hotplug a block device:
+  device_add virtio-blk-pci,id=blk0,drive=drive0,bus=rp0
+If hotplug fails on plug_cb, drive0 will be deleted.
+
+Fixes: 0501e1aa1d32a6 ("hw/pci/pcie: Forbid hot-plug if it's disabled on the slot")
+
+Acked-by: Igor Mammedov <imammedo@redhat.com>
+Signed-off-by: Julia Suvorova <jusual@redhat.com>
+Message-Id: <20200604125947.881210-1-jusual@redhat.com>
+Reviewed-by: Michael S. Tsirkin <mst@redhat.com>
+Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+(cherry picked from commit 0dabc0f6544f2c0310546f6d6cf3b68979580a9c)
+Signed-off-by: Eduardo Lima (Etrunko) <etrunko@redhat.com>
+---
+ hw/pci/pcie.c | 11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+diff --git a/hw/pci/pcie.c b/hw/pci/pcie.c
+index 2b4eedd2bb..b5190a3a55 100644
+--- a/hw/pci/pcie.c
++++ b/hw/pci/pcie.c
+@@ -419,6 +419,17 @@ static void pcie_cap_slot_plug_common(PCIDevice *hotplug_dev, DeviceState *dev,
+ void pcie_cap_slot_pre_plug_cb(HotplugHandler *hotplug_dev, DeviceState *dev,
+                                Error **errp)
+ {
++    PCIDevice *hotplug_pdev = PCI_DEVICE(hotplug_dev);
++    uint8_t *exp_cap = hotplug_pdev->config + hotplug_pdev->exp.exp_cap;
++    uint32_t sltcap = pci_get_word(exp_cap + PCI_EXP_SLTCAP);
++
++    /* Check if hot-plug is disabled on the slot */
++    if (dev->hotplugged && (sltcap & PCI_EXP_SLTCAP_HPC) == 0) {
++        error_setg(errp, "Hot-plug failed: unsupported by the port device '%s'",
++                         DEVICE(hotplug_pdev)->id);
++        return;
++    }
++
+     pcie_cap_slot_plug_common(PCI_DEVICE(hotplug_dev), dev, errp);
+ }
+ 
+-- 
+2.27.0
+
