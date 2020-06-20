@@ -54,7 +54,7 @@ index 9bb2101e..1a720c38 100644
  common-obj-$(CONFIG_ACPI_PCI) += pci.o
  common-obj-$(CONFIG_TPM) += tpm.o
 +common-obj-$(CONFIG_CPUFREQ) += cpufreq.o
-
+ 
  common-obj-$(CONFIG_IPMI) += ipmi.o
  common-obj-$(call lnot,$(CONFIG_IPMI)) += ipmi-stub.o
 diff --git a/hw/acpi/aml-build.c b/hw/acpi/aml-build.c
@@ -64,7 +64,7 @@ index 555c24f2..73f97751 100644
 @@ -1369,6 +1369,28 @@ Aml *aml_sleep(uint64_t msec)
      return var;
  }
-
+ 
 +/* ACPI 5.0b: 6.4.3.7 Generic Register Descriptor */
 +Aml *aml_generic_register(AmlRegionSpace rs, uint8_t reg_width,
 +                          uint8_t reg_offset, AmlAccessType type, uint64_t addr)
@@ -392,10 +392,10 @@ index 0afb3727..29494ebd 100644
  #include "sysemu/numa.h"
  #include "kvm_arm.h"
 +#include "hw/acpi/acpi-defs.h"
-
+ 
  #define ARM_SPI_BASE 32
  #define ACPI_POWER_BUTTON_DEVICE "PWRB"
-
+ 
 -static void acpi_dsdt_add_cpus(Aml *scope, int smp_cpus)
 +static void acpi_dsdt_add_psd(Aml *dev, int cpus)
 +{
@@ -461,7 +461,7 @@ index 0afb3727..29494ebd 100644
 +                               const MemMapEntry *cppc_memmap)
  {
      uint16_t i;
-
+ 
 @@ -57,6 +119,18 @@ static void acpi_dsdt_add_cpus(Aml *scope, int smp_cpus)
          Aml *dev = aml_device("C%.03X", i);
          aml_append(dev, aml_name_decl("_HID", aml_string("ACPI0007")));
@@ -505,7 +505,7 @@ index d9496c93..0fa355ba 100644
 @@ -731,6 +732,16 @@ static void create_uart(const VirtMachineState *vms, qemu_irq *pic, int uart,
      g_free(nodename);
  }
-
+ 
 +static void create_cpufreq(const VirtMachineState *vms, MemoryRegion *mem)
 +{
 +    hwaddr base = vms->memmap[VIRT_CPUFREQ].base;
@@ -520,9 +520,9 @@ index d9496c93..0fa355ba 100644
  {
      char *nodename;
 @@ -1682,6 +1693,8 @@ static void machvirt_init(MachineState *machine)
-
+ 
      create_uart(vms, pic, VIRT_UART, sysmem, serial_hd(0));
-
+ 
 +    create_cpufreq(vms, sysmem);
 +
      if (vms->secure) {
@@ -533,7 +533,7 @@ index 40e7a8b8..2f61bf53 100644
 --- a/hw/char/Kconfig
 +++ b/hw/char/Kconfig
 @@ -46,3 +46,7 @@ config SCLPCONSOLE
-
+ 
  config TERMINAL3270
      bool
 +
@@ -547,7 +547,7 @@ index 57a3f58b..39ae91d3 100644
 @@ -634,4 +634,42 @@ struct AcpiIortRC {
  } QEMU_PACKED;
  typedef struct AcpiIortRC AcpiIortRC;
-
+ 
 +/*
 + * CPPC register definition from kernel header
 + * include/acpi/cppc_acpi.h
@@ -598,7 +598,7 @@ index 1a563ad7..375335ab 100644
 +Aml *aml_generic_register(AmlRegionSpace rs, uint8_t reg_width,
 +                          uint8_t reg_offset, AmlAccessType type,
 +                          uint64_t addr);
-
+ 
  /* Block AML object primitives */
  Aml *aml_scope(const char *name_format, ...) GCC_FMT_ATTR(1, 2);
 diff --git a/include/hw/arm/virt.h b/include/hw/arm/virt.h
@@ -613,5 +613,6 @@ index a7209420..43a6ce91 100644
      VIRT_MMIO,
      VIRT_RTC,
      VIRT_FW_CFG,
---
-2.19.1
+-- 
+2.23.0
+
