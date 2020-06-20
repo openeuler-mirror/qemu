@@ -33,7 +33,7 @@ index fd7fdb86..d8cf00c1 100644
 -check-qtest-aarch64-y += tests/bios-tables-test$(EXESUF)
 +#check-qtest-aarch64-y += tests/bios-tables-test$(EXESUF)
  endif
-
+ 
  check-qtest-microblazeel-y += $(check-qtest-microblaze-y)
 @@ -783,7 +783,7 @@ tests/ipmi-bt-test$(EXESUF): tests/ipmi-bt-test.o
  tests/hd-geo-test$(EXESUF): tests/hd-geo-test.o
@@ -41,8 +41,8 @@ index fd7fdb86..d8cf00c1 100644
  tests/boot-serial-test$(EXESUF): tests/boot-serial-test.o $(libqos-obj-y)
 -tests/bios-tables-test$(EXESUF): tests/bios-tables-test.o \
 +#tests/bios-tables-test$(EXESUF): tests/bios-tables-test.o \
-	tests/boot-sector.o tests/acpi-utils.o $(libqos-obj-y)
+ 	tests/boot-sector.o tests/acpi-utils.o $(libqos-obj-y)
  tests/pxe-test$(EXESUF): tests/pxe-test.o tests/boot-sector.o $(libqos-obj-y)
  tests/microbit-test$(EXESUF): tests/microbit-test.o
---
+-- 
 2.23.0
