@@ -224,6 +224,7 @@ BuildRequires: libudev-devel
 BuildRequires: pam-devel
 BuildRequires: perl-Test-Harness
 BuildRequires: python3-devel
+BuildRequires: librbd-devel
 %ifarch aarch64
 BuildRequires: libfdt-devel
 BuildRequires: virglrenderer-devel
