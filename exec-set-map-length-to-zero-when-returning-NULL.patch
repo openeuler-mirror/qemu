@@ -1,0 +1,54 @@
+From a1a9d6f908b21878daa7868313243c30b7a90fcf Mon Sep 17 00:00:00 2001
+From: Prasad J Pandit <pjp@fedoraproject.org>
+Date: Tue, 26 May 2020 16:47:43 +0530
+Subject: [PATCH 2/9] exec: set map length to zero when returning NULL
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+When mapping physical memory into host's virtual address space,
+'address_space_map' may return NULL if BounceBuffer is in_use.
+Set and return '*plen = 0' to avoid later NULL pointer dereference.
+
+Reported-by: Alexander Bulekov <alxndr@bu.edu>
+Fixes: https://bugs.launchpad.net/qemu/+bug/1878259
+Suggested-by: Paolo Bonzini <pbonzini@redhat.com>
+Suggested-by: Peter Maydell <peter.maydell@linaro.org>
+Signed-off-by: Prasad J Pandit <pjp@fedoraproject.org>
+Message-Id: <20200526111743.428367-1-ppandit@redhat.com>
+Reviewed-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ exec.c                | 1 +
+ include/exec/memory.h | 3 ++-
+ 2 files changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/exec.c b/exec.c
+index 3e78de3b8f..85c6d80353 100644
+--- a/exec.c
++++ b/exec.c
+@@ -3739,6 +3739,7 @@ void *address_space_map(AddressSpace *as,
+     if (!memory_access_is_direct(mr, is_write)) {
+         if (atomic_xchg(&bounce.in_use, true)) {
+             rcu_read_unlock();
++            *plen = 0;
+             return NULL;
+         }
+         /* Avoid unbounded allocations */
+diff --git a/include/exec/memory.h b/include/exec/memory.h
+index 611a89122d..dca8184277 100644
+--- a/include/exec/memory.h
++++ b/include/exec/memory.h
+@@ -2064,7 +2064,8 @@ bool address_space_access_valid(AddressSpace *as, hwaddr addr, hwaddr len,
+ /* address_space_map: map a physical memory region into a host virtual address
+  *
+  * May map a subset of the requested range, given by and returned in @plen.
+- * May return %NULL if resources needed to perform the mapping are exhausted.
++ * May return %NULL and set *@plen to zero(0), if resources needed to perform
++ * the mapping are exhausted.
+  * Use only for reads OR writes - not for read-modify-write operations.
+  * Use cpu_register_map_client() to know when retrying the map operation is
+  * likely to succeed.
+-- 
+2.25.1
+
