@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 14
+Release: 15
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY
@@ -175,6 +175,13 @@ Patch0162: migration-Compat-virtual-timer-adjust-for-v4.0.1-and.patch
 Patch0163: vtimer-Drop-vtimer-virtual-timer-adjust.patch
 Patch0164: target-arm-Add-the-kvm_adjvtime-vcpu-property-for-Co.patch
 Patch0165: target-arm-Fix-PAuth-sbox-functions.patch
+Patch0166: es1370-check-total-frame-count-against-current-frame.patch
+Patch0167: exec-set-map-length-to-zero-when-returning-NULL.patch
+Patch0168: ati-vga-check-mm_index-before-recursive-call-CVE-202.patch
+Patch0169: megasas-use-unsigned-type-for-reply_queue_head-and-c.patch
+Patch0170: megasas-avoid-NULL-pointer-dereference.patch
+Patch0171: megasas-use-unsigned-type-for-positive-numeric-field.patch
+Patch0172: hw-scsi-megasas-Fix-possible-out-of-bounds-array-acc.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -520,6 +527,15 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Fri Jul 24 2020 Huawei Technologies Co., Ltd <zhang.zhanghailiang@huawei.com>
+- es1370: check total frame count against current frame
+- exec: set map length to zero when returning NULL
+- ati-vga: check mm_index before recursive call (CVE-2020-13800)
+- megasas: use unsigned type for reply_queue_head and check index
+- megasas: avoid NULL pointer dereference
+- megasas: use unsigned type for positive numeric fields
+- hw/scsi/megasas: Fix possible out-of-bounds array access in tracepoints
+
 * Sat Jun 20 2020 Huawei Technologies Co., Ltd <zhang.zhanghailiang@huawei.com>
 - target/arm: Fix PAuth sbox functions
 - fix two patches' format which can cause git am failed
