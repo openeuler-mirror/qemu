@@ -1,0 +1,73 @@
+From a2fcbe2b82c42f890a857ad8d4edcfdb273106ea Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Fri, 31 Jul 2020 08:18:31 -0400
+Subject: [PATCH] qemu-img convert: Don't pre-zero images
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20200731081831.13781-2-kwolf@redhat.com>
+Patchwork-id: 98117
+O-Subject: [RHEL-AV-8.2.1.z qemu-kvm PATCH 1/1] qemu-img convert: Don't pre-zero images
+Bugzilla: 1861682
+RH-Acked-by: Stefano Garzarella <sgarzare@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Eric Blake <eblake@redhat.com>
+
+Since commit 5a37b60a61c, qemu-img create will pre-zero the target image
+if it isn't already zero-initialised (most importantly, for host block
+devices, but also iscsi etc.), so that writing explicit zeros wouldn't
+be necessary later.
+
+This could speed up the operation significantly, in particular when the
+source image file was only sparsely populated. However, it also means
+that some block are written twice: Once when pre-zeroing them, and then
+when they are overwritten with actual data. On a full image, the
+pre-zeroing is wasted work because everything will be overwritten.
+
+In practice, write_zeroes typically turns out faster than writing
+explicit zero buffers, but slow enough that first zeroing everything and
+then overwriting parts can be a significant net loss.
+
+Meanwhile, qemu-img convert was rewritten in 690c7301600 and zero blocks
+are now written to the target using bdrv_co_pwrite_zeroes() if the
+target could be pre-zeroed. This way we already make use of the faster
+write_zeroes operation, but avoid writing any blocks twice.
+
+Remove the pre-zeroing because these days this former optimisation has
+actually turned into a pessimisation in the common case.
+
+Reported-by: Nir Soffer <nsoffer@redhat.com>
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Message-Id: <20200622151203.35624-1-kwolf@redhat.com>
+Tested-by:  Nir Soffer <nsoffer@redhat.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit edafc70c0c8510862f2f213a3acf7067113bcd08)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Danilo C. L. de Paula <ddepaula@redhat.com>
+---
+ qemu-img.c | 9 ---------
+ 1 file changed, 9 deletions(-)
+
+diff --git a/qemu-img.c b/qemu-img.c
+index 2e9cc5db7c..e4abd4978a 100644
+--- a/qemu-img.c
++++ b/qemu-img.c
+@@ -1981,15 +1981,6 @@ static int convert_do_copy(ImgConvertState *s)
+                      ? bdrv_has_zero_init(blk_bs(s->target))
+                      : false;
+ 
+-    if (!s->has_zero_init && !s->target_has_backing &&
+-        bdrv_can_write_zeroes_with_unmap(blk_bs(s->target)))
+-    {
+-        ret = blk_make_zero(s->target, BDRV_REQ_MAY_UNMAP | BDRV_REQ_NO_FALLBACK);
+-        if (ret == 0) {
+-            s->has_zero_init = true;
+-        }
+-    }
+-
+     /* Allocate buffer for copied data. For compressed images, only one cluster
+      * can be copied at a time. */
+     if (s->compressed) {
+-- 
+2.27.0
+
