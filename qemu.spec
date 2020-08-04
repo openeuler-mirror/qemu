@@ -303,7 +303,6 @@ buildldflags="VL_LDFLAGS=-Wl,--build-id"
     --with-pkgversion=%{name}-%{version}-%{release} \
     --python=/usr/bin/python3 \
     --disable-strip \
-    --disable-werror  \
     --disable-slirp  \
     --enable-gtk \
     --enable-docs \
