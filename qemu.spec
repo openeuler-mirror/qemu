@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 15
+Release: 16
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY
@@ -308,7 +308,6 @@ buildldflags="VL_LDFLAGS=-Wl,--build-id"
     --with-pkgversion=%{name}-%{version}-%{release} \
     --python=/usr/bin/python3 \
     --disable-strip \
-    --disable-werror  \
     --disable-slirp  \
     --enable-gtk \
     --enable-docs \
