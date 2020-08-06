@@ -217,6 +217,8 @@ CpuModelExpansionInfo *qmp_query_cpu_model_expansion(CpuModelExpansionType type,
         }
     }
 
+    arm_cpu_features_to_dict(ARM_CPU(obj), qdict_out);
+
     if (!qdict_size(qdict_out)) {
         qobject_unref(qdict_out);
     } else {

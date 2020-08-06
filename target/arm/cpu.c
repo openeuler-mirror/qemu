@@ -25,6 +25,8 @@
 #include "qemu/module.h"
 #include "qapi/error.h"
 #include "qapi/visitor.h"
+#include "qapi/qmp/qdict.h"
+#include "qom/qom-qobject.h"
 #include "cpu.h"
 #ifdef CONFIG_TCG
 #include "hw/core/tcg-cpu-ops.h"
@@ -1579,6 +1581,31 @@ static const CPUFeatureDep feature_dependencies[] = {
         .to = FIELD_INFO("sha3", ID_AA64ISAR0, SHA3, false, 1, 0, false),
     },
 };
+
+void arm_cpu_features_to_dict(ARMCPU *cpu, QDict *features)
+{
+    Object *obj = OBJECT(cpu);
+    const char *name;
+    ObjectProperty *prop;
+    bool is_32bit = !arm_feature(&cpu->env, ARM_FEATURE_AARCH64);
+    int i;
+
+    for (i = 0; i < ARRAY_SIZE(cpu_features); ++i) {
+        if (is_32bit != cpu_features[i].is_32bit) {
+            continue;
+        }
+
+        name = cpu_features[i].name;
+        prop = object_property_find(obj, name);
+        if (prop) {
+            QObject *value;
+
+            assert(prop->get);
+            value = object_property_get_qobject(obj, name, &error_abort);
+            qdict_put_obj(features, name, value);
+        }
+    }
+}
 
 static void arm_cpu_get_bit_prop(Object *obj, Visitor *v, const char *name,
                                  void *opaque, Error **errp)
