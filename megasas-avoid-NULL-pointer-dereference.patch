@@ -1,0 +1,36 @@
+From cf7f42b21aaa7694c6232a9a5027de9df341f299 Mon Sep 17 00:00:00 2001
+From: Prasad J Pandit <pjp@fedoraproject.org>
+Date: Thu, 14 May 2020 00:55:39 +0530
+Subject: [PATCH 5/9] megasas: avoid NULL pointer dereference
+
+While in megasas_handle_frame(), megasas_enqueue_frame() may
+set a NULL frame into MegasasCmd object for a given 'frame_addr'
+address. Add check to avoid a NULL pointer dereference issue.
+
+Reported-by: Alexander Bulekov <alxndr@bu.edu>
+Fixes: https://bugs.launchpad.net/qemu/+bug/1878259
+Signed-off-by: Prasad J Pandit <pjp@fedoraproject.org>
+Acked-by: Alexander Bulekov <alxndr@bu.edu>
+Reviewed-by: Darren Kenny <darren.kenny@oracle.com>
+Message-Id: <20200513192540.1583887-3-ppandit@redhat.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ hw/scsi/megasas.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/hw/scsi/megasas.c b/hw/scsi/megasas.c
+index 7ee331d9da..5923ffbd22 100644
+--- a/hw/scsi/megasas.c
++++ b/hw/scsi/megasas.c
+@@ -503,7 +503,7 @@ static MegasasCmd *megasas_enqueue_frame(MegasasState *s,
+     cmd->pa = frame;
+     /* Map all possible frames */
+     cmd->frame = pci_dma_map(pcid, frame, &frame_size_p, 0);
+-    if (frame_size_p != frame_size) {
++    if (!cmd->frame || frame_size_p != frame_size) {
+         trace_megasas_qf_map_failed(cmd->index, (unsigned long)frame);
+         if (cmd->frame) {
+             megasas_unmap_frame(s, cmd);
+-- 
+2.25.1
+
