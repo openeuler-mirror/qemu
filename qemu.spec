@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 14
+Release: 15
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY
@@ -175,6 +175,7 @@ Patch0162: migration-Compat-virtual-timer-adjust-for-v4.0.1-and.patch
 Patch0163: vtimer-Drop-vtimer-virtual-timer-adjust.patch
 Patch0164: target-arm-Add-the-kvm_adjvtime-vcpu-property-for-Co.patch
 Patch0165: target-arm-Fix-PAuth-sbox-functions.patch
+Patch0166: tests-Disalbe-filemonitor-testcase.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -302,7 +303,6 @@ buildldflags="VL_LDFLAGS=-Wl,--build-id"
     --with-pkgversion=%{name}-%{version}-%{release} \
     --python=/usr/bin/python3 \
     --disable-strip \
-    --disable-werror  \
     --disable-slirp  \
     --enable-gtk \
     --enable-docs \
@@ -521,6 +521,9 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Thu Aug 6 2020 Huawei Technologies Co., Ltd <fangying1@huawei.com>
+- tests: Disalbe filemonitor testcase
+
 * Sat Jun 20 2020 Huawei Technologies Co., Ltd <zhang.zhanghailiang@huawei.com>
 - target/arm: Fix PAuth sbox functions
 - fix two patches' format which can cause git am failed

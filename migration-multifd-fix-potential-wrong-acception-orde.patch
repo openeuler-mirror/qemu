@@ -274,10 +274,18 @@ index bd0eee79..a788ff0e 100644
  uint64_t ram_pagesize_summary(void);
  int ram_save_queue_pages(const char *rbname, ram_addr_t start, ram_addr_t len);
 diff --git a/migration/socket.c b/migration/socket.c
-index 98efdc02..bc0960c6 100644
+index 98efdc02..093b956b 100644
 --- a/migration/socket.c
 +++ b/migration/socket.c
-@@ -181,6 +181,12 @@ static void socket_start_incoming_migration(SocketAddress *saddr,
+@@ -22,6 +22,7 @@
+ #include "channel.h"
+ #include "socket.h"
+ #include "migration.h"
++#include "ram.h"
+ #include "qemu-file.h"
+ #include "io/channel-socket.h"
+ #include "io/net-listener.h"
+@@ -181,6 +182,12 @@ static void socket_start_incoming_migration(SocketAddress *saddr,
 
      qio_net_listener_set_name(listener, "migration-socket-listener");
 
