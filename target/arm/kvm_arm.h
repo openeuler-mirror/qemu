@@ -240,6 +240,13 @@ void kvm_arm_set_cpu_features_from_host(ARMCPU *cpu);
 void kvm_arm_add_vcpu_properties(Object *obj);
 
 /**
+ * kvm_arm_cpu_feature_supported:
+ *
+ * Returns true if KVM can set CPU features and false otherwise.
+ */
+bool kvm_arm_cpu_feature_supported(void);
+
+/**
  * kvm_arm_get_max_vm_ipa_size:
  * @ms: Machine state handle
  *
