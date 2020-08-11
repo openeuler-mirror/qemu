@@ -1309,6 +1309,9 @@ static struct CPUFeatureInfo cpu_features[] = {
     FIELD_INFO("fhm", ID_ISAR6, FHM, false, 1, 0, true),
     FIELD_INFO("sb", ID_ISAR6, SB, false, 1, 0, true),
     FIELD_INFO("specres", ID_ISAR6, SPECRES, false, 1, 0, true),
+    FIELD_INFO("i8mm", ID_AA64ISAR1, I8MM, false, 1, 0, false),
+    FIELD_INFO("bf16", ID_AA64ISAR1, BF16, false, 1, 0, false),
+    FIELD_INFO("dgh", ID_AA64ISAR1, DGH, false, 1, 0, false),
 
     FIELD_INFO("cmaintva", ID_MMFR3, CMAINTVA, false, 1, 0, true),
     FIELD_INFO("cmaintsw", ID_MMFR3, CMAINTSW, false, 1, 0, true),
