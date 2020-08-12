@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 16
+Release: 17
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY
@@ -183,6 +183,7 @@ Patch0170: megasas-use-unsigned-type-for-reply_queue_head-and-c.patch
 Patch0171: megasas-avoid-NULL-pointer-dereference.patch
 Patch0172: megasas-use-unsigned-type-for-positive-numeric-field.patch
 Patch0173: hw-scsi-megasas-Fix-possible-out-of-bounds-array-acc.patch
+Patch0174: hw-arm-acpi-enable-SHPC-native-hot-plug.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -528,6 +529,9 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Wed Aug 12 2020 Huawei Technologies Co., Ltd <jinzeyu@huawei.com>
+- backport upstream patch to support SHPCHotplug in arm
+
 * Thu Aug 6 2020 Huawei Technologies Co., Ltd <zhang.zhanghailiang@huawei.com>
 - es1370: check total frame count against current frame
 - exec: set map length to zero when returning NULL
