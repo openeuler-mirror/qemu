@@ -1,0 +1,45 @@
+From 1ad2e774f4fd3f720d5db07e86fe60df13f21a6d Mon Sep 17 00:00:00 2001
+From: Heyi Guo <guoheyi@huawei.com>
+Date: Mon, 9 Dec 2019 14:37:19 +0800
+Subject: [PATCH] hw/arm/acpi: enable SHPC native hot plug
+
+After the introduction of generic PCIe root port and PCIe-PCI bridge,
+we will also have SHPC controller on ARM, so just enable SHPC native
+hot plug.
+
+Also update tests/data/acpi/virt/DSDT* to pass "make check".
+
+Cc: Shannon Zhao <shannon.zhaosl@gmail.com>
+Cc: Peter Maydell <peter.maydell@linaro.org>
+Cc: "Michael S. Tsirkin" <mst@redhat.com>
+Cc: Igor Mammedov <imammedo@redhat.com>
+Reviewed-by: Michael S. Tsirkin <mst@redhat.com>
+Reviewed-by: Igor Mammedov <imammedo@redhat.com>
+Signed-off-by: Heyi Guo <guoheyi@huawei.com>
+Message-id: 20191209063719.23086-3-guoheyi@huawei.com
+Signed-off-by: Peter Maydell <peter.maydell@linaro.org>
+---
+ hw/arm/virt-acpi-build.c | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/hw/arm/virt-acpi-build.c b/hw/arm/virt-acpi-build.c
+index 2cfac7b84f..588e7f2680 100644
+--- a/hw/arm/virt-acpi-build.c
++++ b/hw/arm/virt-acpi-build.c
+@@ -347,7 +347,12 @@ static void acpi_dsdt_add_pci(Aml *scope, const MemMapEntry *memmap,
+         aml_create_dword_field(aml_arg(3), aml_int(8), "CDW3"));
+     aml_append(ifctx, aml_store(aml_name("CDW2"), aml_name("SUPP")));
+     aml_append(ifctx, aml_store(aml_name("CDW3"), aml_name("CTRL")));
+-    aml_append(ifctx, aml_store(aml_and(aml_name("CTRL"), aml_int(0x1D), NULL),
++
++    /*
++     * Allow OS control for all 5 features:
++     * PCIeHotplug SHPCHotplug PME AER PCIeCapability.
++     */
++    aml_append(ifctx, aml_store(aml_and(aml_name("CTRL"), aml_int(0x1F), NULL),
+                                 aml_name("CTRL")));
+ 
+     ifctx1 = aml_if(aml_lnot(aml_equal(aml_arg(1), aml_int(0x1))));
+-- 
+2.23.0
+
