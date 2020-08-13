@@ -1,0 +1,141 @@
+From 443ebab9c299b04f020a6873454facb078723141 Mon Sep 17 00:00:00 2001
+From: jiangfangjie <jiangfangjie@huawei.com>
+Date: Thu, 13 Aug 2020 20:01:10 +0800
+Subject: [PATCH 15/19] hw/arm/virt: vTPM support
+
+Let the TPM TIS SYSBUS device be dynamically instantiable
+in ARM virt.  A device tree node is dynamically created
+(TPM via MMIO).
+
+The TPM Physical Presence interface (PPI) is not supported.
+
+To run with the swtmp TPM emulator, the qemu command line must
+be augmented with:
+
+        -chardev socket,id=chrtpm,path=swtpm-sock
+	-tpmdev emulator,id=tpm0,chardev=chrtpm
+	-device tpm-tis-device,tpmdev=tpm0
+
+swtpm/libtpms command line example:
+
+swtpm socket --tpm2 -t -d --tpmstate dir=/tmp/tpm
+--ctrl type=unixio,path=swtpm-sock
+
+Signed-off-by: Eric Auger <eric.auger@redhat.com>
+Reviewed-by: Stefan Berger <stefanb@linux.ibm.com>
+Tested-by: Ard Biesheuvel <ard.biesheuvel@linaro.org>
+Acked-by: Ard Biesheuvel <ard.biesheuvel@linaro.org>
+Message-id: 20200305165149.618-7-eric.auger@redhat.com
+Signed-off-by: Stefan Berger <stefanb@linux.ibm.com>
+Signed-off-by: jiangfangjie <jiangfangjie@huawei.com>
+---
+ hw/arm/Kconfig      |  1 +
+ hw/arm/sysbus-fdt.c | 33 +++++++++++++++++++++++++++++++++
+ hw/arm/virt.c       |  7 +++++++
+ 3 files changed, 41 insertions(+)
+
+diff --git a/hw/arm/Kconfig b/hw/arm/Kconfig
+index 15e18b0a..06e49f26 100644
+--- a/hw/arm/Kconfig
++++ b/hw/arm/Kconfig
+@@ -5,6 +5,7 @@ config ARM_VIRT
+     imply VFIO_AMD_XGBE
+     imply VFIO_PLATFORM
+     imply VFIO_XGMAC
++    imply TPM_TIS_SYSBUS
+     select A15MPCORE
+     select ACPI
+     select ARM_SMMUV3
+diff --git a/hw/arm/sysbus-fdt.c b/hw/arm/sysbus-fdt.c
+index 57f94e65..c725d325 100644
+--- a/hw/arm/sysbus-fdt.c
++++ b/hw/arm/sysbus-fdt.c
+@@ -30,6 +30,7 @@
+ #include "hw/arm/sysbus-fdt.h"
+ #include "qemu/error-report.h"
+ #include "sysemu/device_tree.h"
++#include "sysemu/tpm.h"
+ #include "hw/platform-bus.h"
+ #include "sysemu/sysemu.h"
+ #include "hw/vfio/vfio-platform.h"
+@@ -437,6 +438,37 @@ static bool vfio_platform_match(SysBusDevice *sbdev,
+ 
+ #endif /* CONFIG_LINUX */
+ 
++/*
++ * add_tpm_tis_fdt_node: Create a DT node for TPM TIS
++ *
++ * See kernel documentation:
++ * Documentation/devicetree/bindings/security/tpm/tpm_tis_mmio.txt
++ * Optional interrupt for command completion is not exposed
++ */
++static int add_tpm_tis_fdt_node(SysBusDevice *sbdev, void *opaque)
++{
++    PlatformBusFDTData *data = opaque;
++    PlatformBusDevice *pbus = data->pbus;
++    void *fdt = data->fdt;
++    const char *parent_node = data->pbus_node_name;
++    char *nodename;
++    uint32_t reg_attr[2];
++    uint64_t mmio_base;
++
++    mmio_base = platform_bus_get_mmio_addr(pbus, sbdev, 0);
++    nodename = g_strdup_printf("%s/tpm_tis@%" PRIx64, parent_node, mmio_base);
++    qemu_fdt_add_subnode(fdt, nodename);
++
++    qemu_fdt_setprop_string(fdt, nodename, "compatible", "tcg,tpm-tis-mmio");
++
++    reg_attr[0] = cpu_to_be32(mmio_base);
++    reg_attr[1] = cpu_to_be32(0x5000);
++    qemu_fdt_setprop(fdt, nodename, "reg", reg_attr, 2 * sizeof(uint32_t));
++
++    g_free(nodename);
++    return 0;
++}
++
+ static int no_fdt_node(SysBusDevice *sbdev, void *opaque)
+ {
+     return 0;
+@@ -457,6 +489,7 @@ static const BindingEntry bindings[] = {
+     TYPE_BINDING(TYPE_VFIO_AMD_XGBE, add_amd_xgbe_fdt_node),
+     VFIO_PLATFORM_BINDING("amd,xgbe-seattle-v1a", add_amd_xgbe_fdt_node),
+ #endif
++    TYPE_BINDING(TYPE_TPM_TIS_SYSBUS, add_tpm_tis_fdt_node),
+     TYPE_BINDING(TYPE_RAMFB_DEVICE, no_fdt_node),
+     TYPE_BINDING("", NULL), /* last element */
+ };
+diff --git a/hw/arm/virt.c b/hw/arm/virt.c
+index 133d36a4..7afc6c5e 100644
+--- a/hw/arm/virt.c
++++ b/hw/arm/virt.c
+@@ -47,6 +47,7 @@
+ #include "sysemu/numa.h"
+ #include "sysemu/cpus.h"
+ #include "sysemu/sysemu.h"
++#include "sysemu/tpm.h"
+ #include "sysemu/kvm.h"
+ #include "sysemu/cpus.h"
+ #include "sysemu/hw_accel.h"
+@@ -2368,6 +2369,7 @@ static void virt_machine_class_init(ObjectClass *oc, void *data)
+     machine_class_allow_dynamic_sysbus_dev(mc, TYPE_VFIO_AMD_XGBE);
+     machine_class_allow_dynamic_sysbus_dev(mc, TYPE_RAMFB_DEVICE);
+     machine_class_allow_dynamic_sysbus_dev(mc, TYPE_VFIO_PLATFORM);
++    machine_class_allow_dynamic_sysbus_dev(mc, TYPE_TPM_TIS_SYSBUS);
+     mc->block_default_type = IF_VIRTIO;
+     mc->no_cdrom = 1;
+     mc->pci_allow_0_address = true;
+@@ -2481,6 +2483,11 @@ type_init(machvirt_machine_init);
+ 
+ static void virt_machine_4_1_options(MachineClass *mc)
+ {
++    static GlobalProperty compat[] = {
++        { TYPE_TPM_TIS_SYSBUS, "ppi", "false" },
++    };
++
++    compat_props_add(mc->compat_props, compat, G_N_ELEMENTS(compat));
+ }
+ DEFINE_VIRT_MACHINE_AS_LATEST(4, 1)
+ 
+-- 
+2.23.0
+

@@ -1,0 +1,187 @@
+From c06a3ceacc1793bc1cfe5c2a6ed510c9aea8253d Mon Sep 17 00:00:00 2001
+From: jiangfangjie <jiangfangjie@huawei.com>
+Date: Thu, 13 Aug 2020 20:28:25 +0800
+Subject: [PATCH 17/19] test: tpm: pass optional machine options to swtpm test 
+ functions
+
+We plan to use swtpm test functions on ARM for testing the
+sysbus TPM-TIS device. However on ARM there is no default machine
+type. So we need to explictly pass some machine options on startup.
+Let's allow this by adding a new parameter to both swtpm test
+functions and update all call sites.
+
+Signed-off-by: Eric Auger <eric.auger@redhat.com>
+Reviewed-by: Stefan Berger <stefanb@linux.ibm.com>
+Message-id: 20200305165149.618-9-eric.auger@redhat.com
+Signed-off-by: Stefan Berger <stefanb@linux.ibm.com>
+Signed-off-by: jiangfangjie <jiangfangjie@huawei.com>
+---
+ tests/tpm-crb-swtpm-test.c |  5 +++--
+ tests/tpm-tests.c          | 10 ++++++----
+ tests/tpm-tests.h          |  5 +++--
+ tests/tpm-tis-swtpm-test.c |  5 +++--
+ tests/tpm-util.c           |  8 ++++++--
+ tests/tpm-util.h           |  3 ++-
+ 6 files changed, 23 insertions(+), 13 deletions(-)
+
+diff --git a/tests/tpm-crb-swtpm-test.c b/tests/tpm-crb-swtpm-test.c
+index 2c4fb8ae..5228cb7a 100644
+--- a/tests/tpm-crb-swtpm-test.c
++++ b/tests/tpm-crb-swtpm-test.c
+@@ -29,7 +29,8 @@ static void tpm_crb_swtpm_test(const void *data)
+ {
+     const TestState *ts = data;
+ 
+-    tpm_test_swtpm_test(ts->src_tpm_path, tpm_util_crb_transfer, "tpm-crb");
++    tpm_test_swtpm_test(ts->src_tpm_path, tpm_util_crb_transfer,
++                        "tpm-crb", NULL);
+ }
+ 
+ static void tpm_crb_swtpm_migration_test(const void *data)
+@@ -37,7 +38,7 @@ static void tpm_crb_swtpm_migration_test(const void *data)
+     const TestState *ts = data;
+ 
+     tpm_test_swtpm_migration_test(ts->src_tpm_path, ts->dst_tpm_path, ts->uri,
+-                                  tpm_util_crb_transfer, "tpm-crb");
++                                  tpm_util_crb_transfer, "tpm-crb", NULL);
+ }
+ 
+ int main(int argc, char **argv)
+diff --git a/tests/tpm-tests.c b/tests/tpm-tests.c
+index e640777a..d823bda8 100644
+--- a/tests/tpm-tests.c
++++ b/tests/tpm-tests.c
+@@ -30,7 +30,7 @@ tpm_test_swtpm_skip(void)
+ }
+ 
+ void tpm_test_swtpm_test(const char *src_tpm_path, tx_func *tx,
+-                         const char *ifmodel)
++                         const char *ifmodel, const char *machine_options)
+ {
+     char *args = NULL;
+     QTestState *s;
+@@ -47,10 +47,11 @@ void tpm_test_swtpm_test(const char *src_tpm_path, tx_func *tx,
+     g_assert_true(succ);
+ 
+     args = g_strdup_printf(
++        "%s "
+         "-chardev socket,id=chr,path=%s "
+         "-tpmdev emulator,id=dev,chardev=chr "
+         "-device %s,tpmdev=dev",
+-        addr->u.q_unix.path, ifmodel);
++        machine_options ? : "", addr->u.q_unix.path, ifmodel);
+ 
+     s = qtest_start(args);
+     g_free(args);
+@@ -78,7 +79,8 @@ void tpm_test_swtpm_test(const char *src_tpm_path, tx_func *tx,
+ void tpm_test_swtpm_migration_test(const char *src_tpm_path,
+                                    const char *dst_tpm_path,
+                                    const char *uri, tx_func *tx,
+-                                   const char *ifmodel)
++                                   const char *ifmodel,
++                                   const char *machine_options)
+ {
+     gboolean succ;
+     GPid src_tpm_pid, dst_tpm_pid;
+@@ -100,7 +102,7 @@ void tpm_test_swtpm_migration_test(const char *src_tpm_path,
+ 
+     tpm_util_migration_start_qemu(&src_qemu, &dst_qemu,
+                                   src_tpm_addr, dst_tpm_addr, uri,
+-                                  ifmodel);
++                                  ifmodel, machine_options);
+ 
+     tpm_util_startup(src_qemu, tx);
+     tpm_util_pcrextend(src_qemu, tx);
+diff --git a/tests/tpm-tests.h b/tests/tpm-tests.h
+index b97688fe..a5df35ab 100644
+--- a/tests/tpm-tests.h
++++ b/tests/tpm-tests.h
+@@ -16,11 +16,12 @@
+ #include "tpm-util.h"
+ 
+ void tpm_test_swtpm_test(const char *src_tpm_path, tx_func *tx,
+-                         const char *ifmodel);
++                         const char *ifmodel, const char *machine_options);
+ 
+ void tpm_test_swtpm_migration_test(const char *src_tpm_path,
+                                    const char *dst_tpm_path,
+                                    const char *uri, tx_func *tx,
+-                                   const char *ifmodel);
++                                   const char *ifmodel,
++                                   const char *machine_options);
+ 
+ #endif /* TESTS_TPM_TESTS_H */
+diff --git a/tests/tpm-tis-swtpm-test.c b/tests/tpm-tis-swtpm-test.c
+index 9f58a3a9..9470f157 100644
+--- a/tests/tpm-tis-swtpm-test.c
++++ b/tests/tpm-tis-swtpm-test.c
+@@ -29,7 +29,8 @@ static void tpm_tis_swtpm_test(const void *data)
+ {
+     const TestState *ts = data;
+ 
+-    tpm_test_swtpm_test(ts->src_tpm_path, tpm_util_tis_transfer, "tpm-tis");
++    tpm_test_swtpm_test(ts->src_tpm_path, tpm_util_tis_transfer,
++                        "tpm-tis", NULL);
+ }
+ 
+ static void tpm_tis_swtpm_migration_test(const void *data)
+@@ -37,7 +38,7 @@ static void tpm_tis_swtpm_migration_test(const void *data)
+     const TestState *ts = data;
+ 
+     tpm_test_swtpm_migration_test(ts->src_tpm_path, ts->dst_tpm_path, ts->uri,
+-                                  tpm_util_tis_transfer, "tpm-tis");
++                                  tpm_util_tis_transfer, "tpm-tis", NULL);
+ }
+ 
+ int main(int argc, char **argv)
+diff --git a/tests/tpm-util.c b/tests/tpm-util.c
+index e08b1376..7ecdae2f 100644
+--- a/tests/tpm-util.c
++++ b/tests/tpm-util.c
+@@ -258,23 +258,27 @@ void tpm_util_migration_start_qemu(QTestState **src_qemu,
+                                    SocketAddress *src_tpm_addr,
+                                    SocketAddress *dst_tpm_addr,
+                                    const char *miguri,
+-                                   const char *ifmodel)
++                                   const char *ifmodel,
++                                   const char *machine_options)
+ {
+     char *src_qemu_args, *dst_qemu_args;
+ 
+     src_qemu_args = g_strdup_printf(
++        "%s "
+         "-chardev socket,id=chr,path=%s "
+         "-tpmdev emulator,id=dev,chardev=chr "
+         "-device %s,tpmdev=dev ",
+-        src_tpm_addr->u.q_unix.path, ifmodel);
++        machine_options ? : "", src_tpm_addr->u.q_unix.path, ifmodel);
+ 
+     *src_qemu = qtest_init(src_qemu_args);
+ 
+     dst_qemu_args = g_strdup_printf(
++        "%s "
+         "-chardev socket,id=chr,path=%s "
+         "-tpmdev emulator,id=dev,chardev=chr "
+         "-device %s,tpmdev=dev "
+         "-incoming %s",
++        machine_options ? : "",
+         dst_tpm_addr->u.q_unix.path,
+         ifmodel, miguri);
+ 
+diff --git a/tests/tpm-util.h b/tests/tpm-util.h
+index 5755698a..15e39249 100644
+--- a/tests/tpm-util.h
++++ b/tests/tpm-util.h
+@@ -44,7 +44,8 @@ void tpm_util_migration_start_qemu(QTestState **src_qemu,
+                                    SocketAddress *src_tpm_addr,
+                                    SocketAddress *dst_tpm_addr,
+                                    const char *miguri,
+-                                   const char *ifmodel);
++                                   const char *ifmodel,
++                                   const char *machine_options);
+ 
+ void tpm_util_wait_for_migration_complete(QTestState *who);
+ 
+-- 
+2.23.0
+

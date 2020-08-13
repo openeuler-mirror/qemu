@@ -1,0 +1,108 @@
+From 1eca7dbacabbc8ccc737f320839e7800fef5dfa1 Mon Sep 17 00:00:00 2001
+From: jiangfangjie <jiangfangjie@huawei.com>
+Date: Tue, 11 Aug 2020 12:42:31 +0800
+Subject: [PATCH 13/19] tpm: Separate TPM_TIS and TPM_TIS_ISA configs
+ MIME-Version: 1.0 Content-Type: text/plain; charset=UTF-8
+ Content-Transfer-Encoding: 8bit
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Let's separate the compilation of tpm_tis_common.c from
+the compilation of tpm_tis_isa.c
+
+The common part will be also compiled along with the
+tpm_tis_sysbus device.
+
+Signed-off-by: Eric Auger <eric.auger@redhat.com>
+Reviewed-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+Tested-by: Ard Biesheuvel <ard.biesheuvel@linaro.org>
+Acked-by: Ard Biesheuvel <ard.biesheuvel@linaro.org>
+Message-id: 20200305165149.618-5-eric.auger@redhat.com
+Signed-off-by: Stefan Berger <stefanb@linux.ibm.com>
+Signed-off-by: jiangfangjie <jiangfangjie@huawei.com>
+---
+ default-configs/i386-softmmu.mak | 2 +-
+ hw/i386/Kconfig                  | 2 +-
+ hw/tpm/Kconfig                   | 7 ++++++-
+ hw/tpm/Makefile.objs             | 3 ++-
+ tests/Makefile.include           | 4 ++--
+ 5 files changed, 12 insertions(+), 6 deletions(-)
+
+diff --git a/default-configs/i386-softmmu.mak b/default-configs/i386-softmmu.mak
+index cd5ea391..bdeef670 100644
+--- a/default-configs/i386-softmmu.mak
++++ b/default-configs/i386-softmmu.mak
+@@ -17,7 +17,7 @@
+ #CONFIG_SGA=n
+ #CONFIG_TEST_DEVICES=n
+ #CONFIG_TPM_CRB=n
+-#CONFIG_TPM_TIS=n
++#CONFIG_TPM_TIS_ISA=n
+ #CONFIG_VTD=n
+ 
+ # Boards:
+diff --git a/hw/i386/Kconfig b/hw/i386/Kconfig
+index 63504380..60334504 100644
+--- a/hw/i386/Kconfig
++++ b/hw/i386/Kconfig
+@@ -17,7 +17,7 @@ config PC
+     imply SGA
+     imply TEST_DEVICES
+     imply TPM_CRB
+-    imply TPM_TIS
++    imply TPM_TIS_ISA
+     imply VGA_PCI
+     imply VIRTIO_VGA
+     select FDC
+diff --git a/hw/tpm/Kconfig b/hw/tpm/Kconfig
+index 9e67d990..686f8206 100644
+--- a/hw/tpm/Kconfig
++++ b/hw/tpm/Kconfig
+@@ -2,9 +2,14 @@ config TPMDEV
+     bool
+     depends on TPM
+ 
+-config TPM_TIS
++config TPM_TIS_ISA
+     bool
+     depends on TPM && ISA_BUS
++    select TPM_TIS
++
++config TPM_TIS
++    bool
++    depends on TPM
+     select TPMDEV
+ 
+ config TPM_CRB
+diff --git a/hw/tpm/Makefile.objs b/hw/tpm/Makefile.objs
+index fcc4c2f2..3ef2036c 100644
+--- a/hw/tpm/Makefile.objs
++++ b/hw/tpm/Makefile.objs
+@@ -1,6 +1,7 @@
+ common-obj-$(CONFIG_TPM) += tpm_util.o
+ obj-$(call lor,$(CONFIG_TPM_TIS),$(CONFIG_TPM_CRB)) += tpm_ppi.o
+-common-obj-$(CONFIG_TPM_TIS) += tpm_tis_isa.o tpm_tis_common.o
++common-obj-$(CONFIG_TPM_TIS_ISA) += tpm_tis_isa.o
++common-obj-$(CONFIG_TPM_TIS) += tpm_tis_common.o
+ common-obj-$(CONFIG_TPM_CRB) += tpm_crb.o
+ common-obj-$(CONFIG_TPM_PASSTHROUGH) += tpm_passthrough.o
+ common-obj-$(CONFIG_TPM_EMULATOR) += tpm_emulator.o
+diff --git a/tests/Makefile.include b/tests/Makefile.include
+index f3273ad3..c151de64 100644
+--- a/tests/Makefile.include
++++ b/tests/Makefile.include
+@@ -190,8 +190,8 @@ check-qtest-i386-y += tests/q35-test$(EXESUF)
+ check-qtest-i386-y += tests/vmgenid-test$(EXESUF)
+ check-qtest-i386-$(CONFIG_TPM_CRB) += tests/tpm-crb-swtpm-test$(EXESUF)
+ check-qtest-i386-$(CONFIG_TPM_CRB) += tests/tpm-crb-test$(EXESUF)
+-check-qtest-i386-$(CONFIG_TPM_TIS) += tests/tpm-tis-swtpm-test$(EXESUF)
+-check-qtest-i386-$(CONFIG_TPM_TIS) += tests/tpm-tis-test$(EXESUF)
++check-qtest-i386-$(CONFIG_TPM_TIS_ISA) += tests/tpm-tis-swtpm-test$(EXESUF)
++check-qtest-i386-$(CONFIG_TPM_TIS_ISA) += tests/tpm-tis-test$(EXESUF)
+ check-qtest-i386-$(CONFIG_SLIRP) += tests/test-netfilter$(EXESUF)
+ check-qtest-i386-$(CONFIG_POSIX) += tests/test-filter-mirror$(EXESUF)
+ check-qtest-i386-$(CONFIG_RTL8139_PCI) += tests/test-filter-redirector$(EXESUF)
+-- 
+2.23.0
+

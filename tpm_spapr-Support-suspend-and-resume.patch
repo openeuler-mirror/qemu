@@ -1,0 +1,119 @@
+From 2948d9712a7058bcdca6732101874beb1a6e00a9 Mon Sep 17 00:00:00 2001
+From: Stefan Berger <stefanb@linux.vnet.ibm.com>
+Date: Tue, 21 Jan 2020 10:29:33 -0500
+Subject: [PATCH 07/19] tpm_spapr: Support suspend and resume
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Extend the tpm_spapr frontend with VM suspend and resume support.
+
+Signed-off-by: Stefan Berger <stefanb@linux.vnet.ibm.com>
+Message-Id: <20200121152935.649898-5-stefanb@linux.ibm.com>
+Reviewed-by: Marc-André Lureau <marcandre.lureau@redhat.com>
+Signed-off-by: David Gibson <david@gibson.dropbear.id.au>
+Signed-off-by: jiangfangjie <jiangfangjie@huawei.com>
+---
+ hw/tpm/tpm_spapr.c  | 52 ++++++++++++++++++++++++++++++++++++++++++++-
+ hw/tpm/trace-events |  2 ++
+ 2 files changed, 53 insertions(+), 1 deletion(-)
+
+diff --git a/hw/tpm/tpm_spapr.c b/hw/tpm/tpm_spapr.c
+index 1db9696a..8ba561f4 100644
+--- a/hw/tpm/tpm_spapr.c
++++ b/hw/tpm/tpm_spapr.c
+@@ -76,6 +76,8 @@ typedef struct {
+ 
+     unsigned char *buffer;
+ 
++    uint32_t numbytes; /* number of bytes to deliver on resume */
++
+     TPMBackendCmd cmd;
+ 
+     TPMBackend *be_driver;
+@@ -240,6 +242,14 @@ static void tpm_spapr_request_completed(TPMIf *ti, int ret)
+ 
+     /* a max. of be_buffer_size bytes can be transported */
+     len = MIN(tpm_cmd_get_size(s->buffer), s->be_buffer_size);
++
++    if (runstate_check(RUN_STATE_FINISH_MIGRATE)) {
++        trace_tpm_spapr_caught_response(len);
++        /* defer delivery of response until .post_load */
++        s->numbytes = len;
++        return;
++    }
++
+     rc = spapr_vio_dma_write(&s->vdev, be32_to_cpu(crq->data),
+                              s->buffer, len);
+ 
+@@ -288,6 +298,7 @@ static void tpm_spapr_reset(SpaprVioDevice *dev)
+     SpaprTpmState *s = VIO_SPAPR_VTPM(dev);
+ 
+     s->state = SPAPR_VTPM_STATE_NONE;
++    s->numbytes = 0;
+ 
+     s->be_tpm_version = tpm_backend_get_tpm_version(s->be_driver);
+ 
+@@ -309,9 +320,48 @@ static enum TPMVersion tpm_spapr_get_version(TPMIf *ti)
+     return tpm_backend_get_tpm_version(s->be_driver);
+ }
+ 
++/* persistent state handling */
++
++static int tpm_spapr_pre_save(void *opaque)
++{
++    SpaprTpmState *s = opaque;
++
++    tpm_backend_finish_sync(s->be_driver);
++    /*
++     * we cannot deliver the results to the VM since DMA would touch VM memory
++     */
++
++    return 0;
++}
++
++static int tpm_spapr_post_load(void *opaque, int version_id)
++{
++    SpaprTpmState *s = opaque;
++
++    if (s->numbytes) {
++        trace_tpm_spapr_post_load();
++        /* deliver the results to the VM via DMA */
++        tpm_spapr_request_completed(TPM_IF(s), 0);
++        s->numbytes = 0;
++    }
++
++    return 0;
++}
++
+ static const VMStateDescription vmstate_spapr_vtpm = {
+     .name = "tpm-spapr",
+-    .unmigratable = 1,
++    .pre_save = tpm_spapr_pre_save,
++    .post_load = tpm_spapr_post_load,
++    .fields = (VMStateField[]) {
++        VMSTATE_SPAPR_VIO(vdev, SpaprTpmState),
++
++        VMSTATE_UINT8(state, SpaprTpmState),
++        VMSTATE_UINT32(numbytes, SpaprTpmState),
++        VMSTATE_VBUFFER_UINT32(buffer, SpaprTpmState, 0, NULL, numbytes),
++        /* remember DMA address */
++        VMSTATE_UINT32(crq.data, SpaprTpmState),
++        VMSTATE_END_OF_LIST(),
++    }
+ };
+ 
+ static Property tpm_spapr_properties[] = {
+diff --git a/hw/tpm/trace-events b/hw/tpm/trace-events
+index edbe1bd7..b97eea24 100644
+--- a/hw/tpm/trace-events
++++ b/hw/tpm/trace-events
+@@ -67,3 +67,5 @@ tpm_spapr_do_crq_get_version(uint32_t version) "response: version %u"
+ tpm_spapr_do_crq_prepare_to_suspend(void) "response: preparing to suspend"
+ tpm_spapr_do_crq_unknown_msg_type(uint8_t type) "Unknown message type 0x%02x"
+ tpm_spapr_do_crq_unknown_crq(uint8_t raw1, uint8_t raw2) "unknown CRQ 0x%02x 0x%02x ..."
++tpm_spapr_post_load(void) "Delivering TPM response after resume"
++tpm_spapr_caught_response(uint32_t v) "Caught response to deliver after resume: %u bytes"
+-- 
+2.23.0
+
