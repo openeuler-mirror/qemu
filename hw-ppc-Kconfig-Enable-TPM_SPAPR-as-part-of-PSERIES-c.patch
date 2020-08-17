@@ -1,0 +1,36 @@
+From 95cbe18c649a20f98562a993537a67e0ad78bf36 Mon Sep 17 00:00:00 2001
+From: Stefan Berger <stefanb@linux.vnet.ibm.com>
+Date: Tue, 21 Jan 2020 10:29:34 -0500
+Subject: [PATCH 08/19] hw/ppc/Kconfig: Enable TPM_SPAPR as part of PSERIES
+ config
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Signed-off-by: Stefan Berger <stefanb@linux.ibm.com>
+Reviewed-by: Marc-André Lureau <marcandre.lureau@redhat.com>
+Reviewed-by: David Gibson <david@gibson.dropbear.id.au>
+Message-Id: <20200121152935.649898-6-stefanb@linux.ibm.com>
+[dwg: Use default in Kconfig rather than select to avoid breaking
+ Windows host build]
+Signed-off-by: David Gibson <david@gibson.dropbear.id.au>
+Signed-off-by: jiangfangjie <jiangfangjie@huawei.com>
+---
+ hw/tpm/Kconfig | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/hw/tpm/Kconfig b/hw/tpm/Kconfig
+index 4d4ab085..9e67d990 100644
+--- a/hw/tpm/Kconfig
++++ b/hw/tpm/Kconfig
+@@ -25,6 +25,6 @@ config TPM_EMULATOR
+ 
+ config TPM_SPAPR
+     bool
+-    default n
++    default y
+     depends on TPM && PSERIES
+     select TPMDEV
+-- 
+2.23.0
+

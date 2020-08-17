@@ -1,0 +1,43 @@
+From 26b54c545f253049faa633ff886132602ff47241 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Marc-Andr=C3=A9=20Lureau?= <marcandre.lureau@redhat.com>
+Date: Fri, 3 Jan 2020 11:39:59 +0400
+Subject: [PATCH 02/19] tpm-ppi: page-align PPI RAM
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+post-copy migration fails on destination with error such as:
+2019-12-26T10:22:44.714644Z qemu-kvm: ram_block_discard_range:
+Unaligned start address: 0x559d2afae9a0
+
+Use qemu_memalign() to constrain the PPI RAM memory alignment.
+
+Cc: qemu-stable@nongnu.org
+Signed-off-by: Marc-André Lureau <marcandre.lureau@redhat.com>
+Reviewed-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+Reviewed-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+Reviewed-by: Stefan Berger <stefanb@linux.ibm.com>
+Signed-off-by: Stefan Berger <stefanb@linux.ibm.com>
+Message-id: 20200103074000.1006389-3-marcandre.lureau@redhat.com
+Signed-off-by: jiangfangjie <jiangfangjie@huawei.com>
+---
+ hw/tpm/tpm_ppi.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/hw/tpm/tpm_ppi.c b/hw/tpm/tpm_ppi.c
+index cd8205f2..6509ffd4 100644
+--- a/hw/tpm/tpm_ppi.c
++++ b/hw/tpm/tpm_ppi.c
+@@ -44,7 +44,8 @@ void tpm_ppi_reset(TPMPPI *tpmppi)
+ void tpm_ppi_init(TPMPPI *tpmppi, struct MemoryRegion *m,
+                   hwaddr addr, Object *obj)
+ {
+-    tpmppi->buf = g_malloc0(HOST_PAGE_ALIGN(TPM_PPI_ADDR_SIZE));
++    tpmppi->buf = qemu_memalign(qemu_real_host_page_size,
++                                HOST_PAGE_ALIGN(TPM_PPI_ADDR_SIZE));
+     memory_region_init_ram_device_ptr(&tpmppi->ram, obj, "tpm-ppi",
+                                       TPM_PPI_ADDR_SIZE, tpmppi->buf);
+     vmstate_register_ram(&tpmppi->ram, DEVICE(obj));
+-- 
+2.23.0
+

@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 17
+Release: 18
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY
@@ -184,6 +184,25 @@ Patch0171: megasas-avoid-NULL-pointer-dereference.patch
 Patch0172: megasas-use-unsigned-type-for-positive-numeric-field.patch
 Patch0173: hw-scsi-megasas-Fix-possible-out-of-bounds-array-acc.patch
 Patch0174: hw-arm-acpi-enable-SHPC-native-hot-plug.patch
+Patch0175: hw-tpm-rename-Error-parameter-to-more-common-errp.patch
+Patch0176: tpm-ppi-page-align-PPI-RAM.patch
+Patch0177: tpm-Move-tpm_tis_show_buffer-to-tpm_util.c.patch
+Patch0178: spapr-Implement-get_dt_compatible-callback.patch
+Patch0179: delete-the-in-tpm.txt.patch
+Patch0180: tpm_spapr-Support-TPM-for-ppc64-using-CRQ-based-inte.patch
+Patch0181: tpm_spapr-Support-suspend-and-resume.patch
+Patch0182: hw-ppc-Kconfig-Enable-TPM_SPAPR-as-part-of-PSERIES-c.patch
+Patch0183: docs-specs-tpm-reST-ify-TPM-documentation.patch
+Patch0184: tpm-rename-TPM_TIS-into-TPM_TIS_ISA.patch
+Patch0185: tpm-Use-TPMState-as-a-common-struct.patch
+Patch0186: tpm-Separate-tpm_tis-common-functions-from-isa-code.patch
+Patch0187: tpm-Separate-TPM_TIS-and-TPM_TIS_ISA-configs.patch
+Patch0188: tpm-Add-the-SysBus-TPM-TIS-device.patch
+Patch0189: hw-arm-virt-vTPM-support.patch
+Patch0190: docs-specs-tpm-Document-TPM_TIS-sysbus-device-for-AR.patch
+Patch0191: test-tpm-pass-optional-machine-options-to-swtpm-test.patch
+Patch0192: test-tpm-tis-Get-prepared-to-share-tests-between-ISA.patch
+Patch0193: test-tpm-tis-Add-Sysbus-TPM-TIS-device-test.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -326,6 +345,7 @@ buildldflags="VL_LDFLAGS=-Wl,--build-id"
     --enable-linux-aio \
     --enable-cap-ng \
     --enable-vhost-user \
+    --enable-tpm \
 %ifarch aarch64
     --enable-fdt \
     --enable-virglrenderer \
@@ -529,6 +549,9 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Wed Aug 13 2020 Huawei Technologies Co., Ltd <jiangfangjie@huawei.com>
+-target/arm: Aarch64 support vtpm
+
 * Wed Aug 12 2020 Huawei Technologies Co., Ltd <jinzeyu@huawei.com>
 - backport upstream patch to support SHPCHotplug in arm
 

@@ -1,0 +1,101 @@
+From 7974f8ffd75171be106a1ce2705878abbb6c4477 Mon Sep 17 00:00:00 2001
+From: Eric Auger <eric.auger@redhat.com>
+Date: Thu, 5 Mar 2020 17:51:40 +0100
+Subject: [PATCH 10/19] tpm: rename TPM_TIS into TPM_TIS_ISA
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+As we plan to introduce a sysbus TPM_TIS, let's rename
+TPM_TIS into TPM_TIS_ISA.
+
+Signed-off-by: Eric Auger <eric.auger@redhat.com>
+Reviewed-by: Stefan Berger <stefanb@linux.ibm.com>
+Reviewed-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+Tested-by: Ard Biesheuvel <ard.biesheuvel@linaro.org>
+Acked-by: Ard Biesheuvel <ard.biesheuvel@linaro.org>
+Message-id: 20200305165149.618-2-eric.auger@redhat.com
+Signed-off-by: Stefan Berger <stefanb@linux.ibm.com>
+Signed-off-by: jiangfangjie <jiangfangjie@huawei.com>
+---
+ hw/i386/acpi-build.c | 6 +++---
+ hw/tpm/tpm_tis.c     | 4 ++--
+ include/sysemu/tpm.h | 6 +++---
+ 3 files changed, 8 insertions(+), 8 deletions(-)
+
+diff --git a/hw/i386/acpi-build.c b/hw/i386/acpi-build.c
+index c97731ec..093f7d93 100644
+--- a/hw/i386/acpi-build.c
++++ b/hw/i386/acpi-build.c
+@@ -2007,7 +2007,7 @@ build_dsdt(GArray *table_data, BIOSLinker *linker,
+         }
+     }
+ 
+-    if (TPM_IS_TIS(tpm_find())) {
++    if (TPM_IS_TIS_ISA(tpm_find())) {
+         aml_append(crs, aml_memory32_fixed(TPM_TIS_ADDR_BASE,
+                    TPM_TIS_ADDR_SIZE, AML_READ_WRITE));
+     }
+@@ -2178,7 +2178,7 @@ build_dsdt(GArray *table_data, BIOSLinker *linker,
+             /* Scan all PCI buses. Generate tables to support hotplug. */
+             build_append_pci_bus_devices(scope, bus, pm->pcihp_bridge_en);
+ 
+-            if (TPM_IS_TIS(tpm)) {
++            if (TPM_IS_TIS_ISA(tpm)) {
+                 if (misc->tpm_version == TPM_VERSION_2_0) {
+                     dev = aml_device("TPM");
+                     aml_append(dev, aml_name_decl("_HID",
+@@ -2285,7 +2285,7 @@ build_tpm2(GArray *table_data, BIOSLinker *linker, GArray *tcpalog)
+         (char *)&tpm2_ptr->log_area_start_address - table_data->data;
+ 
+     tpm2_ptr->platform_class = cpu_to_le16(TPM2_ACPI_CLASS_CLIENT);
+-    if (TPM_IS_TIS(tpm_find())) {
++    if (TPM_IS_TIS_ISA(tpm_find())) {
+         tpm2_ptr->control_area_address = cpu_to_le64(0);
+         tpm2_ptr->start_method = cpu_to_le32(TPM2_START_METHOD_MMIO);
+     } else if (TPM_IS_CRB(tpm_find())) {
+diff --git a/hw/tpm/tpm_tis.c b/hw/tpm/tpm_tis.c
+index 96a9ac48..49d44652 100644
+--- a/hw/tpm/tpm_tis.c
++++ b/hw/tpm/tpm_tis.c
+@@ -88,7 +88,7 @@ typedef struct TPMState {
+     TPMPPI ppi;
+ } TPMState;
+ 
+-#define TPM(obj) OBJECT_CHECK(TPMState, (obj), TYPE_TPM_TIS)
++#define TPM(obj) OBJECT_CHECK(TPMState, (obj), TYPE_TPM_TIS_ISA)
+ 
+ #define DEBUG_TIS 0
+ 
+@@ -1005,7 +1005,7 @@ static void tpm_tis_class_init(ObjectClass *klass, void *data)
+ }
+ 
+ static const TypeInfo tpm_tis_info = {
+-    .name = TYPE_TPM_TIS,
++    .name = TYPE_TPM_TIS_ISA,
+     .parent = TYPE_ISA_DEVICE,
+     .instance_size = sizeof(TPMState),
+     .instance_init = tpm_tis_initfn,
+diff --git a/include/sysemu/tpm.h b/include/sysemu/tpm.h
+index 15979a36..1691b92c 100644
+--- a/include/sysemu/tpm.h
++++ b/include/sysemu/tpm.h
+@@ -43,12 +43,12 @@ typedef struct TPMIfClass {
+     enum TPMVersion (*get_version)(TPMIf *obj);
+ } TPMIfClass;
+ 
+-#define TYPE_TPM_TIS                "tpm-tis"
++#define TYPE_TPM_TIS_ISA            "tpm-tis"
+ #define TYPE_TPM_CRB                "tpm-crb"
+ #define TYPE_TPM_SPAPR              "tpm-spapr"
+ 
+-#define TPM_IS_TIS(chr)                             \
+-    object_dynamic_cast(OBJECT(chr), TYPE_TPM_TIS)
++#define TPM_IS_TIS_ISA(chr)                         \
++    object_dynamic_cast(OBJECT(chr), TYPE_TPM_TIS_ISA)
+ #define TPM_IS_CRB(chr)                             \
+     object_dynamic_cast(OBJECT(chr), TYPE_TPM_CRB)
+ #define TPM_IS_SPAPR(chr)                           \
+-- 
+2.23.0
+

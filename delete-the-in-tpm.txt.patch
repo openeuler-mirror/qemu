@@ -1,0 +1,26 @@
+From 3020ae141ef40f06b17eb0f16d2a3c6d5872ff89 Mon Sep 17 00:00:00 2001
+From: jiangfangjie <jiangfangjie@huawei.com>
+Date: Wed, 29 Jul 2020 08:45:50 +0000
+Subject: [PATCH 05/19] delete the in tpm.txt
+
+Signed-off-by: jiangfangjie <jiangfangjie@huawei.com>
+---
+ docs/specs/tpm.txt | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/docs/specs/tpm.txt b/docs/specs/tpm.txt
+index 5d8c26b1..9c8cca04 100644
+--- a/docs/specs/tpm.txt
++++ b/docs/specs/tpm.txt
+@@ -89,7 +89,7 @@ TPM upon reboot. The PPI specification defines the operation requests and the
+ actions the firmware has to take. The system administrator passes the operation
+ request number to the firmware through an ACPI interface which writes this
+ number to a memory location that the firmware knows. Upon reboot, the firmware
+-finds the number and sends commands to the the TPM. The firmware writes the TPM
++finds the number and sends commands to the TPM. The firmware writes the TPM
+ result code and the operation request number to a memory location that ACPI can
+ read from and pass the result on to the administrator.
+ 
+-- 
+2.23.0
+

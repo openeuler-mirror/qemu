@@ -1,0 +1,68 @@
+From c520d8e823431be94268daa2a911e224cab81521 Mon Sep 17 00:00:00 2001
+From: Stefan Berger <stefanb@linux.vnet.ibm.com>
+Date: Tue, 21 Jan 2020 10:29:31 -0500
+Subject: [PATCH 04/19] spapr: Implement get_dt_compatible() callback
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+For devices that cannot be statically initialized, implement a
+get_dt_compatible() callback that allows us to ask the device for
+the 'compatible' value.
+
+Signed-off-by: Stefan Berger <stefanb@linux.ibm.com>
+Reviewed-by: Marc-André Lureau <marcandre.lureau@redhat.com>
+Reviewed-by: David Gibson <david@gibson.dropbear.id.au>
+Message-Id: <20200121152935.649898-3-stefanb@linux.ibm.com>
+Signed-off-by: David Gibson <david@gibson.dropbear.id.au>
+Signed-off-by: jiangfangjie <jiangfangjie@huawei.com>
+---
+ hw/ppc/spapr_vio.c         | 11 +++++++++--
+ include/hw/ppc/spapr_vio.h |  1 +
+ 2 files changed, 10 insertions(+), 2 deletions(-)
+
+diff --git a/hw/ppc/spapr_vio.c b/hw/ppc/spapr_vio.c
+index 583c13de..4e50916f 100644
+--- a/hw/ppc/spapr_vio.c
++++ b/hw/ppc/spapr_vio.c
+@@ -89,6 +89,7 @@ static int vio_make_devnode(SpaprVioDevice *dev,
+     SpaprVioDeviceClass *pc = VIO_SPAPR_DEVICE_GET_CLASS(dev);
+     int vdevice_off, node_off, ret;
+     char *dt_name;
++    const char *dt_compatible;
+ 
+     vdevice_off = fdt_path_offset(fdt, "/vdevice");
+     if (vdevice_off < 0) {
+@@ -115,9 +116,15 @@ static int vio_make_devnode(SpaprVioDevice *dev,
+         }
+     }
+ 
+-    if (pc->dt_compatible) {
++    if (pc->get_dt_compatible) {
++        dt_compatible = pc->get_dt_compatible(dev);
++    } else {
++        dt_compatible = pc->dt_compatible;
++    }
++
++    if (dt_compatible) {
+         ret = fdt_setprop_string(fdt, node_off, "compatible",
+-                                 pc->dt_compatible);
++                                 dt_compatible);
+         if (ret < 0) {
+             return ret;
+         }
+diff --git a/include/hw/ppc/spapr_vio.h b/include/hw/ppc/spapr_vio.h
+index 04609f21..97951fc6 100644
+--- a/include/hw/ppc/spapr_vio.h
++++ b/include/hw/ppc/spapr_vio.h
+@@ -56,6 +56,7 @@ typedef struct SpaprVioDeviceClass {
+     void (*realize)(SpaprVioDevice *dev, Error **errp);
+     void (*reset)(SpaprVioDevice *dev);
+     int (*devnode)(SpaprVioDevice *dev, void *fdt, int node_off);
++    const char *(*get_dt_compatible)(SpaprVioDevice *dev);
+ } SpaprVioDeviceClass;
+ 
+ struct SpaprVioDevice {
+-- 
+2.23.0
+
