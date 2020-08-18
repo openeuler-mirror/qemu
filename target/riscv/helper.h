@@ -76,3 +76,12 @@ DEF_HELPER_2(mret, tl, env, tl)
 DEF_HELPER_1(wfi, void, env)
 DEF_HELPER_1(tlb_flush, void, env)
 #endif
+
+/* Hypervisor functions */
+#ifndef CONFIG_USER_ONLY
+DEF_HELPER_1(hyp_tlb_flush, void, env)
+DEF_HELPER_1(hyp_gvma_tlb_flush, void, env)
+DEF_HELPER_4(hyp_load, tl, env, tl, tl, tl)
+DEF_HELPER_5(hyp_store, void, env, tl, tl, tl, tl)
+DEF_HELPER_4(hyp_x_load, tl, env, tl, tl, tl)
+#endif
