@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 18
+Release: 19
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY
@@ -203,6 +203,7 @@ Patch0190: docs-specs-tpm-Document-TPM_TIS-sysbus-device-for-AR.patch
 Patch0191: test-tpm-pass-optional-machine-options-to-swtpm-test.patch
 Patch0192: test-tpm-tis-Get-prepared-to-share-tests-between-ISA.patch
 Patch0193: test-tpm-tis-Add-Sysbus-TPM-TIS-device-test.patch
+Patch0194: build-smt-processor-structure-to-support-smt-topolog.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -549,7 +550,10 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
-* Wed Aug 13 2020 Huawei Technologies Co., Ltd <jiangfangjie@huawei.com>
+* Tue Aug 18 2020 Huawei Technologies Co., Ltd <fanhenglong@huawei.com>
+- hw/acpi/aml-build.c: build smt processor structure to support smt topology
+
+* Thu Aug 13 2020 Huawei Technologies Co., Ltd <jiangfangjie@huawei.com>
 -target/arm: Aarch64 support vtpm
 
 * Wed Aug 12 2020 Huawei Technologies Co., Ltd <jinzeyu@huawei.com>
