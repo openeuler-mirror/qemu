@@ -1,0 +1,77 @@
+From 6f18e959eabf9c752659eb3851f193bf343346c5 Mon Sep 17 00:00:00 2001
+From: Richard Henderson <richard.henderson@linaro.org>
+Date: Sat, 8 Feb 2020 12:57:59 +0000
+Subject: [PATCH 01/13] target/arm: Add isar_feature tests for PAN + ATS1E1
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Include definitions for all of the bits in ID_MMFR3.
+We already have a definition for ID_AA64MMFR1.PAN.
+
+Reviewed-by: Alex Bennée <alex.bennee@linaro.org>
+Reviewed-by: Peter Maydell <peter.maydell@linaro.org>
+Signed-off-by: Richard Henderson <richard.henderson@linaro.org>
+Message-id: 20200208125816.14954-4-richard.henderson@linaro.org
+Signed-off-by: Peter Maydell <peter.maydell@linaro.org>
+---
+ target/arm/cpu.h | 29 +++++++++++++++++++++++++++++
+ 1 file changed, 29 insertions(+)
+
+diff --git a/target/arm/cpu.h b/target/arm/cpu.h
+index 86eb79cd..fe310828 100644
+--- a/target/arm/cpu.h
++++ b/target/arm/cpu.h
+@@ -1680,6 +1680,15 @@ FIELD(ID_ISAR6, FHM, 8, 4)
+ FIELD(ID_ISAR6, SB, 12, 4)
+ FIELD(ID_ISAR6, SPECRES, 16, 4)
+ 
++FIELD(ID_MMFR3, CMAINTVA, 0, 4)
++FIELD(ID_MMFR3, CMAINTSW, 4, 4)
++FIELD(ID_MMFR3, BPMAINT, 8, 4)
++FIELD(ID_MMFR3, MAINTBCST, 12, 4)
++FIELD(ID_MMFR3, PAN, 16, 4)
++FIELD(ID_MMFR3, COHWALK, 20, 4)
++FIELD(ID_MMFR3, CMEMSZ, 24, 4)
++FIELD(ID_MMFR3, SUPERSEC, 28, 4)
++
+ FIELD(ID_MMFR4, SPECSEI, 0, 4)
+ FIELD(ID_MMFR4, AC2, 4, 4)
+ FIELD(ID_MMFR4, XNX, 8, 4)
+@@ -3445,6 +3454,16 @@ static inline bool isar_feature_aa32_vminmaxnm(const ARMISARegisters *id)
+     return FIELD_EX64(id->mvfr2, MVFR2, FPMISC) >= 4;
+ }
+ 
++static inline bool isar_feature_aa32_pan(const ARMISARegisters *id)
++{
++    return FIELD_EX64(id->mvfr0, ID_MMFR3, PAN) != 0;
++}
++
++static inline bool isar_feature_aa32_ats1e1(const ARMISARegisters *id)
++{
++    return FIELD_EX64(id->mvfr0, ID_MMFR3, PAN) >= 2;
++}
++
+ /*
+  * 64-bit feature tests via id registers.
+  */
+@@ -3589,6 +3608,16 @@ static inline bool isar_feature_aa64_lor(const ARMISARegisters *id)
+     return FIELD_EX64(id->id_aa64mmfr1, ID_AA64MMFR1, LO) != 0;
+ }
+ 
++static inline bool isar_feature_aa64_pan(const ARMISARegisters *id)
++{
++    return FIELD_EX64(id->id_aa64mmfr1, ID_AA64MMFR1, PAN) != 0;
++}
++
++static inline bool isar_feature_aa64_ats1e1(const ARMISARegisters *id)
++{
++    return FIELD_EX64(id->id_aa64mmfr1, ID_AA64MMFR1, PAN) >= 2;
++}
++
+ static inline bool isar_feature_aa64_bti(const ARMISARegisters *id)
+ {
+     return FIELD_EX64(id->id_aa64pfr1, ID_AA64PFR1, BT) != 0;
+-- 
+2.25.1
+

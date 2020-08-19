@@ -1,0 +1,186 @@
+From 1d4d4cda9637ec09f8cf30785f68b58cd46815c8 Mon Sep 17 00:00:00 2001
+From: Peter Maydell <peter.maydell@linaro.org>
+Date: Fri, 14 Feb 2020 17:51:05 +0000
+Subject: [PATCH 07/13] target/arm: Stop assuming DBGDIDR always exists
+
+The AArch32 DBGDIDR defines properties like the number of
+breakpoints, watchpoints and context-matching comparators.  On an
+AArch64 CPU, the register may not even exist if AArch32 is not
+supported at EL1.
+
+Currently we hard-code use of DBGDIDR to identify the number of
+breakpoints etc; this works for all our TCG CPUs, but will break if
+we ever add an AArch64-only CPU.  We also have an assert() that the
+AArch32 and AArch64 registers match, which currently works only by
+luck for KVM because we don't populate either of these ID registers
+from the KVM vCPU and so they are both zero.
+
+Clean this up so we have functions for finding the number
+of breakpoints, watchpoints and context comparators which look
+in the appropriate ID register.
+
+This allows us to drop the "check that AArch64 and AArch32 agree
+on the number of breakpoints etc" asserts:
+ * we no longer look at the AArch32 versions unless that's the
+   right place to be looking
+ * it's valid to have a CPU (eg AArch64-only) where they don't match
+ * we shouldn't have been asserting the validity of ID registers
+   in a codepath used with KVM anyway
+
+Signed-off-by: Peter Maydell <peter.maydell@linaro.org>
+Reviewed-by: Richard Henderson <richard.henderson@linaro.org>
+Message-id: 20200214175116.9164-11-peter.maydell@linaro.org
+---
+ target/arm/cpu.h          |  7 +++++++
+ target/arm/debug_helper.c |  6 +++---
+ target/arm/helper.c       | 21 +++++---------------
+ target/arm/internals.h    | 42 +++++++++++++++++++++++++++++++++++++++
+ 4 files changed, 57 insertions(+), 19 deletions(-)
+
+diff --git a/target/arm/cpu.h b/target/arm/cpu.h
+index 230130be..4b1ae32b 100644
+--- a/target/arm/cpu.h
++++ b/target/arm/cpu.h
+@@ -1798,6 +1798,13 @@ FIELD(ID_DFR0, MPROFDBG, 20, 4)
+ FIELD(ID_DFR0, PERFMON, 24, 4)
+ FIELD(ID_DFR0, TRACEFILT, 28, 4)
+ 
++FIELD(DBGDIDR, SE_IMP, 12, 1)
++FIELD(DBGDIDR, NSUHD_IMP, 14, 1)
++FIELD(DBGDIDR, VERSION, 16, 4)
++FIELD(DBGDIDR, CTX_CMPS, 20, 4)
++FIELD(DBGDIDR, BRPS, 24, 4)
++FIELD(DBGDIDR, WRPS, 28, 4)
++
+ FIELD(MVFR0, SIMDREG, 0, 4)
+ FIELD(MVFR0, FPSP, 4, 4)
+ FIELD(MVFR0, FPDP, 8, 4)
+diff --git a/target/arm/debug_helper.c b/target/arm/debug_helper.c
+index dde80273..3f8f667d 100644
+--- a/target/arm/debug_helper.c
++++ b/target/arm/debug_helper.c
+@@ -16,8 +16,8 @@ static bool linked_bp_matches(ARMCPU *cpu, int lbn)
+ {
+     CPUARMState *env = &cpu->env;
+     uint64_t bcr = env->cp15.dbgbcr[lbn];
+-    int brps = extract32(cpu->dbgdidr, 24, 4);
+-    int ctx_cmps = extract32(cpu->dbgdidr, 20, 4);
++    int brps = arm_num_brps(cpu);
++    int ctx_cmps = arm_num_ctx_cmps(cpu);
+     int bt;
+     uint32_t contextidr;
+ 
+@@ -28,7 +28,7 @@ static bool linked_bp_matches(ARMCPU *cpu, int lbn)
+      * case DBGWCR<n>_EL1.LBN must indicate that breakpoint).
+      * We choose the former.
+      */
+-    if (lbn > brps || lbn < (brps - ctx_cmps)) {
++    if (lbn >= brps || lbn < (brps - ctx_cmps)) {
+         return false;
+     }
+ 
+diff --git a/target/arm/helper.c b/target/arm/helper.c
+index a71f4ef6..c1ff4b6b 100644
+--- a/target/arm/helper.c
++++ b/target/arm/helper.c
+@@ -5601,23 +5601,12 @@ static void define_debug_regs(ARMCPU *cpu)
+     };
+ 
+     /* Note that all these register fields hold "number of Xs minus 1". */
+-    brps = extract32(cpu->dbgdidr, 24, 4);
+-    wrps = extract32(cpu->dbgdidr, 28, 4);
+-    ctx_cmps = extract32(cpu->dbgdidr, 20, 4);
++    brps = arm_num_brps(cpu);
++    wrps = arm_num_wrps(cpu);
++    ctx_cmps = arm_num_ctx_cmps(cpu);
+ 
+     assert(ctx_cmps <= brps);
+ 
+-    /* The DBGDIDR and ID_AA64DFR0_EL1 define various properties
+-     * of the debug registers such as number of breakpoints;
+-     * check that if they both exist then they agree.
+-     */
+-    if (arm_feature(&cpu->env, ARM_FEATURE_AARCH64)) {
+-        assert(FIELD_EX64(cpu->isar.id_aa64dfr0, ID_AA64DFR0, BRPS) == brps);
+-        assert(FIELD_EX64(cpu->isar.id_aa64dfr0, ID_AA64DFR0, WRPS) == wrps);
+-        assert(FIELD_EX64(cpu->isar.id_aa64dfr0, ID_AA64DFR0, CTX_CMPS)
+-               == ctx_cmps);
+-    }
+-
+     define_one_arm_cp_reg(cpu, &dbgdidr);
+     define_arm_cp_regs(cpu, debug_cp_reginfo);
+ 
+@@ -5625,7 +5614,7 @@ static void define_debug_regs(ARMCPU *cpu)
+         define_arm_cp_regs(cpu, debug_lpae_cp_reginfo);
+     }
+ 
+-    for (i = 0; i < brps + 1; i++) {
++    for (i = 0; i < brps; i++) {
+         ARMCPRegInfo dbgregs[] = {
+             { .name = "DBGBVR", .state = ARM_CP_STATE_BOTH,
+               .cp = 14, .opc0 = 2, .opc1 = 0, .crn = 0, .crm = i, .opc2 = 4,
+@@ -5644,7 +5633,7 @@ static void define_debug_regs(ARMCPU *cpu)
+         define_arm_cp_regs(cpu, dbgregs);
+     }
+ 
+-    for (i = 0; i < wrps + 1; i++) {
++    for (i = 0; i < wrps; i++) {
+         ARMCPRegInfo dbgregs[] = {
+             { .name = "DBGWVR", .state = ARM_CP_STATE_BOTH,
+               .cp = 14, .opc0 = 2, .opc1 = 0, .crn = 0, .crm = i, .opc2 = 6,
+diff --git a/target/arm/internals.h b/target/arm/internals.h
+index 232d9638..a72d0a6c 100644
+--- a/target/arm/internals.h
++++ b/target/arm/internals.h
+@@ -857,6 +857,48 @@ static inline uint32_t arm_debug_exception_fsr(CPUARMState *env)
+     }
+ }
+ 
++/**
++ * arm_num_brps: Return number of implemented breakpoints.
++ * Note that the ID register BRPS field is "number of bps - 1",
++ * and we return the actual number of breakpoints.
++ */
++static inline int arm_num_brps(ARMCPU *cpu)
++{
++    if (arm_feature(&cpu->env, ARM_FEATURE_AARCH64)) {
++        return FIELD_EX64(cpu->isar.id_aa64dfr0, ID_AA64DFR0, BRPS) + 1;
++    } else {
++        return FIELD_EX32(cpu->dbgdidr, DBGDIDR, BRPS) + 1;
++    }
++}
++
++/**
++ * arm_num_wrps: Return number of implemented watchpoints.
++ * Note that the ID register WRPS field is "number of wps - 1",
++ * and we return the actual number of watchpoints.
++ */
++static inline int arm_num_wrps(ARMCPU *cpu)
++{
++    if (arm_feature(&cpu->env, ARM_FEATURE_AARCH64)) {
++        return FIELD_EX64(cpu->isar.id_aa64dfr0, ID_AA64DFR0, WRPS) + 1;
++    } else {
++        return FIELD_EX32(cpu->dbgdidr, DBGDIDR, WRPS) + 1;
++    }
++}
++
++/**
++ * arm_num_ctx_cmps: Return number of implemented context comparators.
++ * Note that the ID register CTX_CMPS field is "number of cmps - 1",
++ * and we return the actual number of comparators.
++ */
++static inline int arm_num_ctx_cmps(ARMCPU *cpu)
++{
++    if (arm_feature(&cpu->env, ARM_FEATURE_AARCH64)) {
++        return FIELD_EX64(cpu->isar.id_aa64dfr0, ID_AA64DFR0, CTX_CMPS) + 1;
++    } else {
++        return FIELD_EX32(cpu->dbgdidr, DBGDIDR, CTX_CMPS) + 1;
++    }
++}
++
+ /* Note make_memop_idx reserves 4 bits for mmu_idx, and MO_BSWAP is bit 3.
+  * Thus a TCGMemOpIdx, without any MO_ALIGN bits, fits in 8 bits.
+  */
+-- 
+2.25.1
+

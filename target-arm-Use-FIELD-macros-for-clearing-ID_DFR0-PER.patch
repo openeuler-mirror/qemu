@@ -1,0 +1,36 @@
+From f54cdca97bf86f5ca1df8471bc229b89797b287e Mon Sep 17 00:00:00 2001
+From: Peter Maydell <peter.maydell@linaro.org>
+Date: Fri, 14 Feb 2020 17:51:02 +0000
+Subject: [PATCH 04/13] target/arm: Use FIELD macros for clearing ID_DFR0
+ PERFMON field
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+We already define FIELD macros for ID_DFR0, so use them in the
+one place where we're doing direct bit value manipulation.
+
+Reviewed-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+Reviewed-by: Richard Henderson <richard.henderson@linaro.org>
+Signed-off-by: Peter Maydell <peter.maydell@linaro.org>
+Message-id: 20200214175116.9164-8-peter.maydell@linaro.org
+---
+ target/arm/cpu.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/target/arm/cpu.c b/target/arm/cpu.c
+index dbd05e01..6ad211b1 100644
+--- a/target/arm/cpu.c
++++ b/target/arm/cpu.c
+@@ -1523,7 +1523,7 @@ static void arm_cpu_realizefn(DeviceState *dev, Error **errp)
+ #endif
+     } else {
+         cpu->id_aa64dfr0 = FIELD_DP64(cpu->id_aa64dfr0, ID_AA64DFR0, PMUVER, 0);
+-        cpu->id_dfr0 &= ~(0xf << 24);
++        cpu->id_dfr0 = FIELD_DP32(cpu->id_dfr0, ID_DFR0, PERFMON, 0);
+         cpu->pmceid0 = 0;
+         cpu->pmceid1 = 0;
+     }
+-- 
+2.25.1
+

@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 19
+Release: 20
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY
@@ -204,6 +204,19 @@ Patch0191: test-tpm-pass-optional-machine-options-to-swtpm-test.patch
 Patch0192: test-tpm-tis-Get-prepared-to-share-tests-between-ISA.patch
 Patch0193: test-tpm-tis-Add-Sysbus-TPM-TIS-device-test.patch
 Patch0194: build-smt-processor-structure-to-support-smt-topolog.patch
+Patch0195: target-arm-Add-isar_feature-tests-for-PAN-ATS1E1.patch
+Patch0196: target-arm-Add-ID_AA64MMFR2_EL1.patch
+Patch0197: target-arm-Add-and-use-FIELD-definitions-for-ID_AA64.patch
+Patch0198: target-arm-Use-FIELD-macros-for-clearing-ID_DFR0-PER.patch
+Patch0199: target-arm-Define-an-aa32_pmu_8_1-isar-feature-test-.patch
+Patch0200: target-arm-Add-_aa64_-and-_any_-versions-of-pmu_8_1-.patch
+Patch0201: target-arm-Stop-assuming-DBGDIDR-always-exists.patch
+Patch0202: target-arm-Move-DBGDIDR-into-ARMISARegisters.patch
+Patch0203: target-arm-Enable-ARMv8.2-ATS1E1-in-cpu-max.patch
+Patch0204: target-arm-Test-correct-register-in-aa32_pan-and-aa3.patch
+Patch0205: target-arm-Read-debug-related-ID-registers-from-KVM.patch
+Patch0206: target-arm-monitor-Introduce-qmp_query_cpu_model_exp.patch
+Patch0207: target-arm-monitor-query-cpu-model-expansion-crashed.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -550,6 +563,21 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Wed Aug 19 2020 Huawei Technologies Co., Ltd <liangpeng10@huawei.com>
+- target-arm-Add-isar_feature-tests-for-PAN-ATS1E1.patch
+- target-arm-Add-ID_AA64MMFR2_EL1.patch
+- target-arm-Add-and-use-FIELD-definitions-for-ID_AA64.patch
+- target-arm-Use-FIELD-macros-for-clearing-ID_DFR0-PER.patch
+- target-arm-Define-an-aa32_pmu_8_1-isar-feature-test-.patch
+- target-arm-Add-_aa64_-and-_any_-versions-of-pmu_8_1-.patch
+- target-arm-Stop-assuming-DBGDIDR-always-exists.patch
+- target-arm-Move-DBGDIDR-into-ARMISARegisters.patch
+- target-arm-Enable-ARMv8.2-ATS1E1-in-cpu-max.patch
+- target-arm-Test-correct-register-in-aa32_pan-and-aa3.patch
+- target-arm-Read-debug-related-ID-registers-from-KVM.patch
+- target-arm-monitor-Introduce-qmp_query_cpu_model_exp.patch
+- target-arm-monitor-query-cpu-model-expansion-crashed.patch
+
 * Tue Aug 18 2020 Huawei Technologies Co., Ltd <fanhenglong@huawei.com>
 - hw/acpi/aml-build.c: build smt processor structure to support smt topology
 
