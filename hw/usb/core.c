@@ -144,6 +144,8 @@ static void do_token_setup(USBDevice *s, USBPacket *p)
                 "usb_generic_handle_packet: ctrl buffer too small (%d > %zu)\n",
                 s->setup_len, sizeof(s->data_buf));
         p->status = USB_RET_STALL;
+		s->setup_len = 0;
+		s->setup_state = SETUP_STATE_ACK;
         return;
     }
 
@@ -277,6 +279,8 @@ static void do_parameter(USBDevice *s, USBPacket *p)
                 "usb_generic_handle_packet: ctrl buffer too small (%d > %zu)\n",
                 s->setup_len, sizeof(s->data_buf));
         p->status = USB_RET_STALL;
+		s->setup_len = 0;
+		s->setup_state = SETUP_STATE_ACK;
         return;
     }
 
