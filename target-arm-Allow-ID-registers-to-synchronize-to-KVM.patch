@@ -1,0 +1,160 @@
+From 79a60f0eeb56faf5d162ca566d1cd9988c3e4d60 Mon Sep 17 00:00:00 2001
+From: Peng Liang <liangpeng10@huawei.com>
+Date: Thu, 6 Aug 2020 16:14:40 +0800
+Subject: [PATCH 4/9] target/arm: Allow ID registers to synchronize to KVM
+
+There are 2 steps to synchronize the values of system registers from
+CPU state to KVM:
+1. write to the values of system registers from CPU state to
+   (index,value) list by write_cpustate_to_list;
+2. write the values in (index,value) list to KVM by
+   write_list_to_kvmstate;
+
+In step 1, the values of constant system registers are not allowed to
+write to (index,value) list.  However, a constant system register is
+CONSTANT for guest but not for QEMU, which means, QEMU can set/modify
+the value of constant system registers that is different from phsical
+registers when startup.  But if KVM is enabled, guest can not read the
+values of the system registers which QEMU set unless they can be written
+to (index,value) list.  And why not try to write to KVM if kvm_sync is
+true?
+
+At the moment we call write_cpustate_to_list, all ID registers are
+contant, including ID_PFR1_EL1 and ID_AA64PFR0_EL1 because GIC has been
+initialized.  Hence, let's give all ID registers a chance to write to
+KVM.  If the write is successful, then write to (index,value) list.
+
+Signed-off-by: zhanghailiang <zhang.zhanghailiang@huawei.com>
+Signed-off-by: Peng Liang <liangpeng10@huawei.com>
+---
+ target/arm/helper.c  | 31 ++++++++++++++++++++-----------
+ target/arm/kvm.c     | 38 ++++++++++++++++++++++++++++++++++++++
+ target/arm/kvm_arm.h |  3 +++
+ 3 files changed, 61 insertions(+), 11 deletions(-)
+
+diff --git a/target/arm/helper.c b/target/arm/helper.c
+index 459af431..97b6b861 100644
+--- a/target/arm/helper.c
++++ b/target/arm/helper.c
+@@ -32,6 +32,7 @@
+ #include "arm_ldst.h"
+ #include "exec/cpu_ldst.h"
+ #endif
++#include "kvm_arm.h"
+ 
+ #define ARM_CPU_FREQ 1000000000 /* FIXME: 1 GHz, should be configurable */
+ 
+@@ -267,30 +268,38 @@ bool write_cpustate_to_list(ARMCPU *cpu, bool kvm_sync)
+             ok = false;
+             continue;
+         }
+-        if (ri->type & ARM_CP_NO_RAW) {
++        /*
++         * (Op0, Op1, CRn, CRm, Op2) of ID registers is (3, 0, 0, crm, op2),
++         * where 1<=crm<8, 0<=op2<8.  Let's give ID registers a chance to
++         * synchronize to kvm.
++         */
++        if ((ri->type & ARM_CP_NO_RAW) && !(kvm_sync &&
++            ri->opc0 == 3 && ri->opc1 == 0 && ri->crn == 0 && ri->crm > 0)) {
+             continue;
+         }
+ 
+         newval = read_raw_cp_reg(&cpu->env, ri);
+         if (kvm_sync) {
+-            /*
+-             * Only sync if the previous list->cpustate sync succeeded.
+-             * Rather than tracking the success/failure state for every
+-             * item in the list, we just recheck "does the raw write we must
+-             * have made in write_list_to_cpustate() read back OK" here.
+-             */
+-            uint64_t oldval = cpu->cpreg_values[i];
++            /* Only sync if we can sync to KVM successfully. */
++            uint64_t oldval;
++            uint64_t kvmval;
+ 
++            if (kvm_arm_get_one_reg(cpu, cpu->cpreg_indexes[i], &oldval)) {
++                continue;
++            }
+             if (oldval == newval) {
+                 continue;
+             }
+ 
+-            write_raw_cp_reg(&cpu->env, ri, oldval);
+-            if (read_raw_cp_reg(&cpu->env, ri) != oldval) {
++            if (kvm_arm_set_one_reg(cpu, cpu->cpreg_indexes[i], &newval)) {
++                continue;
++            }
++            if (kvm_arm_get_one_reg(cpu, cpu->cpreg_indexes[i], &kvmval) ||
++                kvmval != newval) {
+                 continue;
+             }
+ 
+-            write_raw_cp_reg(&cpu->env, ri, newval);
++            kvm_arm_set_one_reg(cpu, cpu->cpreg_indexes[i], &oldval);
+         }
+         cpu->cpreg_values[i] = newval;
+     }
+diff --git a/target/arm/kvm.c b/target/arm/kvm.c
+index 4f131f68..229b17ce 100644
+--- a/target/arm/kvm.c
++++ b/target/arm/kvm.c
+@@ -457,6 +457,44 @@ out:
+     return ret;
+ }
+ 
++int kvm_arm_get_one_reg(ARMCPU *cpu, uint64_t regidx, uint64_t *target)
++{
++    uint32_t v32;
++    int ret;
++
++    switch (regidx & KVM_REG_SIZE_MASK) {
++    case KVM_REG_SIZE_U32:
++        ret = kvm_get_one_reg(CPU(cpu), regidx, &v32);
++        if (ret == 0) {
++            *target = v32;
++        }
++        return ret;
++    case KVM_REG_SIZE_U64:
++        return kvm_get_one_reg(CPU(cpu), regidx, target);
++    default:
++        return -1;
++    }
++}
++
++int kvm_arm_set_one_reg(ARMCPU *cpu, uint64_t regidx, uint64_t *source)
++{
++    uint32_t v32;
++
++    switch (regidx & KVM_REG_SIZE_MASK) {
++    case KVM_REG_SIZE_U32:
++        v32 = *source;
++        if (v32 != *source) {
++            error_report("the value of source is too large");
++            return -1;
++        }
++        return kvm_set_one_reg(CPU(cpu), regidx, &v32);
++    case KVM_REG_SIZE_U64:
++        return kvm_set_one_reg(CPU(cpu), regidx, source);
++    default:
++        return -1;
++    }
++}
++
+ bool write_kvmstate_to_list(ARMCPU *cpu)
+ {
+     CPUState *cs = CPU(cpu);
+diff --git a/target/arm/kvm_arm.h b/target/arm/kvm_arm.h
+index 0de5f83e..9b7104d6 100644
+--- a/target/arm/kvm_arm.h
++++ b/target/arm/kvm_arm.h
+@@ -400,4 +400,7 @@ static inline const char *its_class_name(void)
+     }
+ }
+ 
++int kvm_arm_get_one_reg(ARMCPU *cpu, uint64_t regidx, uint64_t *target);
++int kvm_arm_set_one_reg(ARMCPU *cpu, uint64_t regidx, uint64_t *source);
++
+ #endif
+-- 
+2.25.1
+

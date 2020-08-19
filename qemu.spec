@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 20
+Release: 21
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY
@@ -217,6 +217,15 @@ Patch0204: target-arm-Test-correct-register-in-aa32_pan-and-aa3.patch
 Patch0205: target-arm-Read-debug-related-ID-registers-from-KVM.patch
 Patch0206: target-arm-monitor-Introduce-qmp_query_cpu_model_exp.patch
 Patch0207: target-arm-monitor-query-cpu-model-expansion-crashed.patch
+Patch0208: target-arm-convert-isar-regs-to-array.patch
+Patch0209: target-arm-parse-cpu-feature-related-options.patch
+Patch0210: target-arm-register-CPU-features-for-property.patch
+Patch0211: target-arm-Allow-ID-registers-to-synchronize-to-KVM.patch
+Patch0212: target-arm-introduce-CPU-feature-dependency-mechanis.patch
+Patch0213: target-arm-introduce-KVM_CAP_ARM_CPU_FEATURE.patch
+Patch0214: target-arm-Add-CPU-features-to-query-cpu-model-expan.patch
+Patch0215: target-arm-Update-ID-fields.patch
+Patch0216: target-arm-Add-more-CPU-features.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -563,6 +572,17 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Wed Aug 19 2020 Huawei Technologies Co., Ltd <liangpeng10@huawei.com>
+- target-arm-convert-isar-regs-to-array.patch
+- target-arm-parse-cpu-feature-related-options.patch
+- target-arm-register-CPU-features-for-property.patch
+- target-arm-Allow-ID-registers-to-synchronize-to-KVM.patch
+- target-arm-introduce-CPU-feature-dependency-mechanis.patch
+- target-arm-introduce-KVM_CAP_ARM_CPU_FEATURE.patch
+- target-arm-Add-CPU-features-to-query-cpu-model-expan.patch
+- target-arm-Update-ID-fields.patch
+- target-arm-Add-more-CPU-features.patch
+
 * Wed Aug 19 2020 Huawei Technologies Co., Ltd <liangpeng10@huawei.com>
 - target-arm-Add-isar_feature-tests-for-PAN-ATS1E1.patch
 - target-arm-Add-ID_AA64MMFR2_EL1.patch
