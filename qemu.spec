@@ -204,6 +204,7 @@ Patch0191: test-tpm-pass-optional-machine-options-to-swtpm-test.patch
 Patch0192: test-tpm-tis-Get-prepared-to-share-tests-between-ISA.patch
 Patch0193: test-tpm-tis-Add-Sysbus-TPM-TIS-device-test.patch
 Patch0194: build-smt-processor-structure-to-support-smt-topolog.patch
+Patch0195: hw-usb-core-fix-buffer-overflow.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -550,6 +551,9 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Fri Aug 21 2020 Huawei Technologies Co., Ltd <lijiajie11@huawei.com>
+- hw/usb/core.c: fix buffer overflow in do_token_setup function
+
 * Tue Aug 18 2020 Huawei Technologies Co., Ltd <fanhenglong@huawei.com>
 - hw/acpi/aml-build.c: build smt processor structure to support smt topology
 
