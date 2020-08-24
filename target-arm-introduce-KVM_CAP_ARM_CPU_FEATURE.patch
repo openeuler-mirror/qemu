@@ -1,0 +1,92 @@
+From 7ed595242f52d0654982d41a9c2a63be2bc3378e Mon Sep 17 00:00:00 2001
+From: Peng Liang <liangpeng10@huawei.com>
+Date: Thu, 6 Aug 2020 16:14:55 +0800
+Subject: [PATCH 6/9] target/arm: introduce KVM_CAP_ARM_CPU_FEATURE
+
+Introduce KVM_CAP_ARM_CPU_FEATURE to check whether KVM supports to set
+CPU features in ARM.
+
+Signed-off-by: zhanghailiang <zhang.zhanghailiang@huawei.com>
+Signed-off-by: Peng Liang <liangpeng10@huawei.com>
+---
+ linux-headers/linux/kvm.h |  2 ++
+ target/arm/cpu.c          |  5 +++++
+ target/arm/kvm64.c        | 14 ++++++++++++++
+ target/arm/kvm_arm.h      |  7 +++++++
+ 4 files changed, 28 insertions(+)
+
+diff --git a/linux-headers/linux/kvm.h b/linux-headers/linux/kvm.h
+index 744e888e..4844edc3 100644
+--- a/linux-headers/linux/kvm.h
++++ b/linux-headers/linux/kvm.h
+@@ -995,6 +995,8 @@ struct kvm_ppc_resize_hpt {
+ #define KVM_CAP_ARM_PTRAUTH_ADDRESS 171
+ #define KVM_CAP_ARM_PTRAUTH_GENERIC 172
+ 
++#define KVM_CAP_ARM_CPU_FEATURE 555
++
+ #ifdef KVM_CAP_IRQ_ROUTING
+ 
+ struct kvm_irq_routing_irqchip {
+diff --git a/target/arm/cpu.c b/target/arm/cpu.c
+index d5576538..db46afba 100644
+--- a/target/arm/cpu.c
++++ b/target/arm/cpu.c
+@@ -1427,6 +1427,11 @@ static void arm_cpu_set_bit_prop(Object *obj, Visitor *v, const char *name,
+     Error *local_err = NULL;
+     bool value;
+ 
++    if (!kvm_arm_cpu_feature_supported()) {
++        warn_report("KVM doesn't support to set CPU feature in arm.  "
++                    "Setting to `%s` is ignored.", name);
++        return;
++    }
+     if (dev->realized) {
+         qdev_prop_set_after_realize(dev, name, errp);
+         return;
+diff --git a/target/arm/kvm64.c b/target/arm/kvm64.c
+index 06cf31e8..05345556 100644
+--- a/target/arm/kvm64.c
++++ b/target/arm/kvm64.c
+@@ -644,6 +644,20 @@ bool kvm_arm_get_host_cpu_features(ARMHostCPUFeatures *ahcf)
+     return true;
+ }
+ 
++bool kvm_arm_cpu_feature_supported(void)
++{
++    static bool cpu_feature_initialized;
++    static bool cpu_feature_supported;
++
++    if (!cpu_feature_initialized) {
++        cpu_feature_supported = kvm_check_extension(kvm_state,
++                                                    KVM_CAP_ARM_CPU_FEATURE);
++        cpu_feature_initialized = true;
++    }
++
++    return cpu_feature_supported;
++}
++
+ #define ARM_CPU_ID_MPIDR       3, 0, 0, 0, 5
+ 
+ int kvm_arch_init_vcpu(CPUState *cs)
+diff --git a/target/arm/kvm_arm.h b/target/arm/kvm_arm.h
+index 9b7104d6..49e80878 100644
+--- a/target/arm/kvm_arm.h
++++ b/target/arm/kvm_arm.h
+@@ -239,6 +239,13 @@ void kvm_arm_set_cpu_features_from_host(ARMCPU *cpu);
+  */
+ void kvm_arm_add_vcpu_properties(Object *obj);
+ 
++/**
++ * kvm_arm_cpu_feature_supported:
++ *
++ * Returns true if KVM can set CPU features and false otherwise.
++ */
++bool kvm_arm_cpu_feature_supported(void);
++
+ /**
+  * kvm_arm_get_max_vm_ipa_size:
+  * @ms: Machine state handle
+-- 
+2.25.1
+

@@ -1,0 +1,30 @@
+From 3eee1e4ff1ca342e760f759c727abc41780d0afa Mon Sep 17 00:00:00 2001
+From: Peng Liang <liangpeng10@huawei.com>
+Date: Tue, 11 Aug 2020 10:28:10 +0800
+Subject: [PATCH 9/9] target/arm: Add more CPU features
+
+Add i8mm, bf16, and dgh CPU features for AArch64.
+
+Signed-off-by: zhanghailiang <zhang.zhanghailiang@huawei.com>
+Signed-off-by: Peng Liang <liangpeng10@huawei.com>
+---
+ target/arm/cpu.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/target/arm/cpu.c b/target/arm/cpu.c
+index dcf9f49e..7ae2d3da 100644
+--- a/target/arm/cpu.c
++++ b/target/arm/cpu.c
+@@ -1132,6 +1132,9 @@ static struct CPUFeatureInfo cpu_features[] = {
+     FIELD_INFO("fhm", ID_ISAR6, FHM, false, 1, 0, true),
+     FIELD_INFO("sb", ID_ISAR6, SB, false, 1, 0, true),
+     FIELD_INFO("specres", ID_ISAR6, SPECRES, false, 1, 0, true),
++    FIELD_INFO("i8mm", ID_AA64ISAR1, I8MM, false, 1, 0, false),
++    FIELD_INFO("bf16", ID_AA64ISAR1, BF16, false, 1, 0, false),
++    FIELD_INFO("dgh", ID_AA64ISAR1, DGH, false, 1, 0, false),
+ 
+     FIELD_INFO("cmaintva", ID_MMFR3, CMAINTVA, false, 1, 0, true),
+     FIELD_INFO("cmaintsw", ID_MMFR3, CMAINTSW, false, 1, 0, true),
+-- 
+2.25.1
+
