@@ -43,6 +43,7 @@
 #include "exec/address-spaces.h"
 #include "hw/pci/pci.h"
 #include "hw/pci-host/gpex.h"
+#include "sysemu/kvm.h"
 
 #include <libfdt.h>
 
@@ -498,6 +499,9 @@ static void riscv_virt_board_init(MachineState *machine)
     target_ulong start_addr = memmap[VIRT_DRAM].base;
     DeviceState *mmio_plic, *virtio_plic, *pcie_plic;
     int i, j, base_hartid, hart_count;
+    uint64_t kernel_entry = 0;
+    hwaddr start_fdt;
+    CPUState *cs;
 
     /* Check socket count limit */
     if (VIRT_SOCKETS_MAX < riscv_socket_count(machine)) {
@@ -607,7 +611,7 @@ static void riscv_virt_board_init(MachineState *machine)
                                  memmap[VIRT_DRAM].base, NULL);
 
     if (machine->kernel_filename) {
-        uint64_t kernel_entry = riscv_load_kernel(machine->kernel_filename,
+        kernel_entry = riscv_load_kernel(machine->kernel_filename,
                                                   NULL);
 
         if (machine->initrd_filename) {
@@ -661,9 +665,16 @@ static void riscv_virt_board_init(MachineState *machine)
         exit(1);
     }
     qemu_fdt_dumpdtb(s->fdt, fdt_totalsize(s->fdt));
+    start_fdt = memmap[VIRT_MROM].base + sizeof(reset_vec);
     rom_add_blob_fixed_as("mrom.fdt", s->fdt, fdt_totalsize(s->fdt),
-                          memmap[VIRT_MROM].base + sizeof(reset_vec),
+                          start_fdt,
                           &address_space_memory);
+
+    for (cs = first_cpu; cs; cs = CPU_NEXT(cs)) {
+        RISCVCPU *riscv_cpu = RISCV_CPU(cs);
+        riscv_cpu->env.loader_start = kernel_entry;
+        riscv_cpu->env.fdt_start = start_fdt;
+    }
 
     /* SiFive Test MMIO device */
     sifive_test_create(memmap[VIRT_TEST].base);
