@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 21
+Release: 22
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY
@@ -226,6 +226,7 @@ Patch0213: target-arm-introduce-KVM_CAP_ARM_CPU_FEATURE.patch
 Patch0214: target-arm-Add-CPU-features-to-query-cpu-model-expan.patch
 Patch0215: target-arm-Update-ID-fields.patch
 Patch0216: target-arm-Add-more-CPU-features.patch
+Patch0217: hw-usb-core-fix-buffer-overflow.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -572,6 +573,9 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Fri Aug 21 2020 Huawei Technologies Co., Ltd <lijiajie11@huawei.com>
+- hw/usb/core.c: fix buffer overflow in do_token_setup function
+
 * Wed Aug 19 2020 Huawei Technologies Co., Ltd <liangpeng10@huawei.com>
 - target-arm-convert-isar-regs-to-array.patch
 - target-arm-parse-cpu-feature-related-options.patch
