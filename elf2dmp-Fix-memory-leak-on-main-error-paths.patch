@@ -1,0 +1,41 @@
+From 1f63f8c20a4cb7b752981ef07b2614bbea828b30 Mon Sep 17 00:00:00 2001
+From: AlexChen <alex.chen@huawei.com>
+Date: Wed, 26 Aug 2020 18:15:53 +0800
+Subject: [PATCH] elf2dmp: Fix memory leak on main() error paths
+
+The 'kdgb' is allocating memory in get_kdbg(), but it is not freed
+in both fill_header() and fill_context() failed branches, fix it.
+
+Signed-off-by: AlexChen <alex.chen@huawei.com>
+Reviewed-by: Li Qiang <liq3ea@gmail.com>
+Reviewed-by: Viktor Prutyanov <viktor.prutyanov@phystech.edu>
+Reviewed-by: Thomas Huth <thuth@redhat.com>
+Message-Id: <5F463659.8080101@huawei.com>
+Signed-off-by: Laurent Vivier <laurent@vivier.eu>
+(cherry-picked from commit 885538fdc9)
+---
+ contrib/elf2dmp/main.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/contrib/elf2dmp/main.c b/contrib/elf2dmp/main.c
+index 9a2dbc2902..ac746e49e0 100644
+--- a/contrib/elf2dmp/main.c
++++ b/contrib/elf2dmp/main.c
+@@ -568,12 +568,12 @@ int main(int argc, char *argv[])
+     if (fill_header(&header, &ps, &vs, KdDebuggerDataBlock, kdbg,
+             KdVersionBlock, qemu_elf.state_nr)) {
+         err = 1;
+-        goto out_pdb;
++        goto out_kdbg;
+     }
+ 
+     if (fill_context(kdbg, &vs, &qemu_elf)) {
+         err = 1;
+-        goto out_pdb;
++        goto out_kdbg;
+     }
+ 
+     if (write_dump(&ps, &header, argv[2])) {
+-- 
+2.27.0
+
