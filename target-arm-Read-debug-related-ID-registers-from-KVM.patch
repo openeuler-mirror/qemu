@@ -1,0 +1,131 @@
+From 9cda8af5af9e95e7b0ff683d0fb661c1ffcba8d8 Mon Sep 17 00:00:00 2001
+From: Peter Maydell <peter.maydell@linaro.org>
+Date: Fri, 14 Feb 2020 17:51:07 +0000
+Subject: [PATCH 11/13] target/arm: Read debug-related ID registers from KVM
+
+Now we have isar_feature test functions that look at fields in the
+ID_AA64DFR0_EL1 and ID_DFR0 ID registers, add the code that reads
+these register values from KVM so that the checks behave correctly
+when we're using KVM.
+
+No isar_feature function tests ID_AA64DFR1_EL1 or DBGDIDR yet, but we
+add it to maintain the invariant that every field in the
+ARMISARegisters struct is populated for a KVM CPU and can be relied
+on.  This requirement isn't actually written down yet, so add a note
+to the relevant comment.
+
+Signed-off-by: Peter Maydell <peter.maydell@linaro.org>
+Reviewed-by: Richard Henderson <richard.henderson@linaro.org>
+Message-id: 20200214175116.9164-13-peter.maydell@linaro.org
+---
+ target/arm/cpu.h   |  5 +++++
+ target/arm/kvm32.c |  8 ++++++++
+ target/arm/kvm64.c | 36 ++++++++++++++++++++++++++++++++++++
+ 3 files changed, 49 insertions(+)
+
+diff --git a/target/arm/cpu.h b/target/arm/cpu.h
+index a78c30c3..56d8cd8c 100644
+--- a/target/arm/cpu.h
++++ b/target/arm/cpu.h
+@@ -848,6 +848,11 @@ struct ARMCPU {
+      * prefix means a constant register.
+      * Some of these registers are split out into a substructure that
+      * is shared with the translators to control the ISA.
++     *
++     * Note that if you add an ID register to the ARMISARegisters struct
++     * you need to also update the 32-bit and 64-bit versions of the
++     * kvm_arm_get_host_cpu_features() function to correctly populate the
++     * field by reading the value from the KVM vCPU.
+      */
+     struct ARMISARegisters {
+         uint32_t id_isar0;
+diff --git a/target/arm/kvm32.c b/target/arm/kvm32.c
+index 2247148e..e984d52d 100644
+--- a/target/arm/kvm32.c
++++ b/target/arm/kvm32.c
+@@ -93,6 +93,9 @@ bool kvm_arm_get_host_cpu_features(ARMHostCPUFeatures *ahcf)
+         ahcf->isar.id_isar6 = 0;
+     }
+ 
++    err |= read_sys_reg32(fdarray[2], &ahcf->isar.id_dfr0,
++                          ARM_CP15_REG32(0, 0, 1, 2));
++
+     err |= read_sys_reg32(fdarray[2], &ahcf->isar.mvfr0,
+                           KVM_REG_ARM | KVM_REG_SIZE_U32 |
+                           KVM_REG_ARM_VFP | KVM_REG_ARM_VFP_MVFR0);
+@@ -121,6 +124,11 @@ bool kvm_arm_get_host_cpu_features(ARMHostCPUFeatures *ahcf)
+         ahcf->isar.id_mmfr4 = 0;
+     }
+ 
++    /*
++     * There is no way to read DBGDIDR, because currently 32-bit KVM
++     * doesn't implement debug at all. Leave it at zero.
++     */
++
+     kvm_arm_destroy_scratch_host_vcpu(fdarray);
+ 
+     if (err < 0) {
+diff --git a/target/arm/kvm64.c b/target/arm/kvm64.c
+index 276d1466..2a88b8df 100644
+--- a/target/arm/kvm64.c
++++ b/target/arm/kvm64.c
+@@ -533,6 +533,10 @@ bool kvm_arm_get_host_cpu_features(ARMHostCPUFeatures *ahcf)
+     } else {
+         err |= read_sys_reg64(fdarray[2], &ahcf->isar.id_aa64pfr1,
+                               ARM64_SYS_REG(3, 0, 0, 4, 1));
++        err |= read_sys_reg64(fdarray[2], &ahcf->isar.id_aa64dfr0,
++                              ARM64_SYS_REG(3, 0, 0, 5, 0));
++        err |= read_sys_reg64(fdarray[2], &ahcf->isar.id_aa64dfr1,
++                              ARM64_SYS_REG(3, 0, 0, 5, 1));
+         err |= read_sys_reg64(fdarray[2], &ahcf->isar.id_aa64isar0,
+                               ARM64_SYS_REG(3, 0, 0, 6, 0));
+         err |= read_sys_reg64(fdarray[2], &ahcf->isar.id_aa64isar1,
+@@ -551,6 +555,8 @@ bool kvm_arm_get_host_cpu_features(ARMHostCPUFeatures *ahcf)
+          * than skipping the reads and leaving 0, as we must avoid
+          * considering the values in every case.
+          */
++        err |= read_sys_reg32(fdarray[2], &ahcf->isar.id_dfr0,
++                              ARM64_SYS_REG(3, 0, 0, 1, 2));
+         err |= read_sys_reg32(fdarray[2], &ahcf->isar.id_mmfr0,
+                               ARM64_SYS_REG(3, 0, 0, 1, 4));
+         err |= read_sys_reg32(fdarray[2], &ahcf->isar.id_mmfr1,
+@@ -582,6 +588,36 @@ bool kvm_arm_get_host_cpu_features(ARMHostCPUFeatures *ahcf)
+                               ARM64_SYS_REG(3, 0, 0, 3, 1));
+         err |= read_sys_reg32(fdarray[2], &ahcf->isar.mvfr2,
+                               ARM64_SYS_REG(3, 0, 0, 3, 2));
++
++        /*
++         * DBGDIDR is a bit complicated because the kernel doesn't
++         * provide an accessor for it in 64-bit mode, which is what this
++         * scratch VM is in, and there's no architected "64-bit sysreg
++         * which reads the same as the 32-bit register" the way there is
++         * for other ID registers. Instead we synthesize a value from the
++         * AArch64 ID_AA64DFR0, the same way the kernel code in
++         * arch/arm64/kvm/sys_regs.c:trap_dbgidr() does.
++         * We only do this if the CPU supports AArch32 at EL1.
++         */
++        if (FIELD_EX32(ahcf->isar.id_aa64pfr0, ID_AA64PFR0, EL1) >= 2) {
++            int wrps = FIELD_EX64(ahcf->isar.id_aa64dfr0, ID_AA64DFR0, WRPS);
++            int brps = FIELD_EX64(ahcf->isar.id_aa64dfr0, ID_AA64DFR0, BRPS);
++            int ctx_cmps =
++                FIELD_EX64(ahcf->isar.id_aa64dfr0, ID_AA64DFR0, CTX_CMPS);
++            int version = 6; /* ARMv8 debug architecture */
++            bool has_el3 =
++                !!FIELD_EX32(ahcf->isar.id_aa64pfr0, ID_AA64PFR0, EL3);
++            uint32_t dbgdidr = 0;
++
++            dbgdidr = FIELD_DP32(dbgdidr, DBGDIDR, WRPS, wrps);
++            dbgdidr = FIELD_DP32(dbgdidr, DBGDIDR, BRPS, brps);
++            dbgdidr = FIELD_DP32(dbgdidr, DBGDIDR, CTX_CMPS, ctx_cmps);
++            dbgdidr = FIELD_DP32(dbgdidr, DBGDIDR, VERSION, version);
++            dbgdidr = FIELD_DP32(dbgdidr, DBGDIDR, NSUHD_IMP, has_el3);
++            dbgdidr = FIELD_DP32(dbgdidr, DBGDIDR, SE_IMP, has_el3);
++            dbgdidr |= (1 << 15); /* RES1 bit */
++            ahcf->isar.dbgdidr = dbgdidr;
++        }
+     }
+ 
+     kvm_arm_destroy_scratch_host_vcpu(fdarray);
+-- 
+2.25.1
+

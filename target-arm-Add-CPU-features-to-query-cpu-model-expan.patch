@@ -1,0 +1,89 @@
+From 274d25bdb2df13a26ad6d2a8a06fcc281a22f642 Mon Sep 17 00:00:00 2001
+From: Peng Liang <liangpeng10@huawei.com>
+Date: Thu, 6 Aug 2020 16:14:58 +0800
+Subject: [PATCH 7/9] target/arm: Add CPU features to query-cpu-model-expansion
+
+Add CPU features to the result of query-cpu-model-expansion so that
+other applications (such as libvirt) can know the supported CPU
+features.
+
+Signed-off-by: zhanghailiang <zhang.zhanghailiang@huawei.com>
+Signed-off-by: Peng Liang <liangpeng10@huawei.com>
+---
+ target/arm/cpu.c     | 27 +++++++++++++++++++++++++++
+ target/arm/cpu.h     |  2 ++
+ target/arm/monitor.c |  2 ++
+ 3 files changed, 31 insertions(+)
+
+diff --git a/target/arm/cpu.c b/target/arm/cpu.c
+index db46afba..dcf9f49e 100644
+--- a/target/arm/cpu.c
++++ b/target/arm/cpu.c
+@@ -25,6 +25,8 @@
+ #include "qemu/module.h"
+ #include "qapi/error.h"
+ #include "qapi/visitor.h"
++#include "qapi/qmp/qdict.h"
++#include "qom/qom-qobject.h"
+ #include "cpu.h"
+ #include "internals.h"
+ #include "exec/exec-all.h"
+@@ -1403,6 +1405,31 @@ static const CPUFeatureDep feature_dependencies[] = {
+     },
+ };
+ 
++void arm_cpu_features_to_dict(ARMCPU *cpu, QDict *features)
++{
++    Object *obj = OBJECT(cpu);
++    const char *name;
++    ObjectProperty *prop;
++    bool is_32bit = !arm_feature(&cpu->env, ARM_FEATURE_AARCH64);
++    int i;
++
++    for (i = 0; i < ARRAY_SIZE(cpu_features); ++i) {
++        if (is_32bit != cpu_features[i].is_32bit) {
++            continue;
++        }
++
++        name = cpu_features[i].name;
++        prop = object_property_find(obj, name, NULL);
++        if (prop) {
++            QObject *value;
++
++            assert(prop->get);
++            value = object_property_get_qobject(obj, name, &error_abort);
++            qdict_put_obj(features, name, value);
++        }
++    }
++}
++
+ static void arm_cpu_get_bit_prop(Object *obj, Visitor *v, const char *name,
+                                  void *opaque, Error **errp)
+ {
+diff --git a/target/arm/cpu.h b/target/arm/cpu.h
+index 7bb481fb..068c3fa2 100644
+--- a/target/arm/cpu.h
++++ b/target/arm/cpu.h
+@@ -3692,4 +3692,6 @@ static inline bool isar_feature_any_pmu_8_1(const ARMISARegisters *id)
+ #define cpu_isar_feature(name, cpu) \
+     ({ ARMCPU *cpu_ = (cpu); isar_feature_##name(&cpu_->isar); })
+ 
++void arm_cpu_features_to_dict(ARMCPU *cpu, QDict *features);
++
+ #endif
+diff --git a/target/arm/monitor.c b/target/arm/monitor.c
+index e2b1d117..7c2ff3c0 100644
+--- a/target/arm/monitor.c
++++ b/target/arm/monitor.c
+@@ -219,6 +219,8 @@ CpuModelExpansionInfo *qmp_query_cpu_model_expansion(CpuModelExpansionType type,
+         }
+     }
+ 
++    arm_cpu_features_to_dict(ARM_CPU(obj), qdict_out);
++
+     if (!qdict_size(qdict_out)) {
+         qobject_unref(qdict_out);
+     } else {
+-- 
+2.25.1
+

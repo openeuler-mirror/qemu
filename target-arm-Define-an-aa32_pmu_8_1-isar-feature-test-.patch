@@ -1,0 +1,248 @@
+From 2eded1a4deeb5dd8d28414e54948bcf773f6b540 Mon Sep 17 00:00:00 2001
+From: Peter Maydell <peter.maydell@linaro.org>
+Date: Fri, 14 Feb 2020 17:51:03 +0000
+Subject: [PATCH 05/13] target/arm: Define an aa32_pmu_8_1 isar feature test
+ function
+
+Instead of open-coding a check on the ID_DFR0 PerfMon ID register
+field, create a standardly-named isar_feature for "does AArch32 have
+a v8.1 PMUv3" and use it.
+
+This entails moving the id_dfr0 field into the ARMISARegisters struct.
+
+Reviewed-by: Richard Henderson <richard.henderson@linaro.org>
+Signed-off-by: Peter Maydell <peter.maydell@linaro.org>
+Message-id: 20200214175116.9164-9-peter.maydell@linaro.org
+---
+ hw/intc/armv7m_nvic.c |  2 +-
+ target/arm/cpu.c      | 26 +++++++++++++-------------
+ target/arm/cpu.h      |  9 ++++++++-
+ target/arm/cpu64.c    |  6 +++---
+ target/arm/helper.c   |  5 ++---
+ 5 files changed, 27 insertions(+), 21 deletions(-)
+
+diff --git a/hw/intc/armv7m_nvic.c b/hw/intc/armv7m_nvic.c
+index 9f8f0d3f..0741db7b 100644
+--- a/hw/intc/armv7m_nvic.c
++++ b/hw/intc/armv7m_nvic.c
+@@ -1223,7 +1223,7 @@ static uint32_t nvic_readl(NVICState *s, uint32_t offset, MemTxAttrs attrs)
+     case 0xd44: /* PFR1.  */
+         return cpu->id_pfr1;
+     case 0xd48: /* DFR0.  */
+-        return cpu->id_dfr0;
++        return cpu->isar.id_dfr0;
+     case 0xd4c: /* AFR0.  */
+         return cpu->id_afr0;
+     case 0xd50: /* MMFR0.  */
+diff --git a/target/arm/cpu.c b/target/arm/cpu.c
+index 6ad211b1..7e9b85a2 100644
+--- a/target/arm/cpu.c
++++ b/target/arm/cpu.c
+@@ -1523,7 +1523,7 @@ static void arm_cpu_realizefn(DeviceState *dev, Error **errp)
+ #endif
+     } else {
+         cpu->id_aa64dfr0 = FIELD_DP64(cpu->id_aa64dfr0, ID_AA64DFR0, PMUVER, 0);
+-        cpu->id_dfr0 = FIELD_DP32(cpu->id_dfr0, ID_DFR0, PERFMON, 0);
++        cpu->isar.id_dfr0 = FIELD_DP32(cpu->isar.id_dfr0, ID_DFR0, PERFMON, 0);
+         cpu->pmceid0 = 0;
+         cpu->pmceid1 = 0;
+     }
+@@ -1761,7 +1761,7 @@ static void arm1136_r2_initfn(Object *obj)
+     cpu->reset_sctlr = 0x00050078;
+     cpu->id_pfr0 = 0x111;
+     cpu->id_pfr1 = 0x1;
+-    cpu->id_dfr0 = 0x2;
++    cpu->isar.id_dfr0 = 0x2;
+     cpu->id_afr0 = 0x3;
+     cpu->id_mmfr0 = 0x01130003;
+     cpu->id_mmfr1 = 0x10030302;
+@@ -1793,7 +1793,7 @@ static void arm1136_initfn(Object *obj)
+     cpu->reset_sctlr = 0x00050078;
+     cpu->id_pfr0 = 0x111;
+     cpu->id_pfr1 = 0x1;
+-    cpu->id_dfr0 = 0x2;
++    cpu->isar.id_dfr0 = 0x2;
+     cpu->id_afr0 = 0x3;
+     cpu->id_mmfr0 = 0x01130003;
+     cpu->id_mmfr1 = 0x10030302;
+@@ -1826,7 +1826,7 @@ static void arm1176_initfn(Object *obj)
+     cpu->reset_sctlr = 0x00050078;
+     cpu->id_pfr0 = 0x111;
+     cpu->id_pfr1 = 0x11;
+-    cpu->id_dfr0 = 0x33;
++    cpu->isar.id_dfr0 = 0x33;
+     cpu->id_afr0 = 0;
+     cpu->id_mmfr0 = 0x01130003;
+     cpu->id_mmfr1 = 0x10030302;
+@@ -1856,7 +1856,7 @@ static void arm11mpcore_initfn(Object *obj)
+     cpu->ctr = 0x1d192992; /* 32K icache 32K dcache */
+     cpu->id_pfr0 = 0x111;
+     cpu->id_pfr1 = 0x1;
+-    cpu->id_dfr0 = 0;
++    cpu->isar.id_dfr0 = 0;
+     cpu->id_afr0 = 0x2;
+     cpu->id_mmfr0 = 0x01100103;
+     cpu->id_mmfr1 = 0x10020302;
+@@ -1888,7 +1888,7 @@ static void cortex_m3_initfn(Object *obj)
+     cpu->pmsav7_dregion = 8;
+     cpu->id_pfr0 = 0x00000030;
+     cpu->id_pfr1 = 0x00000200;
+-    cpu->id_dfr0 = 0x00100000;
++    cpu->isar.id_dfr0 = 0x00100000;
+     cpu->id_afr0 = 0x00000000;
+     cpu->id_mmfr0 = 0x00000030;
+     cpu->id_mmfr1 = 0x00000000;
+@@ -1919,7 +1919,7 @@ static void cortex_m4_initfn(Object *obj)
+     cpu->isar.mvfr2 = 0x00000000;
+     cpu->id_pfr0 = 0x00000030;
+     cpu->id_pfr1 = 0x00000200;
+-    cpu->id_dfr0 = 0x00100000;
++    cpu->isar.id_dfr0 = 0x00100000;
+     cpu->id_afr0 = 0x00000000;
+     cpu->id_mmfr0 = 0x00000030;
+     cpu->id_mmfr1 = 0x00000000;
+@@ -1952,7 +1952,7 @@ static void cortex_m33_initfn(Object *obj)
+     cpu->isar.mvfr2 = 0x00000040;
+     cpu->id_pfr0 = 0x00000030;
+     cpu->id_pfr1 = 0x00000210;
+-    cpu->id_dfr0 = 0x00200000;
++    cpu->isar.id_dfr0 = 0x00200000;
+     cpu->id_afr0 = 0x00000000;
+     cpu->id_mmfr0 = 0x00101F40;
+     cpu->id_mmfr1 = 0x00000000;
+@@ -2003,7 +2003,7 @@ static void cortex_r5_initfn(Object *obj)
+     cpu->midr = 0x411fc153; /* r1p3 */
+     cpu->id_pfr0 = 0x0131;
+     cpu->id_pfr1 = 0x001;
+-    cpu->id_dfr0 = 0x010400;
++    cpu->isar.id_dfr0 = 0x010400;
+     cpu->id_afr0 = 0x0;
+     cpu->id_mmfr0 = 0x0210030;
+     cpu->id_mmfr1 = 0x00000000;
+@@ -2058,7 +2058,7 @@ static void cortex_a8_initfn(Object *obj)
+     cpu->reset_sctlr = 0x00c50078;
+     cpu->id_pfr0 = 0x1031;
+     cpu->id_pfr1 = 0x11;
+-    cpu->id_dfr0 = 0x400;
++    cpu->isar.id_dfr0 = 0x400;
+     cpu->id_afr0 = 0;
+     cpu->id_mmfr0 = 0x31100003;
+     cpu->id_mmfr1 = 0x20000000;
+@@ -2131,7 +2131,7 @@ static void cortex_a9_initfn(Object *obj)
+     cpu->reset_sctlr = 0x00c50078;
+     cpu->id_pfr0 = 0x1031;
+     cpu->id_pfr1 = 0x11;
+-    cpu->id_dfr0 = 0x000;
++    cpu->isar.id_dfr0 = 0x000;
+     cpu->id_afr0 = 0;
+     cpu->id_mmfr0 = 0x00100103;
+     cpu->id_mmfr1 = 0x20000000;
+@@ -2196,7 +2196,7 @@ static void cortex_a7_initfn(Object *obj)
+     cpu->reset_sctlr = 0x00c50078;
+     cpu->id_pfr0 = 0x00001131;
+     cpu->id_pfr1 = 0x00011011;
+-    cpu->id_dfr0 = 0x02010555;
++    cpu->isar.id_dfr0 = 0x02010555;
+     cpu->id_afr0 = 0x00000000;
+     cpu->id_mmfr0 = 0x10101105;
+     cpu->id_mmfr1 = 0x40000000;
+@@ -2242,7 +2242,7 @@ static void cortex_a15_initfn(Object *obj)
+     cpu->reset_sctlr = 0x00c50078;
+     cpu->id_pfr0 = 0x00001131;
+     cpu->id_pfr1 = 0x00011011;
+-    cpu->id_dfr0 = 0x02010555;
++    cpu->isar.id_dfr0 = 0x02010555;
+     cpu->id_afr0 = 0x00000000;
+     cpu->id_mmfr0 = 0x10201105;
+     cpu->id_mmfr1 = 0x20000000;
+diff --git a/target/arm/cpu.h b/target/arm/cpu.h
+index 91cc02b4..2d8d27e8 100644
+--- a/target/arm/cpu.h
++++ b/target/arm/cpu.h
+@@ -860,6 +860,7 @@ struct ARMCPU {
+         uint32_t mvfr0;
+         uint32_t mvfr1;
+         uint32_t mvfr2;
++        uint32_t id_dfr0;
+         uint64_t id_aa64isar0;
+         uint64_t id_aa64isar1;
+         uint64_t id_aa64pfr0;
+@@ -875,7 +876,6 @@ struct ARMCPU {
+     uint32_t reset_sctlr;
+     uint32_t id_pfr0;
+     uint32_t id_pfr1;
+-    uint32_t id_dfr0;
+     uint64_t pmceid0;
+     uint64_t pmceid1;
+     uint32_t id_afr0;
+@@ -3491,6 +3491,13 @@ static inline bool isar_feature_aa32_ats1e1(const ARMISARegisters *id)
+     return FIELD_EX64(id->mvfr0, ID_MMFR3, PAN) >= 2;
+ }
+ 
++static inline bool isar_feature_aa32_pmu_8_1(const ARMISARegisters *id)
++{
++    /* 0xf means "non-standard IMPDEF PMU" */
++    return FIELD_EX32(id->id_dfr0, ID_DFR0, PERFMON) >= 4 &&
++        FIELD_EX32(id->id_dfr0, ID_DFR0, PERFMON) != 0xf;
++}
++
+ /*
+  * 64-bit feature tests via id registers.
+  */
+diff --git a/target/arm/cpu64.c b/target/arm/cpu64.c
+index 15f4ee92..afdabbeb 100644
+--- a/target/arm/cpu64.c
++++ b/target/arm/cpu64.c
+@@ -123,7 +123,7 @@ static void aarch64_a57_initfn(Object *obj)
+     cpu->reset_sctlr = 0x00c50838;
+     cpu->id_pfr0 = 0x00000131;
+     cpu->id_pfr1 = 0x00011011;
+-    cpu->id_dfr0 = 0x03010066;
++    cpu->isar.id_dfr0 = 0x03010066;
+     cpu->id_afr0 = 0x00000000;
+     cpu->id_mmfr0 = 0x10101105;
+     cpu->id_mmfr1 = 0x40000000;
+@@ -177,7 +177,7 @@ static void aarch64_a53_initfn(Object *obj)
+     cpu->reset_sctlr = 0x00c50838;
+     cpu->id_pfr0 = 0x00000131;
+     cpu->id_pfr1 = 0x00011011;
+-    cpu->id_dfr0 = 0x03010066;
++    cpu->isar.id_dfr0 = 0x03010066;
+     cpu->id_afr0 = 0x00000000;
+     cpu->id_mmfr0 = 0x10101105;
+     cpu->id_mmfr1 = 0x40000000;
+@@ -231,7 +231,7 @@ static void aarch64_a72_initfn(Object *obj)
+     cpu->reset_sctlr = 0x00c50838;
+     cpu->id_pfr0 = 0x00000131;
+     cpu->id_pfr1 = 0x00011011;
+-    cpu->id_dfr0 = 0x03010066;
++    cpu->isar.id_dfr0 = 0x03010066;
+     cpu->id_afr0 = 0x00000000;
+     cpu->id_mmfr0 = 0x10201105;
+     cpu->id_mmfr1 = 0x40000000;
+diff --git a/target/arm/helper.c b/target/arm/helper.c
+index 419be640..3f06ca19 100644
+--- a/target/arm/helper.c
++++ b/target/arm/helper.c
+@@ -5907,7 +5907,7 @@ void register_cp_regs_for_features(ARMCPU *cpu)
+             { .name = "ID_DFR0", .state = ARM_CP_STATE_BOTH,
+               .opc0 = 3, .opc1 = 0, .crn = 0, .crm = 1, .opc2 = 2,
+               .access = PL1_R, .type = ARM_CP_CONST,
+-              .resetvalue = cpu->id_dfr0 },
++              .resetvalue = cpu->isar.id_dfr0 },
+             { .name = "ID_AFR0", .state = ARM_CP_STATE_BOTH,
+               .opc0 = 3, .opc1 = 0, .crn = 0, .crm = 1, .opc2 = 3,
+               .access = PL1_R, .type = ARM_CP_CONST,
+@@ -6050,8 +6050,7 @@ void register_cp_regs_for_features(ARMCPU *cpu)
+     } else {
+         define_arm_cp_regs(cpu, not_v7_cp_reginfo);
+     }
+-    if (FIELD_EX32(cpu->id_dfr0, ID_DFR0, PERFMON) >= 4 &&
+-            FIELD_EX32(cpu->id_dfr0, ID_DFR0, PERFMON) != 0xf) {
++    if (cpu_isar_feature(aa32_pmu_8_1, cpu)) {
+         ARMCPRegInfo v81_pmu_regs[] = {
+             { .name = "PMCEID2", .state = ARM_CP_STATE_AA32,
+               .cp = 15, .opc1 = 0, .crn = 9, .crm = 14, .opc2 = 4,
+-- 
+2.25.1
+

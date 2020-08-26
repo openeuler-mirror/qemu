@@ -1,0 +1,87 @@
+From 3451fb922aa7b0fe532e508ca13d4ab4b3ec75bf Mon Sep 17 00:00:00 2001
+From: Richard Henderson <richard.henderson@linaro.org>
+Date: Sat, 8 Feb 2020 12:58:13 +0000
+Subject: [PATCH 02/13] target/arm: Add ID_AA64MMFR2_EL1
+
+Add definitions for all of the fields, up to ARMv8.5.
+Convert the existing RESERVED register to a full register.
+Query KVM for the value of the register for the host.
+
+Reviewed-by: Peter Maydell <peter.maydell@linaro.org>
+Signed-off-by: Richard Henderson <richard.henderson@linaro.org>
+Message-id: 20200208125816.14954-18-richard.henderson@linaro.org
+Signed-off-by: Peter Maydell <peter.maydell@linaro.org>
+---
+ target/arm/cpu.h    | 17 +++++++++++++++++
+ target/arm/helper.c |  4 ++--
+ target/arm/kvm64.c  |  2 ++
+ 3 files changed, 21 insertions(+), 2 deletions(-)
+
+diff --git a/target/arm/cpu.h b/target/arm/cpu.h
+index fe310828..3e65bc50 100644
+--- a/target/arm/cpu.h
++++ b/target/arm/cpu.h
+@@ -866,6 +866,7 @@ struct ARMCPU {
+         uint64_t id_aa64pfr1;
+         uint64_t id_aa64mmfr0;
+         uint64_t id_aa64mmfr1;
++        uint64_t id_aa64mmfr2;
+     } isar;
+     uint32_t midr;
+     uint32_t revidr;
+@@ -1762,6 +1763,22 @@ FIELD(ID_AA64MMFR1, PAN, 20, 4)
+ FIELD(ID_AA64MMFR1, SPECSEI, 24, 4)
+ FIELD(ID_AA64MMFR1, XNX, 28, 4)
+ 
++FIELD(ID_AA64MMFR2, CNP, 0, 4)
++FIELD(ID_AA64MMFR2, UAO, 4, 4)
++FIELD(ID_AA64MMFR2, LSM, 8, 4)
++FIELD(ID_AA64MMFR2, IESB, 12, 4)
++FIELD(ID_AA64MMFR2, VARANGE, 16, 4)
++FIELD(ID_AA64MMFR2, CCIDX, 20, 4)
++FIELD(ID_AA64MMFR2, NV, 24, 4)
++FIELD(ID_AA64MMFR2, ST, 28, 4)
++FIELD(ID_AA64MMFR2, AT, 32, 4)
++FIELD(ID_AA64MMFR2, IDS, 36, 4)
++FIELD(ID_AA64MMFR2, FWB, 40, 4)
++FIELD(ID_AA64MMFR2, TTL, 48, 4)
++FIELD(ID_AA64MMFR2, BBM, 52, 4)
++FIELD(ID_AA64MMFR2, EVT, 56, 4)
++FIELD(ID_AA64MMFR2, E0PD, 60, 4)
++
+ FIELD(ID_DFR0, COPDBG, 0, 4)
+ FIELD(ID_DFR0, COPSDBG, 4, 4)
+ FIELD(ID_DFR0, MMAPDBG, 8, 4)
+diff --git a/target/arm/helper.c b/target/arm/helper.c
+index b74c23a9..c50b1ba1 100644
+--- a/target/arm/helper.c
++++ b/target/arm/helper.c
+@@ -6182,10 +6182,10 @@ void register_cp_regs_for_features(ARMCPU *cpu)
+               .opc0 = 3, .opc1 = 0, .crn = 0, .crm = 7, .opc2 = 1,
+               .access = PL1_R, .type = ARM_CP_CONST,
+               .resetvalue = cpu->isar.id_aa64mmfr1 },
+-            { .name = "ID_AA64MMFR2_EL1_RESERVED", .state = ARM_CP_STATE_AA64,
++            { .name = "ID_AA64MMFR2_EL1", .state = ARM_CP_STATE_AA64,
+               .opc0 = 3, .opc1 = 0, .crn = 0, .crm = 7, .opc2 = 2,
+               .access = PL1_R, .type = ARM_CP_CONST,
+-              .resetvalue = 0 },
++              .resetvalue = cpu->isar.id_aa64mmfr2 },
+             { .name = "ID_AA64MMFR3_EL1_RESERVED", .state = ARM_CP_STATE_AA64,
+               .opc0 = 3, .opc1 = 0, .crn = 0, .crm = 7, .opc2 = 3,
+               .access = PL1_R, .type = ARM_CP_CONST,
+diff --git a/target/arm/kvm64.c b/target/arm/kvm64.c
+index 4f0bf000..b794108a 100644
+--- a/target/arm/kvm64.c
++++ b/target/arm/kvm64.c
+@@ -541,6 +541,8 @@ bool kvm_arm_get_host_cpu_features(ARMHostCPUFeatures *ahcf)
+                               ARM64_SYS_REG(3, 0, 0, 7, 0));
+         err |= read_sys_reg64(fdarray[2], &ahcf->isar.id_aa64mmfr1,
+                               ARM64_SYS_REG(3, 0, 0, 7, 1));
++        err |= read_sys_reg64(fdarray[2], &ahcf->isar.id_aa64mmfr2,
++                              ARM64_SYS_REG(3, 0, 0, 7, 2));
+ 
+         /*
+          * Note that if AArch32 support is not present in the host,
+-- 
+2.25.1
+

@@ -1,0 +1,158 @@
+From df641941e6fd7fef78e5c77c9a809a7a8e148589 Mon Sep 17 00:00:00 2001
+From: Peter Maydell <peter.maydell@linaro.org>
+Date: Fri, 14 Feb 2020 17:51:06 +0000
+Subject: [PATCH 08/13] target/arm: Move DBGDIDR into ARMISARegisters
+
+We're going to want to read the DBGDIDR register from KVM in
+a subsequent commit, which means it needs to be in the
+ARMISARegisters sub-struct. Move it.
+
+Signed-off-by: Peter Maydell <peter.maydell@linaro.org>
+Reviewed-by: Richard Henderson <richard.henderson@linaro.org>
+Message-id: 20200214175116.9164-12-peter.maydell@linaro.org
+---
+ target/arm/cpu.c       | 8 ++++----
+ target/arm/cpu.h       | 2 +-
+ target/arm/cpu64.c     | 6 +++---
+ target/arm/helper.c    | 2 +-
+ target/arm/internals.h | 6 +++---
+ 5 files changed, 12 insertions(+), 12 deletions(-)
+
+diff --git a/target/arm/cpu.c b/target/arm/cpu.c
+index bb2edf4e..a23c71db 100644
+--- a/target/arm/cpu.c
++++ b/target/arm/cpu.c
+@@ -2070,7 +2070,7 @@ static void cortex_a8_initfn(Object *obj)
+     cpu->isar.id_isar2 = 0x21232031;
+     cpu->isar.id_isar3 = 0x11112131;
+     cpu->isar.id_isar4 = 0x00111142;
+-    cpu->dbgdidr = 0x15141000;
++    cpu->isar.dbgdidr = 0x15141000;
+     cpu->clidr = (1 << 27) | (2 << 24) | 3;
+     cpu->ccsidr[0] = 0xe007e01a; /* 16k L1 dcache. */
+     cpu->ccsidr[1] = 0x2007e01a; /* 16k L1 icache. */
+@@ -2143,7 +2143,7 @@ static void cortex_a9_initfn(Object *obj)
+     cpu->isar.id_isar2 = 0x21232041;
+     cpu->isar.id_isar3 = 0x11112131;
+     cpu->isar.id_isar4 = 0x00111142;
+-    cpu->dbgdidr = 0x35141000;
++    cpu->isar.dbgdidr = 0x35141000;
+     cpu->clidr = (1 << 27) | (1 << 24) | 3;
+     cpu->ccsidr[0] = 0xe00fe019; /* 16k L1 dcache. */
+     cpu->ccsidr[1] = 0x200fe019; /* 16k L1 icache. */
+@@ -2211,7 +2211,7 @@ static void cortex_a7_initfn(Object *obj)
+     cpu->isar.id_isar2 = 0x21232041;
+     cpu->isar.id_isar3 = 0x11112131;
+     cpu->isar.id_isar4 = 0x10011142;
+-    cpu->dbgdidr = 0x3515f005;
++    cpu->isar.dbgdidr = 0x3515f005;
+     cpu->clidr = 0x0a200023;
+     cpu->ccsidr[0] = 0x701fe00a; /* 32K L1 dcache */
+     cpu->ccsidr[1] = 0x201fe00a; /* 32K L1 icache */
+@@ -2254,7 +2254,7 @@ static void cortex_a15_initfn(Object *obj)
+     cpu->isar.id_isar2 = 0x21232041;
+     cpu->isar.id_isar3 = 0x11112131;
+     cpu->isar.id_isar4 = 0x10011142;
+-    cpu->dbgdidr = 0x3515f021;
++    cpu->isar.dbgdidr = 0x3515f021;
+     cpu->clidr = 0x0a200023;
+     cpu->ccsidr[0] = 0x701fe00a; /* 32K L1 dcache */
+     cpu->ccsidr[1] = 0x201fe00a; /* 32K L1 icache */
+diff --git a/target/arm/cpu.h b/target/arm/cpu.h
+index 4b1ae32b..3040aa40 100644
+--- a/target/arm/cpu.h
++++ b/target/arm/cpu.h
+@@ -861,6 +861,7 @@ struct ARMCPU {
+         uint32_t mvfr1;
+         uint32_t mvfr2;
+         uint32_t id_dfr0;
++        uint32_t dbgdidr;
+         uint64_t id_aa64isar0;
+         uint64_t id_aa64isar1;
+         uint64_t id_aa64pfr0;
+@@ -888,7 +889,6 @@ struct ARMCPU {
+     uint32_t id_mmfr4;
+     uint64_t id_aa64afr0;
+     uint64_t id_aa64afr1;
+-    uint32_t dbgdidr;
+     uint32_t clidr;
+     uint64_t mp_affinity; /* MP ID without feature bits */
+     /* The elements of this array are the CCSIDR values for each cache,
+diff --git a/target/arm/cpu64.c b/target/arm/cpu64.c
+index aa96548f..7ad8b5e2 100644
+--- a/target/arm/cpu64.c
++++ b/target/arm/cpu64.c
+@@ -140,7 +140,7 @@ static void aarch64_a57_initfn(Object *obj)
+     cpu->isar.id_aa64dfr0 = 0x10305106;
+     cpu->isar.id_aa64isar0 = 0x00011120;
+     cpu->isar.id_aa64mmfr0 = 0x00001124;
+-    cpu->dbgdidr = 0x3516d000;
++    cpu->isar.dbgdidr = 0x3516d000;
+     cpu->clidr = 0x0a200023;
+     cpu->ccsidr[0] = 0x701fe00a; /* 32KB L1 dcache */
+     cpu->ccsidr[1] = 0x201fe012; /* 48KB L1 icache */
+@@ -194,7 +194,7 @@ static void aarch64_a53_initfn(Object *obj)
+     cpu->isar.id_aa64dfr0 = 0x10305106;
+     cpu->isar.id_aa64isar0 = 0x00011120;
+     cpu->isar.id_aa64mmfr0 = 0x00001122; /* 40 bit physical addr */
+-    cpu->dbgdidr = 0x3516d000;
++    cpu->isar.dbgdidr = 0x3516d000;
+     cpu->clidr = 0x0a200023;
+     cpu->ccsidr[0] = 0x700fe01a; /* 32KB L1 dcache */
+     cpu->ccsidr[1] = 0x201fe00a; /* 32KB L1 icache */
+@@ -247,7 +247,7 @@ static void aarch64_a72_initfn(Object *obj)
+     cpu->isar.id_aa64dfr0 = 0x10305106;
+     cpu->isar.id_aa64isar0 = 0x00011120;
+     cpu->isar.id_aa64mmfr0 = 0x00001124;
+-    cpu->dbgdidr = 0x3516d000;
++    cpu->isar.dbgdidr = 0x3516d000;
+     cpu->clidr = 0x0a200023;
+     cpu->ccsidr[0] = 0x701fe00a; /* 32KB L1 dcache */
+     cpu->ccsidr[1] = 0x201fe012; /* 48KB L1 icache */
+diff --git a/target/arm/helper.c b/target/arm/helper.c
+index c1ff4b6b..60ff7c0f 100644
+--- a/target/arm/helper.c
++++ b/target/arm/helper.c
+@@ -5597,7 +5597,7 @@ static void define_debug_regs(ARMCPU *cpu)
+     ARMCPRegInfo dbgdidr = {
+         .name = "DBGDIDR", .cp = 14, .crn = 0, .crm = 0, .opc1 = 0, .opc2 = 0,
+         .access = PL0_R, .accessfn = access_tda,
+-        .type = ARM_CP_CONST, .resetvalue = cpu->dbgdidr,
++        .type = ARM_CP_CONST, .resetvalue = cpu->isar.dbgdidr,
+     };
+ 
+     /* Note that all these register fields hold "number of Xs minus 1". */
+diff --git a/target/arm/internals.h b/target/arm/internals.h
+index a72d0a6c..1d01ecc4 100644
+--- a/target/arm/internals.h
++++ b/target/arm/internals.h
+@@ -867,7 +867,7 @@ static inline int arm_num_brps(ARMCPU *cpu)
+     if (arm_feature(&cpu->env, ARM_FEATURE_AARCH64)) {
+         return FIELD_EX64(cpu->isar.id_aa64dfr0, ID_AA64DFR0, BRPS) + 1;
+     } else {
+-        return FIELD_EX32(cpu->dbgdidr, DBGDIDR, BRPS) + 1;
++        return FIELD_EX32(cpu->isar.dbgdidr, DBGDIDR, BRPS) + 1;
+     }
+ }
+ 
+@@ -881,7 +881,7 @@ static inline int arm_num_wrps(ARMCPU *cpu)
+     if (arm_feature(&cpu->env, ARM_FEATURE_AARCH64)) {
+         return FIELD_EX64(cpu->isar.id_aa64dfr0, ID_AA64DFR0, WRPS) + 1;
+     } else {
+-        return FIELD_EX32(cpu->dbgdidr, DBGDIDR, WRPS) + 1;
++        return FIELD_EX32(cpu->isar.dbgdidr, DBGDIDR, WRPS) + 1;
+     }
+ }
+ 
+@@ -895,7 +895,7 @@ static inline int arm_num_ctx_cmps(ARMCPU *cpu)
+     if (arm_feature(&cpu->env, ARM_FEATURE_AARCH64)) {
+         return FIELD_EX64(cpu->isar.id_aa64dfr0, ID_AA64DFR0, CTX_CMPS) + 1;
+     } else {
+-        return FIELD_EX32(cpu->dbgdidr, DBGDIDR, CTX_CMPS) + 1;
++        return FIELD_EX32(cpu->isar.dbgdidr, DBGDIDR, CTX_CMPS) + 1;
+     }
+ }
+ 
+-- 
+2.25.1
+
