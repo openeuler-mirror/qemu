@@ -50,6 +50,7 @@ typedef struct SiFivePLICState {
     uint32_t num_addrs;
     uint32_t num_harts;
     uint32_t bitfield_words;
+    uint32_t num_enables;
     PLICAddr *addr_config;
     uint32_t *source_priority;
     uint32_t *target_priority;
