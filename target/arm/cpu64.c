@@ -982,10 +982,37 @@ static gchar *aarch64_gdb_arch_name(CPUState *cs)
     return g_strdup("aarch64");
 }
 
+static const char *unconfigurable_feats[] = {
+    "evtstrm",
+    "cpuid",
+    NULL
+};
+
+static bool is_configurable_feat(const char *name)
+{
+    int i;
+
+    for (i = 0; unconfigurable_feats[i]; ++i) {
+        if (g_strcmp0(unconfigurable_feats[i], name) == 0) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 static void
 cpu_add_feat_as_prop(const char *typename, const char *name, const char *val)
 {
-    GlobalProperty *prop = g_new0(typeof(*prop), 1);
+    GlobalProperty *prop;
+
+    if (!is_configurable_feat(name)) {
+        info_report("CPU feature '%s' is not configurable by QEMU.  Ignore it.",
+                    name);
+        return;
+    }
+
+    prop = g_new0(typeof(*prop), 1);
     prop->driver = typename;
     prop->property = g_strdup(name);
     prop->value = g_strdup(val);
