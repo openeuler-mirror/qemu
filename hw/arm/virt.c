@@ -605,6 +605,23 @@ static void fdt_add_gic_node(VirtMachineState *vms)
     g_free(nodename);
 }
 
+static bool virt_cpu_init_pmu(const VirtMachineState *vms, CPUState *cpu)
+{
+    ARMCPU *armcpu = ARM_CPU(cpu);
+
+    if (!arm_feature(&armcpu->env, ARM_FEATURE_PMU)) {
+        return false;
+    }
+    if (kvm_enabled()) {
+        if (kvm_irqchip_in_kernel()) {
+            kvm_arm_pmu_set_irq(cpu, PPI(VIRTUAL_PMU_IRQ));
+        }
+        kvm_arm_pmu_init(cpu);
+    }
+
+    return true;
+}
+
 static void fdt_add_pmu_nodes(const VirtMachineState *vms)
 {
     CPUState *cpu;
@@ -612,15 +629,8 @@ static void fdt_add_pmu_nodes(const VirtMachineState *vms)
     uint32_t irqflags = GIC_FDT_IRQ_FLAGS_LEVEL_HI;
 
     CPU_FOREACH(cpu) {
-        armcpu = ARM_CPU(cpu);
-        if (!arm_feature(&armcpu->env, ARM_FEATURE_PMU)) {
+        if (!virt_cpu_init_pmu(vms, cpu)) {
             return;
-        }
-        if (kvm_enabled()) {
-            if (kvm_irqchip_in_kernel()) {
-                kvm_arm_pmu_set_irq(cpu, PPI(VIRTUAL_PMU_IRQ));
-            }
-            kvm_arm_pmu_init(cpu);
         }
     }
 
@@ -2247,6 +2257,9 @@ static void virt_cpu_plug(HotplugHandler *hotplug_dev,
         agcc = ARM_GICV3_COMMON_GET_CLASS(gicv3);
         agcc->cpu_hotplug_realize(gicv3, ncpu);
         connect_gic_cpu_irqs(vms, ncpu);
+
+        /* Init PMU part */
+        virt_cpu_init_pmu(vms, cs);
 
         /* Register CPU reset and trigger it manually */
         cpu_synchronize_state(cs);
