@@ -1,0 +1,66 @@
+From dfedc889fafd35efd4f8382b7672bf0e556f9f45 Mon Sep 17 00:00:00 2001
+From: Peng Liang <liangpeng10@huawei.com>
+Date: Mon, 7 Sep 2020 14:07:07 +0800
+Subject: [PATCH] target/arm: ignore evtstrm and cpuid CPU features
+
+evtstrm and cpuid cann't be controlled by VMM:
+1. evtstrm: The generic timer is configured to generate events at a
+   frequency of approximately 100KHz.  It's controlled by the linux
+   kernel config CONFIG_ARM_ARCH_TIMER_EVTSTREAM.
+2. cpuid: EL0 access to certain ID registers is available.  It's always
+   set by linux kernel after 77c97b4ee2129 ("arm64: cpufeature: Expose
+   CPUID registers by emulation").
+However, they are exposed by getauxval() and /proc/cpuinfo.  Hence,
+let's report and ignore the CPU features if someone set them.
+
+Signed-off-by: Peng Liang <liangpeng10@huawei.com>
+---
+ target/arm/cpu64.c | 29 ++++++++++++++++++++++++++++-
+ 1 file changed, 28 insertions(+), 1 deletion(-)
+
+diff --git a/target/arm/cpu64.c b/target/arm/cpu64.c
+index 7de20848..726d123d 100644
+--- a/target/arm/cpu64.c
++++ b/target/arm/cpu64.c
+@@ -506,10 +506,37 @@ static void arm_cpu_parse_featurestr(const char *typename, char *features,
+     }
+ }
+ 
++static const char *unconfigurable_feats[] = {
++    "evtstrm",
++    "cpuid",
++    NULL
++};
++
++static bool is_configurable_feat(const char *name)
++{
++    int i;
++
++    for (i = 0; unconfigurable_feats[i]; ++i) {
++        if (g_strcmp0(unconfigurable_feats[i], name) == 0) {
++            return false;
++        }
++    }
++
++    return true;
++}
++
+ static void
+ cpu_add_feat_as_prop(const char *typename, const char *name, const char *val)
+ {
+-    GlobalProperty *prop = g_new0(typeof(*prop), 1);
++    GlobalProperty *prop;
++
++    if (!is_configurable_feat(name)) {
++        info_report("CPU feature '%s' is not configurable by QEMU.  Ignore it.",
++                    name);
++        return;
++    }
++
++    prop = g_new0(typeof(*prop), 1);
+     prop->driver = typename;
+     prop->property = g_strdup(name);
+     prop->value = g_strdup(val);
+-- 
+2.28.0
+
