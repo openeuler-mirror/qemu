@@ -1,0 +1,30 @@
+From e8b555c08061ad78920611a5e98ee14fcd967692 Mon Sep 17 00:00:00 2001
+From: Ralf Haferkamp <rhafer@suse.com>
+Date: Fri, 11 Sep 2020 10:55:49 +0800
+Subject: [PATCH] Drop bogus IPv6 messages
+
+Drop IPv6 message shorter than what's mentioned in the playload
+length header (+the size of IPv6 header). They're invalid and could
+lead to data leakage in icmp6_send_echoreply().
+
+diff --git a/slirp/src/ip6_input.c b/slirp/src/ip6_input.c
+index d9d2b7e..c2dce52 100644
+--- a/slirp/src/ip6_input.c
++++ b/slirp/src/ip6_input.c
+@@ -49,6 +49,13 @@ void ip6_input(struct mbuf *m)
+         goto bad;
+     }
+ 
++    // Check if the message size is big enough to hold what's
++    // set in the payload length header. If not this is an invalid
++    // packet
++    if (m->m_len < ntohs(ip6->ip_pl) + sizeof(struct ip6)) {
++	goto bad;
++    }
++
+     /* check ip_ttl for a correct ICMP reply */
+     if (ip6->ip_hl == 0) {
+         icmp6_send_error(m, ICMP6_TIMXCEED, ICMP6_TIMXCEED_INTRANS);
+-- 
+1.8.3.1
+
