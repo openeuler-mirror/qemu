@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 18
+Release: 19
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY
@@ -184,6 +184,7 @@ Patch0171: megasas-use-unsigned-type-for-positive-numeric-field.patch
 Patch0172: hw-scsi-megasas-Fix-possible-out-of-bounds-array-acc.patch
 Patch0173: hw-arm-acpi-enable-SHPC-native-hot-plug.patch
 PATCH0174: hw-usb-core-fix-buffer-overflow.patch
+Patch0175: Drop-bogus-IPv6-messages.patch 
 
 BuildRequires: flex
 BuildRequires: bison
@@ -529,6 +530,9 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Fri Sep 11 2020 Huawei Technologies Co., Ltd <lijiajie11@huawei.com>
+- slirp/src/ip6_input.c: fix out-of-bounds read information vulnerablity
+
 * Thu Aug 27 2020 Huawei Technologies Co., Ltd <lijiajie11@huawei.com>
 - hw/usb/core.c: fix buffer overflow in do_token_setup function
 
