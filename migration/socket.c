@@ -22,6 +22,7 @@
 #include "channel.h"
 #include "socket.h"
 #include "migration.h"
+#include "ram.h"
 #include "qemu-file.h"
 #include "io/channel-socket.h"
 #include "io/net-listener.h"
