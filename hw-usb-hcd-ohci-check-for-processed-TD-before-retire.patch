@@ -1,0 +1,40 @@
+From b1398dc6f3eb16e006167bdd8666fb7c52918e13 Mon Sep 17 00:00:00 2001
+From: Prasad J Pandit <pjp@fedoraproject.org>
+Date: Tue, 15 Sep 2020 23:52:59 +0530
+Subject: [PATCH] hw: usb: hcd-ohci: check for processed TD before retire
+
+While servicing OHCI transfer descriptors(TD), ohci_service_iso_td
+retires a TD if it has passed its time frame. It does not check if
+the TD was already processed once and holds an error code in TD_CC.
+It may happen if the TD list has a loop. Add check to avoid an
+infinite loop condition.
+
+Signed-off-by: Prasad J Pandit <pjp@fedoraproject.org>
+Reviewed-by: Li Qiang <liq3ea@gmail.com>
+Message-id: 20200915182259.68522-3-ppandit@redhat.com
+Signed-off-by: Gerd Hoffmann <kraxel@redhat.com>
+(cherry-picked from 1be90ebe)
+Fix CVE-2020-25625
+Signed-off-by: Alex Chen <alex.chen@huawei.com>
+---
+ hw/usb/hcd-ohci.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/hw/usb/hcd-ohci.c b/hw/usb/hcd-ohci.c
+index 4f6fdbc0a7..ffe52a09d7 100644
+--- a/hw/usb/hcd-ohci.c
++++ b/hw/usb/hcd-ohci.c
+@@ -689,6 +689,10 @@ static int ohci_service_iso_td(OHCIState *ohci, struct ohci_ed *ed,
+            the next ISO TD of the same ED */
+         trace_usb_ohci_iso_td_relative_frame_number_big(relative_frame_number,
+                                                         frame_count);
++        if (OHCI_CC_DATAOVERRUN == OHCI_BM(iso_td.flags, TD_CC)) {
++            /* avoid infinite loop */
++            return 1;
++        }
+         OHCI_SET_BM(iso_td.flags, TD_CC, OHCI_CC_DATAOVERRUN);
+         ed->head &= ~OHCI_DPTR_MASK;
+         ed->head |= (iso_td.next & OHCI_DPTR_MASK);
+-- 
+2.27.0
+
