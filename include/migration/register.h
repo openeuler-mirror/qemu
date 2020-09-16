@@ -70,7 +70,7 @@ typedef struct SaveVMHandlers {
 
 int register_savevm_live(DeviceState *dev,
                          const char *idstr,
-                         int instance_id,
+                         uint32_t instance_id,
                          int version_id,
                          const SaveVMHandlers *ops,
                          void *opaque);

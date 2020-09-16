@@ -189,6 +189,8 @@ QDict *qmp_dispatch(QmpCommandList *cmds, QObject *request,
 
     ret = do_qmp_dispatch(cmds, request, allow_oob, &err);
     if (err) {
+        /* or assert(!ret) after reviewing all handlers: */
+        qobject_unref(ret);
         rsp = qmp_error_response(err);
     } else if (ret) {
         rsp = qdict_new();

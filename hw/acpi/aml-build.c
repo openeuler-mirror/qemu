@@ -53,7 +53,7 @@ static void build_append_array(GArray *array, GArray *val)
 }
 
 /*
- * ACPI 6.2 Processor Properties Topology Table (PPTT)
+ * ACPI 6.3 Processor Properties Topology Table (PPTT)
  */
 #ifdef __aarch64__
 static void build_cache_head(GArray *tbl, uint32_t next_level)
@@ -126,7 +126,7 @@ static void build_arm_socket_hierarchy(GArray *tbl,
     build_append_int_noprefix(tbl, offset, 4);
 }
 
-static void build_arm_cpu_hierarchy(GArray *tbl,
+static void build_arm_core_hierarchy(GArray *tbl,
                  struct offset_status *offset, uint32_t id)
 {
     if (!offset) {
@@ -144,18 +144,35 @@ static void build_arm_cpu_hierarchy(GArray *tbl,
     build_append_int_noprefix(tbl, offset->l2_offset, 4);
 }
 
+static void build_arm_smt_hierarchy(GArray *tbl,
+                 uint32_t offset, uint32_t id)
+{
+    if (!offset) {
+        return;
+    }
+    build_append_byte(tbl, 0);            /* Type 0 - processor */
+    build_append_byte(tbl, 20);           /* Length, add private resources */
+    build_append_int_noprefix(tbl, 0, 2); /* Reserved */
+    build_append_int_noprefix(tbl, 14, 4); /* Valid id*/
+    build_append_int_noprefix(tbl, offset, 4);
+    build_append_int_noprefix(tbl, id, 4);
+    build_append_int_noprefix(tbl, 0, 4); /* Num private resources */
+}
+
 void build_pptt(GArray *table_data, BIOSLinker *linker, int possible_cpus)
 {
     int pptt_start = table_data->len;
-    int uid = 0, cpus = 0, socket;
+    int uid = 0, socket;
+    uint32_t core_offset;
     struct offset_status offset;
     const MachineState *ms = MACHINE(qdev_get_machine());
     unsigned int smp_cores = ms->smp.cores;
+    unsigned int smp_sockets = ms->smp.cpus / (smp_cores * ms->smp.threads);
 
     acpi_data_push(table_data, sizeof(AcpiTableHeader));
 
-    for (socket = 0; cpus < possible_cpus; socket++) {
-        int core;
+    for (socket = 0; socket < smp_sockets; socket++) {
+        int core,thread;
         uint32_t l3_offset = table_data->len - pptt_start;
         build_cache_hierarchy(table_data, 0, ARM_L3_CACHE);
 
@@ -169,14 +186,21 @@ void build_pptt(GArray *table_data, BIOSLinker *linker, int possible_cpus)
             build_cache_hierarchy(table_data, offset.l2_offset, ARM_L1D_CACHE);
             offset.l1i_offset = table_data->len - pptt_start;
             build_cache_hierarchy(table_data, offset.l2_offset, ARM_L1I_CACHE);
-            build_arm_cpu_hierarchy(table_data, &offset, uid++);
-            cpus++;
+            core_offset = table_data->len - pptt_start;
+            if (ms->smp.threads <= 1) {
+                build_arm_core_hierarchy(table_data, &offset, uid++);
+            } else {
+                build_arm_core_hierarchy(table_data, &offset, core);
+                for (thread = 0; thread < ms->smp.threads; thread++) {
+                    build_arm_smt_hierarchy(table_data, core_offset, uid++);
+                }
+            }
         }
     }
 
     build_header(linker, table_data,
                  (void *)(table_data->data + pptt_start), "PPTT",
-                 table_data->len - pptt_start, 1, NULL, NULL);
+                 table_data->len - pptt_start, 2, NULL, NULL);
 }
 
 #else

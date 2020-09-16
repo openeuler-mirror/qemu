@@ -1760,6 +1760,7 @@ static void guest_suspend(SuspendMode mode, Error **errp)
     }
 
     error_free(local_err);
+    local_err = NULL;
 
     if (pmutils_supports_mode(mode, &local_err)) {
         mode_supported = true;
@@ -1771,6 +1772,7 @@ static void guest_suspend(SuspendMode mode, Error **errp)
     }
 
     error_free(local_err);
+    local_err = NULL;
 
     if (linux_sys_state_supports_mode(mode, &local_err)) {
         mode_supported = true;
@@ -1778,6 +1780,7 @@ static void guest_suspend(SuspendMode mode, Error **errp)
     }
 
     if (!mode_supported) {
+        error_free(local_err);
         error_setg(errp,
                    "the requested suspend mode is not supported by the guest");
     } else {
@@ -2420,6 +2423,7 @@ static void transfer_memory_block(GuestMemoryBlock *mem_blk, bool sys2memblk,
             if (sys2memblk) {
                 error_propagate(errp, local_err);
             } else {
+                error_free(local_err);
                 result->response =
                     GUEST_MEMORY_BLOCK_RESPONSE_TYPE_OPERATION_FAILED;
             }

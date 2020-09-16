@@ -848,7 +848,9 @@ static void device_set_realized(Object *obj, bool value, Error **errp)
         dev->canonical_path = object_get_canonical_path(OBJECT(dev));
 
         if (qdev_get_vmsd(dev)) {
-            if (vmstate_register_with_alias_id(dev, -1, qdev_get_vmsd(dev), dev,
+            if (vmstate_register_with_alias_id(dev, 
+                                               VMSTATE_INSTANCE_ID_ANY,
+                                               qdev_get_vmsd(dev), dev,
                                                dev->instance_id_alias,
                                                dev->alias_required_for_version,
                                                &local_err) < 0) {

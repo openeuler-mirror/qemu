@@ -172,7 +172,7 @@ static arm_timer_state *arm_timer_init(uint32_t freq)
 
     bh = qemu_bh_new(arm_timer_tick, s);
     s->timer = ptimer_init(bh, PTIMER_POLICY_DEFAULT);
-    vmstate_register(NULL, -1, &vmstate_arm_timer, s);
+    vmstate_register(NULL, VMSTATE_INSTANCE_ID_ANY, &vmstate_arm_timer, s);
     return s;
 }
 

@@ -141,6 +141,8 @@ static void check_report_connect_error(Chardev *chr,
         error_report("Unable to connect character device %s: %s",
                      chr->label, error_get_pretty(err));
         s->connect_err_reported = true;
+    } else {
+        error_free(err);
     }
     qemu_chr_socket_restart_timer(chr);
 }
@@ -1074,7 +1076,6 @@ static void qemu_chr_socket_connected(QIOTask *task, void *opaque)
     if (qio_task_propagate_error(task, &err)) {
         tcp_chr_change_state(s, TCP_CHARDEV_STATE_DISCONNECTED);
         check_report_connect_error(chr, err);
-        error_free(err);
         goto cleanup;
     }
 
@@ -1118,7 +1119,8 @@ static void tcp_chr_connect_client_async(Chardev *chr)
      */
     s->connect_task = qio_task_new(OBJECT(sioc),
                                    qemu_chr_socket_connected,
-                                   chr, NULL);
+                                   object_ref(OBJECT(chr)),
+                                   (GDestroyNotify)object_unref);
     qio_task_run_in_thread(s->connect_task,
                            tcp_chr_connect_client_task,
                            s->addr,
