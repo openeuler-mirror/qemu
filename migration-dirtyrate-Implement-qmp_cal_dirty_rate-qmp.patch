@@ -1,0 +1,164 @@
+From 1f5f7156988cee6e678eff253df0e79788c950d7 Mon Sep 17 00:00:00 2001
+From: Chuan Zheng <zhengchuan@huawei.com>
+Date: Wed, 16 Sep 2020 14:22:06 +0800
+Subject: [PATCH] migration/dirtyrate: Implement
+ qmp_cal_dirty_rate()/qmp_get_dirty_rate() function
+
+Implement qmp_cal_dirty_rate()/qmp_get_dirty_rate() function which could be called
+
+Signed-off-by: Chuan Zheng <zhengchuan@huawei.com>
+Message-Id: <1600237327-33618-12-git-send-email-zhengchuan@huawei.com>
+Reviewed-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+Signed-off-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+  atomic function fixup
+  Wording fixup in migration.json based on Eric's review
+---
+ migration/dirtyrate.c | 62 +++++++++++++++++++++++++++++++++++++++++++
+ qapi/migration.json   | 50 ++++++++++++++++++++++++++++++++++
+ 2 files changed, 112 insertions(+)
+
+diff --git a/migration/dirtyrate.c b/migration/dirtyrate.c
+index c7a389a527..9d9155f8ab 100644
+--- a/migration/dirtyrate.c
++++ b/migration/dirtyrate.c
+@@ -61,6 +61,24 @@ static int dirtyrate_set_state(int *state, int old_state, int new_state)
+     }
+ }
+ 
++static struct DirtyRateInfo *query_dirty_rate_info(void)
++{
++    int64_t dirty_rate = DirtyStat.dirty_rate;
++    struct DirtyRateInfo *info = g_malloc0(sizeof(DirtyRateInfo));
++
++    if (atomic_read(&CalculatingState) == DIRTY_RATE_STATUS_MEASURED) {
++        info->dirty_rate = dirty_rate;
++    } else {
++        info->dirty_rate = -1;
++    }
++
++    info->status = CalculatingState;
++    info->start_time = DirtyStat.start_time;
++    info->calc_time = DirtyStat.calc_time;
++
++    return info;
++}
++
+ static void reset_dirtyrate_stat(void)
+ {
+     DirtyStat.total_dirty_samples = 0;
+@@ -318,6 +336,8 @@ static void calculate_dirtyrate(struct DirtyRateConfig config)
+ 
+     msec = config.sample_period_seconds * 1000;
+     msec = set_sample_page_period(msec, initial_time);
++    DirtyStat.start_time = initial_time / 1000;
++    DirtyStat.calc_time = msec / 1000;
+ 
+     rcu_read_lock();
+     if (!compare_page_hash_info(block_dinfo, block_count)) {
+@@ -353,3 +373,45 @@ void *get_dirtyrate_thread(void *arg)
+     }
+     return NULL;
+ }
++
++void qmp_calc_dirty_rate(int64_t calc_time, Error **errp)
++{
++    static struct DirtyRateConfig config;
++    QemuThread thread;
++    int ret;
++
++    /*
++     * If the dirty rate is already being measured, don't attempt to start.
++     */
++    if (atomic_read(&CalculatingState) == DIRTY_RATE_STATUS_MEASURING) {
++        error_setg(errp, "the dirty rate is already being measured.");
++        return;
++    }
++
++    if (!is_sample_period_valid(calc_time)) {
++        error_setg(errp, "calc-time is out of range[%d, %d].",
++                         MIN_FETCH_DIRTYRATE_TIME_SEC,
++                         MAX_FETCH_DIRTYRATE_TIME_SEC);
++        return;
++    }
++
++    /*
++     * Init calculation state as unstarted.
++     */
++    ret = dirtyrate_set_state(&CalculatingState, CalculatingState,
++                              DIRTY_RATE_STATUS_UNSTARTED);
++    if (ret == -1) {
++        error_setg(errp, "init dirty rate calculation state failed.");
++        return;
++    }
++
++    config.sample_period_seconds = calc_time;
++    config.sample_pages_per_gigabytes = DIRTYRATE_DEFAULT_SAMPLE_PAGES;
++    qemu_thread_create(&thread, "get_dirtyrate", get_dirtyrate_thread,
++                       (void *)&config, QEMU_THREAD_DETACHED);
++}
++
++struct DirtyRateInfo *qmp_query_dirty_rate(Error **errp)
++{
++    return query_dirty_rate_info();
++}
+diff --git a/qapi/migration.json b/qapi/migration.json
+index fdddde0af7..76f5b42493 100644
+--- a/qapi/migration.json
++++ b/qapi/migration.json
+@@ -1462,3 +1462,53 @@
+ ##
+ { 'enum': 'DirtyRateStatus',
+   'data': [ 'unstarted', 'measuring', 'measured'] }
++
++##
++# @DirtyRateInfo:
++#
++# Information about current dirty page rate of vm.
++#
++# @dirty-rate: @dirtyrate describing the dirty page rate of vm
++#          in units of MB/s.
++#          If this field returns '-1', it means querying has not
++#          yet started or completed.
++#
++# @status: status containing dirtyrate query status includes
++#          'unstarted' or 'measuring' or 'measured'
++#
++# @start-time: start time in units of second for calculation
++#
++# @calc-time: time in units of second for sample dirty pages
++#
++# Since: 5.2
++#
++##
++{ 'struct': 'DirtyRateInfo',
++  'data': {'dirty-rate': 'int64',
++           'status': 'DirtyRateStatus',
++           'start-time': 'int64',
++           'calc-time': 'int64'} }
++
++##
++# @calc-dirty-rate:
++#
++# start calculating dirty page rate for vm
++#
++# @calc-time: time in units of second for sample dirty pages
++#
++# Since: 5.2
++#
++# Example:
++#   {"command": "calc-dirty-rate", "data": {"calc-time": 1} }
++#
++##
++{ 'command': 'calc-dirty-rate', 'data': {'calc-time': 'int64'} }
++
++##
++# @query-dirty-rate:
++#
++# query dirty page rate in units of MB/s for vm
++#
++# Since: 5.2
++##
++{ 'command': 'query-dirty-rate', 'returns': 'DirtyRateInfo' }
+-- 
+2.27.0
+
