@@ -1,0 +1,31 @@
+From e43f0019b0aff881c562c8d2428bce6b3d55845c Mon Sep 17 00:00:00 2001
+From: Li Qiang <liq3ea@163.com>
+Date: Fri, 18 Sep 2020 11:08:28 +0800
+Subject: [PATCH] hw: xhci: check return value of 'usb_packet_map'
+
+Currently we don't check the return value of 'usb_packet_map',
+this will cause an NAF issue. This is LP#1891341.
+Following is the reproducer provided in:
+-->https://bugs.launchpad.net/qemu/+bug/1891341
+
+This patch fixes this.
+
+diff --git a/hw/usb/hcd-xhci.c b/hw/usb/hcd-xhci.c
+index a21485fe..3b25abca 100644
+--- a/hw/usb/hcd-xhci.c
++++ b/hw/usb/hcd-xhci.c
+@@ -1614,7 +1614,10 @@ static int xhci_setup_packet(XHCITransfer *xfer)
+     xhci_xfer_create_sgl(xfer, dir == USB_TOKEN_IN); /* Also sets int_req */
+     usb_packet_setup(&xfer->packet, dir, ep, xfer->streamid,
+                      xfer->trbs[0].addr, false, xfer->int_req);
+-    usb_packet_map(&xfer->packet, &xfer->sgl);
++    if (usb_packet_map(&xfer->packet, &xfer->sgl)) {
++		qemu_sglist_destroy(&xfer->sgl);
++		return -1;
++	}
+     DPRINTF("xhci: setup packet pid 0x%x addr %d ep %d\n",
+             xfer->packet.pid, ep->dev->addr, ep->nr);
+     return 0;
+-- 
+2.23.0
+

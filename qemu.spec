@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 24
+Release: 25
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY
@@ -229,6 +229,8 @@ Patch0216: target-arm-Add-more-CPU-features.patch
 Patch0217: hw-usb-core-fix-buffer-overflow.patch
 Patch0218: target-arm-ignore-evtstrm-and-cpuid-CPU-features.patch
 Patch0219: Drop-bogus-IPv6-messages.patch
+Patch0220: hw-sd-sdhci-Fix-DMA-Transfer-Block-Size-field.patch
+Patch0221: hw-xhci-check-return-value-of-usb_packet_map.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -575,6 +577,10 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Fri Sep 18 2020 Huawei Technologies Co., Ltd <lijiajie11@huawei.com>
+- hw-sd-sdhci-Fix-DMA-Transfer-Block-Size-field.patch
+- hw-xhci-check-return-value-of-usb_packet_map.patch
+
 * Fri Sep 11 2020 Huawei Technologies Co., Ltd <lijiajie11@huawei.com>
 - slirp/src/ip6_input.c: fix out-of-bounds read information vulnerability
 
