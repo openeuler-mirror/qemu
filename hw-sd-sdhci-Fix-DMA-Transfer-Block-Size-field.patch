@@ -1,0 +1,25 @@
+From 8b8d3992db22a583b69b6e2ae1d9cd87e2179e21 Mon Sep 17 00:00:00 2001
+From: Prasad J Pandit <pjp@fedoraproject.org>
+Date: Fri, 18 Sep 2020 10:55:22 +0800
+Subject: [PATCH] hw/sd/sdhci: Fix DMA Transfer Block Size field The 'Transfer
+ Block Size' field is 12-bit wide. See section '2.2.2 Block Size Register
+ (Offset 004h)' in datasheet.
+
+Buglink: https://bugs.launchpad.net/qemu/+bug/1892960
+
+diff --git a/hw/sd/sdhci.c b/hw/sd/sdhci.c
+index 7b80b1d9..acf482b8 100644
+--- a/hw/sd/sdhci.c
++++ b/hw/sd/sdhci.c
+@@ -1127,7 +1127,7 @@ sdhci_write(void *opaque, hwaddr offset, uint64_t val, unsigned size)
+         break;
+     case SDHC_BLKSIZE:
+         if (!TRANSFERRING_DATA(s->prnsts)) {
+-            MASKED_WRITE(s->blksize, mask, value);
++            MASKED_WRITE(s->blksize, mask, extract32(value, 0, 12));
+             MASKED_WRITE(s->blkcnt, mask >> 16, value >> 16);
+         }
+ 
+-- 
+2.23.0
+
