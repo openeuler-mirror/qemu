@@ -262,10 +262,33 @@ static void aarch64_kunpeng_920_initfn(Object *obj)
 
     cpu->midr = 0x480fd010;
     cpu->ctr = 0x84448004;
-    cpu->isar.regs[ID_AA64PFR0] = 0x11001111;
+    cpu->isar.regs[ID_ISAR0] = 0;
+    cpu->isar.regs[ID_ISAR1] = 0;
+    cpu->isar.regs[ID_ISAR2] = 0;
+    cpu->isar.regs[ID_ISAR3] = 0;
+    cpu->isar.regs[ID_ISAR4] = 0;
+    cpu->isar.regs[ID_ISAR5] = 0;
+    cpu->isar.regs[ID_MMFR0] = 0;
+    cpu->isar.regs[ID_MMFR1] = 0;
+    cpu->isar.regs[ID_MMFR2] = 0;
+    cpu->isar.regs[ID_MMFR3] = 0;
+    cpu->isar.regs[ID_MMFR4] = 0;
+    cpu->isar.regs[MVFR0] = 0;
+    cpu->isar.regs[MVFR1] = 0;
+    cpu->isar.regs[MVFR2] = 0;
+    cpu->isar.regs[ID_DFR0] = 0;
+    cpu->isar.regs[MVFR2] = 0;
+    cpu->isar.regs[MVFR2] = 0;
+    cpu->isar.regs[MVFR2] = 0;
+    cpu->isar.regs[ID_PFR0] = 0;
+    cpu->isar.regs[ID_PFR1] = 0;
+    cpu->isar.regs[ID_AA64PFR0] = 0x0000010011111111;
     cpu->isar.regs[ID_AA64DFR0] = 0x110305408;
-    cpu->isar.regs[ID_AA64ISAR0] = 0x10211120;
+    cpu->isar.regs[ID_AA64ISAR0] = 0x0001100010211120;
+    cpu->isar.regs[ID_AA64ISAR1] = 0x00011001;
     cpu->isar.regs[ID_AA64MMFR0] = 0x101125;
+    cpu->isar.regs[ID_AA64MMFR1] = 0x10211122;
+    cpu->isar.regs[ID_AA64MMFR2] = 0x00001011;
 }
 
 void arm_cpu_sve_finalize(ARMCPU *cpu, Error **errp)
