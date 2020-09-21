@@ -2283,7 +2283,7 @@ static void arm_cpu_realizefn(DeviceState *dev, Error **errp)
         }
     }
 
-    if (!arm_feature(env, ARM_FEATURE_M) && !cpu->has_el3) {
+    if (!arm_feature(env, ARM_FEATURE_M) && !cpu->has_el3 && !kvm_enabled()) {
         /* If the has_el3 CPU property is disabled then we need to disable the
          * feature.
          */
@@ -2324,7 +2324,7 @@ static void arm_cpu_realizefn(DeviceState *dev, Error **errp)
         cpu->pmceid1 = 0;
     }
 
-    if (!arm_feature(env, ARM_FEATURE_EL2)) {
+    if (!arm_feature(env, ARM_FEATURE_EL2) && !kvm_enabled()) {
         /* Disable the hypervisor feature bits in the processor feature
          * registers if we don't have EL2. These are id_pfr1[15:12] and
          * id_aa64pfr0_el1[11:8].
