@@ -187,6 +187,13 @@ Patch0174: hw-usb-core-fix-buffer-overflow.patch
 Patch0175: slirp-drop-bogus-IPv6-messages.patch
 Patch0176: hw-sd-sdhci-Fix-DMA-Transfer-Block-Size-field.patch
 Patch0177: hw-xhci-check-return-value-of-usb_packet_map.patch
+Patch0178: hw-net-xgmac-Fix-buffer-overflow-in-xgmac_enet_send.patch
+Patch0179: hw-net-net_tx_pkt-fix-assertion-failure-in-net_tx_pk.patch
+Patch0180: sm501-Convert-printf-abort-to-qemu_log_mask.patch
+Patch0181: sm501-Shorten-long-variable-names-in-sm501_2d_operat.patch
+Patch0182: sm501-Use-BIT-x-macro-to-shorten-constant.patch
+Patch0183: sm501-Clean-up-local-variables-in-sm501_2d_operation.patch
+Patch0184: sm501-Replace-hand-written-implementation-with-pixma.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -532,6 +539,15 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Thu May 21 2020 BALATON Zoltan <balaton@eik.bme.hu>
+- hw/net/xgmac: Fix buffer overflow in xgmac_enet_send()
+- hw/net/net_tx_pkt: fix assertion failure in net_tx_pkt_add_raw_fragment()
+- sm501: Convert printf + abort to qemu_log_mask
+- sm501: Shorten long variable names in sm501_2d_operation
+- sm501: Use BIT(x) macro to shorten constant
+- sm501: Clean up local variables in sm501_2d_operation
+- sm501: Replace hand written implementation with pixman where possible
+
 * Thu Sep 24 2020 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
 - enrich commit info for some patches
 - rename some patches for slirp
