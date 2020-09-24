@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 20
+Release: 21
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY
@@ -183,7 +183,7 @@ Patch0170: megasas-avoid-NULL-pointer-dereference.patch
 Patch0171: megasas-use-unsigned-type-for-positive-numeric-field.patch
 Patch0172: hw-scsi-megasas-Fix-possible-out-of-bounds-array-acc.patch
 Patch0173: hw-arm-acpi-enable-SHPC-native-hot-plug.patch
-PATCH0174: hw-usb-core-fix-buffer-overflow.patch
+Patch0174: hw-usb-core-fix-buffer-overflow.patch
 Patch0175: Drop-bogus-IPv6-messages.patch 
 Patch0176: hw-sd-sdhci-Fix-DMA-Transfer-Block-Size-field.patch
 Patch0177: hw-xhci-check-return-value-of-usb_packet_map.patch
@@ -532,6 +532,9 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Thu Sep 24 2020 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
+- enrich commit info for some patchs
+
 * Fri Sep 18 2020 Huawei Technologies Co., Ltd <lijiajie11@huawei.com>
 - hw-sd-sdhci-Fix-DMA-Transfer-Block-Size-field.patch
 - hw-xhci-check-return-value-of-usb_packet_map.patch
