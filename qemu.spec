@@ -40,11 +40,11 @@ Patch0027: nbd-fix-uninitialized-variable-warning.patch
 Patch0028: xhci-Fix-memory-leak-in-xhci_kick_epctx-when-poweroff.patch
 Patch0029: block-fix-memleaks-in-bdrv_refresh_filename.patch
 Patch0030: iscsi-Cap-block-count-from-GET-LBA-STATUS-CVE-2020-1.patch
-Patch0031: tcp_emu-Fix-oob-access.patch
+Patch0031: slirp-tcp_emu-Fix-oob-access.patch
 Patch0032: slirp-use-correct-size-while-emulating-IRC-commands.patch
 Patch0033: slirp-use-correct-size-while-emulating-commands.patch
-Patch0034: util-add-slirp_fmt-helpers.patch
-Patch0035: tcp_emu-fix-unsafe-snprintf-usages.patch
+Patch0034: slirp-util-add-slirp_fmt-helpers.patch
+Patch0035: slirp-tcp_emu-fix-unsafe-snprintf-usages.patch
 Patch0036: block-iscsi-use-MIN-between-mx_sb_len-and-sb_len_wr.patch
 Patch0037: monitor-fix-memory-leak-in-monitor_fdset_dup_fd_find.patch
 Patch0038: memory-Align-MemoryRegionSections-fields.patch
@@ -165,7 +165,7 @@ Patch0152: arm-virt-Support-CPU-cold-plug.patch
 Patch0153: ide-Fix-incorrect-handling-of-some-PRDTs-in-ide_dma_.patch
 Patch0154: ati-vga-Fix-checks-in-ati_2d_blt-to-avoid-crash.patch
 Patch0155: slirp-tftp-restrict-relative-path-access.patch
-Patch0156: ip_reass-Fix-use-after-free.patch
+Patch0156: slirp-ip_reass-Fix-use-after-free.patch
 Patch0157: bt-use-size_t-type-for-length-parameters-instead-of-.patch
 Patch0158: log-Add-some-logs-on-VM-runtime-path.patch
 Patch0159: Revert-vtimer-compat-cross-version-migration-from-v4.patch
@@ -184,7 +184,7 @@ Patch0171: megasas-use-unsigned-type-for-positive-numeric-field.patch
 Patch0172: hw-scsi-megasas-Fix-possible-out-of-bounds-array-acc.patch
 Patch0173: hw-arm-acpi-enable-SHPC-native-hot-plug.patch
 Patch0174: hw-usb-core-fix-buffer-overflow.patch
-Patch0175: Drop-bogus-IPv6-messages.patch 
+Patch0175: slirp-drop-bogus-IPv6-messages.patch
 Patch0176: hw-sd-sdhci-Fix-DMA-Transfer-Block-Size-field.patch
 Patch0177: hw-xhci-check-return-value-of-usb_packet_map.patch
 
@@ -533,7 +533,8 @@ getent passwd qemu >/dev/null || \
 
 %changelog
 * Thu Sep 24 2020 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
-- enrich commit info for some patchs
+- enrich commit info for some patches
+- rename some patches for slirp
 
 * Fri Sep 18 2020 Huawei Technologies Co., Ltd <lijiajie11@huawei.com>
 - hw-sd-sdhci-Fix-DMA-Transfer-Block-Size-field.patch
