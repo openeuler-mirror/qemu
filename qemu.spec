@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 25
+Release: 26
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY
@@ -231,6 +231,13 @@ Patch0218: target-arm-ignore-evtstrm-and-cpuid-CPU-features.patch
 Patch0219: Drop-bogus-IPv6-messages.patch
 Patch0220: hw-sd-sdhci-Fix-DMA-Transfer-Block-Size-field.patch
 Patch0221: hw-xhci-check-return-value-of-usb_packet_map.patch
+Patch0222: hw-net-xgmac-Fix-buffer-overflow-in-xgmac_enet_send.patch
+Patch0223: hw-net-net_tx_pkt-fix-assertion-failure-in-net_tx_pk.patch
+Patch0224: sm501-Convert-printf-abort-to-qemu_log_mask.patch
+Patch0225: sm501-Shorten-long-variable-names-in-sm501_2d_operat.patch
+Patch0226: sm501-Use-BIT-x-macro-to-shorten-constant.patch
+Patch0227: sm501-Clean-up-local-variables-in-sm501_2d_operation.patch
+Patch0228: sm501-Replace-hand-written-implementation-with-pixma.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -577,6 +584,15 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Mon Sep 28 2020 Huawei Technologies Co., Ltd <fangying1@huawei.com>
+- sm501: Replace hand written implementation with pixman where possible
+- sm501: Clean up local variables in sm501_2d_operation
+- sm501: Use BIT(x) macro to shorten constant
+- sm501: Shorten long variable names in sm501_2d_operation
+- sm501: Convert printf + abort to qemu_log_mask
+- hw/net/net_tx_pkt: fix assertion failure in net_tx_pkt_add_raw_fragment
+- hw/net/xgmac: Fix buffer overflow in xgmac_enet_send()
+
 * Fri Sep 18 2020 Huawei Technologies Co., Ltd <lijiajie11@huawei.com>
 - hw-sd-sdhci-Fix-DMA-Transfer-Block-Size-field.patch
 - hw-xhci-check-return-value-of-usb_packet_map.patch
