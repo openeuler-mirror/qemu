@@ -1468,10 +1468,8 @@
 #
 # Information about current dirty page rate of vm.
 #
-# @dirty-rate: @dirtyrate describing the dirty page rate of vm
-#          in units of MB/s.
-#          If this field returns '-1', it means querying has not
-#          yet started or completed.
+# @dirty-rate: an estimate of the dirty page rate of the VM in units of
+#              MB/s, present only when estimating the rate has completed.
 #
 # @status: status containing dirtyrate query status includes
 #          'unstarted' or 'measuring' or 'measured'
@@ -1484,7 +1482,7 @@
 #
 ##
 { 'struct': 'DirtyRateInfo',
-  'data': {'dirty-rate': 'int64',
+  'data': {'*dirty-rate': 'int64',
            'status': 'DirtyRateStatus',
            'start-time': 'int64',
            'calc-time': 'int64'} }
