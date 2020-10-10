@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 18
+Release: 22
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY
@@ -40,11 +40,11 @@ Patch0027: nbd-fix-uninitialized-variable-warning.patch
 Patch0028: xhci-Fix-memory-leak-in-xhci_kick_epctx-when-poweroff.patch
 Patch0029: block-fix-memleaks-in-bdrv_refresh_filename.patch
 Patch0030: iscsi-Cap-block-count-from-GET-LBA-STATUS-CVE-2020-1.patch
-Patch0031: tcp_emu-Fix-oob-access.patch
+Patch0031: slirp-tcp_emu-Fix-oob-access.patch
 Patch0032: slirp-use-correct-size-while-emulating-IRC-commands.patch
 Patch0033: slirp-use-correct-size-while-emulating-commands.patch
-Patch0034: util-add-slirp_fmt-helpers.patch
-Patch0035: tcp_emu-fix-unsafe-snprintf-usages.patch
+Patch0034: slirp-util-add-slirp_fmt-helpers.patch
+Patch0035: slirp-tcp_emu-fix-unsafe-snprintf-usages.patch
 Patch0036: block-iscsi-use-MIN-between-mx_sb_len-and-sb_len_wr.patch
 Patch0037: monitor-fix-memory-leak-in-monitor_fdset_dup_fd_find.patch
 Patch0038: memory-Align-MemoryRegionSections-fields.patch
@@ -165,7 +165,7 @@ Patch0152: arm-virt-Support-CPU-cold-plug.patch
 Patch0153: ide-Fix-incorrect-handling-of-some-PRDTs-in-ide_dma_.patch
 Patch0154: ati-vga-Fix-checks-in-ati_2d_blt-to-avoid-crash.patch
 Patch0155: slirp-tftp-restrict-relative-path-access.patch
-Patch0156: ip_reass-Fix-use-after-free.patch
+Patch0156: slirp-ip_reass-Fix-use-after-free.patch
 Patch0157: bt-use-size_t-type-for-length-parameters-instead-of-.patch
 Patch0158: log-Add-some-logs-on-VM-runtime-path.patch
 Patch0159: Revert-vtimer-compat-cross-version-migration-from-v4.patch
@@ -183,7 +183,17 @@ Patch0170: megasas-avoid-NULL-pointer-dereference.patch
 Patch0171: megasas-use-unsigned-type-for-positive-numeric-field.patch
 Patch0172: hw-scsi-megasas-Fix-possible-out-of-bounds-array-acc.patch
 Patch0173: hw-arm-acpi-enable-SHPC-native-hot-plug.patch
-PATCH0174: hw-usb-core-fix-buffer-overflow.patch
+Patch0174: hw-usb-core-fix-buffer-overflow.patch
+Patch0175: slirp-drop-bogus-IPv6-messages.patch
+Patch0176: hw-sd-sdhci-Fix-DMA-Transfer-Block-Size-field.patch
+Patch0177: hw-xhci-check-return-value-of-usb_packet_map.patch
+Patch0178: hw-net-xgmac-Fix-buffer-overflow-in-xgmac_enet_send.patch
+Patch0179: hw-net-net_tx_pkt-fix-assertion-failure-in-net_tx_pk.patch
+Patch0180: sm501-Convert-printf-abort-to-qemu_log_mask.patch
+Patch0181: sm501-Shorten-long-variable-names-in-sm501_2d_operat.patch
+Patch0182: sm501-Use-BIT-x-macro-to-shorten-constant.patch
+Patch0183: sm501-Clean-up-local-variables-in-sm501_2d_operation.patch
+Patch0184: sm501-Replace-hand-written-implementation-with-pixma.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -529,6 +539,26 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Thu May 21 2020 BALATON Zoltan <balaton@eik.bme.hu>
+- hw/net/xgmac: Fix buffer overflow in xgmac_enet_send()
+- hw/net/net_tx_pkt: fix assertion failure in net_tx_pkt_add_raw_fragment()
+- sm501: Convert printf + abort to qemu_log_mask
+- sm501: Shorten long variable names in sm501_2d_operation
+- sm501: Use BIT(x) macro to shorten constant
+- sm501: Clean up local variables in sm501_2d_operation
+- sm501: Replace hand written implementation with pixman where possible
+
+* Thu Sep 24 2020 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
+- enrich commit info for some patches
+- rename some patches for slirp
+
+* Fri Sep 18 2020 Huawei Technologies Co., Ltd <lijiajie11@huawei.com>
+- hw-sd-sdhci-Fix-DMA-Transfer-Block-Size-field.patch
+- hw-xhci-check-return-value-of-usb_packet_map.patch
+
+* Fri Sep 11 2020 Huawei Technologies Co., Ltd <lijiajie11@huawei.com>
+- slirp/src/ip6_input.c: fix out-of-bounds read information vulnerablity
+
 * Thu Aug 27 2020 Huawei Technologies Co., Ltd <lijiajie11@huawei.com>
 - hw/usb/core.c: fix buffer overflow in do_token_setup function
 

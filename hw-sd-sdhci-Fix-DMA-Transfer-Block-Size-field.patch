@@ -1,0 +1,38 @@
+From d99d965c232c649686b4d8bc42dc11dcaf90dc0b Mon Sep 17 00:00:00 2001
+From: Prasad J Pandit <pjp@fedoraproject.org>
+Date: Fri, 18 Sep 2020 10:55:22 +0800
+Subject: [PATCH] hw/sd/sdhci: Fix DMA Transfer Block Size field
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+The 'Transfer Block Size' field is 12-bit wide.
+
+See section '2.2.2. Block Size Register (Offset 004h)' in datasheet.
+
+Cc: qemu-stable@nongnu.org
+Cc: Igor Mitsyanko <i.mitsyanko@gmail.com>
+Buglink: https://bugs.launchpad.net/qemu/+bug/1892960
+Fixes: d7dfca0807a ("hw/sdhci: introduce standard SD host controller")
+Reported-by: Alexander Bulekov <alxndr@bu.edu>
+Signed-off-by: Philippe Mathieu-Daudé <f4bug@amsat.org>
+---
+ hw/sd/sdhci.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/hw/sd/sdhci.c b/hw/sd/sdhci.c
+index 7b80b1d93f..65a530aee4 100644
+--- a/hw/sd/sdhci.c
++++ b/hw/sd/sdhci.c
+@@ -1127,7 +1127,7 @@ sdhci_write(void *opaque, hwaddr offset, uint64_t val, unsigned size)
+         break;
+     case SDHC_BLKSIZE:
+         if (!TRANSFERRING_DATA(s->prnsts)) {
+-            MASKED_WRITE(s->blksize, mask, value);
++            MASKED_WRITE(s->blksize, mask, extract32(value, 0, 12));
+             MASKED_WRITE(s->blkcnt, mask >> 16, value >> 16);
+         }
+ 
+-- 
+2.23.0
+

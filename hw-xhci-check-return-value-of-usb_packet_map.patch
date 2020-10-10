@@ -1,0 +1,74 @@
+From ff7545a6911bc7b9d818a541130f666a81077b44 Mon Sep 17 00:00:00 2001
+From: Li Qiang <liq3ea@163.com>
+Date: Fri, 18 Sep 2020 11:08:28 +0800
+Subject: [PATCH] hw: xhci: check return value of 'usb_packet_map'
+
+Currently we don't check the return value of 'usb_packet_map',
+this will cause an UAF issue. This is LP#1891341.
+Following is the reproducer provided in:
+-->https://bugs.launchpad.net/qemu/+bug/1891341
+
+cat << EOF | ./i386-softmmu/qemu-system-i386 -device nec-usb-xhci \
+-trace usb\* -device usb-audio -device usb-storage,drive=mydrive \
+-drive id=mydrive,file=null-co://,size=2M,format=raw,if=none \
+-nodefaults -nographic -qtest stdio
+outl 0xcf8 0x80001016
+outl 0xcfc 0x3c009f0d
+outl 0xcf8 0x80001004
+outl 0xcfc 0xc77695e
+writel 0x9f0d000000000040 0xffff3655
+writeq 0x9f0d000000002000 0xff2f9e0000000000
+write 0x1d 0x1 0x27
+write 0x2d 0x1 0x2e
+write 0x17232 0x1 0x03
+write 0x17254 0x1 0x06
+write 0x17278 0x1 0x34
+write 0x3d 0x1 0x27
+write 0x40 0x1 0x2e
+write 0x41 0x1 0x72
+write 0x42 0x1 0x01
+write 0x4d 0x1 0x2e
+write 0x4f 0x1 0x01
+writeq 0x9f0d000000002000 0x5c051a0100000000
+write 0x34001d 0x1 0x13
+write 0x340026 0x1 0x30
+write 0x340028 0x1 0x08
+write 0x34002c 0x1 0xfe
+write 0x34002d 0x1 0x08
+write 0x340037 0x1 0x5e
+write 0x34003a 0x1 0x05
+write 0x34003d 0x1 0x05
+write 0x34004d 0x1 0x13
+writeq 0x9f0d000000002000 0xff00010100400009
+EOF
+
+This patch fixes this.
+
+Buglink: https://bugs.launchpad.net/qemu/+bug/1891341
+Reported-by: Alexander Bulekov <alxndr@bu.edu>
+Signed-off-by: Li Qiang <liq3ea@163.com>
+Message-id: 20200812153139.15146-1-liq3ea@163.com
+Signed-off-by: Gerd Hoffmann <kraxel@redhat.com>
+---
+ hw/usb/hcd-xhci.c | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/hw/usb/hcd-xhci.c b/hw/usb/hcd-xhci.c
+index a21485fe8a..3b25abcacd 100644
+--- a/hw/usb/hcd-xhci.c
++++ b/hw/usb/hcd-xhci.c
+@@ -1614,7 +1614,10 @@ static int xhci_setup_packet(XHCITransfer *xfer)
+     xhci_xfer_create_sgl(xfer, dir == USB_TOKEN_IN); /* Also sets int_req */
+     usb_packet_setup(&xfer->packet, dir, ep, xfer->streamid,
+                      xfer->trbs[0].addr, false, xfer->int_req);
+-    usb_packet_map(&xfer->packet, &xfer->sgl);
++    if (usb_packet_map(&xfer->packet, &xfer->sgl)) {
++		qemu_sglist_destroy(&xfer->sgl);
++		return -1;
++	}
+     DPRINTF("xhci: setup packet pid 0x%x addr %d ep %d\n",
+             xfer->packet.pid, ep->dev->addr, ep->nr);
+     return 0;
+-- 
+2.23.0
+
