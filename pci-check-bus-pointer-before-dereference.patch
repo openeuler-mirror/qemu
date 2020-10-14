@@ -1,0 +1,50 @@
+From e393095e6d1456e2fb22f3cde3a9f0a307152562 Mon Sep 17 00:00:00 2001
+From: Prasad J Pandit <pjp@fedoraproject.org>
+Date: Wed, 14 Oct 2020 15:00:20 +0800
+Subject: [PATCH] pci: check bus pointer before dereference
+
+fix CVE-2020-25742
+
+patch link: https://lists.nongnu.org/archive/html/qemu-devel/2020-09/msg05294.html
+
+While mapping IRQ level in pci_change_irq_level() routine,
+it does not check if pci_get_bus() returned a valid pointer.
+It may lead to a NULL pointer dereference issue. Add check to
+avoid it.
+
+  -> https://ruhr-uni-bochum.sciebo.de/s/NNWP2GfwzYKeKwE?path=%2Flsi_nullptr1
+     ==1183858==Hint: address points to the zero page.
+     #0 pci_change_irq_level hw/pci/pci.c:259
+     #1 pci_irq_handler hw/pci/pci.c:1445
+     #2 pci_set_irq hw/pci/pci.c:1463
+     #3 lsi_set_irq hw/scsi/lsi53c895a.c:488
+     #4 lsi_update_irq hw/scsi/lsi53c895a.c:523
+     #5 lsi_script_scsi_interrupt hw/scsi/lsi53c895a.c:554
+     #6 lsi_execute_script hw/scsi/lsi53c895a.c:1149
+     #7 lsi_reg_writeb hw/scsi/lsi53c895a.c:1984
+     #8 lsi_io_write hw/scsi/lsi53c895a.c:2146
+     ...
+
+Reported-by: Ruhr-University <bugs-syssec@rub.de>
+Signed-off-by: Prasad J Pandit <pjp@fedoraproject.org>
+---
+ hw/pci/pci.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/hw/pci/pci.c b/hw/pci/pci.c
+index de0fae10ab..df5a2c3294 100644
+--- a/hw/pci/pci.c
++++ b/hw/pci/pci.c
+@@ -253,6 +253,9 @@ static void pci_change_irq_level(PCIDevice *pci_dev, int irq_num, int change)
+     PCIBus *bus;
+     for (;;) {
+         bus = pci_get_bus(pci_dev);
++        if (!bus) {
++            return;
++        }
+         irq_num = bus->map_irq(pci_dev, irq_num);
+         if (bus->set_irq)
+             break;
+-- 
+2.23.0
+
