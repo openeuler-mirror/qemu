@@ -1,0 +1,31 @@
+From b353d059bddf4b211c2560e7c123f874ed5c8cf6 Mon Sep 17 00:00:00 2001
+From: AlexChen <alex.chen@huawei.com>
+Date: Wed, 21 Oct 2020 17:12:52 +0800
+Subject: [PATCH] block: Remove unused include
+
+The "qemu-common.h" include is not used, remove it.
+
+Reported-by: Euler Robot <euler.robot@huawei.com>
+Signed-off-by: AlexChen <alex.chen@huawei.com>
+Message-Id: <5F8FFB94.3030209@huawei.com>
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+(cherry-picked from commit 3d86af858e)
+---
+ block/dmg-lzfse.c | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/block/dmg-lzfse.c b/block/dmg-lzfse.c
+index 19d25bc646..6798cf4fbf 100644
+--- a/block/dmg-lzfse.c
++++ b/block/dmg-lzfse.c
+@@ -22,7 +22,6 @@
+  * THE SOFTWARE.
+  */
+ #include "qemu/osdep.h"
+-#include "qemu-common.h"
+ #include "dmg.h"
+ #include <lzfse.h>
+ 
+-- 
+2.27.0
+
