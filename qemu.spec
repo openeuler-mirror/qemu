@@ -238,6 +238,8 @@ Patch0225: sm501-Shorten-long-variable-names-in-sm501_2d_operat.patch
 Patch0226: sm501-Use-BIT-x-macro-to-shorten-constant.patch
 Patch0227: sm501-Clean-up-local-variables-in-sm501_2d_operation.patch
 Patch0228: sm501-Replace-hand-written-implementation-with-pixma.patch
+Patch0229: pci-check-bus-pointer-before-dereference.patch
+Patch0230: hw-ide-check-null-block-before-_cancel_dma_sync.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -584,6 +586,10 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Wed Oct 14 2020 Prasad J Pandit <pjp@fedoraproject.org>
+- pci: check bus pointer before dereference
+- hw/ide: check null block before _cancel_dma_sync
+
 * Mon Sep 28 2020 Huawei Technologies Co., Ltd <fangying1@huawei.com>
 - sm501: Replace hand written implementation with pixman where possible
 - sm501: Clean up local variables in sm501_2d_operation
