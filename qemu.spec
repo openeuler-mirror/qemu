@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 22
+Release: 23
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY
@@ -194,6 +194,8 @@ Patch0181: sm501-Shorten-long-variable-names-in-sm501_2d_operat.patch
 Patch0182: sm501-Use-BIT-x-macro-to-shorten-constant.patch
 Patch0183: sm501-Clean-up-local-variables-in-sm501_2d_operation.patch
 Patch0184: sm501-Replace-hand-written-implementation-with-pixma.patch
+Patch0185: pci-check-bus-pointer-before-dereference.patch
+Patch0186: hw-ide-check-null-block-before-_cancel_dma_sync.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -539,6 +541,10 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Wed Oct 14 2020 Prasad J Pandit <pjp@fedoraproject.org>
+- pci: check bus pointer before dereference
+- hw/ide: check null block before _cancel_dma_sync
+
 * Thu May 21 2020 BALATON Zoltan <balaton@eik.bme.hu>
 - hw/net/xgmac: Fix buffer overflow in xgmac_enet_send()
 - hw/net/net_tx_pkt: fix assertion failure in net_tx_pkt_add_raw_fragment()
