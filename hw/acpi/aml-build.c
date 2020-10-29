@@ -167,7 +167,7 @@ void build_pptt(GArray *table_data, BIOSLinker *linker, int possible_cpus)
     struct offset_status offset;
     const MachineState *ms = MACHINE(qdev_get_machine());
     unsigned int smp_cores = ms->smp.cores;
-    unsigned int smp_sockets = ms->smp.cpus / (smp_cores * ms->smp.threads);
+    unsigned int smp_sockets = ms->smp.max_cpus / (smp_cores * ms->smp.threads);
 
     acpi_data_push(table_data, sizeof(AcpiTableHeader));
 
