@@ -10,17 +10,16 @@
  * See the COPYING file in the top-level directory.
  */
 
-#include <zlib.h>
 #include "qemu/osdep.h"
+#include <zlib.h>
 #include "qapi/error.h"
 #include "cpu.h"
-#include "qemu/config-file.h"
 #include "exec/memory.h"
 #include "exec/ram_addr.h"
 #include "exec/target_page.h"
 #include "qemu/rcu_queue.h"
+#include "qemu/error-report.h"
 #include "qapi/qapi-commands-migration.h"
-#include "migration.h"
 #include "ram.h"
 #include "trace.h"
 #include "dirtyrate.h"
