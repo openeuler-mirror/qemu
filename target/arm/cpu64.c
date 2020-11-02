@@ -116,31 +116,31 @@ static void aarch64_a57_initfn(Object *obj)
     cpu->midr = 0x411fd070;
     cpu->revidr = 0x00000000;
     cpu->reset_fpsid = 0x41034070;
-    cpu->isar.mvfr0 = 0x10110222;
-    cpu->isar.mvfr1 = 0x12111111;
-    cpu->isar.mvfr2 = 0x00000043;
+    cpu->isar.regs[MVFR0] = 0x10110222;
+    cpu->isar.regs[MVFR1] = 0x12111111;
+    cpu->isar.regs[MVFR2] = 0x00000043;
     cpu->ctr = 0x8444c004;
     cpu->reset_sctlr = 0x00c50838;
     cpu->id_pfr0 = 0x00000131;
     cpu->id_pfr1 = 0x00011011;
-    cpu->id_dfr0 = 0x03010066;
+    cpu->isar.regs[ID_DFR0] = 0x03010066;
     cpu->id_afr0 = 0x00000000;
-    cpu->id_mmfr0 = 0x10101105;
-    cpu->id_mmfr1 = 0x40000000;
-    cpu->id_mmfr2 = 0x01260000;
-    cpu->id_mmfr3 = 0x02102211;
-    cpu->isar.id_isar0 = 0x02101110;
-    cpu->isar.id_isar1 = 0x13112111;
-    cpu->isar.id_isar2 = 0x21232042;
-    cpu->isar.id_isar3 = 0x01112131;
-    cpu->isar.id_isar4 = 0x00011142;
-    cpu->isar.id_isar5 = 0x00011121;
-    cpu->isar.id_isar6 = 0;
-    cpu->isar.id_aa64pfr0 = 0x00002222;
-    cpu->id_aa64dfr0 = 0x10305106;
-    cpu->isar.id_aa64isar0 = 0x00011120;
-    cpu->isar.id_aa64mmfr0 = 0x00001124;
-    cpu->dbgdidr = 0x3516d000;
+    cpu->isar.regs[ID_MMFR0] = 0x10101105;
+    cpu->isar.regs[ID_MMFR1] = 0x40000000;
+    cpu->isar.regs[ID_MMFR2] = 0x01260000;
+    cpu->isar.regs[ID_MMFR3] = 0x02102211;
+    cpu->isar.regs[ID_ISAR0] = 0x02101110;
+    cpu->isar.regs[ID_ISAR1] = 0x13112111;
+    cpu->isar.regs[ID_ISAR2] = 0x21232042;
+    cpu->isar.regs[ID_ISAR3] = 0x01112131;
+    cpu->isar.regs[ID_ISAR4] = 0x00011142;
+    cpu->isar.regs[ID_ISAR5] = 0x00011121;
+    cpu->isar.regs[ID_ISAR6] = 0;
+    cpu->isar.regs[ID_AA64PFR0] = 0x00002222;
+    cpu->isar.regs[ID_AA64DFR0] = 0x10305106;
+    cpu->isar.regs[ID_AA64ISAR0] = 0x00011120;
+    cpu->isar.regs[ID_AA64MMFR0] = 0x00001124;
+    cpu->isar.regs[DBGDIDR] = 0x3516d000;
     cpu->clidr = 0x0a200023;
     cpu->ccsidr[0] = 0x701fe00a; /* 32KB L1 dcache */
     cpu->ccsidr[1] = 0x201fe012; /* 48KB L1 icache */
@@ -170,31 +170,31 @@ static void aarch64_a53_initfn(Object *obj)
     cpu->midr = 0x410fd034;
     cpu->revidr = 0x00000000;
     cpu->reset_fpsid = 0x41034070;
-    cpu->isar.mvfr0 = 0x10110222;
-    cpu->isar.mvfr1 = 0x12111111;
-    cpu->isar.mvfr2 = 0x00000043;
+    cpu->isar.regs[MVFR0] = 0x10110222;
+    cpu->isar.regs[MVFR1] = 0x12111111;
+    cpu->isar.regs[MVFR2] = 0x00000043;
     cpu->ctr = 0x84448004; /* L1Ip = VIPT */
     cpu->reset_sctlr = 0x00c50838;
     cpu->id_pfr0 = 0x00000131;
     cpu->id_pfr1 = 0x00011011;
-    cpu->id_dfr0 = 0x03010066;
+    cpu->isar.regs[ID_DFR0] = 0x03010066;
     cpu->id_afr0 = 0x00000000;
-    cpu->id_mmfr0 = 0x10101105;
-    cpu->id_mmfr1 = 0x40000000;
-    cpu->id_mmfr2 = 0x01260000;
-    cpu->id_mmfr3 = 0x02102211;
-    cpu->isar.id_isar0 = 0x02101110;
-    cpu->isar.id_isar1 = 0x13112111;
-    cpu->isar.id_isar2 = 0x21232042;
-    cpu->isar.id_isar3 = 0x01112131;
-    cpu->isar.id_isar4 = 0x00011142;
-    cpu->isar.id_isar5 = 0x00011121;
-    cpu->isar.id_isar6 = 0;
-    cpu->isar.id_aa64pfr0 = 0x00002222;
-    cpu->id_aa64dfr0 = 0x10305106;
-    cpu->isar.id_aa64isar0 = 0x00011120;
-    cpu->isar.id_aa64mmfr0 = 0x00001122; /* 40 bit physical addr */
-    cpu->dbgdidr = 0x3516d000;
+    cpu->isar.regs[ID_MMFR0] = 0x10101105;
+    cpu->isar.regs[ID_MMFR1] = 0x40000000;
+    cpu->isar.regs[ID_MMFR2] = 0x01260000;
+    cpu->isar.regs[ID_MMFR3] = 0x02102211;
+    cpu->isar.regs[ID_ISAR0] = 0x02101110;
+    cpu->isar.regs[ID_ISAR1] = 0x13112111;
+    cpu->isar.regs[ID_ISAR2] = 0x21232042;
+    cpu->isar.regs[ID_ISAR3] = 0x01112131;
+    cpu->isar.regs[ID_ISAR4] = 0x00011142;
+    cpu->isar.regs[ID_ISAR5] = 0x00011121;
+    cpu->isar.regs[ID_ISAR6] = 0;
+    cpu->isar.regs[ID_AA64PFR0] = 0x00002222;
+    cpu->isar.regs[ID_AA64DFR0] = 0x10305106;
+    cpu->isar.regs[ID_AA64ISAR0] = 0x00011120;
+    cpu->isar.regs[ID_AA64MMFR0] = 0x00001122; /* 40 bit physical addr */
+    cpu->isar.regs[DBGDIDR] = 0x3516d000;
     cpu->clidr = 0x0a200023;
     cpu->ccsidr[0] = 0x700fe01a; /* 32KB L1 dcache */
     cpu->ccsidr[1] = 0x201fe00a; /* 32KB L1 icache */
@@ -224,30 +224,30 @@ static void aarch64_a72_initfn(Object *obj)
     cpu->midr = 0x410fd083;
     cpu->revidr = 0x00000000;
     cpu->reset_fpsid = 0x41034080;
-    cpu->isar.mvfr0 = 0x10110222;
-    cpu->isar.mvfr1 = 0x12111111;
-    cpu->isar.mvfr2 = 0x00000043;
+    cpu->isar.regs[MVFR0] = 0x10110222;
+    cpu->isar.regs[MVFR1] = 0x12111111;
+    cpu->isar.regs[MVFR2] = 0x00000043;
     cpu->ctr = 0x8444c004;
     cpu->reset_sctlr = 0x00c50838;
     cpu->id_pfr0 = 0x00000131;
     cpu->id_pfr1 = 0x00011011;
-    cpu->id_dfr0 = 0x03010066;
+    cpu->isar.regs[ID_DFR0] = 0x03010066;
     cpu->id_afr0 = 0x00000000;
-    cpu->id_mmfr0 = 0x10201105;
-    cpu->id_mmfr1 = 0x40000000;
-    cpu->id_mmfr2 = 0x01260000;
-    cpu->id_mmfr3 = 0x02102211;
-    cpu->isar.id_isar0 = 0x02101110;
-    cpu->isar.id_isar1 = 0x13112111;
-    cpu->isar.id_isar2 = 0x21232042;
-    cpu->isar.id_isar3 = 0x01112131;
-    cpu->isar.id_isar4 = 0x00011142;
-    cpu->isar.id_isar5 = 0x00011121;
-    cpu->isar.id_aa64pfr0 = 0x00002222;
-    cpu->id_aa64dfr0 = 0x10305106;
-    cpu->isar.id_aa64isar0 = 0x00011120;
-    cpu->isar.id_aa64mmfr0 = 0x00001124;
-    cpu->dbgdidr = 0x3516d000;
+    cpu->isar.regs[ID_MMFR0] = 0x10201105;
+    cpu->isar.regs[ID_MMFR1] = 0x40000000;
+    cpu->isar.regs[ID_MMFR2] = 0x01260000;
+    cpu->isar.regs[ID_MMFR3] = 0x02102211;
+    cpu->isar.regs[ID_ISAR0] = 0x02101110;
+    cpu->isar.regs[ID_ISAR1] = 0x13112111;
+    cpu->isar.regs[ID_ISAR2] = 0x21232042;
+    cpu->isar.regs[ID_ISAR3] = 0x01112131;
+    cpu->isar.regs[ID_ISAR4] = 0x00011142;
+    cpu->isar.regs[ID_ISAR5] = 0x00011121;
+    cpu->isar.regs[ID_AA64PFR0] = 0x00002222;
+    cpu->isar.regs[ID_AA64DFR0] = 0x10305106;
+    cpu->isar.regs[ID_AA64ISAR0] = 0x00011120;
+    cpu->isar.regs[ID_AA64MMFR0] = 0x00001124;
+    cpu->isar.regs[DBGDIDR] = 0x3516d000;
     cpu->clidr = 0x0a200023;
     cpu->ccsidr[0] = 0x701fe00a; /* 32KB L1 dcache */
     cpu->ccsidr[1] = 0x201fe012; /* 48KB L1 icache */
@@ -275,10 +275,33 @@ static void aarch64_kunpeng_920_initfn(Object *obj)
 
     cpu->midr = 0x480fd010;
     cpu->ctr = 0x84448004;
-    cpu->isar.id_aa64pfr0 = 0x11001111;
-    cpu->id_aa64dfr0 = 0x110305408;
-    cpu->isar.id_aa64isar0 = 0x10211120;
-    cpu->isar.id_aa64mmfr0 = 0x101125;
+    cpu->isar.regs[ID_ISAR0] = 0;
+    cpu->isar.regs[ID_ISAR1] = 0;
+    cpu->isar.regs[ID_ISAR2] = 0;
+    cpu->isar.regs[ID_ISAR3] = 0;
+    cpu->isar.regs[ID_ISAR4] = 0;
+    cpu->isar.regs[ID_ISAR5] = 0;
+    cpu->isar.regs[ID_MMFR0] = 0;
+    cpu->isar.regs[ID_MMFR1] = 0;
+    cpu->isar.regs[ID_MMFR2] = 0;
+    cpu->isar.regs[ID_MMFR3] = 0;
+    cpu->isar.regs[ID_MMFR4] = 0;
+    cpu->isar.regs[MVFR0] = 0;
+    cpu->isar.regs[MVFR1] = 0;
+    cpu->isar.regs[MVFR2] = 0;
+    cpu->isar.regs[ID_DFR0] = 0;
+    cpu->isar.regs[MVFR2] = 0;
+    cpu->isar.regs[MVFR2] = 0;
+    cpu->isar.regs[MVFR2] = 0;
+    cpu->id_pfr0 = 0;
+    cpu->id_pfr1 = 0;
+    cpu->isar.regs[ID_AA64PFR0] = 0x0000010011111111;
+    cpu->isar.regs[ID_AA64DFR0] = 0x110305408;
+    cpu->isar.regs[ID_AA64ISAR0] = 0x0001100010211120;
+    cpu->isar.regs[ID_AA64ISAR1] = 0x00011001;
+    cpu->isar.regs[ID_AA64MMFR0] = 0x101125;
+    cpu->isar.regs[ID_AA64MMFR1] = 0x10211122;
+    cpu->isar.regs[ID_AA64MMFR2] = 0x00001011;
 }
 
 static void cpu_max_get_sve_vq(Object *obj, Visitor *v, const char *name,
@@ -321,7 +344,7 @@ static void aarch64_max_initfn(Object *obj)
         uint32_t u;
         aarch64_a57_initfn(obj);
 
-        t = cpu->isar.id_aa64isar0;
+        t = cpu->isar.regs[ID_AA64ISAR0];
         t = FIELD_DP64(t, ID_AA64ISAR0, AES, 2); /* AES + PMULL */
         t = FIELD_DP64(t, ID_AA64ISAR0, SHA1, 1);
         t = FIELD_DP64(t, ID_AA64ISAR0, SHA2, 2); /* SHA512 */
@@ -335,9 +358,9 @@ static void aarch64_max_initfn(Object *obj)
         t = FIELD_DP64(t, ID_AA64ISAR0, FHM, 1);
         t = FIELD_DP64(t, ID_AA64ISAR0, TS, 2); /* v8.5-CondM */
         t = FIELD_DP64(t, ID_AA64ISAR0, RNDR, 1);
-        cpu->isar.id_aa64isar0 = t;
+        cpu->isar.regs[ID_AA64ISAR0] = t;
 
-        t = cpu->isar.id_aa64isar1;
+        t = cpu->isar.regs[ID_AA64ISAR1];
         t = FIELD_DP64(t, ID_AA64ISAR1, JSCVT, 1);
         t = FIELD_DP64(t, ID_AA64ISAR1, FCMA, 1);
         t = FIELD_DP64(t, ID_AA64ISAR1, APA, 1); /* PAuth, architected only */
@@ -347,40 +370,45 @@ static void aarch64_max_initfn(Object *obj)
         t = FIELD_DP64(t, ID_AA64ISAR1, SB, 1);
         t = FIELD_DP64(t, ID_AA64ISAR1, SPECRES, 1);
         t = FIELD_DP64(t, ID_AA64ISAR1, FRINTTS, 1);
-        cpu->isar.id_aa64isar1 = t;
+        cpu->isar.regs[ID_AA64ISAR1] = t;
 
-        t = cpu->isar.id_aa64pfr0;
+        t = cpu->isar.regs[ID_AA64PFR0];
         t = FIELD_DP64(t, ID_AA64PFR0, SVE, 1);
         t = FIELD_DP64(t, ID_AA64PFR0, FP, 1);
         t = FIELD_DP64(t, ID_AA64PFR0, ADVSIMD, 1);
-        cpu->isar.id_aa64pfr0 = t;
+        cpu->isar.regs[ID_AA64PFR0] = t;
 
-        t = cpu->isar.id_aa64pfr1;
+        t = cpu->isar.regs[ID_AA64PFR1];
         t = FIELD_DP64(t, ID_AA64PFR1, BT, 1);
-        cpu->isar.id_aa64pfr1 = t;
+        cpu->isar.regs[ID_AA64PFR1] = t;
 
-        t = cpu->isar.id_aa64mmfr1;
+        t = cpu->isar.regs[ID_AA64MMFR1];
         t = FIELD_DP64(t, ID_AA64MMFR1, HPDS, 1); /* HPD */
         t = FIELD_DP64(t, ID_AA64MMFR1, LO, 1);
-        cpu->isar.id_aa64mmfr1 = t;
+        t = FIELD_DP64(t, ID_AA64MMFR1, PAN, 2); /* ATS1E1 */
+        cpu->isar.regs[ID_AA64MMFR1] = t;
 
         /* Replicate the same data to the 32-bit id registers.  */
-        u = cpu->isar.id_isar5;
+        u = cpu->isar.regs[ID_ISAR5];
         u = FIELD_DP32(u, ID_ISAR5, AES, 2); /* AES + PMULL */
         u = FIELD_DP32(u, ID_ISAR5, SHA1, 1);
         u = FIELD_DP32(u, ID_ISAR5, SHA2, 1);
         u = FIELD_DP32(u, ID_ISAR5, CRC32, 1);
         u = FIELD_DP32(u, ID_ISAR5, RDM, 1);
         u = FIELD_DP32(u, ID_ISAR5, VCMA, 1);
-        cpu->isar.id_isar5 = u;
+        cpu->isar.regs[ID_ISAR5] = u;
 
-        u = cpu->isar.id_isar6;
+        u = cpu->isar.regs[ID_ISAR6];
         u = FIELD_DP32(u, ID_ISAR6, JSCVT, 1);
         u = FIELD_DP32(u, ID_ISAR6, DP, 1);
         u = FIELD_DP32(u, ID_ISAR6, FHM, 1);
         u = FIELD_DP32(u, ID_ISAR6, SB, 1);
         u = FIELD_DP32(u, ID_ISAR6, SPECRES, 1);
-        cpu->isar.id_isar6 = u;
+        cpu->isar.regs[ID_ISAR6] = u;
+
+        u = cpu->isar.regs[ID_MMFR3];
+        u = FIELD_DP32(u, ID_MMFR3, PAN, 2); /* ATS1E1 */
+        cpu->isar.regs[ID_MMFR3] = u;
 
         /*
          * FIXME: We do not yet support ARMv8.2-fp16 for AArch32 yet,
@@ -501,6 +529,115 @@ static void arm_cpu_parse_featurestr(const char *typename, char *features,
     }
 }
 
+static const char *unconfigurable_feats[] = {
+    "evtstrm",
+    "cpuid",
+    NULL
+};
+
+static bool is_configurable_feat(const char *name)
+{
+    int i;
+
+    for (i = 0; unconfigurable_feats[i]; ++i) {
+        if (g_strcmp0(unconfigurable_feats[i], name) == 0) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static void
+cpu_add_feat_as_prop(const char *typename, const char *name, const char *val)
+{
+    GlobalProperty *prop;
+
+    if (!is_configurable_feat(name)) {
+        info_report("CPU feature '%s' is not configurable by QEMU.  Ignore it.",
+                    name);
+        return;
+    }
+
+    prop = g_new0(typeof(*prop), 1);
+    prop->driver = typename;
+    prop->property = g_strdup(name);
+    prop->value = g_strdup(val);
+    qdev_prop_register_global(prop);
+}
+
+static gint compare_string(gconstpointer a, gconstpointer b)
+{
+    return g_strcmp0(a, b);
+}
+
+static GList *plus_features, *minus_features;
+
+static void aarch64_cpu_parse_features(const char *typename, char *features,
+                                     Error **errp)
+{
+    GList *l;
+    char *featurestr; /* Single 'key=value" string being parsed */
+    static bool cpu_globals_initialized;
+
+    if (cpu_globals_initialized) {
+        return;
+    }
+    cpu_globals_initialized = true;
+
+    if (!features) {
+        return;
+    }
+    for (featurestr = strtok(features, ",");
+        featurestr;
+        featurestr = strtok(NULL, ",")) {
+        const char *name;
+        const char *val = NULL;
+        char *eq = NULL;
+
+        /* Compatibility syntax: */
+        if (featurestr[0] == '+') {
+            plus_features = g_list_append(plus_features,
+                                          g_strdup(featurestr + 1));
+            continue;
+        } else if (featurestr[0] == '-') {
+            minus_features = g_list_append(minus_features,
+                                           g_strdup(featurestr + 1));
+            continue;
+        }
+
+        eq = strchr(featurestr, '=');
+        name = featurestr;
+        if (eq) {
+            *eq++ = 0;
+            val = eq;
+        } else {
+            error_setg(errp, "Unsupported property format: %s", name);
+            return;
+        }
+
+        if (g_list_find_custom(plus_features, name, compare_string)) {
+            warn_report("Ambiguous CPU model string. "
+                        "Don't mix both \"+%s\" and \"%s=%s\"",
+                        name, name, val);
+        }
+        if (g_list_find_custom(minus_features, name, compare_string)) {
+            warn_report("Ambiguous CPU model string. "
+                        "Don't mix both \"-%s\" and \"%s=%s\"",
+                        name, name, val);
+        }
+        cpu_add_feat_as_prop(typename, name, val);
+    }
+
+    for (l = plus_features; l; l = l->next) {
+        cpu_add_feat_as_prop(typename, l->data, "on");
+    }
+
+    for (l = minus_features; l; l = l->next) {
+        cpu_add_feat_as_prop(typename, l->data, "off");
+    }
+}
+
 static void aarch64_cpu_class_init(ObjectClass *oc, void *data)
 {
     CPUClass *cc = CPU_CLASS(oc);
@@ -512,6 +649,7 @@ static void aarch64_cpu_class_init(ObjectClass *oc, void *data)
     cc->gdb_num_core_regs = 34;
     cc->gdb_core_xml_file = "aarch64-core.xml";
     cc->gdb_arch_name = aarch64_gdb_arch_name;
+    cc->parse_features = aarch64_cpu_parse_features;
 }
 
 static void aarch64_cpu_instance_init(Object *obj)
