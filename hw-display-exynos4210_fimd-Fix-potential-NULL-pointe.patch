@@ -1,0 +1,46 @@
+From b47d7ad29bc7f30d4ea3fdb0ef86942468416b79 Mon Sep 17 00:00:00 2001
+From: AlexChen <alex.chen@huawei.com>
+Date: Mon, 2 Nov 2020 16:52:17 +0000
+Subject: [PATCH] hw/display/exynos4210_fimd: Fix potential NULL pointer
+ dereference
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+In exynos4210_fimd_update(), the pointer s is dereferinced before
+being check if it is valid, which may lead to NULL pointer dereference.
+So move the assignment to global_width after checking that the s is valid.
+
+Reported-by: Euler Robot <euler.robot@huawei.com>
+Signed-off-by: Alex Chen <alex.chen@huawei.com>
+Reviewed-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+Message-id: 5F9F8D88.9030102@huawei.com
+Signed-off-by: Peter Maydell <peter.maydell@linaro.org>
+(cherry-picked from commit 18520fa465)
+---
+ hw/display/exynos4210_fimd.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/hw/display/exynos4210_fimd.c b/hw/display/exynos4210_fimd.c
+index 61f7408b1c..85b0ebf23a 100644
+--- a/hw/display/exynos4210_fimd.c
++++ b/hw/display/exynos4210_fimd.c
+@@ -1271,12 +1271,14 @@ static void exynos4210_fimd_update(void *opaque)
+     bool blend = false;
+     uint8_t *host_fb_addr;
+     bool is_dirty = false;
+-    const int global_width = (s->vidtcon[2] & FIMD_VIDTCON2_SIZE_MASK) + 1;
++    int global_width;
+ 
+     if (!s || !s->console || !s->enabled ||
+         surface_bits_per_pixel(qemu_console_surface(s->console)) == 0) {
+         return;
+     }
++
++    global_width = (s->vidtcon[2] & FIMD_VIDTCON2_SIZE_MASK) + 1;
+     exynos4210_update_resolution(s);
+     surface = qemu_console_surface(s->console);
+ 
+-- 
+2.27.0
+
