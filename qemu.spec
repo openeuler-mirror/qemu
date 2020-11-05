@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 23
+Release: 24
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY
@@ -196,6 +196,32 @@ Patch0183: sm501-Clean-up-local-variables-in-sm501_2d_operation.patch
 Patch0184: sm501-Replace-hand-written-implementation-with-pixma.patch
 Patch0185: pci-check-bus-pointer-before-dereference.patch
 Patch0186: hw-ide-check-null-block-before-_cancel_dma_sync.patch
+Patch0187: target-arm-Add-isar_feature-tests-for-PAN-ATS1E1.patch
+Patch0188: target-arm-Add-ID_AA64MMFR2_EL1.patch
+Patch0189: target-arm-Add-and-use-FIELD-definitions-for-ID_AA64.patch
+Patch0190: target-arm-Use-FIELD-macros-for-clearing-ID_DFR0-PER.patch
+Patch0191: target-arm-Define-an-aa32_pmu_8_1-isar-feature-test-.patch
+Patch0192: target-arm-Add-_aa64_-and-_any_-versions-of-pmu_8_1-.patch
+Patch0193: target-arm-Stop-assuming-DBGDIDR-always-exists.patch
+Patch0194: target-arm-Move-DBGDIDR-into-ARMISARegisters.patch
+Patch0195: target-arm-Enable-ARMv8.2-ATS1E1-in-cpu-max.patch
+Patch0196: target-arm-Test-correct-register-in-aa32_pan-and-aa3.patch
+Patch0197: target-arm-Read-debug-related-ID-registers-from-KVM.patch
+Patch0198: target-arm-monitor-Introduce-qmp_query_cpu_model_exp.patch
+Patch0199: target-arm-monitor-query-cpu-model-expansion-crashed.patch
+Patch0200: target-arm-convert-isar-regs-to-array.patch
+Patch0201: target-arm-parse-cpu-feature-related-options.patch
+Patch0202: target-arm-register-CPU-features-for-property.patch
+Patch0203: target-arm-Allow-ID-registers-to-synchronize-to-KVM.patch
+Patch0204: target-arm-introduce-CPU-feature-dependency-mechanis.patch
+Patch0205: target-arm-introduce-KVM_CAP_ARM_CPU_FEATURE.patch
+Patch0206: target-arm-Add-CPU-features-to-query-cpu-model-expan.patch
+Patch0207: target-arm-Update-ID-fields.patch
+Patch0208: target-arm-Add-more-CPU-features.patch
+Patch0209: target-arm-ignore-evtstrm-and-cpuid-CPU-features.patch
+Patch0210: target-arm-Update-the-ID-registers-of-Kunpeng-920.patch
+Patch0211: target-arm-only-set-ID_PFR1_EL1.GIC-for-AArch32-gues.patch
+Patch0212: target-arm-clear-EL2-and-EL3-only-when-kvm-is-not-en.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -541,6 +567,34 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Mon Sep 21 2020 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
+- target/arm: Add isar_feature tests for PAN + ATS1E1
+- target/arm: Add ID_AA64MMFR2_EL1
+- target/arm: Add and use FIELD definitions for ID_AA64DFR0_EL1
+- target/arm: Use FIELD macros for clearing ID_DFR0 PERFMON field
+- target/arm: Define an aa32_pmu_8_1 isar feature test function
+- target/arm: Add _aa64_ and _any_ versions of pmu_8_1 isar checks
+- target/arm: Stop assuming DBGDIDR always exists
+- target/arm: Move DBGDIDR into ARMISARegisters
+- target/arm: Enable ARMv8.2-ATS1E1 in -cpu max
+- target/arm: Test correct register in aa32_pan and aa32_ats1e1 checks
+- target/arm: Read debug-related ID registers from KVM
+- target/arm/monitor: Introduce qmp_query_cpu_model_expansion
+- target/arm/monitor: query-cpu-model-expansion crashed qemu when using machine type none
+- target/arm: convert isar regs to array
+- target/arm: parse cpu feature related options
+- target/arm: register CPU features for property
+- target/arm: Allow ID registers to synchronize to KVM
+- target/arm: introduce CPU feature dependency mechanism
+- target/arm: introduce KVM_CAP_ARM_CPU_FEATURE
+- target/arm: Add CPU features to query-cpu-model-expansion
+- target/arm: Update ID fields
+- target/arm: Add more CPU features
+- target/arm: ignore evtstrm and cpuid CPU features
+- target/arm: Update the ID registers of Kunpeng-920
+- target/arm: only set ID_PFR1_EL1.GIC for AArch32 guest
+- target/arm: clear EL2 and EL3 only when kvm is not enabled
+
 * Wed Oct 14 2020 Prasad J Pandit <pjp@fedoraproject.org>
 - pci: check bus pointer before dereference
 - hw/ide: check null block before _cancel_dma_sync
