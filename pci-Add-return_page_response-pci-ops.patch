@@ -1,0 +1,86 @@
+From e3b498a1afec138693251bf1bd1fa9b322a880fb Mon Sep 17 00:00:00 2001
+From: Eric Auger <eric.auger@redhat.com>
+Date: Fri, 6 Nov 2020 14:34:35 +0100
+Subject: [PATCH] pci: Add return_page_response pci ops
+
+Add a new PCI operation that allows to return page responses
+to registered VFIO devices
+
+Signed-off-by: Eric Auger <eric.auger@redhat.com>
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+---
+ hw/pci/pci.c             | 16 ++++++++++++++++
+ include/hw/iommu/iommu.h |  8 ++++++++
+ include/hw/pci/pci.h     |  4 ++++
+ 3 files changed, 28 insertions(+)
+
+diff --git a/hw/pci/pci.c b/hw/pci/pci.c
+index f11ca7964e..a8b3d1c071 100644
+--- a/hw/pci/pci.c
++++ b/hw/pci/pci.c
+@@ -2660,6 +2660,22 @@ int pci_device_set_pasid_table(PCIBus *bus, int32_t devfn,
+     return -ENOENT;
+ }
+ 
++int pci_device_return_page_response(PCIBus *bus, int32_t devfn,
++                                    IOMMUPageResponse *resp)
++{
++    PCIDevice *dev;
++
++    if (!bus) {
++        return -EINVAL;
++    }
++
++    dev = bus->devices[devfn];
++    if (dev && dev->pasid_ops && dev->pasid_ops->return_page_response) {
++        return dev->pasid_ops->return_page_response(bus, devfn, resp);
++    }
++    return -ENOENT;
++}
++
+ static void pci_dev_get_w64(PCIBus *b, PCIDevice *dev, void *opaque)
+ {
+     Range *range = opaque;
+diff --git a/include/hw/iommu/iommu.h b/include/hw/iommu/iommu.h
+index 12092bda7b..5890f095b1 100644
+--- a/include/hw/iommu/iommu.h
++++ b/include/hw/iommu/iommu.h
+@@ -24,5 +24,13 @@ typedef struct IOMMUConfig {
+           };
+ } IOMMUConfig;
+ 
++typedef struct IOMMUPageResponse {
++    union {
++#ifdef __linux__
++        struct iommu_page_response resp;
++#endif
++          };
++} IOMMUPageResponse;
++
+ 
+ #endif /* QEMU_HW_IOMMU_IOMMU_H */
+diff --git a/include/hw/pci/pci.h b/include/hw/pci/pci.h
+index bb14ed61b0..5e7e0e4e6f 100644
+--- a/include/hw/pci/pci.h
++++ b/include/hw/pci/pci.h
+@@ -266,6 +266,8 @@ typedef struct PCIReqIDCache PCIReqIDCache;
+ 
+ struct PCIPASIDOps {
+     int (*set_pasid_table)(PCIBus *bus, int32_t devfn, IOMMUConfig *config);
++    int (*return_page_response)(PCIBus *bus, int32_t devfn,
++                                IOMMUPageResponse *resp);
+ };
+ typedef struct PCIPASIDOps PCIPASIDOps;
+ 
+@@ -495,6 +497,8 @@ void pci_setup_iommu(PCIBus *bus, PCIIOMMUFunc fn, void *opaque);
+ void pci_setup_pasid_ops(PCIDevice *dev, PCIPASIDOps *ops);
+ bool pci_device_is_pasid_ops_set(PCIBus *bus, int32_t devfn);
+ int pci_device_set_pasid_table(PCIBus *bus, int32_t devfn, IOMMUConfig *config);
++int pci_device_return_page_response(PCIBus *bus, int32_t devfn,
++                                    IOMMUPageResponse *resp);
+ 
+ static inline void
+ pci_set_byte(uint8_t *config, uint8_t val)
+-- 
+2.27.0
+
