@@ -1,0 +1,46 @@
+From 2b157688d19da5ce4fca6b5f3c78d2e309ecec9a Mon Sep 17 00:00:00 2001
+From: Prasad J Pandit <pjp@fedoraproject.org>
+Date: Wed, 11 Nov 2020 18:36:36 +0530
+Subject: [PATCH] hw/net/e1000e: advance desc_offset in case of null descriptor
+
+While receiving packets via e1000e_write_packet_to_guest() routine,
+'desc_offset' is advanced only when RX descriptor is processed. And
+RX descriptor is not processed if it has NULL buffer address.
+This may lead to an infinite loop condition. Increament 'desc_offset'
+to process next descriptor in the ring to avoid infinite loop.
+
+Reported-by: Cheol-woo Myung <330cjfdn@gmail.com>
+Signed-off-by: Prasad J Pandit <pjp@fedoraproject.org>
+Signed-off-by: Jason Wang <jasowang@redhat.com>
+(cherry-picked from c2cb5116)
+Fix CVE-2020-28916
+Signed-off-by: Alex Chen <alex.chen@huawei.com>
+---
+ hw/net/e1000e_core.c | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/hw/net/e1000e_core.c b/hw/net/e1000e_core.c
+index 2a221c2ef9..e45d47f584 100644
+--- a/hw/net/e1000e_core.c
++++ b/hw/net/e1000e_core.c
+@@ -1595,13 +1595,13 @@ e1000e_write_packet_to_guest(E1000ECore *core, struct NetRxPkt *pkt,
+                           (const char *) &fcs_pad, e1000x_fcs_len(core->mac));
+                 }
+             }
+-            desc_offset += desc_size;
+-            if (desc_offset >= total_size) {
+-                is_last = true;
+-            }
+         } else { /* as per intel docs; skip descriptors with null buf addr */
+             trace_e1000e_rx_null_descriptor();
+         }
++        desc_offset += desc_size;
++        if (desc_offset >= total_size) {
++            is_last = true;
++        }
+ 
+         e1000e_write_rx_descr(core, desc, is_last ? core->rx_pkt : NULL,
+                            rss_info, do_ps ? ps_hdr_len : 0, &bastate.written);
+-- 
+2.27.0
+
