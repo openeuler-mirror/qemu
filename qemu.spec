@@ -240,6 +240,14 @@ Patch0227: sm501-Clean-up-local-variables-in-sm501_2d_operation.patch
 Patch0228: sm501-Replace-hand-written-implementation-with-pixma.patch
 Patch0229: pci-check-bus-pointer-before-dereference.patch
 Patch0230: hw-ide-check-null-block-before-_cancel_dma_sync.patch
+Patch0231: elf2dmp-Fix-memory-leak-on-main-error-paths.patch
+Patch0232: io-Don-t-use-flag-of-printf-format.patch
+Patch0233: hw-display-omap_lcdc-Fix-potential-NULL-pointer-dere.patch
+Patch0234: hw-display-exynos4210_fimd-Fix-potential-NULL-pointe.patch
+Patch0235: block-vvfat-Fix-bad-printf-format-specifiers.patch
+Patch0236: block-Remove-unused-include.patch
+Patch0237: ssi-Fix-bad-printf-format-specifiers.patch
+Patch0238: net-l2tpv3-Remove-redundant-check-in-net_init_l2tpv3.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -586,6 +594,16 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Fri Oct 30 2020 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
+- elf2dmp: Fix memory leak on main() error paths
+- io: Don't use '#' flag of printf format
+- hw/display/omap_lcdc: Fix potential NULL pointer dereference
+- hw/display/exynos4210_fimd: Fix potential NULL pointer dereference
+- block/vvfat: Fix bad printf format specifiers
+- block: Remove unused include
+- ssi: Fix bad printf format specifiers
+- net/l2tpv3: Remove redundant check in net_init_l2tpv3()
+
 * Wed Oct 14 2020 Prasad J Pandit <pjp@fedoraproject.org>
 - pci: check bus pointer before dereference
 - hw/ide: check null block before _cancel_dma_sync
