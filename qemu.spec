@@ -222,6 +222,7 @@ Patch0209: target-arm-ignore-evtstrm-and-cpuid-CPU-features.patch
 Patch0210: target-arm-Update-the-ID-registers-of-Kunpeng-920.patch
 Patch0211: target-arm-only-set-ID_PFR1_EL1.GIC-for-AArch32-gues.patch
 Patch0212: target-arm-clear-EL2-and-EL3-only-when-kvm-is-not-en.patch
+Patch0213: ati-check-x-y-display-parameter-values.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -567,6 +568,9 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Wed Nov 18 2020 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
+- ati: check x y display parameter values
+
 * Mon Sep 21 2020 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
 - target/arm: Add isar_feature tests for PAN + ATS1E1
 - target/arm: Add ID_AA64MMFR2_EL1
