@@ -248,6 +248,7 @@ Patch0235: block-vvfat-Fix-bad-printf-format-specifiers.patch
 Patch0236: block-Remove-unused-include.patch
 Patch0237: ssi-Fix-bad-printf-format-specifiers.patch
 Patch0238: net-l2tpv3-Remove-redundant-check-in-net_init_l2tpv3.patch
+Patch0239: ati-check-x-y-display-parameter-values.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -594,6 +595,9 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Wed Nov 18 2020 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
+- ati: check x y display parameter values
+
 * Fri Oct 30 2020 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
 - elf2dmp: Fix memory leak on main() error paths
 - io: Don't use '#' flag of printf format
