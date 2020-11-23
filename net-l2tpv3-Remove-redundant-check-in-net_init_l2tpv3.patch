@@ -1,0 +1,46 @@
+From cb6048ace290e770b0ec1a6011209192541d3e8a Mon Sep 17 00:00:00 2001
+From: AlexChen <alex.chen@huawei.com>
+Date: Fri, 30 Oct 2020 10:46:55 +0800
+Subject: [PATCH] net/l2tpv3: Remove redundant check in net_init_l2tpv3()
+
+The result has been checked to be NULL before, it cannot be NULL here,
+so the check is redundant. Remove it.
+
+Reported-by: Euler Robot <euler.robot@huawei.com>
+Signed-off-by: AlexChen <alex.chen@huawei.com>
+Signed-off-by: Jason Wang <jasowang@redhat.com>
+(cherry-picked from commit d949fe64b0)
+---
+ net/l2tpv3.c | 9 +++------
+ 1 file changed, 3 insertions(+), 6 deletions(-)
+
+diff --git a/net/l2tpv3.c b/net/l2tpv3.c
+index 55fea17c0f..e4d4218db6 100644
+--- a/net/l2tpv3.c
++++ b/net/l2tpv3.c
+@@ -655,9 +655,8 @@ int net_init_l2tpv3(const Netdev *netdev,
+         error_setg(errp, "could not bind socket err=%i", errno);
+         goto outerr;
+     }
+-    if (result) {
+-        freeaddrinfo(result);
+-    }
++
++    freeaddrinfo(result);
+ 
+     memset(&hints, 0, sizeof(hints));
+ 
+@@ -686,9 +685,7 @@ int net_init_l2tpv3(const Netdev *netdev,
+     memcpy(s->dgram_dst, result->ai_addr, result->ai_addrlen);
+     s->dst_size = result->ai_addrlen;
+ 
+-    if (result) {
+-        freeaddrinfo(result);
+-    }
++    freeaddrinfo(result);
+ 
+     if (l2tpv3->has_counter && l2tpv3->counter) {
+         s->has_counter = true;
+-- 
+2.27.0
+

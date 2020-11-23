@@ -1,0 +1,48 @@
+From 073457a45eaccd2beac3c94c53a449b8f683501e Mon Sep 17 00:00:00 2001
+From: AlexChen <alex.chen@huawei.com>
+Date: Wed, 4 Nov 2020 18:22:45 +0800
+Subject: [PATCH] ssi: Fix bad printf format specifiers
+
+We should use printf format specifier "%u" instead of "%d" for
+argument of type "unsigned int".
+
+Reported-by: Euler Robot <euler.robot@huawei.com>
+Signed-off-by: Alex Chen <alex.chen@huawei.com>
+Reviewed-by: Alistair Francis <alistair.francis@wdc.com>
+Message-id: 5FA280F5.8060902@huawei.com
+Signed-off-by: Peter Maydell <peter.maydell@linaro.org>
+(cherry-picked from commit 9df0a97298)
+---
+ hw/ssi/imx_spi.c    | 2 +-
+ hw/ssi/xilinx_spi.c | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/hw/ssi/imx_spi.c b/hw/ssi/imx_spi.c
+index 5cec9b5d05..0b3052bdf9 100644
+--- a/hw/ssi/imx_spi.c
++++ b/hw/ssi/imx_spi.c
+@@ -52,7 +52,7 @@ static const char *imx_spi_reg_name(uint32_t reg)
+     case ECSPI_MSGDATA:
+         return  "ECSPI_MSGDATA";
+     default:
+-        sprintf(unknown, "%d ?", reg);
++        sprintf(unknown, "%u ?", reg);
+         return unknown;
+     }
+ }
+diff --git a/hw/ssi/xilinx_spi.c b/hw/ssi/xilinx_spi.c
+index 1379cb164b..d2b69d027a 100644
+--- a/hw/ssi/xilinx_spi.c
++++ b/hw/ssi/xilinx_spi.c
+@@ -139,7 +139,7 @@ static void xlx_spi_update_irq(XilinxSPI *s)
+        irq chain unless things really changed.  */
+     if (pending != s->irqline) {
+         s->irqline = pending;
+-        DB_PRINT("irq_change of state %d ISR:%x IER:%X\n",
++        DB_PRINT("irq_change of state %u ISR:%x IER:%X\n",
+                     pending, s->regs[R_IPISR], s->regs[R_IPIER]);
+         qemu_set_irq(s->irq, pending);
+     }
+-- 
+2.27.0
+

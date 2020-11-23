@@ -1,0 +1,49 @@
+From 38697076a98034a078c2411234b8979cf3cec6da Mon Sep 17 00:00:00 2001
+From: AlexChen <alex.chen@huawei.com>
+Date: Mon, 2 Nov 2020 16:52:17 +0000
+Subject: [PATCH] hw/display/omap_lcdc: Fix potential NULL pointer dereference
+
+In omap_lcd_interrupts(), the pointer omap_lcd is dereferinced before
+being check if it is valid, which may lead to NULL pointer dereference.
+So move the assignment to surface after checking that the omap_lcd is valid
+and move surface_bits_per_pixel(surface) to after the surface assignment.
+
+Reported-by: Euler Robot <euler.robot@huawei.com>
+Signed-off-by: AlexChen <alex.chen@huawei.com>
+Message-id: 5F9CDB8A.9000001@huawei.com
+Reviewed-by: Peter Maydell <peter.maydell@linaro.org>
+Signed-off-by: Peter Maydell <peter.maydell@linaro.org>
+(cherry-picked from commit 0080edc45e)
+---
+ hw/display/omap_lcdc.c | 10 +++++++---
+ 1 file changed, 7 insertions(+), 3 deletions(-)
+
+diff --git a/hw/display/omap_lcdc.c b/hw/display/omap_lcdc.c
+index 07a5effe04..13ab73ec61 100644
+--- a/hw/display/omap_lcdc.c
++++ b/hw/display/omap_lcdc.c
+@@ -77,14 +77,18 @@ static void omap_lcd_interrupts(struct omap_lcd_panel_s *s)
+ static void omap_update_display(void *opaque)
+ {
+     struct omap_lcd_panel_s *omap_lcd = (struct omap_lcd_panel_s *) opaque;
+-    DisplaySurface *surface = qemu_console_surface(omap_lcd->con);
++    DisplaySurface *surface;
+     draw_line_func draw_line;
+     int size, height, first, last;
+     int width, linesize, step, bpp, frame_offset;
+     hwaddr frame_base;
+ 
+-    if (!omap_lcd || omap_lcd->plm == 1 || !omap_lcd->enable ||
+-        !surface_bits_per_pixel(surface)) {
++    if (!omap_lcd || omap_lcd->plm == 1 || !omap_lcd->enable) {
++        return;
++    }
++
++    surface = qemu_console_surface(omap_lcd->con);
++    if (!surface_bits_per_pixel(surface)) {
+         return;
+     }
+ 
+-- 
+2.27.0
+
