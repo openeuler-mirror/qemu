@@ -833,7 +833,6 @@ bool migration_is_running(int state)
     case MIGRATION_STATUS_PRE_SWITCHOVER:
     case MIGRATION_STATUS_DEVICE:
     case MIGRATION_STATUS_CANCELLING:
-    case MIGRATION_STATUS_COLO:
         return true;
 
     default:
