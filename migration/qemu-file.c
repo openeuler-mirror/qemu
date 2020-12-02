@@ -51,6 +51,8 @@ struct QEMUFile {
     unsigned int iovcnt;
 
     int last_error;
+    /* has the file has been shutdown */
+    bool shutdown;
 };
 
 /*
@@ -59,10 +61,18 @@ struct QEMUFile {
  */
 int qemu_file_shutdown(QEMUFile *f)
 {
+    int ret;
+
+    f->shutdown = true;
     if (!f->ops->shut_down) {
         return -ENOSYS;
     }
-    return f->ops->shut_down(f->opaque, true, true);
+
+    ret = f->ops->shut_down(f->opaque, true, true);
+    if (!f->last_error) {
+        qemu_file_set_error(f, -EIO);
+    }
+    return ret;
 }
 
 /*
@@ -181,6 +191,10 @@ void qemu_fflush(QEMUFile *f)
         return;
     }
 
+    if (f->shutdown) {
+        return;
+    }
+
     if (f->iovcnt > 0) {
         expect = iov_size(f->iov, f->iovcnt);
         ret = f->ops->writev_buffer(f->opaque, f->iov, f->iovcnt, f->pos);
@@ -293,6 +307,9 @@ static ssize_t qemu_fill_buffer(QEMUFile *f)
     f->buf_index = 0;
     f->buf_size = pending;
 
+    if (f->shutdown) {
+        return 0;
+    }
     len = f->ops->get_buffer(f->opaque, f->buf + pending, f->pos,
                         IO_BUF_SIZE - pending);
     if (len > 0) {
@@ -591,6 +608,9 @@ int64_t qemu_ftell(QEMUFile *f)
 
 int qemu_file_rate_limit(QEMUFile *f)
 {
+    if (f->shutdown) {
+        return 1;
+    }
     if (qemu_file_get_error(f)) {
         return 1;
     }
