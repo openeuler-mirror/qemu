@@ -249,6 +249,21 @@ Patch0236: block-Remove-unused-include.patch
 Patch0237: ssi-Fix-bad-printf-format-specifiers.patch
 Patch0238: net-l2tpv3-Remove-redundant-check-in-net_init_l2tpv3.patch
 Patch0239: ati-check-x-y-display-parameter-values.patch
+Patch0240: migration-dirtyrate-setup-up-query-dirtyrate-framwor.patch
+Patch0241: migration-dirtyrate-add-DirtyRateStatus-to-denote-ca.patch
+Patch0242: migration-dirtyrate-Add-RamblockDirtyInfo-to-store-s.patch
+Patch0243: migration-dirtyrate-Add-dirtyrate-statistics-series-.patch
+Patch0244: migration-dirtyrate-move-RAMBLOCK_FOREACH_MIGRATABLE.patch
+Patch0245: migration-dirtyrate-Record-hash-results-for-each-sam.patch
+Patch0246: migration-dirtyrate-Compare-page-hash-results-for-re.patch
+Patch0247: migration-dirtyrate-skip-sampling-ramblock-with-size.patch
+Patch0248: migration-dirtyrate-Implement-set_sample_page_period.patch
+Patch0249: migration-dirtyrate-Implement-calculate_dirtyrate-fu.patch
+Patch0250: migration-dirtyrate-Implement-qmp_cal_dirty_rate-qmp.patch
+Patch0251: migration-dirtyrate-Add-trace_calls-to-make-it-easie.patch
+Patch0252: migration-dirtyrate-record-start_time-and-calc_time-.patch
+Patch0253: migration-dirtyrate-present-dirty-rate-only-when-que.patch
+Patch0254: migration-dirtyrate-simplify-includes-in-dirtyrate.c.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -595,6 +610,23 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Fri Oct 30 2020 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
+- migration/dirtyrate: setup up query-dirtyrate framwork
+- migration/dirtyrate: add DirtyRateStatus to denote calculation status
+- migration/dirtyrate: Add RamblockDirtyInfo to store sampled page info
+- migration/dirtyrate: Add dirtyrate statistics series functions
+- migration/dirtyrate: move RAMBLOCK_FOREACH_MIGRATABLE into ram.h
+- migration/dirtyrate: Record hash results for each sampled page
+- migration/dirtyrate: Compare page hash results for recorded sampled page
+- migration/dirtyrate: skip sampling ramblock with size below MIN_RAMBLOCK_SIZE
+- migration/dirtyrate: Implement set_sample_page_period() and is_sample_period_valid()
+- migration/dirtyrate: Implement calculate_dirtyrate() function
+- migration/dirtyrate: Implement qmp_cal_dirty_rate()/qmp_get_dirty_rate() function
+- migration/dirtyrate: Add trace_calls to make it easier to debug
+- migration/dirtyrate: record start_time and calc_time while at the measuring state
+- migration/dirtyrate: present dirty rate only when querying the rate has completed
+- migration/dirtyrate: simplify includes in dirtyrate.c
+
 * Wed Nov 18 2020 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
 - ati: check x y display parameter values
 
