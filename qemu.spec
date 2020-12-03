@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 30
+Release: 31
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY
@@ -264,6 +264,19 @@ Patch0251: migration-dirtyrate-Add-trace_calls-to-make-it-easie.patch
 Patch0252: migration-dirtyrate-record-start_time-and-calc_time-.patch
 Patch0253: migration-dirtyrate-present-dirty-rate-only-when-que.patch
 Patch0254: migration-dirtyrate-simplify-includes-in-dirtyrate.c.patch
+Patch0255: migration-tls-save-hostname-into-MigrationState.patch
+Patch0256: migration-tls-extract-migration_tls_client_create-fo.patch
+Patch0257: migration-tls-add-tls_hostname-into-MultiFDSendParam.patch
+Patch0258: migration-tls-extract-cleanup-function-for-common-us.patch
+Patch0259: migration-tls-add-support-for-multifd-tls-handshake.patch
+Patch0260: migration-tls-add-trace-points-for-multifd-tls.patch
+Patch0261: qemu-file-Don-t-do-IO-after-shutdown.patch
+Patch0262: multifd-Make-sure-that-we-don-t-do-any-IO-after-an-e.patch
+Patch0263: migration-Don-t-send-data-if-we-have-stopped.patch
+Patch0264: migration-Create-migration_is_running.patch
+Patch0265: migration-fix-COLO-broken-caused-by-a-previous-commi.patch
+Patch0266: migration-multifd-fix-hangup-with-TLS-Multifd-due-to.patch
+Patch0267: multifd-tls-fix-memoryleak-of-the-QIOChannelSocket-o.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -610,6 +623,21 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Wed Dec 2 2020 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
+- migration/tls: save hostname into MigrationState
+- migration/tls: extract migration_tls_client_create for common-use
+- migration/tls: add tls_hostname into MultiFDSendParams
+- migration/tls: extract cleanup function for common-use
+- migration/tls: add support for multifd tls-handshake
+- migration/tls: add trace points for multifd-tls
+- qemu-file: Don't do IO after shutdown
+- multifd: Make sure that we don't do any IO after an error
+- migration: Don't send data if we have stopped
+- migration: Create migration_is_running()
+- migration: fix COLO broken caused by a previous commit
+- migration/multifd: fix hangup with TLS-Multifd due to  blocking handshake
+- multifd/tls: fix memoryleak of the QIOChannelSocket object when cancelling migration
+
 * Fri Oct 30 2020 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
 - migration/dirtyrate: setup up query-dirtyrate framwork
 - migration/dirtyrate: add DirtyRateStatus to denote calculation status

@@ -1,0 +1,62 @@
+From 3db288bbddb730960430fb4907e100f19001ca0a Mon Sep 17 00:00:00 2001
+From: Ying Fang <fangying1@huawei.com>
+Date: Wed, 2 Dec 2020 14:31:07 +0800
+Subject: [PATCH] multifd: Make sure that we don't do any IO after an error
+
+Signed-off-by: Juan Quintela <quintela@redhat.com>
+Reviewed-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+---
+ migration/ram.c | 22 +++++++++++++---------
+ 1 file changed, 13 insertions(+), 9 deletions(-)
+
+diff --git a/migration/ram.c b/migration/ram.c
+index 3ded38c0be..b74929542d 100644
+--- a/migration/ram.c
++++ b/migration/ram.c
+@@ -3617,7 +3617,7 @@ static int ram_save_iterate(QEMUFile *f, void *opaque)
+ {
+     RAMState **temp = opaque;
+     RAMState *rs = *temp;
+-    int ret;
++    int ret = 0;
+     int i;
+     int64_t t0;
+     int done = 0;
+@@ -3686,12 +3686,14 @@ static int ram_save_iterate(QEMUFile *f, void *opaque)
+     ram_control_after_iterate(f, RAM_CONTROL_ROUND);
+ 
+ out:
+-    multifd_send_sync_main(rs);
+-    qemu_put_be64(f, RAM_SAVE_FLAG_EOS);
+-    qemu_fflush(f);
+-    ram_counters.transferred += 8;
++    if (ret >= 0) {
++        multifd_send_sync_main(rs);
++        qemu_put_be64(f, RAM_SAVE_FLAG_EOS);
++        qemu_fflush(f);
++        ram_counters.transferred += 8;
+ 
+-    ret = qemu_file_get_error(f);
++        ret = qemu_file_get_error(f);
++    }
+     if (ret < 0) {
+         return ret;
+     }
+@@ -3745,9 +3747,11 @@ static int ram_save_complete(QEMUFile *f, void *opaque)
+ 
+     rcu_read_unlock();
+ 
+-    multifd_send_sync_main(rs);
+-    qemu_put_be64(f, RAM_SAVE_FLAG_EOS);
+-    qemu_fflush(f);
++    if (ret >= 0) {
++        multifd_send_sync_main(rs);
++        qemu_put_be64(f, RAM_SAVE_FLAG_EOS);
++        qemu_fflush(f);
++    }
+ 
+     return ret;
+ }
+-- 
+2.27.0
+

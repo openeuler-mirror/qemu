@@ -1,0 +1,39 @@
+From c635692b4e75db3f9547f6d4ed9d73d1cdb34989 Mon Sep 17 00:00:00 2001
+From: Ying Fang <fangying1@huawei.com>
+Date: Wed, 2 Dec 2020 14:43:45 +0800
+Subject: [PATCH] migration: fix COLO broken caused by a previous commit
+
+This commit "migration: Create migration_is_running()" broke
+COLO. Becuase there is a process broken by this commit.
+
+colo_process_checkpoint
+ ->colo_do_checkpoint_transaction
+   ->migrate_set_block_enabled
+     ->qmp_migrate_set_capabilities
+
+It can be fixed by make COLO process as an exception,
+Maybe we need a better way to fix it.
+
+Cc: Juan Quintela <quintela@redhat.com>
+Signed-off-by: zhanghailiang <zhang.zhanghailiang@huawei.com>
+Reviewed-by: Juan Quintela <quintela@redhat.com>
+Signed-off-by: Juan Quintela <quintela@redhat.com>
+---
+ migration/migration.c | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/migration/migration.c b/migration/migration.c
+index 923a1d9d3f..0e396f22b4 100644
+--- a/migration/migration.c
++++ b/migration/migration.c
+@@ -833,7 +833,6 @@ bool migration_is_running(int state)
+     case MIGRATION_STATUS_PRE_SWITCHOVER:
+     case MIGRATION_STATUS_DEVICE:
+     case MIGRATION_STATUS_CANCELLING:
+-    case MIGRATION_STATUS_COLO:
+         return true;
+ 
+     default:
+-- 
+2.27.0
+

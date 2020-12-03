@@ -1,0 +1,37 @@
+From a4288f41b3af9f4f73f162b89007c6928509a43c Mon Sep 17 00:00:00 2001
+From: Ying Fang <fangying1@huawei.com>
+Date: Wed, 2 Dec 2020 14:51:51 +0800
+Subject: [PATCH] multifd/tls: fix memoryleak of the QIOChannelSocket object
+ when cancelling migration
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+When creating new tls client, the tioc->master will be referenced which results in socket
+leaking after multifd_save_cleanup if we cancel migration.
+Fix it by do object_unref() after tls client creation.
+
+Suggested-by: Daniel P. Berrangé <berrange@redhat.com>
+Signed-off-by: Chuan Zheng <zhengchuan@huawei.com>
+Message-Id: <1605104763-118687-1-git-send-email-zhengchuan@huawei.com>
+Reviewed-by: Daniel P. Berrangé <berrange@redhat.com>
+Signed-off-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+---
+ migration/ram.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/migration/ram.c b/migration/ram.c
+index a37dbfc049..92ce1a53e7 100644
+--- a/migration/ram.c
++++ b/migration/ram.c
+@@ -1246,6 +1246,7 @@ static void multifd_tls_channel_connect(MultiFDSendParams *p,
+         return;
+     }
+ 
++    object_unref(OBJECT(ioc));
+     trace_multifd_tls_outgoing_handshake_start(ioc, tioc, hostname);
+     qio_channel_set_name(QIO_CHANNEL(tioc), "multifd-tls-outgoing");
+     p->c = QIO_CHANNEL(tioc);
+-- 
+2.27.0
+
