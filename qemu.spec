@@ -223,6 +223,7 @@ Patch0210: target-arm-Update-the-ID-registers-of-Kunpeng-920.patch
 Patch0211: target-arm-only-set-ID_PFR1_EL1.GIC-for-AArch32-gues.patch
 Patch0212: target-arm-clear-EL2-and-EL3-only-when-kvm-is-not-en.patch
 Patch0213: ati-check-x-y-display-parameter-values.patch
+Patch0214: net-remove-an-assert-call-in-eth_get_gso_type.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -568,6 +569,9 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Wed Oct 21 2020 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
+- net: remove an assert call in eth_get_gso_type
+
 * Wed Nov 18 2020 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
 - ati: check x y display parameter values
 
