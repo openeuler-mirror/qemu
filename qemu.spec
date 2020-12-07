@@ -277,6 +277,7 @@ Patch0264: migration-Create-migration_is_running.patch
 Patch0265: migration-fix-COLO-broken-caused-by-a-previous-commi.patch
 Patch0266: migration-multifd-fix-hangup-with-TLS-Multifd-due-to.patch
 Patch0267: multifd-tls-fix-memoryleak-of-the-QIOChannelSocket-o.patch
+Patch0268: net-remove-an-assert-call-in-eth_get_gso_type.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -623,6 +624,9 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Wed Oct 21 2020 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
+- net: remove an assert call in eth_get_gso_type
+
 * Wed Dec 2 2020 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
 - migration/tls: save hostname into MigrationState
 - migration/tls: extract migration_tls_client_create for common-use
