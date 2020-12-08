@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 26
+Release: 27
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY
@@ -224,6 +224,7 @@ Patch0211: target-arm-only-set-ID_PFR1_EL1.GIC-for-AArch32-gues.patch
 Patch0212: target-arm-clear-EL2-and-EL3-only-when-kvm-is-not-en.patch
 Patch0213: ati-check-x-y-display-parameter-values.patch
 Patch0214: net-remove-an-assert-call-in-eth_get_gso_type.patch
+Patch0215: json-Fix-a-memleak-in-parse_pair.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -569,6 +570,9 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Fri Nov 13 2020 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
+- json: Fix a memleak in parse_pair()
+
 * Wed Oct 21 2020 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
 - net: remove an assert call in eth_get_gso_type
 
