@@ -1,0 +1,116 @@
+From 503d231e06c159c1530a76b1740b3ec7e47619e5 Mon Sep 17 00:00:00 2001
+From: Alex Chen <alex.chen@huawei.com>
+Date: Fri, 13 Nov 2020 14:55:25 +0000
+Subject: [PATCH] json: Fix a memleak in parse_pair()
+
+In qobject_type(), NULL is returned when the 'QObject' returned from parse_value() is not of QString type,
+and this 'QObject' memory will leaked.
+So we need to first cache the 'QObject' returned from parse_value(), and finally
+free 'QObject' memory at the end of the function.
+Also, we add a testcast about invalid dict key.
+
+The memleak stack is as follows:
+Direct leak of 32 byte(s) in 1 object(s) allocated from:
+    #0 0xfffe4b3c34fb in __interceptor_malloc (/lib64/libasan.so.4+0xd34fb)
+    #1 0xfffe4ae48aa3 in g_malloc (/lib64/libglib-2.0.so.0+0x58aa3)
+    #2 0xaaab3557d9f7 in qnum_from_int qemu/qobject/qnum.c:25
+    #3 0xaaab35584d23 in parse_literal qemu/qobject/json-parser.c:511
+    #4 0xaaab35584d23 in parse_value qemu/qobject/json-parser.c:554
+    #5 0xaaab35583d77 in parse_pair qemu/qobject/json-parser.c:270
+    #6 0xaaab355845db in parse_object qemu/qobject/json-parser.c:327
+    #7 0xaaab355845db in parse_value qemu/qobject/json-parser.c:546
+    #8 0xaaab35585b1b in json_parser_parse qemu/qobject/json-parser.c:580
+    #9 0xaaab35583703 in json_message_process_token qemu/qobject/json-streamer.c:92
+    #10 0xaaab355ddccf in json_lexer_feed_char qemu/qobject/json-lexer.c:313
+    #11 0xaaab355de0eb in json_lexer_feed qemu/qobject/json-lexer.c:350
+    #12 0xaaab354aff67 in tcp_chr_read qemu/chardev/char-socket.c:525
+    #13 0xfffe4ae429db in g_main_context_dispatch (/lib64/libglib-2.0.so.0+0x529db)
+    #14 0xfffe4ae42d8f  (/lib64/libglib-2.0.so.0+0x52d8f)
+    #15 0xfffe4ae430df in g_main_loop_run (/lib64/libglib-2.0.so.0+0x530df)
+    #16 0xaaab34d70bff in iothread_run qemu/iothread.c:82
+    #17 0xaaab3559d71b in qemu_thread_start qemu/util/qemu-thread-posix.c:519
+
+Fixes: 532fb5328473 ("qapi: Make more of qobject_to()")
+Reported-by: Euler Robot <euler.robot@huawei.com>
+Signed-off-by: Alex Chen <alex.chen@huawei.com>
+Signed-off-by: Chen Qun <kuhn.chenqun@huawei.com>
+Signed-off-by: Markus Armbruster <armbru@redhat.com>
+Message-Id: <20201113145525.85151-1-alex.chen@huawei.com>
+[Commit message tweaked]
+(cherry-picked form commit 922d42bb)
+---
+ qobject/json-parser.c | 12 ++++++------
+ tests/check-qjson.c   |  9 +++++++++
+ 2 files changed, 15 insertions(+), 6 deletions(-)
+
+diff --git a/qobject/json-parser.c b/qobject/json-parser.c
+index 7d23e12e33..840909ea6a 100644
+--- a/qobject/json-parser.c
++++ b/qobject/json-parser.c
+@@ -257,8 +257,9 @@ static JSONToken *parser_context_peek_token(JSONParserContext *ctxt)
+  */
+ static int parse_pair(JSONParserContext *ctxt, QDict *dict)
+ {
++    QObject *key_obj = NULL;
++    QString *key;
+     QObject *value;
+-    QString *key = NULL;
+     JSONToken *peek, *token;
+ 
+     peek = parser_context_peek_token(ctxt);
+@@ -267,7 +268,8 @@ static int parse_pair(JSONParserContext *ctxt, QDict *dict)
+         goto out;
+     }
+ 
+-    key = qobject_to(QString, parse_value(ctxt));
++    key_obj = parse_value(ctxt);
++    key = qobject_to(QString, key_obj);
+     if (!key) {
+         parse_error(ctxt, peek, "key is not a string in object");
+         goto out;
+@@ -297,13 +299,11 @@ static int parse_pair(JSONParserContext *ctxt, QDict *dict)
+ 
+     qdict_put_obj(dict, qstring_get_str(key), value);
+ 
+-    qobject_unref(key);
+-
++    qobject_unref(key_obj);
+     return 0;
+ 
+ out:
+-    qobject_unref(key);
+-
++    qobject_unref(key_obj);
+     return -1;
+ }
+ 
+diff --git a/tests/check-qjson.c b/tests/check-qjson.c
+index fa2afccb0a..5e3e08fe79 100644
+--- a/tests/check-qjson.c
++++ b/tests/check-qjson.c
+@@ -1415,6 +1415,14 @@ static void invalid_dict_comma(void)
+     g_assert(obj == NULL);
+ }
+ 
++static void invalid_dict_key(void)
++{
++    Error *err = NULL;
++    QObject *obj = qobject_from_json("{32:'abc'}", &err);
++    error_free_or_abort(&err);
++    g_assert(obj == NULL);
++}
++
+ static void unterminated_literal(void)
+ {
+     Error *err = NULL;
+@@ -1500,6 +1508,7 @@ int main(int argc, char **argv)
+     g_test_add_func("/errors/unterminated/dict_comma", unterminated_dict_comma);
+     g_test_add_func("/errors/invalid_array_comma", invalid_array_comma);
+     g_test_add_func("/errors/invalid_dict_comma", invalid_dict_comma);
++    g_test_add_func("/errors/invalid_dict_key", invalid_dict_key);
+     g_test_add_func("/errors/unterminated/literal", unterminated_literal);
+     g_test_add_func("/errors/limits/nesting", limits_nesting);
+     g_test_add_func("/errors/multiple_values", multiple_values);
+-- 
+2.27.0
+
