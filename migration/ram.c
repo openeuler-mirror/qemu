@@ -2159,6 +2159,10 @@ static bool encrypted_test_list(RAMState *rs, RAMBlock *block,
         return false;
     }
 
+    if (!strcmp(memory_region_name(block->mr), "vga.vram")) {
+        return false;
+    }
+
     /*
      * Translate page in ram_addr_t address space to GPA address
      * space using memory region.
