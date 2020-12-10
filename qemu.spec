@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 33
+Release: 34
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY
@@ -279,6 +279,7 @@ Patch0266: migration-multifd-fix-hangup-with-TLS-Multifd-due-to.patch
 Patch0267: multifd-tls-fix-memoryleak-of-the-QIOChannelSocket-o.patch
 Patch0268: net-remove-an-assert-call-in-eth_get_gso_type.patch
 Patch0269: json-Fix-a-memleak-in-parse_pair.patch
+Patch0270: Bugfix-hw-acpi-Use-max_cpus-instead-of-cpus-when-bui.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -625,6 +626,9 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Thu Oct 29 2020 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
+- Bugfix: hw/acpi: Use max_cpus instead of cpus when build PPTT table
+
 * Fri Nov 13 2020 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
 - json: Fix a memleak in parse_pair()
 
