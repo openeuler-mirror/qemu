@@ -226,6 +226,7 @@ Patch0213: ati-check-x-y-display-parameter-values.patch
 Patch0214: net-remove-an-assert-call-in-eth_get_gso_type.patch
 Patch0215: json-Fix-a-memleak-in-parse_pair.patch
 Patch0216: tests-Disalbe-filemonitor-testcase.patch
+Patch0217: hostmem-Fix-up-free-host_nodes-list-right-after-visi.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -571,6 +572,9 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Fri Dec 11 2020 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
+- hostmem: Fix up free host_nodes list right after visited
+
 * Thu Aug 6 2020 Huawei Technologies Co., Ltd <fangying1@huawei.com>
 - tests: Disalbe filemonitor testcase
 
