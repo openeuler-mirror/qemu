@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 29
+Release: 30
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY
@@ -227,6 +227,7 @@ Patch0214: net-remove-an-assert-call-in-eth_get_gso_type.patch
 Patch0215: json-Fix-a-memleak-in-parse_pair.patch
 Patch0216: tests-Disalbe-filemonitor-testcase.patch
 Patch0217: hostmem-Fix-up-free-host_nodes-list-right-after-visi.patch
+Patch0218: slirp-check-pkt_len-before-reading-protocol-header.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -572,6 +573,9 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Fri Dec 11 2020 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
+- slirp: check pkt_len before reading protocol header for fixing CVE-2020-29129 and CVE-2020-29130
+
 * Fri Dec 11 2020 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
 - hostmem: Fix up free host_nodes list right after visited
 
