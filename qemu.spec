@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 34
+Release: 35
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY
@@ -280,6 +280,7 @@ Patch0267: multifd-tls-fix-memoryleak-of-the-QIOChannelSocket-o.patch
 Patch0268: net-remove-an-assert-call-in-eth_get_gso_type.patch
 Patch0269: json-Fix-a-memleak-in-parse_pair.patch
 Patch0270: Bugfix-hw-acpi-Use-max_cpus-instead-of-cpus-when-bui.patch
+Patch0271: slirp-check-pkt_len-before-reading-protocol-header.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -626,6 +627,9 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Fri Dec 11 2020 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
+- slirp: check pkt_len before reading protocol header for fixing CVE-2020-29129 and CVE-2020-29130
+
 * Thu Oct 29 2020 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
 - Bugfix: hw/acpi: Use max_cpus instead of cpus when build PPTT table
 
