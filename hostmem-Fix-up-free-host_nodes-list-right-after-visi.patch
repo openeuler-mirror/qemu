@@ -1,0 +1,61 @@
+From 52fb9a5d089be68ca03d9504238ecea7b4c31c8f Mon Sep 17 00:00:00 2001
+From: Keqian Zhu <zhukeqian1@huawei.com>
+Date: Fri, 11 Dec 2020 17:28:39 +0800
+Subject: [PATCH] hostmem: Fix up free host_nodes list right after visited
+
+In host_memory_backend_get_host_nodes, we build host_nodes
+list and output it to v (a StringOutputVisitor) but forget
+to free the list. This fixes the memory leak.
+
+The memory leak stack:
+
+Direct leak of 32 byte(s) in 2 object(s) allocated from:
+ #0 0xfffda30b3393 in __interceptor_calloc (/usr/lib64/libasan.so.4+0xd3393)
+ #1 0xfffda1d28b9b in g_malloc0 (/usr/lib64/libglib-2.0.so.0+0x58b9b)
+ #2 0xaaab05ca6e43 in host_memory_backend_get_host_nodes backends/hostmem.c:94
+ #3 0xaaab061ddf83 in object_property_get_uint16List qom/object.c:1478
+ #4 0xaaab05866513 in query_memdev hw/core/machine-qmp-cmds.c:312
+ #5 0xaaab061d980b in do_object_child_foreach qom/object.c:1001
+ #6 0xaaab0586779b in qmp_query_memdev hw/core/machine-qmp-cmds.c:328
+ #7 0xaaab0615ed3f in qmp_marshal_query_memdev qapi/qapi-commands-machine.c:327
+ #8 0xaaab0632d647 in do_qmp_dispatch qapi/qmp-dispatch.c:147
+ #9 0xaaab0632d647 in qmp_dispatch qapi/qmp-dispatch.c:190
+ #10 0xaaab0610f74b in monitor_qmp_dispatch monitor/qmp.c:120
+ #11 0xaaab0611074b in monitor_qmp_bh_dispatcher monitor/qmp.c:209
+ #12 0xaaab063caefb in aio_bh_poll util/async.c:117
+ #13 0xaaab063d30fb in aio_dispatch util/aio-posix.c:459
+ #14 0xaaab063cac8f in aio_ctx_dispatch util/async.c:268
+ #15 0xfffda1d22a6b in g_main_context_dispatch (/usr/lib64/libglib-2.0.so.0+0x52a6b)
+ #16 0xaaab063d0e97 in glib_pollfds_poll util/main-loop.c:218
+ #17 0xaaab063d0e97 in os_host_main_loop_wait util/main-loop.c:241
+ #18 0xaaab063d0e97 in main_loop_wait util/main-loop.c:517
+ #19 0xaaab05c8bfa7 in main_loop /root/rpmbuild/BUILD/qemu-4.1.0/vl.c:1791
+ #20 0xaaab05713bc3 in main /root/rpmbuild/BUILD/qemu-4.1.0/vl.c:4473
+ #21 0xfffda0a83ebf in __libc_start_main (/usr/lib64/libc.so.6+0x23ebf)
+ #22 0xaaab0571ed5f (aarch64-softmmu/qemu-system-aarch64+0x88ed5f)
+SUMMARY: AddressSanitizer: 32 byte(s) leaked in 2 allocation(s).
+
+Fixes: 4cf1b76bf1e2 (hostmem: add properties for NUMA memory policy)
+Reported-by: Euler Robot <euler.robot@huawei.com>
+Tested-by: Chen Qun <kuhn.chenqun@huawei.com>
+Reviewed-by: Igor Mammedov <imammedo@redhat.com>
+Signed-off-by: Keqian Zhu <zhukeqian1@huawei.com>
+---
+ backends/hostmem.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/backends/hostmem.c b/backends/hostmem.c
+index 463102aa15..9e1b3a0afc 100644
+--- a/backends/hostmem.c
++++ b/backends/hostmem.c
+@@ -108,6 +108,7 @@ host_memory_backend_get_host_nodes(Object *obj, Visitor *v, const char *name,
+ 
+ ret:
+     visit_type_uint16List(v, name, &host_nodes, errp);
++    qapi_free_uint16List(host_nodes);
+ }
+ 
+ static void
+-- 
+2.27.0
+
