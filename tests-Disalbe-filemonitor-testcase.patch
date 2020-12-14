@@ -1,0 +1,34 @@
+From 4f1eaa63065594276c11958e963377a09668d44b Mon Sep 17 00:00:00 2001
+From: Ying Fang <fangying1@huawei.com>
+Date: Thu, 6 Aug 2020 10:05:00 +0800
+Subject: [PATCH] tests: Disalbe filemonitor testcase
+
+Since filemonitor testcase requires that host kernel being a LTS version,
+we cannot guarantee that on OBS system. Let's disable it by default.
+
+Signed-of-by: Ying Fang <fangying1@huawei.com>
+
+diff --git a/tests/Makefile.include b/tests/Makefile.include
+index d8cf00c1..f3273ad3 100644
+--- a/tests/Makefile.include
++++ b/tests/Makefile.include
+@@ -117,7 +117,6 @@ ifneq (,$(findstring qemu-ga,$(TOOLS)))
+ check-unit-$(call land,$(CONFIG_LINUX),$(CONFIG_VIRTIO_SERIAL)) += tests/test-qga$(EXESUF)
+ endif
+ check-unit-y += tests/test-timed-average$(EXESUF)
+-check-unit-$(CONFIG_INOTIFY1) += tests/test-util-filemonitor$(EXESUF)
+ check-unit-y += tests/test-util-sockets$(EXESUF)
+ check-unit-$(CONFIG_BLOCK) += tests/test-authz-simple$(EXESUF)
+ check-unit-$(CONFIG_BLOCK) += tests/test-authz-list$(EXESUF)
+@@ -654,8 +653,6 @@ tests/test-crypto-tlssession$(EXESUF): tests/test-crypto-tlssession.o \
+ 	tests/crypto-tls-x509-helpers.o tests/pkix_asn1_tab.o \
+ 	tests/crypto-tls-psk-helpers.o \
+         $(test-crypto-obj-y)
+-tests/test-util-filemonitor$(EXESUF): tests/test-util-filemonitor.o \
+-	$(test-util-obj-y)
+ tests/test-util-sockets$(EXESUF): tests/test-util-sockets.o \
+ 	tests/socket-helpers.o $(test-util-obj-y)
+ tests/test-authz-simple$(EXESUF): tests/test-authz-simple.o $(test-authz-obj-y)
+-- 
+2.23.0
+
