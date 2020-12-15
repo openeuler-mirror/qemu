@@ -281,6 +281,10 @@ Patch0268: net-remove-an-assert-call-in-eth_get_gso_type.patch
 Patch0269: json-Fix-a-memleak-in-parse_pair.patch
 Patch0270: Bugfix-hw-acpi-Use-max_cpus-instead-of-cpus-when-bui.patch
 Patch0271: slirp-check-pkt_len-before-reading-protocol-header.patch
+Patch0272: hw-usb-hcd-ohci-check-for-processed-TD-before-retire.patch
+Patch0273: hw-ehci-check-return-value-of-usb_packet_map.patch
+Patch0274: hw-usb-hcd-ohci-check-len-and-frame_number-variables.patch
+Patch0275: hw-net-e1000e-advance-desc_offset-in-case-of-null-de.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -627,6 +631,12 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Wed Nov 11 2020 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
+- hw: usb: hcd-ohci: check for processed TD before retire
+- hw: ehci: check return value of 'usb_packet_map'
+- hw: usb: hcd-ohci: check len and frame_number variables
+- hw/net/e1000e: advance desc_offset in case of null descriptor
+
 * Fri Dec 11 2020 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
 - slirp: check pkt_len before reading protocol header for fixing CVE-2020-29129 and CVE-2020-29130
 
