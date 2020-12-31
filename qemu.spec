@@ -285,6 +285,7 @@ Patch0272: hw-usb-hcd-ohci-check-for-processed-TD-before-retire.patch
 Patch0273: hw-ehci-check-return-value-of-usb_packet_map.patch
 Patch0274: hw-usb-hcd-ohci-check-len-and-frame_number-variables.patch
 Patch0275: hw-net-e1000e-advance-desc_offset-in-case-of-null-de.patch
+Patch0276: hostmem-Fix-up-free-host_nodes-list-right-after-visi.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -662,6 +663,9 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Fri Dec 11 2020 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
+- hostmem: Fix up free host_nodes list right after visited
+
 * Fri Dec 25 2020 Huawei Technologies Co., Ltd <yangming73@huawei.com>
 - add qemu-block-rbd package
 - add qemu-block-ssh package
