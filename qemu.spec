@@ -286,6 +286,7 @@ Patch0273: hw-ehci-check-return-value-of-usb_packet_map.patch
 Patch0274: hw-usb-hcd-ohci-check-len-and-frame_number-variables.patch
 Patch0275: hw-net-e1000e-advance-desc_offset-in-case-of-null-de.patch
 Patch0276: hostmem-Fix-up-free-host_nodes-list-right-after-visi.patch
+Patch0277: target-arm-Fix-write-redundant-values-to-kvm.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -663,6 +664,9 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Wed Dec 9 2020 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
+- target/arm: Fix write redundant values to kvm
+
 * Fri Dec 11 2020 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
 - hostmem: Fix up free host_nodes list right after visited
 
