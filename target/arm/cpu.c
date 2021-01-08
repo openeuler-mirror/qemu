@@ -1223,7 +1223,7 @@ static struct CPUFeatureInfo cpu_features[] = {
     FIELD_INFO("sve", ID_AA64PFR0, SVE, false, 1, 0, false),
 
     FIELD_INFO("bti", ID_AA64PFR1, BT, false, 1, 0, false),
-    FIELD_INFO("sbss", ID_AA64PFR1, SBSS, false, 1, 0, false),
+    FIELD_INFO("ssbs", ID_AA64PFR1, SSBS, false, 1, 0, false),
     FIELD_INFO("mte", ID_AA64PFR1, MTE, false, 1, 0, false),
     FIELD_INFO("ras_frac", ID_AA64PFR1, RAS_FRAC, false, 1, 0, false),
 
