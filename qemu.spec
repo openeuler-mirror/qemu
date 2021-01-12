@@ -1,9 +1,9 @@
 Name: qemu
 Version: 4.1.0
-Release: 31
+Release: 32
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
-License: GPLv2 and BSD and MIT and CC-BY
+License: GPLv2 and BSD and MIT and CC-BY-SA-4.0
 URL: http://www.qemu.org
 Source0: https://www.qemu.org/download/%{name}-%{version}%{?rcstr}.tar.xz
 Source1: 80-kvm.rules
@@ -232,6 +232,7 @@ Patch0219: hw-usb-hcd-ohci-check-for-processed-TD-before-retire.patch
 Patch0220: hw-ehci-check-return-value-of-usb_packet_map.patch
 Patch0221: hw-usb-hcd-ohci-check-len-and-frame_number-variables.patch
 Patch0222: hw-net-e1000e-advance-desc_offset-in-case-of-null-de.patch
+Patch0223: target-arm-Fix-write-redundant-values-to-kvm.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -577,6 +578,9 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Wed Dec 9 2020 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
+- target/arm: Fix write redundant values to kvm
+
 * Wed Nov 11 2020 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
 - hw: usb: hcd-ohci: check for processed TD before retire
 - hw: ehci: check return value of 'usb_packet_map'
