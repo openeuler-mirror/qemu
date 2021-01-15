@@ -233,6 +233,7 @@ Patch0220: hw-ehci-check-return-value-of-usb_packet_map.patch
 Patch0221: hw-usb-hcd-ohci-check-len-and-frame_number-variables.patch
 Patch0222: hw-net-e1000e-advance-desc_offset-in-case-of-null-de.patch
 Patch0223: target-arm-Fix-write-redundant-values-to-kvm.patch
+Patch0224: memory-clamp-cached-translation-in-case-it-points-to.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -578,6 +579,9 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Fri Jan 15 2021 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
+- memory: clamp cached translation in case it points to an MMIO region
+
 * Wed Dec 9 2020 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
 - target/arm: Fix write redundant values to kvm
 
