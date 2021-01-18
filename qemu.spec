@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 41
+Release: 42
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY-SA-4.0
@@ -665,6 +665,9 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Mon Jan 18 2021 Huawei Technologies Co., Ltd <fangying1@huawei.com>
+- reorder changelog in desceding order
+
 * Fri Jan 15 2021 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
 - memory: clamp cached translation in case it points to an MMIO region
 
@@ -678,23 +681,14 @@ getent passwd qemu >/dev/null || \
 - add qemu-block-rbd package
 - add qemu-block-ssh package
 
-* Wed Nov 11 2020 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
-- hw: usb: hcd-ohci: check for processed TD before retire
-- hw: ehci: check return value of 'usb_packet_map'
-- hw: usb: hcd-ohci: check len and frame_number variables
-- hw/net/e1000e: advance desc_offset in case of null descriptor
+* Fri Dec 11 2020 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
+- hostmem: Fix up free host_nodes list right after visited
 
 * Fri Dec 11 2020 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
 - slirp: check pkt_len before reading protocol header for fixing CVE-2020-29129 and CVE-2020-29130
 
-* Thu Oct 29 2020 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
-- Bugfix: hw/acpi: Use max_cpus instead of cpus when build PPTT table
-
-* Fri Nov 13 2020 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
-- json: Fix a memleak in parse_pair()
-
-* Wed Oct 21 2020 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
-- net: remove an assert call in eth_get_gso_type
+* Wed Dec 9 2020 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
+- target/arm: Fix write redundant values to kvm
 
 * Wed Dec 2 2020 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
 - migration/tls: save hostname into MigrationState
@@ -710,6 +704,18 @@ getent passwd qemu >/dev/null || \
 - migration: fix COLO broken caused by a previous commit
 - migration/multifd: fix hangup with TLS-Multifd due to  blocking handshake
 - multifd/tls: fix memoryleak of the QIOChannelSocket object when cancelling migration
+
+* Wed Nov 18 2020 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
+- ati: check x y display parameter values
+
+* Fri Nov 13 2020 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
+- json: Fix a memleak in parse_pair()
+
+* Wed Nov 11 2020 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
+- hw: usb: hcd-ohci: check for processed TD before retire
+- hw: ehci: check return value of 'usb_packet_map'
+- hw: usb: hcd-ohci: check len and frame_number variables
+- hw/net/e1000e: advance desc_offset in case of null descriptor
 
 * Fri Oct 30 2020 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
 - migration/dirtyrate: setup up query-dirtyrate framwork
@@ -728,9 +734,6 @@ getent passwd qemu >/dev/null || \
 - migration/dirtyrate: present dirty rate only when querying the rate has completed
 - migration/dirtyrate: simplify includes in dirtyrate.c
 
-* Wed Nov 18 2020 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
-- ati: check x y display parameter values
-
 * Fri Oct 30 2020 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
 - elf2dmp: Fix memory leak on main() error paths
 - io: Don't use '#' flag of printf format
@@ -740,6 +743,12 @@ getent passwd qemu >/dev/null || \
 - block: Remove unused include
 - ssi: Fix bad printf format specifiers
 - net/l2tpv3: Remove redundant check in net_init_l2tpv3()
+
+* Thu Oct 29 2020 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
+- Bugfix: hw/acpi: Use max_cpus instead of cpus when build PPTT table
+
+* Wed Oct 21 2020 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
+- net: remove an assert call in eth_get_gso_type
 
 * Wed Oct 14 2020 Prasad J Pandit <pjp@fedoraproject.org>
 - pci: check bus pointer before dereference
