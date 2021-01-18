@@ -1,0 +1,72 @@
+From fdcfc9cf131b905ef7ad851a132bc6d0097e4250 Mon Sep 17 00:00:00 2001
+From: Paolo Bonzini <pbonzini@redhat.com>
+Date: Wed, 13 Jan 2021 14:50:59 +0800
+Subject: [PATCH] memory: clamp cached translation in case it points to an MMIO
+ region
+
+In using the address_space_translate_internal API, address_space_cache_init
+forgot one piece of advice that can be found in the code for
+address_space_translate_internal:
+
+    /* MMIO registers can be expected to perform full-width accesses based only
+     * on their address, without considering adjacent registers that could
+     * decode to completely different MemoryRegions.  When such registers
+     * exist (e.g. I/O ports 0xcf8 and 0xcf9 on most PC chipsets), MMIO
+     * regions overlap wildly.  For this reason we cannot clamp the accesses
+     * here.
+     *
+     * If the length is small (as is the case for address_space_ldl/stl),
+     * everything works fine.  If the incoming length is large, however,
+     * the caller really has to do the clamping through memory_access_size.
+     */
+
+address_space_cache_init is exactly one such case where "the incoming length
+is large", therefore we need to clamp the resulting length---not to
+memory_access_size though, since we are not doing an access yet, but to
+the size of the resulting section.  This ensures that subsequent accesses
+to the cached MemoryRegionSection will be in range.
+
+With this patch, the enclosed testcase notices that the used ring does
+not fit into the MSI-X table and prints a "qemu-system-x86_64: Cannot map used"
+error.
+
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+(cherry-picked from 4bfb024b)
+Fix CVE-2020-27821
+Signed-off-by: Alex Chen <alex.chen@huawei.com>
+---
+ exec.c | 11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+diff --git a/exec.c b/exec.c
+index 85c6d80353..8822c241d8 100644
+--- a/exec.c
++++ b/exec.c
+@@ -3834,6 +3834,7 @@ int64_t address_space_cache_init(MemoryRegionCache *cache,
+     AddressSpaceDispatch *d;
+     hwaddr l;
+     MemoryRegion *mr;
++    Int128 diff;
+ 
+     assert(len > 0);
+ 
+@@ -3842,6 +3843,16 @@ int64_t address_space_cache_init(MemoryRegionCache *cache,
+     d = flatview_to_dispatch(cache->fv);
+     cache->mrs = *address_space_translate_internal(d, addr, &cache->xlat, &l, true);
+ 
++    /*
++     * cache->xlat is now relative to cache->mrs.mr, not to the section itself.
++     * Take that into account to compute how many bytes are there between
++     * cache->xlat and the end of the section.
++     */
++
++    diff = int128_sub(cache->mrs.size,
++                     int128_make64(cache->xlat - cache->mrs.offset_within_region));
++    l = int128_get64(int128_min(diff, int128_make64(l)));
++
+     mr = cache->mrs.mr;
+     memory_region_ref(mr);
+     if (memory_access_is_direct(mr, is_write)) {
+-- 
+2.27.0
+
