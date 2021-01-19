@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 42
+Release: 43
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY-SA-4.0
@@ -334,7 +334,8 @@ BuildRequires: librbd-devel
 BuildRequires: krb5-devel
 BuildRequires: libssh-devel
 BuildRequires: glib2
-
+BuildRequires: spice-server-devel >= 0.12.5
+BuildRequires: spice-protocol >= 0.12.3
 %ifarch aarch64
 BuildRequires: libfdt-devel
 BuildRequires: virglrenderer-devel
@@ -447,6 +448,7 @@ buildldflags="VL_LDFLAGS=-Wl,--build-id"
     --enable-tpm \
     --enable-modules \
     --enable-libssh \
+    --enable-spice \
 %ifarch aarch64
     --enable-fdt \
     --enable-virglrenderer \
@@ -665,6 +667,9 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Mon Jan 18 2021 Huawei Technologies Co., Ltd <fangying1@huawei.com>
+- feature: enable spice protocol
+
 * Mon Jan 18 2021 Huawei Technologies Co., Ltd <fangying1@huawei.com>
 - reorder changelog in desceding order
 
