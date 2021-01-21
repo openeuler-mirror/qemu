@@ -1,0 +1,76 @@
+From 86bd26f21c3dd3a90b0c35203f77a9551e2db60d Mon Sep 17 00:00:00 2001
+From: Jiahui Cen <cenjiahui@huawei.com>
+Date: Thu, 21 Jan 2021 15:46:55 +0800
+Subject: [PATCH] scsi-disk: Add support for retry on errors
+
+Mark failed requests as to be retried and implement retry_request_cb to
+handle these requests.
+
+Signed-off-by: Jiahui Cen <cenjiahui(a)huawei.com>
+Signed-off-by: Ying Fang <fangying1(a)huawei.com>
+---
+ hw/scsi/scsi-disk.c | 16 ++++++++++++++++
+ 1 file changed, 16 insertions(+)
+
+diff --git a/hw/scsi/scsi-disk.c b/hw/scsi/scsi-disk.c
+index cd90cd780e..93fdd913fe 100644
+--- a/hw/scsi/scsi-disk.c
++++ b/hw/scsi/scsi-disk.c
+@@ -184,6 +184,8 @@ static void scsi_disk_load_request(QEMUFile *f, SCSIRequest *req)
+ 
+ static bool scsi_disk_req_check_error(SCSIDiskReq *r, int ret, bool acct_failed)
+ {
++    SCSIDiskState *s = DO_UPCAST(SCSIDiskState, qdev, r->req.dev);
++
+     if (r->req.io_canceled) {
+         scsi_req_cancel_complete(&r->req);
+         return true;
+@@ -193,6 +195,7 @@ static bool scsi_disk_req_check_error(SCSIDiskReq *r, int ret, bool acct_failed)
+         return scsi_handle_rw_error(r, -ret, acct_failed);
+     }
+ 
++    blk_error_retry_reset_timeout(s->qdev.conf.blk);
+     return false;
+ }
+ 
+@@ -480,6 +483,10 @@ static bool scsi_handle_rw_error(SCSIDiskReq *r, int error, bool acct_failed)
+         }
+     }
+ 
++    if (action == BLOCK_ERROR_ACTION_RETRY) {
++        scsi_req_retry(&r->req);
++    }
++
+     blk_error_action(s->qdev.conf.blk, action, is_read, error);
+     if (action == BLOCK_ERROR_ACTION_IGNORE) {
+         scsi_req_complete(&r->req, 0);
+@@ -2252,6 +2259,13 @@ static void scsi_disk_resize_cb(void *opaque)
+     }
+ }
+ 
++static void scsi_disk_retry_request(void *opaque)
++{
++    SCSIDiskState *s = opaque;
++
++    scsi_retry_requests(&s->qdev);
++}
++
+ static void scsi_cd_change_media_cb(void *opaque, bool load, Error **errp)
+ {
+     SCSIDiskState *s = opaque;
+@@ -2300,10 +2314,12 @@ static const BlockDevOps scsi_disk_removable_block_ops = {
+     .is_medium_locked = scsi_cd_is_medium_locked,
+ 
+     .resize_cb = scsi_disk_resize_cb,
++    .retry_request_cb = scsi_disk_retry_request,
+ };
+ 
+ static const BlockDevOps scsi_disk_block_ops = {
+     .resize_cb = scsi_disk_resize_cb,
++    .retry_request_cb = scsi_disk_retry_request,
+ };
+ 
+ static void scsi_disk_unit_attention_reported(SCSIDevice *dev)
+-- 
+2.27.0
+
