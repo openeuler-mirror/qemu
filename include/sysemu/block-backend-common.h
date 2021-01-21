@@ -71,6 +71,10 @@ typedef struct BlockDevOps {
      * Is the device still busy?
      */
     bool (*drained_poll)(void *opaque);
+    /*
+     * Runs when retrying failed requests.
+     */
+    void (*retry_request_cb)(void *opaque);
 
     /*
      * I/O API functions. These functions are thread-safe.
