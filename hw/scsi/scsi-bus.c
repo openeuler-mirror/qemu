@@ -99,13 +99,9 @@ void scsi_bus_new(SCSIBus *bus, size_t bus_size, DeviceState *host,
     qbus_set_bus_hotplug_handler(BUS(bus), &error_abort);
 }
 
-static void scsi_dma_restart_bh(void *opaque)
+void scsi_retry_requests(SCSIDevice *s)
 {
-    SCSIDevice *s = opaque;
     SCSIRequest *req, *next;
-
-    qemu_bh_delete(s->bh);
-    s->bh = NULL;
 
     aio_context_acquire(blk_get_aio_context(s->conf.blk));
     QTAILQ_FOREACH_SAFE(req, &s->requests, next, next) {
@@ -126,6 +122,16 @@ static void scsi_dma_restart_bh(void *opaque)
         scsi_req_unref(req);
     }
     aio_context_release(blk_get_aio_context(s->conf.blk));
+}
+
+static void scsi_dma_restart_bh(void *opaque)
+{
+    SCSIDevice *s = opaque;
+
+    qemu_bh_delete(s->bh);
+    s->bh = NULL;
+
+    scsi_retry_requests(s);
 }
 
 void scsi_req_retry(SCSIRequest *req)
