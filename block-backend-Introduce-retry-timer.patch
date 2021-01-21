@@ -1,0 +1,69 @@
+From c2f4b43ed0858a02138f8e893e2a49732317a3ba Mon Sep 17 00:00:00 2001
+From: Jiahui Cen <cenjiahui@huawei.com>
+Date: Thu, 21 Jan 2021 15:46:46 +0800
+Subject: [PATCH] block-backend: Introduce retry timer
+
+Add a timer to regularly trigger retry on errors.
+
+Signed-off-by: Jiahui Cen <cenjiahui(a)huawei.com>
+Signed-off-by: Ying Fang <fangying1(a)huawei.com>
+---
+ block/block-backend.c | 21 +++++++++++++++++++++
+ 1 file changed, 21 insertions(+)
+
+diff --git a/block/block-backend.c b/block/block-backend.c
+index 0056b526b8..a9a43b1440 100644
+--- a/block/block-backend.c
++++ b/block/block-backend.c
+@@ -31,6 +31,9 @@
+ 
+ static AioContext *blk_aiocb_get_aio_context(BlockAIOCB *acb);
+ 
++/* block backend default retry interval */
++#define BLOCK_BACKEND_DEFAULT_RETRY_INTERVAL   1000
++
+ typedef struct BlockBackendAioNotifier {
+     void (*attached_aio_context)(AioContext *new_context, void *opaque);
+     void (*detach_aio_context)(void *opaque);
+@@ -88,6 +91,15 @@ struct BlockBackend {
+      * Accessed with atomic ops.
+      */
+     unsigned int in_flight;
++
++    /* Timer for retry on errors. */
++    QEMUTimer *retry_timer;
++    /* Interval in ms to trigger next retry. */
++    int64_t retry_interval;
++    /* Start time of the first error. Used to check timeout. */
++    int64_t retry_start_time;
++    /* Retry timeout. 0 represents infinite retry. */
++    int64_t retry_timeout;
+ };
+ 
+ typedef struct BlockBackendAIOCB {
+@@ -337,6 +349,11 @@ BlockBackend *blk_new(AioContext *ctx, uint64_t perm, uint64_t shared_perm)
+     blk->on_read_error = BLOCKDEV_ON_ERROR_REPORT;
+     blk->on_write_error = BLOCKDEV_ON_ERROR_ENOSPC;
+ 
++    blk->retry_timer = NULL;
++    blk->retry_interval = BLOCK_BACKEND_DEFAULT_RETRY_INTERVAL;
++    blk->retry_start_time = 0;
++    blk->retry_timeout = 0;
++
+     block_acct_init(&blk->stats);
+ 
+     notifier_list_init(&blk->remove_bs_notifiers);
+@@ -423,6 +440,10 @@ static void blk_delete(BlockBackend *blk)
+     QTAILQ_REMOVE(&block_backends, blk, link);
+     drive_info_del(blk->legacy_dinfo);
+     block_acct_cleanup(&blk->stats);
++    if (blk->retry_timer) {
++        timer_del(blk->retry_timer);
++        timer_free(blk->retry_timer);
++    }
+     g_free(blk);
+ }
+ 
+-- 
+2.27.0
+
