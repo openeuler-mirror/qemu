@@ -16,6 +16,9 @@
 #include "qemu/iov.h"
 #include "block/throttle-groups.h"
 
+/* block backend default retry interval */
+#define BLOCK_BACKEND_DEFAULT_RETRY_INTERVAL   1000
+
 /*
  * TODO Have to include block/block.h for a bunch of block layer
  * types.  Unfortunately, this pulls in the whole BlockDriverState
