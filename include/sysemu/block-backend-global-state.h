@@ -84,6 +84,7 @@ int blk_commit_all(void);
 bool blk_in_drain(BlockBackend *blk);
 void blk_drain(BlockBackend *blk);
 void blk_drain_all(void);
+void blk_error_retry_reset_timeout(BlockBackend *blk);
 void blk_set_on_error(BlockBackend *blk, BlockdevOnError on_read_error,
                       BlockdevOnError on_write_error);
 bool blk_supports_write_perm(BlockBackend *blk);
