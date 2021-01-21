@@ -1,0 +1,70 @@
+From 75823c32e4713c6a4c551455fbc55f561cd51fa4 Mon Sep 17 00:00:00 2001
+From: Sergio Lopez <slp(a)redhat.com>
+Date: Thu, 21 Jan 2021 15:46:51 +0800
+Subject: [PATCH] virtio-blk: Refactor the code that processes queued requests
+
+Move the code that processes queued requests from
+virtio_blk_dma_restart_bh() to its own, non-static, function. This
+will allow us to call it from the virtio_blk_data_plane_start() in a
+future patch.
+
+Signed-off-by: Sergio Lopez <slp(a)redhat.com>
+Message-Id: <20200603093240.40489-2-slp(a)redhat.com>
+Signed-off-by: Kevin Wolf <kwolf(a)redhat.com>
+---
+ hw/block/virtio-blk.c          | 16 +++++++++++-----
+ include/hw/virtio/virtio-blk.h |  1 +
+ 2 files changed, 12 insertions(+), 5 deletions(-)
+
+diff --git a/hw/block/virtio-blk.c b/hw/block/virtio-blk.c
+index cbb3729158..99916bc544 100644
+--- a/hw/block/virtio-blk.c
++++ b/hw/block/virtio-blk.c
+@@ -809,15 +809,11 @@ static void virtio_blk_handle_output(VirtIODevice *vdev, VirtQueue *vq)
+     virtio_blk_handle_output_do(s, vq);
+ }
+ 
+-static void virtio_blk_dma_restart_bh(void *opaque)
++void virtio_blk_process_queued_requests(VirtIOBlock *s)
+ {
+-    VirtIOBlock *s = opaque;
+     VirtIOBlockReq *req = s->rq;
+     MultiReqBuffer mrb = {};
+ 
+-    qemu_bh_delete(s->bh);
+-    s->bh = NULL;
+-
+     s->rq = NULL;
+ 
+     aio_context_acquire(blk_get_aio_context(s->conf.conf.blk));
+@@ -845,6 +841,16 @@ static void virtio_blk_dma_restart_bh(void *opaque)
+     aio_context_release(blk_get_aio_context(s->conf.conf.blk));
+ }
+ 
++static void virtio_blk_dma_restart_bh(void *opaque)
++{
++    VirtIOBlock *s = opaque;
++
++    qemu_bh_delete(s->bh);
++    s->bh = NULL;
++
++    virtio_blk_process_queued_requests(s);
++}
++
+ static void virtio_blk_dma_restart_cb(void *opaque, int running,
+                                       RunState state)
+ {
+diff --git a/include/hw/virtio/virtio-blk.h b/include/hw/virtio/virtio-blk.h
+index cddcfbebe9..cf8eea2f58 100644
+--- a/include/hw/virtio/virtio-blk.h
++++ b/include/hw/virtio/virtio-blk.h
+@@ -84,5 +84,6 @@ typedef struct MultiReqBuffer {
+ } MultiReqBuffer;
+ 
+ bool virtio_blk_handle_vq(VirtIOBlock *s, VirtQueue *vq);
++void virtio_blk_process_queued_requests(VirtIOBlock *s);
+ 
+ #endif
+-- 
+2.27.0
+
