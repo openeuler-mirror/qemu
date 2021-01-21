@@ -70,6 +70,10 @@ typedef struct BlockDevOps {
      * Is the device still busy?
      */
     bool (*drained_poll)(void *opaque);
+    /*
+     * Runs when retrying failed requests.
+     */
+    void (*retry_request_cb)(void *opaque);
 } BlockDevOps;
 
 /* This struct is embedded in (the private) BlockBackend struct and contains
