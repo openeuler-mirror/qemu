@@ -1,0 +1,53 @@
+From 272a438da65454a4d59091960061a0dc05c58e47 Mon Sep 17 00:00:00 2001
+From: Jiahui Cen <cenjiahui@huawei.com>
+Date: Thu, 21 Jan 2021 15:46:47 +0800
+Subject: [PATCH] block-backend: Add device specific retry callback
+
+Add retry_request_cb in BlockDevOps to do device specific retry action.
+Backend's timer would be registered only when the backend is set 'retry'
+on errors and the device supports retry action.
+
+Signed-off-by: Jiahui Cen <cenjiahui(a)huawei.com>
+Signed-off-by: Ying Fang <fangying1(a)huawei.com>
+---
+ block/block-backend.c          | 8 ++++++++
+ include/sysemu/block-backend.h | 4 ++++
+ 2 files changed, 12 insertions(+)
+
+diff --git a/block/block-backend.c b/block/block-backend.c
+index a9a43b1440..b8f535a5fd 100644
+--- a/block/block-backend.c
++++ b/block/block-backend.c
+@@ -958,6 +958,14 @@ void blk_set_dev_ops(BlockBackend *blk, const BlockDevOps *ops,
+     blk->dev_ops = ops;
+     blk->dev_opaque = opaque;
+ 
++    if ((blk->on_read_error == BLOCKDEV_ON_ERROR_RETRY ||
++         blk->on_write_error == BLOCKDEV_ON_ERROR_RETRY) &&
++        ops->retry_request_cb) {
++        blk->retry_timer = aio_timer_new(blk->ctx, QEMU_CLOCK_REALTIME,
++                                         SCALE_MS, ops->retry_request_cb,
++                                         opaque);
++    }
++
+     /* Are we currently quiesced? Should we enforce this right now? */
+     if (blk->quiesce_counter && ops->drained_begin) {
+         ops->drained_begin(opaque);
+diff --git a/include/sysemu/block-backend.h b/include/sysemu/block-backend.h
+index 733c4957eb..b58dc6bde8 100644
+--- a/include/sysemu/block-backend.h
++++ b/include/sysemu/block-backend.h
+@@ -66,6 +66,10 @@ typedef struct BlockDevOps {
+      * Runs when the backend's last drain request ends.
+      */
+     void (*drained_end)(void *opaque);
++    /*
++     * Runs when retrying failed requests.
++     */
++    void (*retry_request_cb)(void *opaque);
+ } BlockDevOps;
+ 
+ /* This struct is embedded in (the private) BlockBackend struct and contains
+-- 
+2.27.0
+
