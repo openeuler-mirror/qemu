@@ -1,0 +1,226 @@
+From d5de0271f824fe5f74a47252d78fc9177ef68b5a Mon Sep 17 00:00:00 2001
+From: Jiahui Cen <cenjiahui@huawei.com>
+Date: Thu, 21 Jan 2021 15:46:50 +0800
+Subject: [PATCH] block: Add error retry param setting
+
+Add "retry_interval" and "retry_timeout" parameter for drive and device
+option. These parameter are valid only when werror/rerror=retry.
+
+eg. --drive file=image,rerror=retry,retry_interval=1000,retry_timeout=5000
+
+Signed-off-by: Jiahui Cen <cenjiahui(a)huawei.com>
+Signed-off-by: Ying Fang <fangying1(a)huawei.com>
+---
+ block/block-backend.c          | 13 +++++++--
+ blockdev.c                     | 50 ++++++++++++++++++++++++++++++++++
+ hw/block/block.c               | 10 +++++++
+ include/hw/block/block.h       |  7 ++++-
+ include/sysemu/block-backend.h |  5 ++++
+ 5 files changed, 81 insertions(+), 4 deletions(-)
+
+diff --git a/block/block-backend.c b/block/block-backend.c
+index 0fe99ffe52..2d812e2254 100644
+--- a/block/block-backend.c
++++ b/block/block-backend.c
+@@ -31,9 +31,6 @@
+ 
+ static AioContext *blk_aiocb_get_aio_context(BlockAIOCB *acb);
+ 
+-/* block backend default retry interval */
+-#define BLOCK_BACKEND_DEFAULT_RETRY_INTERVAL   1000
+-
+ typedef struct BlockBackendAioNotifier {
+     void (*attached_aio_context)(AioContext *new_context, void *opaque);
+     void (*detach_aio_context)(void *opaque);
+@@ -1633,6 +1630,16 @@ void blk_drain_all(void)
+     bdrv_drain_all_end();
+ }
+ 
++void blk_set_on_error_retry_interval(BlockBackend *blk, int64_t interval)
++{
++    blk->retry_interval = interval;
++}
++
++void blk_set_on_error_retry_timeout(BlockBackend *blk, int64_t timeout)
++{
++    blk->retry_timeout = timeout;
++}
++
+ static bool blk_error_retry_timeout(BlockBackend *blk)
+ {
+     /* No timeout set, infinite retries. */
+diff --git a/blockdev.c b/blockdev.c
+index 0f49fd290e..99c92b96d2 100644
+--- a/blockdev.c
++++ b/blockdev.c
+@@ -470,6 +470,7 @@ static BlockBackend *blockdev_init(const char *file, QDict *bs_opts,
+     const char *buf;
+     int bdrv_flags = 0;
+     int on_read_error, on_write_error;
++    int64_t retry_interval, retry_timeout;
+     bool account_invalid, account_failed;
+     bool writethrough, read_only;
+     BlockBackend *blk;
+@@ -565,6 +566,10 @@ static BlockBackend *blockdev_init(const char *file, QDict *bs_opts,
+         }
+     }
+ 
++    retry_interval = qemu_opt_get_number(opts, "retry_interval",
++                                         BLOCK_BACKEND_DEFAULT_RETRY_INTERVAL);
++    retry_timeout = qemu_opt_get_number(opts, "retry_timeout", 0);
++
+     if (snapshot) {
+         bdrv_flags |= BDRV_O_SNAPSHOT;
+     }
+@@ -629,6 +634,11 @@ static BlockBackend *blockdev_init(const char *file, QDict *bs_opts,
+ 
+     blk_set_enable_write_cache(blk, !writethrough);
+     blk_set_on_error(blk, on_read_error, on_write_error);
++    if (on_read_error == BLOCKDEV_ON_ERROR_RETRY ||
++        on_write_error == BLOCKDEV_ON_ERROR_RETRY) {
++        blk_set_on_error_retry_interval(blk, retry_interval);
++        blk_set_on_error_retry_timeout(blk, retry_timeout);
++    }
+ 
+     if (!monitor_add_blk(blk, id, errp)) {
+         blk_unref(blk);
+@@ -754,6 +764,14 @@ QemuOptsList qemu_legacy_drive_opts = {
+             .name = "werror",
+             .type = QEMU_OPT_STRING,
+             .help = "write error action",
++        },{
++            .name = "retry_interval",
++            .type = QEMU_OPT_NUMBER,
++            .help = "interval for retry action in millisecond",
++        },{
++            .name = "retry_timeout",
++            .type = QEMU_OPT_NUMBER,
++            .help = "timeout for retry action in millisecond",
+         },{
+             .name = "copy-on-read",
+             .type = QEMU_OPT_BOOL,
+@@ -776,6 +794,7 @@ DriveInfo *drive_new(QemuOpts *all_opts, BlockInterfaceType block_default_type,
+     BlockInterfaceType type;
+     int max_devs, bus_id, unit_id, index;
+     const char *werror, *rerror;
++    int64_t retry_interval, retry_timeout;
+     bool read_only = false;
+     bool copy_on_read;
+     const char *filename;
+@@ -992,6 +1011,29 @@ DriveInfo *drive_new(QemuOpts *all_opts, BlockInterfaceType block_default_type,
+         qdict_put_str(bs_opts, "rerror", rerror);
+     }
+ 
++    if (qemu_opt_find(legacy_opts, "retry_interval")) {
++        if ((werror == NULL || strcmp(werror, "retry")) &&
++            (rerror == NULL || strcmp(rerror, "retry"))) {
++            error_setg(errp, "retry_interval is only supported "
++                             "by werror/rerror=retry");
++            goto fail;
++        }
++        retry_interval = qemu_opt_get_number(legacy_opts, "retry_interval",
++                             BLOCK_BACKEND_DEFAULT_RETRY_INTERVAL);
++        qdict_put_int(bs_opts, "retry_interval", retry_interval);
++    }
++
++    if (qemu_opt_find(legacy_opts, "retry_timeout")) {
++        if ((werror == NULL || strcmp(werror, "retry")) &&
++            (rerror == NULL || strcmp(rerror, "retry"))) {
++            error_setg(errp, "retry_timeout is only supported "
++                             "by werror/rerror=retry");
++            goto fail;
++        }
++        retry_timeout = qemu_opt_get_number(legacy_opts, "retry_timeout", 0);
++        qdict_put_int(bs_opts, "retry_timeout", retry_timeout);
++    }
++
+     /* Actual block device init: Functionality shared with blockdev-add */
+     blk = blockdev_init(filename, bs_opts, &local_err);
+     bs_opts = NULL;
+@@ -4593,6 +4635,14 @@ QemuOptsList qemu_common_drive_opts = {
+             .name = "werror",
+             .type = QEMU_OPT_STRING,
+             .help = "write error action",
++        },{
++            .name = "retry_interval",
++            .type = QEMU_OPT_NUMBER,
++            .help = "interval for retry action in millisecond",
++        },{
++            .name = "retry_timeout",
++            .type = QEMU_OPT_NUMBER,
++            .help = "timeout for retry action in millisecond",
+         },{
+             .name = BDRV_OPT_READ_ONLY,
+             .type = QEMU_OPT_BOOL,
+diff --git a/hw/block/block.c b/hw/block/block.c
+index bf56c7612b..56141940ca 100644
+--- a/hw/block/block.c
++++ b/hw/block/block.c
+@@ -134,6 +134,16 @@ bool blkconf_apply_backend_options(BlockConf *conf, bool readonly,
+     blk_set_enable_write_cache(blk, wce);
+     blk_set_on_error(blk, rerror, werror);
+ 
++    if (rerror == BLOCKDEV_ON_ERROR_RETRY ||
++        werror == BLOCKDEV_ON_ERROR_RETRY) {
++        if (conf->retry_interval >= 0) {
++            blk_set_on_error_retry_interval(blk, conf->retry_interval);
++        }
++        if (conf->retry_timeout >= 0) {
++            blk_set_on_error_retry_timeout(blk, conf->retry_timeout);
++        }
++    }
++
+     return true;
+ }
+ 
+diff --git a/include/hw/block/block.h b/include/hw/block/block.h
+index 607539057a..d12603aabd 100644
+--- a/include/hw/block/block.h
++++ b/include/hw/block/block.h
+@@ -30,6 +30,8 @@ typedef struct BlockConf {
+     bool share_rw;
+     BlockdevOnError rerror;
+     BlockdevOnError werror;
++    int64_t retry_interval;
++    int64_t retry_timeout;
+ } BlockConf;
+ 
+ static inline unsigned int get_physical_block_exp(BlockConf *conf)
+@@ -71,7 +73,10 @@ static inline unsigned int get_physical_block_exp(BlockConf *conf)
+     DEFINE_PROP_BLOCKDEV_ON_ERROR("rerror", _state, _conf.rerror,       \
+                                   BLOCKDEV_ON_ERROR_AUTO),              \
+     DEFINE_PROP_BLOCKDEV_ON_ERROR("werror", _state, _conf.werror,       \
+-                                  BLOCKDEV_ON_ERROR_AUTO)
++                                  BLOCKDEV_ON_ERROR_AUTO),              \
++    DEFINE_PROP_INT64("retry_interval", _state, _conf.retry_interval,   \
++                      -1),                                              \
++    DEFINE_PROP_INT64("retry_timeout", _state, _conf.retry_timeout, -1)
+ 
+ /* Backend access helpers */
+ 
+diff --git a/include/sysemu/block-backend.h b/include/sysemu/block-backend.h
+index 58dde446ca..dc10e507ae 100644
+--- a/include/sysemu/block-backend.h
++++ b/include/sysemu/block-backend.h
+@@ -25,6 +25,9 @@
+  */
+ #include "block/block.h"
+ 
++/* block backend default retry interval */
++#define BLOCK_BACKEND_DEFAULT_RETRY_INTERVAL   1000
++
+ /* Callbacks for block device models */
+ typedef struct BlockDevOps {
+     /*
+@@ -184,6 +187,8 @@ void blk_inc_in_flight(BlockBackend *blk);
+ void blk_dec_in_flight(BlockBackend *blk);
+ void blk_drain(BlockBackend *blk);
+ void blk_drain_all(void);
++void blk_set_on_error_retry_interval(BlockBackend *blk, int64_t interval);
++void blk_set_on_error_retry_timeout(BlockBackend *blk, int64_t timeout);
+ void blk_error_retry_reset_timeout(BlockBackend *blk);
+ void blk_set_on_error(BlockBackend *blk, BlockdevOnError on_read_error,
+                       BlockdevOnError on_write_error);
+-- 
+2.27.0
+
