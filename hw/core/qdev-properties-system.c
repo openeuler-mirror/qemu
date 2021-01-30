@@ -406,7 +406,7 @@ void qdev_set_nic_properties(DeviceState *dev, NICInfo *nd)
 const PropertyInfo qdev_prop_compress_method = {
     .name = "CompressMethod",
     .description = "multi-thread compression method, "
-                   "zlib",
+                   "zlib/zstd",
     .enum_table = &CompressMethod_lookup,
     .get = get_enum,
     .set = set_enum,

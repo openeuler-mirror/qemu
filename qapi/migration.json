@@ -493,7 +493,7 @@
 #
 ##
 { 'enum': 'CompressMethod',
-  'data': [ 'zlib' ] }
+  'data': [ 'zlib', { 'name': 'zstd', 'if': 'defined(CONFIG_ZSTD)' } ] }
 
 ##
 # @MigrationParameter:
