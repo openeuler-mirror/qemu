@@ -346,7 +346,7 @@ static void *do_touch_pages(void *arg)
     }
     qemu_mutex_unlock(&page_mutex);
 
-    while (started_num_threads != memset_args->context.num_threads) {
+    while (started_num_threads != memset_args->context->num_threads) {
         smp_mb();
     }
 
