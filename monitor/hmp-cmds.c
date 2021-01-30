@@ -45,6 +45,7 @@
 #include "qapi/qapi-visit-net.h"
 #include "qapi/qapi-visit-migration.h"
 #include "qapi/qmp/qdict.h"
+#include "qapi/qapi-visit-migration.h"
 #include "qapi/qmp/qerror.h"
 #include "qapi/string-input-visitor.h"
 #include "qapi/string-output-visitor.h"
@@ -429,6 +430,9 @@ void hmp_info_migrate_parameters(Monitor *mon, const QDict *qdict)
             MigrationParameter_str(MIGRATION_PARAMETER_DECOMPRESS_THREADS),
             params->decompress_threads);
         assert(params->has_throttle_trigger_threshold);
+        monitor_printf(mon, "%s: %s\n",
+            MigrationParameter_str(MIGRATION_PARAMETER_COMPRESS_METHOD),
+            CompressMethod_str(params->compress_method));
         monitor_printf(mon, "%s: %u\n",
             MigrationParameter_str(MIGRATION_PARAMETER_THROTTLE_TRIGGER_THRESHOLD),
             params->throttle_trigger_threshold);
@@ -1191,6 +1195,7 @@ void hmp_migrate_set_parameter(Monitor *mon, const QDict *qdict)
     MigrateSetParameters *p = g_new0(MigrateSetParameters, 1);
     uint64_t valuebw = 0;
     uint64_t cache_size;
+    CompressMethod compress_method;
     Error *err = NULL;
     int val, ret;
 
@@ -1215,6 +1220,14 @@ void hmp_migrate_set_parameter(Monitor *mon, const QDict *qdict)
     case MIGRATION_PARAMETER_DECOMPRESS_THREADS:
         p->has_decompress_threads = true;
         visit_type_uint8(v, param, &p->decompress_threads, &err);
+        break;
+    case MIGRATION_PARAMETER_COMPRESS_METHOD:
+        p->has_compress_method = true;
+        visit_type_CompressMethod(v, param, &compress_method, &err);
+        if (err) {
+            break;
+        }
+        p->compress_method = compress_method;
         break;
     case MIGRATION_PARAMETER_THROTTLE_TRIGGER_THRESHOLD:
         p->has_throttle_trigger_threshold = true;
