@@ -669,55 +669,6 @@ uint64_t qemu_get_be64(QEMUFile *f)
     return v;
 }
 
-/* return the size after compression, or negative value on error */
-static int qemu_compress_data(z_stream *stream, uint8_t *dest, size_t dest_len,
-                              const uint8_t *source, size_t source_len)
-{
-    int err;
-
-    err = deflateReset(stream);
-    if (err != Z_OK) {
-        return -1;
-    }
-
-    stream->avail_in = source_len;
-    stream->next_in = (uint8_t *)source;
-    stream->avail_out = dest_len;
-    stream->next_out = dest;
-
-    err = deflate(stream, Z_FINISH);
-    if (err != Z_STREAM_END) {
-        return -1;
-    }
-
-    return stream->next_out - dest;
-}
-
-/* Compress size bytes of data start at p and store the compressed
- * data to the buffer of f.
- *
- * Since the file is dummy file with empty_ops, return -1 if f has no space to
- * save the compressed data.
- */
-ssize_t qemu_put_compression_data(QEMUFile *f, z_stream *stream,
-                                  const uint8_t *p, size_t size)
-{
-    ssize_t blen = IO_BUF_SIZE - f->buf_index - sizeof(int32_t);
-
-    if (blen < compressBound(size)) {
-        return -1;
-    }
-
-    blen = qemu_compress_data(stream, f->buf + f->buf_index + sizeof(int32_t),
-                              blen, p, size);
-    if (blen < 0) {
-        return -1;
-    }
-
-    qemu_put_be32(f, blen);
-    add_buf_to_iovec(f, blen);
-    return blen + sizeof(int32_t);
-}
 
 /* Put the data in the buffer of f_src to the buffer of f_des, and
  * then reset the buf_index of f_src to 0.
@@ -833,4 +784,16 @@ int qemu_file_get_to_fd(QEMUFile *f, int fd, size_t size)
     }
 
     return 0;
+}
+
+ssize_t qemu_put_compress_start(QEMUFile *f, uint8_t **dest_ptr)
+{
+    *dest_ptr = f->buf + f->buf_index + sizeof(int32_t);
+    return IO_BUF_SIZE - f->buf_index - sizeof(int32_t);
+}
+
+void qemu_put_compress_end(QEMUFile *f, unsigned int v)
+{
+    qemu_put_be32(f, v);
+    add_buf_to_iovec(f, v);
 }

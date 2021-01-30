@@ -22,7 +22,6 @@ system_ss.add(files(
   'migration.c',
   'multifd.c',
   'multifd-zlib.c',
-  'ram-compress.c',
   'options.c',
   'postcopy-ram.c',
   'savevm.c',
@@ -43,4 +42,5 @@ system_ss.add(when: zstd, if_true: files('multifd-zstd.c'))
 
 specific_ss.add(when: 'CONFIG_SYSTEM_ONLY',
                 if_true: files('ram.c',
-                               'target.c'))
+                               'target.c',
+                               'ram-compress.c'))
