@@ -29,6 +29,10 @@
 #ifndef QEMU_MIGRATION_COMPRESS_H
 #define QEMU_MIGRATION_COMPRESS_H
 
+#ifdef CONFIG_ZSTD
+#include <zstd.h>
+#include <zstd_errors.h>
+#endif
 #include "qemu-file.h"
 #include "qapi/qapi-types-migration.h"
 
@@ -50,6 +54,11 @@ struct DecompressParam {
 
     /* for zlib compression */
     z_stream stream;
+#ifdef CONFIG_ZSTD
+    ZSTD_DStream *zstd_ds;
+    ZSTD_inBuffer in;
+    ZSTD_outBuffer out;
+#endif
 };
 typedef struct DecompressParam DecompressParam;
 
@@ -69,6 +78,12 @@ struct CompressParam {
 
     /* for zlib compression */
     z_stream stream;
+
+#ifdef CONFIG_ZSTD
+    ZSTD_CStream *zstd_cs;
+    ZSTD_inBuffer in;
+    ZSTD_outBuffer out;
+#endif
 };
 typedef struct CompressParam CompressParam;
 
