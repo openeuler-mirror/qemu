@@ -101,6 +101,10 @@ static int virtio_blk_handle_rw_error(VirtIOBlockReq *req, int error,
             block_acct_failed(blk_get_stats(s->blk), &req->acct);
         }
         virtio_blk_free_request(req);
+    } else if (action == BLOCK_ERROR_ACTION_RETRY) {
+        req->mr_next = NULL;
+        req->next = s->rq;
+        s->rq = req;
     }
 
     blk_error_action(s->blk, action, is_read, error);
@@ -142,6 +146,7 @@ static void virtio_blk_rw_complete(void *opaque, int ret)
             }
         }
 
+        blk_error_retry_reset_timeout(s->blk);
         virtio_blk_req_complete(req, VIRTIO_BLK_S_OK);
         block_acct_done(blk_get_stats(s->blk), &req->acct);
         virtio_blk_free_request(req);
@@ -161,6 +166,7 @@ static void virtio_blk_flush_complete(void *opaque, int ret)
         }
     }
 
+    blk_error_retry_reset_timeout(s->blk);
     virtio_blk_req_complete(req, VIRTIO_BLK_S_OK);
     block_acct_done(blk_get_stats(s->blk), &req->acct);
     virtio_blk_free_request(req);
@@ -183,6 +189,7 @@ static void virtio_blk_discard_write_zeroes_complete(void *opaque, int ret)
         }
     }
 
+    blk_error_retry_reset_timeout(s->blk);
     virtio_blk_req_complete(req, VIRTIO_BLK_S_OK);
     if (is_write_zeroes) {
         block_acct_done(blk_get_stats(s->blk), &req->acct);
@@ -809,18 +816,14 @@ static void virtio_blk_handle_output(VirtIODevice *vdev, VirtQueue *vq)
     virtio_blk_handle_output_do(s, vq);
 }
 
-static void virtio_blk_dma_restart_bh(void *opaque)
+void virtio_blk_process_queued_requests(VirtIOBlock *s, bool is_bh)
 {
-    VirtIOBlock *s = opaque;
-    VirtIOBlockReq *req = s->rq;
+    VirtIOBlockReq *req;
     MultiReqBuffer mrb = {};
 
-    qemu_bh_delete(s->bh);
-    s->bh = NULL;
-
-    s->rq = NULL;
-
     aio_context_acquire(blk_get_aio_context(s->conf.conf.blk));
+    req = s->rq;
+    s->rq = NULL;
     while (req) {
         VirtIOBlockReq *next = req->next;
         if (virtio_blk_handle_request(req, &mrb)) {
@@ -841,22 +844,38 @@ static void virtio_blk_dma_restart_bh(void *opaque)
     if (mrb.num_reqs) {
         virtio_blk_submit_multireq(s->blk, &mrb);
     }
-    blk_dec_in_flight(s->conf.conf.blk);
+    if (is_bh) {
+        blk_dec_in_flight(s->conf.conf.blk);
+    }
     aio_context_release(blk_get_aio_context(s->conf.conf.blk));
+}
+
+static void virtio_blk_dma_restart_bh(void *opaque)
+{
+    VirtIOBlock *s = opaque;
+
+    qemu_bh_delete(s->bh);
+    s->bh = NULL;
+
+    virtio_blk_process_queued_requests(s, true);
 }
 
 static void virtio_blk_dma_restart_cb(void *opaque, int running,
                                       RunState state)
 {
     VirtIOBlock *s = opaque;
+    BusState *qbus = BUS(qdev_get_parent_bus(DEVICE(s)));
+    VirtioBusState *bus = VIRTIO_BUS(qbus);
 
     if (!running) {
         return;
     }
 
-    if (!s->bh) {
-        /* FIXME The data plane is not started yet, so these requests are
-         * processed in the main thread. */
+    /*
+     * If ioeventfd is enabled, don't schedule the BH here as queued
+     * requests will be processed while starting the data plane.
+     */
+    if (!s->bh && !virtio_bus_ioeventfd_enabled(bus)) {
         s->bh = aio_bh_new(blk_get_aio_context(s->conf.conf.blk),
                            virtio_blk_dma_restart_bh, s);
         blk_inc_in_flight(s->conf.conf.blk);
@@ -1089,8 +1108,16 @@ static void virtio_blk_resize(void *opaque)
     virtio_notify_config(vdev);
 }
 
+static void virtio_blk_retry_request(void *opaque)
+{
+    VirtIOBlock *s = VIRTIO_BLK(opaque);
+
+    virtio_blk_process_queued_requests(s, false);
+}
+
 static const BlockDevOps virtio_block_ops = {
     .resize_cb = virtio_blk_resize,
+    .retry_request_cb = virtio_blk_retry_request,
 };
 
 static void virtio_blk_device_realize(DeviceState *dev, Error **errp)
