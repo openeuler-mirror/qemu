@@ -11,6 +11,7 @@
 #include "qapi/visitor.h"
 #include "chardev/char.h"
 #include "qemu/uuid.h"
+#include "qdev-prop-internal.h"
 
 void qdev_prop_set_after_realize(DeviceState *dev, const char *name,
                                   Error **errp)
@@ -46,7 +47,7 @@ void *qdev_get_prop_ptr(DeviceState *dev, Property *prop)
     return ptr;
 }
 
-static void get_enum(Object *obj, Visitor *v, const char *name, void *opaque,
+void get_enum(Object *obj, Visitor *v, const char *name, void *opaque,
                      Error **errp)
 {
     DeviceState *dev = DEVICE(obj);
@@ -56,7 +57,7 @@ static void get_enum(Object *obj, Visitor *v, const char *name, void *opaque,
     visit_type_enum(v, prop->name, ptr, prop->info->enum_table, errp);
 }
 
-static void set_enum(Object *obj, Visitor *v, const char *name, void *opaque,
+void set_enum(Object *obj, Visitor *v, const char *name, void *opaque,
                      Error **errp)
 {
     DeviceState *dev = DEVICE(obj);
@@ -71,13 +72,20 @@ static void set_enum(Object *obj, Visitor *v, const char *name, void *opaque,
     visit_type_enum(v, prop->name, ptr, prop->info->enum_table, errp);
 }
 
-static void set_default_value_enum(Object *obj, const Property *prop)
+void set_default_value_enum(Object *obj, const Property *prop)
 {
     object_property_set_str(obj,
                             qapi_enum_lookup(prop->info->enum_table,
                                              prop->defval.i),
                             prop->name, &error_abort);
 }
+
+const PropertyInfo qdev_prop_enum = {
+    .name  = "enum",
+    .get   = get_enum,
+    .set   = set_enum,
+    .set_default_value = set_default_value_enum,
+};
 
 /* Bit */
 

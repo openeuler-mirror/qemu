@@ -382,6 +382,15 @@ static void add_to_iovec(QEMUFile *f, const uint8_t *buf, size_t size,
     }
 }
 
+static void add_buf_to_iovec(QEMUFile *f, size_t len)
+{
+    add_to_iovec(f, f->buf + f->buf_index, len, false);
+    f->buf_index += len;
+    if (f->buf_index == IO_BUF_SIZE) {
+        qemu_fflush(f);
+    }
+}
+
 void qemu_put_buffer_async(QEMUFile *f, const uint8_t *buf, size_t size,
                            bool may_free)
 {
