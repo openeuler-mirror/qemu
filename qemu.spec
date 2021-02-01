@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 43
+Release: 44
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY-SA-4.0
@@ -288,6 +288,17 @@ Patch0275: hw-net-e1000e-advance-desc_offset-in-case-of-null-de.patch
 Patch0276: hostmem-Fix-up-free-host_nodes-list-right-after-visi.patch
 Patch0277: target-arm-Fix-write-redundant-values-to-kvm.patch
 Patch0278: memory-clamp-cached-translation-in-case-it-points-to.patch
+Patch0279: scsi-bus-Refactor-the-code-that-retries-requests.patch
+Patch0280: scsi-disk-Add-support-for-retry-on-errors.patch
+Patch0281: qapi-block-core-Add-retry-option-for-error-action.patch
+Patch0282: block-backend-Introduce-retry-timer.patch
+Patch0283: block-backend-Add-device-specific-retry-callback.patch
+Patch0284: block-backend-Enable-retry-action-on-errors.patch
+Patch0285: block-backend-Add-timeout-support-for-retry.patch
+Patch0286: block-Add-error-retry-param-setting.patch
+Patch0287: virtio-blk-Refactor-the-code-that-processes-queued-r.patch
+Patch0288: virtio-blk-On-restart-process-queued-requests-in-the.patch
+Patch0289: virtio_blk-Add-support-for-retry-on-errors.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -667,6 +678,19 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Sat Jan 30 2021 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
+- scsi-bus: Refactor the code that retries requests
+- scsi-disk: Add support for retry on errors
+- qapi/block-core: Add retry option for error action
+- block-backend: Introduce retry timer
+- block-backend: Add device specific retry callback
+- block-backend: Enable retry action on errors
+- block-backend: Add timeout support for retry
+- block: Add error retry param setting
+- virtio-blk: Refactor the code that processes queued requests
+- virtio-blk: On restart, process queued requests in the proper context
+- virtio_blk: Add support for retry on errors
+
 * Mon Jan 18 2021 Huawei Technologies Co., Ltd <fangying1@huawei.com>
 - feature: enable spice protocol
 
