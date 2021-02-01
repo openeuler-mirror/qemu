@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 33
+Release: 34
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY-SA-4.0
@@ -579,6 +579,9 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Mon Jan 18 2021 Huawei Technologies Co., Ltd <fangying1@huawei.com>
+- reorder the changelog
+
 * Fri Jan 15 2021 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
 - memory: clamp cached translation in case it points to an MMIO region
 
@@ -597,17 +600,31 @@ getent passwd qemu >/dev/null || \
 * Fri Dec 11 2020 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
 - hostmem: Fix up free host_nodes list right after visited
 
-* Thu Aug 6 2020 Huawei Technologies Co., Ltd <fangying1@huawei.com>
-- tests: Disalbe filemonitor testcase
+* Wed Dec 9 2020 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
+- target/arm: Fix write redundant values to kvm
+
+* Wed Nov 18 2020 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
+- ati: check x y display parameter values
 
 * Fri Nov 13 2020 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
 - json: Fix a memleak in parse_pair()
 
+* Wed Nov 11 2020 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
+- hw: usb: hcd-ohci: check for processed TD before retire
+- hw: ehci: check return value of 'usb_packet_map'
+- hw: usb: hcd-ohci: check len and frame_number variables
+- hw/net/e1000e: advance desc_offset in case of null descriptor
+
 * Wed Oct 21 2020 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
 - net: remove an assert call in eth_get_gso_type
 
-* Wed Nov 18 2020 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
-- ati: check x y display parameter values
+* Wed Oct 14 2020 Prasad J Pandit <pjp@fedoraproject.org>
+- pci: check bus pointer before dereference
+- hw/ide: check null block before _cancel_dma_sync
+
+* Thu Sep 24 2020 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
+- enrich commit info for some patches
+- rename some patches for slirp
 
 * Mon Sep 21 2020 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
 - target/arm: Add isar_feature tests for PAN + ATS1E1
@@ -637,29 +654,15 @@ getent passwd qemu >/dev/null || \
 - target/arm: only set ID_PFR1_EL1.GIC for AArch32 guest
 - target/arm: clear EL2 and EL3 only when kvm is not enabled
 
-* Wed Oct 14 2020 Prasad J Pandit <pjp@fedoraproject.org>
-- pci: check bus pointer before dereference
-- hw/ide: check null block before _cancel_dma_sync
-
-* Thu May 21 2020 BALATON Zoltan <balaton@eik.bme.hu>
-- hw/net/xgmac: Fix buffer overflow in xgmac_enet_send()
-- hw/net/net_tx_pkt: fix assertion failure in net_tx_pkt_add_raw_fragment()
-- sm501: Convert printf + abort to qemu_log_mask
-- sm501: Shorten long variable names in sm501_2d_operation
-- sm501: Use BIT(x) macro to shorten constant
-- sm501: Clean up local variables in sm501_2d_operation
-- sm501: Replace hand written implementation with pixman where possible
-
-* Thu Sep 24 2020 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
-- enrich commit info for some patches
-- rename some patches for slirp
-
 * Fri Sep 18 2020 Huawei Technologies Co., Ltd <lijiajie11@huawei.com>
 - hw-sd-sdhci-Fix-DMA-Transfer-Block-Size-field.patch
 - hw-xhci-check-return-value-of-usb_packet_map.patch
 
 * Fri Sep 11 2020 Huawei Technologies Co., Ltd <lijiajie11@huawei.com>
 - slirp/src/ip6_input.c: fix out-of-bounds read information vulnerablity
+
+* Thu Aug 6 2020 Huawei Technologies Co., Ltd <fangying1@huawei.com>
+- tests: Disalbe filemonitor testcase
 
 * Thu Aug 27 2020 Huawei Technologies Co., Ltd <lijiajie11@huawei.com>
 - hw/usb/core.c: fix buffer overflow in do_token_setup function
@@ -694,6 +697,15 @@ getent passwd qemu >/dev/null || \
 - ip_reass: Fix use after free
 - bt: use size_t type for length parameters instead of int
 - log: Add some logs on VM runtime path
+
+* Thu May 21 2020 BALATON Zoltan <balaton@eik.bme.hu>
+- hw/net/xgmac: Fix buffer overflow in xgmac_enet_send()
+- hw/net/net_tx_pkt: fix assertion failure in net_tx_pkt_add_raw_fragment()
+- sm501: Convert printf + abort to qemu_log_mask
+- sm501: Shorten long variable names in sm501_2d_operation
+- sm501: Use BIT(x) macro to shorten constant
+- sm501: Clean up local variables in sm501_2d_operation
+- sm501: Replace hand written implementation with pixman where possible
 
 * Fri May 15 2020 Huawei Technologies Co., Ltd. <fangying1@huawei.com>
 - ide: Fix incorrect handling of some PRDTs in ide_dma_cb()
