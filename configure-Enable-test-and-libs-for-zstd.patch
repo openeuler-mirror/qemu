@@ -1,0 +1,121 @@
+From 5a79ccd388ee09dc1db93d26791d1e4a6b2ced47 Mon Sep 17 00:00:00 2001
+From: Juan Quintela <quintela@redhat.com>
+Date: Wed, 3 Feb 2021 17:33:44 +0800
+Subject: [PATCH] configure: Enable test and libs for zstd
+
+configure: Enable test and libs for zstd
+Add it to several build systems to make testing good.
+
+Signed-off-by: Juan Quintela <quintela@redhat.com>
+Reviewed-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+
+Signed-off-by: Jiajie Li <lijiajie11@huawei.com>
+---
+ .gitlab-ci.yml |  1 +
+ .travis.yml    |  1 +
+ configure      | 30 ++++++++++++++++++++++++++++++
+ 3 files changed, 32 insertions(+)
+
+diff --git a/.gitlab-ci.yml b/.gitlab-ci.yml
+index c63bf2f822..3d9b7f9262 100644
+--- a/.gitlab-ci.yml
++++ b/.gitlab-ci.yml
+@@ -16,6 +16,7 @@ build-system2:
+  script:
+  - apt-get install -y -qq libsdl2-dev libgcrypt-dev libbrlapi-dev libaio-dev
+       libfdt-dev liblzo2-dev librdmacm-dev libibverbs-dev libibumad-dev
++      libzstd-dev
+  - ./configure --enable-werror --target-list="tricore-softmmu unicore32-softmmu
+       microblaze-softmmu mips-softmmu riscv32-softmmu s390x-softmmu sh4-softmmu
+       sparc64-softmmu x86_64-softmmu xtensa-softmmu nios2-softmmu or1k-softmmu"
+diff --git a/.travis.yml b/.travis.yml
+index caf0a1f8fa..f3fe04fba9 100644
+--- a/.travis.yml
++++ b/.travis.yml
+@@ -35,6 +35,7 @@ addons:
+       - liburcu-dev
+       - libusb-1.0-0-dev
+       - libvte-2.91-dev
++      - libzstd-dev
+       - sparse
+       - uuid-dev
+       - gcovr
+diff --git a/configure b/configure
+index 714e7fb6a1..577533e9ed 100755
+--- a/configure
++++ b/configure
+@@ -446,6 +446,7 @@ lzo=""
+ snappy=""
+ bzip2=""
+ lzfse=""
++zstd=""
+ guest_agent=""
+ guest_agent_with_vss="no"
+ guest_agent_ntddscsi="no"
+@@ -1358,6 +1359,10 @@ for opt do
+   ;;
+   --disable-lzfse) lzfse="no"
+   ;;
++  --disable-zstd) zstd="no"
++  ;;
++  --enable-zstd) zstd="yes"
++  ;;
+   --enable-guest-agent) guest_agent="yes"
+   ;;
+   --disable-guest-agent) guest_agent="no"
+@@ -1812,6 +1817,8 @@ disabled with --disable-FEATURE, default is enabled if available:
+                   (for reading bzip2-compressed dmg images)
+   lzfse           support of lzfse compression library
+                   (for reading lzfse-compressed dmg images)
++  zstd            support for zstd compression library
++                  (for migration compression)
+   seccomp         seccomp support
+   coroutine-pool  coroutine freelist (better performance)
+   glusterfs       GlusterFS backend
+@@ -2407,6 +2414,24 @@ EOF
+     fi
+ fi
+ 
++##########################################
++# zstd check
++
++if test "$zstd" != "no" ; then
++    if $pkg_config --exist libzstd ; then
++        zstd_cflags="$($pkg_config --cflags libzstd)"
++        zstd_libs="$($pkg_config --libs libzstd)"
++        LIBS="$zstd_libs $LIBS"
++        QEMU_CFLAGS="$QEMU_CFLAGS $zstd_cflags"
++        zstd="yes"
++    else
++        if test "$zstd" = "yes" ; then
++            feature_not_found "libzstd" "Install libzstd devel"
++        fi
++        zstd="no"
++    fi
++fi
++
+ ##########################################
+ # libseccomp check
+ 
+@@ -6460,6 +6485,7 @@ echo "lzo support       $lzo"
+ echo "snappy support    $snappy"
+ echo "bzip2 support     $bzip2"
+ echo "lzfse support     $lzfse"
++echo "zstd support      $zstd"
+ echo "NUMA host support $numa"
+ echo "libxml2           $libxml2"
+ echo "tcmalloc support  $tcmalloc"
+@@ -7024,6 +7050,10 @@ if test "$lzfse" = "yes" ; then
+   echo "LZFSE_LIBS=-llzfse" >> $config_host_mak
+ fi
+ 
++if test "$zstd" = "yes" ; then
++  echo "CONFIG_ZSTD=y" >> $config_host_mak
++fi
++
+ if test "$libiscsi" = "yes" ; then
+   echo "CONFIG_LIBISCSI=m" >> $config_host_mak
+   echo "LIBISCSI_CFLAGS=$libiscsi_cflags" >> $config_host_mak
+-- 
+2.27.0
+
