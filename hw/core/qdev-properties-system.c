@@ -15,6 +15,7 @@
 #include "hw/qdev.h"
 #include "qapi/error.h"
 #include "qapi/qmp/qerror.h"
+#include "qapi/qapi-types-migration.h"
 #include "sysemu/block-backend.h"
 #include "sysemu/blockdev.h"
 #include "hw/block/block.h"
@@ -23,6 +24,7 @@
 #include "chardev/char-fe.h"
 #include "sysemu/iothread.h"
 #include "sysemu/tpm_backend.h"
+#include "qdev-prop-internal.h"
 
 static void get_pointer(Object *obj, Visitor *v, Property *prop,
                         char *(*print)(void *ptr),
@@ -399,3 +401,14 @@ void qdev_set_nic_properties(DeviceState *dev, NICInfo *nd)
     }
     nd->instantiated = 1;
 }
+
+/* --- CompressMethod --- */
+const PropertyInfo qdev_prop_compress_method = {
+    .name = "CompressMethod",
+    .description = "multi-thread compression method, "
+                   "zlib/zstd",
+    .enum_table = &CompressMethod_lookup,
+    .get = get_enum,
+    .set = set_enum,
+    .set_default_value = set_default_value_enum,
+};
