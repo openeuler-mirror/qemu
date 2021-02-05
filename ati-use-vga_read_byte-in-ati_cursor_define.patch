@@ -1,0 +1,198 @@
+From 9bc85b4b6060287ee0178ceba35f3233a53e180a Mon Sep 17 00:00:00 2001
+From: Gerd Hoffmann <kraxel@redhat.com>
+Date: Fri, 5 Feb 2021 10:38:24 +0800
+Subject: [PATCH] ati: use vga_read_byte in ati_cursor_define
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+fix CVE-2019-20808
+
+This makes sure reads are confined to vga video memory.
+
+v3: use uint32_t, fix cut+paste bug.
+v2: fix ati_cursor_draw_line too.
+
+Reported-by: xu hang <flier_m@outlook.com>
+Signed-off-by: Gerd Hoffmann <kraxel@redhat.com>
+Reviewed-by: BALATON Zoltan <balaton@eik.bme.hu>
+Reviewed-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+Message-id: 20190917111441.27405-3-kraxel@redhat.com
+
+cherry-pick from aab0e2a661b2b6bf7915c0aefe807fb60d6d9d13
+Signed-off-by: Jiajie Li <lijiajie11@huawei.com>
+---
+ hw/display/ati.c         | 21 ++++++++---------
+ hw/display/vga-access.h  | 49 ++++++++++++++++++++++++++++++++++++++++
+ hw/display/vga-helpers.h | 27 +---------------------
+ 3 files changed, 60 insertions(+), 37 deletions(-)
+ create mode 100644 hw/display/vga-access.h
+
+diff --git a/hw/display/ati.c b/hw/display/ati.c
+index 5943040416..b17569874e 100644
+--- a/hw/display/ati.c
++++ b/hw/display/ati.c
+@@ -19,6 +19,7 @@
+ #include "qemu/osdep.h"
+ #include "ati_int.h"
+ #include "ati_regs.h"
++#include "vga-access.h"
+ #include "vga_regs.h"
+ #include "qemu/log.h"
+ #include "qemu/module.h"
+@@ -125,20 +126,19 @@ static void ati_vga_switch_mode(ATIVGAState *s)
+ static void ati_cursor_define(ATIVGAState *s)
+ {
+     uint8_t data[1024];
+-    uint8_t *src;
++    uint32_t srcoff;
+     int i, j, idx = 0;
+ 
+     if ((s->regs.cur_offset & BIT(31)) || s->cursor_guest_mode) {
+         return; /* Do not update cursor if locked or rendered by guest */
+     }
+     /* FIXME handle cur_hv_offs correctly */
+-    src = s->vga.vram_ptr + (s->regs.crtc_offset & 0x07ffffff) +
+-          s->regs.cur_offset - (s->regs.cur_hv_offs >> 16) -
+-          (s->regs.cur_hv_offs & 0xffff) * 16;
++    srcoff = s->regs.cur_offset -
++        (s->regs.cur_hv_offs >> 16) - (s->regs.cur_hv_offs & 0xffff) * 16;
+     for (i = 0; i < 64; i++) {
+         for (j = 0; j < 8; j++, idx++) {
+-            data[idx] = src[i * 16 + j];
+-            data[512 + idx] = src[i * 16 + j + 8];
++            data[idx] = vga_read_byte(&s->vga, srcoff + i * 16 + j);
++            data[512 + idx] = vga_read_byte(&s->vga, srcoff + i * 16 + j + 8);
+         }
+     }
+     if (!s->cursor) {
+@@ -180,7 +180,7 @@ static void ati_cursor_invalidate(VGACommonState *vga)
+ static void ati_cursor_draw_line(VGACommonState *vga, uint8_t *d, int scr_y)
+ {
+     ATIVGAState *s = container_of(vga, ATIVGAState, vga);
+-    uint8_t *src;
++    uint32_t srcoff;
+     uint32_t *dp = (uint32_t *)d;
+     int i, j, h;
+ 
+@@ -190,14 +190,13 @@ static void ati_cursor_draw_line(VGACommonState *vga, uint8_t *d, int scr_y)
+         return;
+     }
+     /* FIXME handle cur_hv_offs correctly */
+-    src = s->vga.vram_ptr + (s->regs.crtc_offset & 0x07ffffff) +
+-          s->cursor_offset + (scr_y - vga->hw_cursor_y) * 16;
++    srcoff = s->cursor_offset + (scr_y - vga->hw_cursor_y) * 16;
+     dp = &dp[vga->hw_cursor_x];
+     h = ((s->regs.crtc_h_total_disp >> 16) + 1) * 8;
+     for (i = 0; i < 8; i++) {
+         uint32_t color;
+-        uint8_t abits = src[i];
+-        uint8_t xbits = src[i + 8];
++        uint8_t abits = vga_read_byte(vga, srcoff + i);
++        uint8_t xbits = vga_read_byte(vga, srcoff + i + 8);
+         for (j = 0; j < 8; j++, abits <<= 1, xbits <<= 1) {
+             if (abits & BIT(7)) {
+                 if (xbits & BIT(7)) {
+diff --git a/hw/display/vga-access.h b/hw/display/vga-access.h
+new file mode 100644
+index 0000000000..c0fbd9958b
+--- /dev/null
++++ b/hw/display/vga-access.h
+@@ -0,0 +1,49 @@
++/*
++ * QEMU VGA Emulator templates
++ *
++ * Copyright (c) 2003 Fabrice Bellard
++ *
++ * Permission is hereby granted, free of charge, to any person obtaining a copy
++ * of this software and associated documentation files (the "Software"), to deal
++ * in the Software without restriction, including without limitation the rights
++ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
++ * copies of the Software, and to permit persons to whom the Software is
++ * furnished to do so, subject to the following conditions:
++ *
++ * The above copyright notice and this permission notice shall be included in
++ * all copies or substantial portions of the Software.
++ *
++ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
++ * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
++ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
++ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
++ * THE SOFTWARE.
++ */
++
++static inline uint8_t vga_read_byte(VGACommonState *vga, uint32_t addr)
++{
++    return vga->vram_ptr[addr & vga->vbe_size_mask];
++}
++
++static inline uint16_t vga_read_word_le(VGACommonState *vga, uint32_t addr)
++{
++    uint32_t offset = addr & vga->vbe_size_mask & ~1;
++    uint16_t *ptr = (uint16_t *)(vga->vram_ptr + offset);
++    return lduw_le_p(ptr);
++}
++
++static inline uint16_t vga_read_word_be(VGACommonState *vga, uint32_t addr)
++{
++    uint32_t offset = addr & vga->vbe_size_mask & ~1;
++    uint16_t *ptr = (uint16_t *)(vga->vram_ptr + offset);
++    return lduw_be_p(ptr);
++}
++
++static inline uint32_t vga_read_dword_le(VGACommonState *vga, uint32_t addr)
++{
++    uint32_t offset = addr & vga->vbe_size_mask & ~3;
++    uint32_t *ptr = (uint32_t *)(vga->vram_ptr + offset);
++    return ldl_le_p(ptr);
++}
+diff --git a/hw/display/vga-helpers.h b/hw/display/vga-helpers.h
+index 5a752b3f9e..5b6c02faa6 100644
+--- a/hw/display/vga-helpers.h
++++ b/hw/display/vga-helpers.h
+@@ -21,6 +21,7 @@
+  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+  * THE SOFTWARE.
+  */
++#include "vga-access.h"
+ 
+ static inline void vga_draw_glyph_line(uint8_t *d, uint32_t font_data,
+                                        uint32_t xorcol, uint32_t bgcol)
+@@ -95,32 +96,6 @@ static void vga_draw_glyph9(uint8_t *d, int linesize,
+     } while (--h);
+ }
+ 
+-static inline uint8_t vga_read_byte(VGACommonState *vga, uint32_t addr)
+-{
+-    return vga->vram_ptr[addr & vga->vbe_size_mask];
+-}
+-
+-static inline uint16_t vga_read_word_le(VGACommonState *vga, uint32_t addr)
+-{
+-    uint32_t offset = addr & vga->vbe_size_mask & ~1;
+-    uint16_t *ptr = (uint16_t *)(vga->vram_ptr + offset);
+-    return lduw_le_p(ptr);
+-}
+-
+-static inline uint16_t vga_read_word_be(VGACommonState *vga, uint32_t addr)
+-{
+-    uint32_t offset = addr & vga->vbe_size_mask & ~1;
+-    uint16_t *ptr = (uint16_t *)(vga->vram_ptr + offset);
+-    return lduw_be_p(ptr);
+-}
+-
+-static inline uint32_t vga_read_dword_le(VGACommonState *vga, uint32_t addr)
+-{
+-    uint32_t offset = addr & vga->vbe_size_mask & ~3;
+-    uint32_t *ptr = (uint32_t *)(vga->vram_ptr + offset);
+-    return ldl_le_p(ptr);
+-}
+-
+ /*
+  * 4 color mode
+  */
+-- 
+2.27.0
+
