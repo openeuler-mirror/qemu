@@ -21,6 +21,7 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
+#include "vga-access.h"
 
 static inline void vga_draw_glyph_line(uint8_t *d, uint32_t font_data,
                                        uint32_t xorcol, uint32_t bgcol)
@@ -93,32 +94,6 @@ static void vga_draw_glyph9(uint8_t *d, int linesize,
         font_ptr += 4;
         d += linesize;
     } while (--h);
-}
-
-static inline uint8_t vga_read_byte(VGACommonState *vga, uint32_t addr)
-{
-    return vga->vram_ptr[addr & vga->vbe_size_mask];
-}
-
-static inline uint16_t vga_read_word_le(VGACommonState *vga, uint32_t addr)
-{
-    uint32_t offset = addr & vga->vbe_size_mask & ~1;
-    uint16_t *ptr = (uint16_t *)(vga->vram_ptr + offset);
-    return lduw_le_p(ptr);
-}
-
-static inline uint16_t vga_read_word_be(VGACommonState *vga, uint32_t addr)
-{
-    uint32_t offset = addr & vga->vbe_size_mask & ~1;
-    uint16_t *ptr = (uint16_t *)(vga->vram_ptr + offset);
-    return lduw_be_p(ptr);
-}
-
-static inline uint32_t vga_read_dword_le(VGACommonState *vga, uint32_t addr)
-{
-    uint32_t offset = addr & vga->vbe_size_mask & ~3;
-    uint32_t *ptr = (uint32_t *)(vga->vram_ptr + offset);
-    return ldl_le_p(ptr);
 }
 
 /*
