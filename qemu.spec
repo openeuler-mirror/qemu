@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 44
+Release: 45
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY-SA-4.0
@@ -299,6 +299,13 @@ Patch0286: block-Add-error-retry-param-setting.patch
 Patch0287: virtio-blk-Refactor-the-code-that-processes-queued-r.patch
 Patch0288: virtio-blk-On-restart-process-queued-requests-in-the.patch
 Patch0289: virtio_blk-Add-support-for-retry-on-errors.patch
+Patch0290: migration-Add-multi-thread-compress-method.patch
+Patch0291: migration-Refactoring-multi-thread-compress-migratio.patch
+Patch0292: migration-Add-multi-thread-compress-ops.patch
+Patch0293: migration-Add-zstd-support-in-multi-thread-compressi.patch
+Patch0294: migration-Add-compress_level-sanity-check.patch
+Patch0295: doc-Update-multi-thread-compression-doc.patch
+Patch0296: configure-Enable-test-and-libs-for-zstd.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -678,6 +685,15 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Thu Feb 04 2021 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
+- migration: Add multi-thread compress method
+- migration: Refactoring multi-thread compress migration
+- migration: Add multi-thread compress ops
+- migration: Add zstd support in multi-thread compression
+- migration: Add compress_level sanity check
+- doc: Update multi-thread compression doc
+- configure: Enable test and libs for zstd
+
 * Sat Jan 30 2021 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
 - scsi-bus: Refactor the code that retries requests
 - scsi-disk: Add support for retry on errors

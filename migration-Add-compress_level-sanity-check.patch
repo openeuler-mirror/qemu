@@ -1,0 +1,67 @@
+From 90c8ce0b3bcf4a3140bc4b500da9b55a694e1bde Mon Sep 17 00:00:00 2001
+From: Zeyu Jin <jinzeyu@huawei.com>
+Date: Sat, 30 Jan 2021 16:23:15 +0800
+Subject: [PATCH] migration: Add compress_level sanity check
+
+Zlib compression has level from 1 to 9. However Zstd compression has level
+from 1 to 22 (level >= 20 not recommanded). Let's do sanity check here
+to make sure a vaild compress_level is given by user.
+
+Signed-off-by: Zeyu Jin <jinzeyu@huawei.com>
+Signed-off-by: Ying Fang <fangying1@huawei.com>
+---
+ migration/migration.c | 32 ++++++++++++++++++++++++++++----
+ 1 file changed, 28 insertions(+), 4 deletions(-)
+
+diff --git a/migration/migration.c b/migration/migration.c
+index 67425fde7a..17a5c16c79 100644
+--- a/migration/migration.c
++++ b/migration/migration.c
+@@ -1111,16 +1111,40 @@ void qmp_migrate_set_capabilities(MigrationCapabilityStatusList *params,
+     }
+ }
+ 
++static bool compress_level_check(MigrationParameters *params, Error **errp)
++{
++    switch (params->compress_method) {
++    case COMPRESS_METHOD_ZLIB:
++        if (params->compress_level > 9 || params->compress_level < 1) {
++            error_setg(errp, QERR_INVALID_PARAMETER_VALUE, "compress_level",
++                           "a value in the range of 0 to 9 for Zlib method");
++            return false;
++        }
++        break;
++#ifdef CONFIG_ZSTD
++    case COMPRESS_METHOD_ZSTD:
++        if (params->compress_level > 19 || params->compress_level < 1) {
++            error_setg(errp, QERR_INVALID_PARAMETER_VALUE, "compress_level",
++                        "a value in the range of 1 to 19 for Zstd method");
++            return false;
++        }
++        break;
++#endif
++    default:
++        error_setg(errp, "Checking compress_level failed for unknown reason");
++        return false;
++    }
++
++    return true;
++}
++
+ /*
+  * Check whether the parameters are valid. Error will be put into errp
+  * (if provided). Return true if valid, otherwise false.
+  */
+ static bool migrate_params_check(MigrationParameters *params, Error **errp)
+ {
+-    if (params->has_compress_level &&
+-        (params->compress_level > 9)) {
+-        error_setg(errp, QERR_INVALID_PARAMETER_VALUE, "compress_level",
+-                   "is invalid, it should be in the range of 0 to 9");
++    if (params->has_compress_level && !compress_level_check(params, errp)) {
+         return false;
+     }
+ 
+-- 
+2.27.0
+

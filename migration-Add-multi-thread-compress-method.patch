@@ -1,0 +1,365 @@
+From b0cabc67e16d9b4e1e749b0359dd8f3874e0968d Mon Sep 17 00:00:00 2001
+From: Zeyu Jin <jinzeyu@huawei.com>
+Date: Sat, 30 Jan 2021 14:57:54 +0800
+Subject: [PATCH] migration: Add multi-thread compress method
+
+A multi-thread compress method parameter is added to hold the method we
+are going to use. By default the 'zlib' method is used to maintain the
+compatibility as before.
+
+Signed-off-by: Zeyu Jin <jinzeyu@huawei.com>
+Signed-off-by: Ying Fang <fangying1@huawei.com>
+---
+ hw/core/qdev-prop-internal.h     | 18 ++++++++++++++++++
+ hw/core/qdev-properties-system.c | 13 +++++++++++++
+ hw/core/qdev-properties.c        | 14 +++++++++++---
+ include/hw/qdev-properties.h     |  4 ++++
+ migration/migration.c            | 15 +++++++++++++++
+ migration/qemu-file.c            |  9 +++++++++
+ monitor/hmp-cmds.c               | 13 +++++++++++++
+ qapi/migration.json              | 26 +++++++++++++++++++++++++-
+ 8 files changed, 108 insertions(+), 4 deletions(-)
+ create mode 100644 hw/core/qdev-prop-internal.h
+
+diff --git a/hw/core/qdev-prop-internal.h b/hw/core/qdev-prop-internal.h
+new file mode 100644
+index 0000000000..a4a7eaf078
+--- /dev/null
++++ b/hw/core/qdev-prop-internal.h
+@@ -0,0 +1,18 @@
++/*
++ * qdev property parsing
++ *
++ * This work is licensed under the terms of the GNU GPL, version 2 or later.
++ * See the COPYING file in the top-level directory.
++ */
++
++#ifndef HW_CORE_QDEV_PROP_INTERNAL_H
++#define HW_CORE_QDEV_PROP_INTERNAL_H
++
++void get_enum(Object *obj, Visitor *v, const char *name, void *opaque,
++              Error **errp);
++void set_enum(Object *obj, Visitor *v, const char *name, void *opaque,
++              Error **errp);
++
++void set_default_value_enum(Object *obj, const Property *prop);
++
++#endif
+diff --git a/hw/core/qdev-properties-system.c b/hw/core/qdev-properties-system.c
+index ba412dd2ca..67ed89b406 100644
+--- a/hw/core/qdev-properties-system.c
++++ b/hw/core/qdev-properties-system.c
+@@ -15,6 +15,7 @@
+ #include "hw/qdev.h"
+ #include "qapi/error.h"
+ #include "qapi/qmp/qerror.h"
++#include "qapi/qapi-types-migration.h"
+ #include "sysemu/block-backend.h"
+ #include "sysemu/blockdev.h"
+ #include "hw/block/block.h"
+@@ -23,6 +24,7 @@
+ #include "chardev/char-fe.h"
+ #include "sysemu/iothread.h"
+ #include "sysemu/tpm_backend.h"
++#include "qdev-prop-internal.h"
+ 
+ static void get_pointer(Object *obj, Visitor *v, Property *prop,
+                         char *(*print)(void *ptr),
+@@ -399,3 +401,14 @@ void qdev_set_nic_properties(DeviceState *dev, NICInfo *nd)
+     }
+     nd->instantiated = 1;
+ }
++
++/* --- CompressMethod --- */
++const PropertyInfo qdev_prop_compress_method = {
++    .name = "CompressMethod",
++    .description = "multi-thread compression method, "
++                   "zlib",
++    .enum_table = &CompressMethod_lookup,
++    .get = get_enum,
++    .set = set_enum,
++    .set_default_value = set_default_value_enum,
++};
+diff --git a/hw/core/qdev-properties.c b/hw/core/qdev-properties.c
+index 81c97f48a7..709f9e0f9d 100644
+--- a/hw/core/qdev-properties.c
++++ b/hw/core/qdev-properties.c
+@@ -11,6 +11,7 @@
+ #include "qapi/visitor.h"
+ #include "chardev/char.h"
+ #include "qemu/uuid.h"
++#include "qdev-prop-internal.h"
+ 
+ void qdev_prop_set_after_realize(DeviceState *dev, const char *name,
+                                   Error **errp)
+@@ -46,7 +47,7 @@ void *qdev_get_prop_ptr(DeviceState *dev, Property *prop)
+     return ptr;
+ }
+ 
+-static void get_enum(Object *obj, Visitor *v, const char *name, void *opaque,
++void get_enum(Object *obj, Visitor *v, const char *name, void *opaque,
+                      Error **errp)
+ {
+     DeviceState *dev = DEVICE(obj);
+@@ -56,7 +57,7 @@ static void get_enum(Object *obj, Visitor *v, const char *name, void *opaque,
+     visit_type_enum(v, prop->name, ptr, prop->info->enum_table, errp);
+ }
+ 
+-static void set_enum(Object *obj, Visitor *v, const char *name, void *opaque,
++void set_enum(Object *obj, Visitor *v, const char *name, void *opaque,
+                      Error **errp)
+ {
+     DeviceState *dev = DEVICE(obj);
+@@ -71,7 +72,7 @@ static void set_enum(Object *obj, Visitor *v, const char *name, void *opaque,
+     visit_type_enum(v, prop->name, ptr, prop->info->enum_table, errp);
+ }
+ 
+-static void set_default_value_enum(Object *obj, const Property *prop)
++void set_default_value_enum(Object *obj, const Property *prop)
+ {
+     object_property_set_str(obj,
+                             qapi_enum_lookup(prop->info->enum_table,
+@@ -79,6 +80,13 @@ static void set_default_value_enum(Object *obj, const Property *prop)
+                             prop->name, &error_abort);
+ }
+ 
++const PropertyInfo qdev_prop_enum = {
++    .name  = "enum",
++    .get   = get_enum,
++    .set   = set_enum,
++    .set_default_value = set_default_value_enum,
++};
++
+ /* Bit */
+ 
+ static uint32_t qdev_get_prop_mask(Property *prop)
+diff --git a/include/hw/qdev-properties.h b/include/hw/qdev-properties.h
+index 1eae5ab056..a22a532eb8 100644
+--- a/include/hw/qdev-properties.h
++++ b/include/hw/qdev-properties.h
+@@ -23,6 +23,7 @@ extern const PropertyInfo qdev_prop_tpm;
+ extern const PropertyInfo qdev_prop_ptr;
+ extern const PropertyInfo qdev_prop_macaddr;
+ extern const PropertyInfo qdev_prop_on_off_auto;
++extern const PropertyInfo qdev_prop_compress_method;
+ extern const PropertyInfo qdev_prop_losttickpolicy;
+ extern const PropertyInfo qdev_prop_blockdev_on_error;
+ extern const PropertyInfo qdev_prop_bios_chs_trans;
+@@ -205,6 +206,9 @@ extern const PropertyInfo qdev_prop_pcie_link_width;
+     DEFINE_PROP(_n, _s, _f, qdev_prop_macaddr, MACAddr)
+ #define DEFINE_PROP_ON_OFF_AUTO(_n, _s, _f, _d) \
+     DEFINE_PROP_SIGNED(_n, _s, _f, _d, qdev_prop_on_off_auto, OnOffAuto)
++#define DEFINE_PROP_COMPRESS_METHOD(_n, _s, _f, _d) \
++    DEFINE_PROP_SIGNED(_n, _s, _f, _d, qdev_prop_compress_method, \
++                        CompressMethod)
+ #define DEFINE_PROP_LOSTTICKPOLICY(_n, _s, _f, _d) \
+     DEFINE_PROP_SIGNED(_n, _s, _f, _d, qdev_prop_losttickpolicy, \
+                         LostTickPolicy)
+diff --git a/migration/migration.c b/migration/migration.c
+index 0e396f22b4..c79bf09269 100644
+--- a/migration/migration.c
++++ b/migration/migration.c
+@@ -71,6 +71,7 @@
+ #define DEFAULT_MIGRATE_DECOMPRESS_THREAD_COUNT 2
+ /*0: means nocompress, 1: best speed, ... 9: best compress ratio */
+ #define DEFAULT_MIGRATE_COMPRESS_LEVEL 1
++#define DEFAULT_MIGRATE_COMPRESS_METHOD COMPRESS_METHOD_ZLIB
+ /* Define default autoconverge cpu throttle migration parameters */
+ #define DEFAULT_MIGRATE_CPU_THROTTLE_INITIAL 20
+ #define DEFAULT_MIGRATE_CPU_THROTTLE_INCREMENT 10
+@@ -748,6 +749,8 @@ MigrationParameters *qmp_query_migrate_parameters(Error **errp)
+     params->compress_wait_thread = s->parameters.compress_wait_thread;
+     params->has_decompress_threads = true;
+     params->decompress_threads = s->parameters.decompress_threads;
++    params->has_compress_method = true;
++    params->compress_method = s->parameters.compress_method;
+     params->has_cpu_throttle_initial = true;
+     params->cpu_throttle_initial = s->parameters.cpu_throttle_initial;
+     params->has_cpu_throttle_increment = true;
+@@ -1250,6 +1253,10 @@ static void migrate_params_test_apply(MigrateSetParameters *params,
+         dest->decompress_threads = params->decompress_threads;
+     }
+ 
++    if (params->has_compress_method) {
++        dest->compress_method = params->compress_method;
++    }
++
+     if (params->has_cpu_throttle_initial) {
+         dest->cpu_throttle_initial = params->cpu_throttle_initial;
+     }
+@@ -1331,6 +1338,10 @@ static void migrate_params_apply(MigrateSetParameters *params, Error **errp)
+         s->parameters.decompress_threads = params->decompress_threads;
+     }
+ 
++    if (params->has_compress_method) {
++        s->parameters.compress_method = params->compress_method;
++    }
++
+     if (params->has_cpu_throttle_initial) {
+         s->parameters.cpu_throttle_initial = params->cpu_throttle_initial;
+     }
+@@ -3436,6 +3447,9 @@ static Property migration_properties[] = {
+     DEFINE_PROP_UINT8("x-decompress-threads", MigrationState,
+                       parameters.decompress_threads,
+                       DEFAULT_MIGRATE_DECOMPRESS_THREAD_COUNT),
++    DEFINE_PROP_COMPRESS_METHOD("compress-method", MigrationState,
++                      parameters.compress_method,
++                      DEFAULT_MIGRATE_COMPRESS_METHOD),
+     DEFINE_PROP_UINT8("x-cpu-throttle-initial", MigrationState,
+                       parameters.cpu_throttle_initial,
+                       DEFAULT_MIGRATE_CPU_THROTTLE_INITIAL),
+@@ -3535,6 +3549,7 @@ static void migration_instance_init(Object *obj)
+     params->has_compress_level = true;
+     params->has_compress_threads = true;
+     params->has_decompress_threads = true;
++    params->has_compress_method = true;
+     params->has_cpu_throttle_initial = true;
+     params->has_cpu_throttle_increment = true;
+     params->has_max_bandwidth = true;
+diff --git a/migration/qemu-file.c b/migration/qemu-file.c
+index cd96d04e9a..be0d6c8ca8 100644
+--- a/migration/qemu-file.c
++++ b/migration/qemu-file.c
+@@ -382,6 +382,15 @@ static void add_to_iovec(QEMUFile *f, const uint8_t *buf, size_t size,
+     }
+ }
+ 
++static void add_buf_to_iovec(QEMUFile *f, size_t len)
++{
++    add_to_iovec(f, f->buf + f->buf_index, len, false);
++    f->buf_index += len;
++    if (f->buf_index == IO_BUF_SIZE) {
++        qemu_fflush(f);
++    }
++}
++
+ void qemu_put_buffer_async(QEMUFile *f, const uint8_t *buf, size_t size,
+                            bool may_free)
+ {
+diff --git a/monitor/hmp-cmds.c b/monitor/hmp-cmds.c
+index fc5d6b92c4..e5a7a88ba2 100644
+--- a/monitor/hmp-cmds.c
++++ b/monitor/hmp-cmds.c
+@@ -41,6 +41,7 @@
+ #include "qapi/qapi-commands-tpm.h"
+ #include "qapi/qapi-commands-ui.h"
+ #include "qapi/qapi-visit-net.h"
++#include "qapi/qapi-visit-migration.h"
+ #include "qapi/qmp/qdict.h"
+ #include "qapi/qmp/qerror.h"
+ #include "qapi/string-input-visitor.h"
+@@ -426,6 +427,9 @@ void hmp_info_migrate_parameters(Monitor *mon, const QDict *qdict)
+             MigrationParameter_str(MIGRATION_PARAMETER_DECOMPRESS_THREADS),
+             params->decompress_threads);
+         assert(params->has_cpu_throttle_initial);
++        monitor_printf(mon, "%s: %s\n",
++            MigrationParameter_str(MIGRATION_PARAMETER_COMPRESS_METHOD),
++            CompressMethod_str(params->compress_method));
+         monitor_printf(mon, "%s: %u\n",
+             MigrationParameter_str(MIGRATION_PARAMETER_CPU_THROTTLE_INITIAL),
+             params->cpu_throttle_initial);
+@@ -1756,6 +1760,7 @@ void hmp_migrate_set_parameter(Monitor *mon, const QDict *qdict)
+     MigrateSetParameters *p = g_new0(MigrateSetParameters, 1);
+     uint64_t valuebw = 0;
+     uint64_t cache_size;
++    CompressMethod compress_method;
+     Error *err = NULL;
+     int val, ret;
+ 
+@@ -1781,6 +1786,14 @@ void hmp_migrate_set_parameter(Monitor *mon, const QDict *qdict)
+         p->has_decompress_threads = true;
+         visit_type_int(v, param, &p->decompress_threads, &err);
+         break;
++    case MIGRATION_PARAMETER_COMPRESS_METHOD:
++        p->has_compress_method = true;
++        visit_type_CompressMethod(v, param, &compress_method, &err);
++        if (err) {
++            break;
++        }
++        p->compress_method = compress_method;
++        break;
+     case MIGRATION_PARAMETER_CPU_THROTTLE_INITIAL:
+         p->has_cpu_throttle_initial = true;
+         visit_type_int(v, param, &p->cpu_throttle_initial, &err);
+diff --git a/qapi/migration.json b/qapi/migration.json
+index 6844ddfab3..b0e8c493ee 100644
+--- a/qapi/migration.json
++++ b/qapi/migration.json
+@@ -482,6 +482,19 @@
+ ##
+ { 'command': 'query-migrate-capabilities', 'returns':   ['MigrationCapabilityStatus']}
+ 
++##
++# @CompressMethod:
++#
++# An enumeration of multi-thread compression methods.
++#
++# @zlib: use zlib compression method.
++#
++# Since: 5.0
++#
++##
++{ 'enum': 'CompressMethod',
++  'data': [ 'zlib' ] }
++
+ ##
+ # @MigrationParameter:
+ #
+@@ -518,6 +531,9 @@
+ #          compression, so set the decompress-threads to the number about 1/4
+ #          of compress-threads is adequate.
+ #
++# @compress-method: Which multi-thread compression method to use.
++#                   Defaults to none. (Since 5.0)
++#
+ # @cpu-throttle-initial: Initial percentage of time guest cpus are throttled
+ #                        when migration auto-converge is activated. The
+ #                        default value is 20. (Since 2.7)
+@@ -586,7 +602,7 @@
+   'data': ['announce-initial', 'announce-max',
+            'announce-rounds', 'announce-step',
+            'compress-level', 'compress-threads', 'decompress-threads',
+-           'compress-wait-thread',
++           'compress-wait-thread', 'compress-method',
+            'cpu-throttle-initial', 'cpu-throttle-increment',
+            'tls-creds', 'tls-hostname', 'tls-authz', 'max-bandwidth',
+            'downtime-limit', 'x-checkpoint-delay', 'block-incremental',
+@@ -620,6 +636,9 @@
+ #
+ # @decompress-threads: decompression thread count
+ #
++# @compress-method: Set compression method to use in multi-thread compression.
++#                   Defaults to none. (Since 5.0)
++#
+ # @cpu-throttle-initial: Initial percentage of time guest cpus are
+ #                        throttled when migration auto-converge is activated.
+ #                        The default value is 20. (Since 2.7)
+@@ -695,6 +714,7 @@
+             '*compress-threads': 'int',
+             '*compress-wait-thread': 'bool',
+             '*decompress-threads': 'int',
++            '*compress-method': 'CompressMethod',
+             '*cpu-throttle-initial': 'int',
+             '*cpu-throttle-increment': 'int',
+             '*tls-creds': 'StrOrNull',
+@@ -753,6 +773,9 @@
+ #
+ # @decompress-threads: decompression thread count
+ #
++# @compress-method: Which multi-thread compression method to use.
++#                   Defaults to none. (Since 5.0)
++#
+ # @cpu-throttle-initial: Initial percentage of time guest cpus are
+ #                        throttled when migration auto-converge is activated.
+ #                        (Since 2.7)
+@@ -828,6 +851,7 @@
+             '*compress-threads': 'uint8',
+             '*compress-wait-thread': 'bool',
+             '*decompress-threads': 'uint8',
++            '*compress-method': 'CompressMethod',
+             '*cpu-throttle-initial': 'uint8',
+             '*cpu-throttle-increment': 'uint8',
+             '*tls-creds': 'str',
+-- 
+2.27.0
+
