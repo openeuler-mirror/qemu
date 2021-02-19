@@ -234,6 +234,9 @@ Patch0221: hw-usb-hcd-ohci-check-len-and-frame_number-variables.patch
 Patch0222: hw-net-e1000e-advance-desc_offset-in-case-of-null-de.patch
 Patch0223: target-arm-Fix-write-redundant-values-to-kvm.patch
 Patch0224: memory-clamp-cached-translation-in-case-it-points-to.patch
+Patch0225: ati-use-vga_read_byte-in-ati_cursor_define.patch
+Patch0226: sd-sdhci-assert-data_count-is-within-fifo_buffer.patch
+Patch0227: msix-add-valid.accepts-methods-to-check-address.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -579,6 +582,11 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Fri Feb 19 2021 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
+- ati: use vga_read_byte in ati_cursor_define
+- sd: sdhci: assert data_count is within fifo_buffer
+- msix: add valid.accepts methods to check address
+
 * Mon Jan 18 2021 Huawei Technologies Co., Ltd <fangying1@huawei.com>
 - reorder the changelog
 
