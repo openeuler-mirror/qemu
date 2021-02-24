@@ -1,0 +1,78 @@
+From e9cc24b1737f745b23c408b183dd34fda5abc30c Mon Sep 17 00:00:00 2001
+From: Prasad J Pandit <pjp@fedoraproject.org>
+Date: Fri, 19 Feb 2021 16:28:00 +0800
+Subject: [PATCH] msix: add valid.accepts methods to check address
+
+Fix CVE-2020-13754
+
+While doing msi-x mmio operations, a guest may send an address
+that leads to an OOB access issue. Add valid.accepts methods to
+ensure that ensuing mmio r/w operation don't go beyond regions.
+
+Reported-by: Ren Ding <rding@gatech.edu>
+Reported-by: Hanqing Zhao <hanqing@gatech.edu>
+Reported-by: Anatoly Trosinenko <anatoly.trosinenko@gmail.com>
+Reported-by: Alexander Bulekov <alxndr@bu.edu>
+Signed-off-by: Prasad J Pandit <pjp@fedoraproject.org>
+
+patch link: https://lists.gnu.org/archive/html/qemu-devel/2020-06/msg00004.html
+Signed-off-by: Jiajie Li <lijiajie11@huawei.com>
+---
+ hw/pci/msix.c | 20 ++++++++++++++++++++
+ 1 file changed, 20 insertions(+)
+
+diff --git a/hw/pci/msix.c b/hw/pci/msix.c
+index d39dcf32e8..ec43f16875 100644
+--- a/hw/pci/msix.c
++++ b/hw/pci/msix.c
+@@ -192,6 +192,15 @@ static void msix_table_mmio_write(void *opaque, hwaddr addr,
+     msix_handle_mask_update(dev, vector, was_masked);
+ }
+ 
++static bool msix_table_accepts(void *opaque, hwaddr addr, unsigned size,
++                                    bool is_write, MemTxAttrs attrs)
++{
++    PCIDevice *dev = opaque;
++    uint16_t tbl_size = dev->msix_entries_nr * PCI_MSIX_ENTRY_SIZE;
++
++    return dev->msix_table + addr + 4 <= dev->msix_table + tbl_size;
++}
++
+ static const MemoryRegionOps msix_table_mmio_ops = {
+     .read = msix_table_mmio_read,
+     .write = msix_table_mmio_write,
+@@ -199,6 +208,7 @@ static const MemoryRegionOps msix_table_mmio_ops = {
+     .valid = {
+         .min_access_size = 4,
+         .max_access_size = 4,
++        .accepts = msix_table_accepts
+     },
+ };
+ 
+@@ -220,6 +230,15 @@ static void msix_pba_mmio_write(void *opaque, hwaddr addr,
+ {
+ }
+ 
++static bool msix_pba_accepts(void *opaque, hwaddr addr, unsigned size,
++                                    bool is_write, MemTxAttrs attrs)
++{
++    PCIDevice *dev = opaque;
++    uint16_t pba_size = QEMU_ALIGN_UP(dev->msix_entries_nr, 64) / 8;
++
++    return dev->msix_pba + addr + 4 <= dev->msix_pba + pba_size;
++}
++
+ static const MemoryRegionOps msix_pba_mmio_ops = {
+     .read = msix_pba_mmio_read,
+     .write = msix_pba_mmio_write,
+@@ -227,6 +246,7 @@ static const MemoryRegionOps msix_pba_mmio_ops = {
+     .valid = {
+         .min_access_size = 4,
+         .max_access_size = 4,
++        .accepts = msix_pba_accepts
+     },
+ };
+ 
+-- 
+2.27.0
+

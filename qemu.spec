@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 45
+Release: 46
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY-SA-4.0
@@ -306,6 +306,9 @@ Patch0293: migration-Add-zstd-support-in-multi-thread-compressi.patch
 Patch0294: migration-Add-compress_level-sanity-check.patch
 Patch0295: doc-Update-multi-thread-compression-doc.patch
 Patch0296: configure-Enable-test-and-libs-for-zstd.patch
+Patch0297: ati-use-vga_read_byte-in-ati_cursor_define.patch
+Patch0298: sd-sdhci-assert-data_count-is-within-fifo_buffer.patch
+Patch0299: msix-add-valid.accepts-methods-to-check-address.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -685,6 +688,11 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Fri Feb 19 2021 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
+- ati: use vga_read_byte in ati_cursor_define
+- sd: sdhci: assert data_count is within fifo_buffer
+- msix: add valid.accepts methods to check address
+
 * Thu Feb 04 2021 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
 - migration: Add multi-thread compress method
 - migration: Refactoring multi-thread compress migration
