@@ -1,0 +1,37 @@
+From 0fbd80eac7bf2be0d6b0054a7f9195144d324f96 Mon Sep 17 00:00:00 2001
+From: Jiahui Cen <cenjiahui@huawei.com>
+Date: Thu, 25 Feb 2021 18:03:57 +0800
+Subject: [PATCH] block-backend: Stop retrying when draining
+
+Retrying failed requests when draining would make the draining hung. So it
+is better not to trigger the retry timer when draining. And after the
+virtual devices go back to work, they would retry those queued requests.
+
+Signed-off-by: Jiahui Cen <cenjiahui@huawei.com>
+Signed-off-by: Ying Fang <fangying1@huawei.com>
+---
+ block/block-backend.c | 8 +++++---
+ 1 file changed, 5 insertions(+), 3 deletions(-)
+
+diff --git a/block/block-backend.c b/block/block-backend.c
+index 2d812e2254..f6c918f1d9 100644
+--- a/block/block-backend.c
++++ b/block/block-backend.c
+@@ -1741,9 +1741,11 @@ void blk_error_action(BlockBackend *blk, BlockErrorAction action,
+         send_qmp_error_event(blk, action, is_read, error);
+         qemu_system_vmstop_request(RUN_STATE_IO_ERROR);
+     } else if (action == BLOCK_ERROR_ACTION_RETRY) {
+-        timer_mod(blk->retry_timer, qemu_clock_get_ms(QEMU_CLOCK_REALTIME) +
+-                                    blk->retry_interval);
+-        send_qmp_error_event(blk, action, is_read, error);
++        if (!blk->quiesce_counter) {
++            timer_mod(blk->retry_timer, qemu_clock_get_ms(QEMU_CLOCK_REALTIME) +
++                                        blk->retry_interval);
++            send_qmp_error_event(blk, action, is_read, error);
++        }
+     } else {
+         send_qmp_error_event(blk, action, is_read, error);
+     }
+-- 
+2.27.0
+
