@@ -1874,9 +1874,11 @@ void blk_error_action(BlockBackend *blk, BlockErrorAction action,
         send_qmp_error_event(blk, action, is_read, error);
         qemu_system_vmstop_request(RUN_STATE_IO_ERROR);
     } else if (action == BLOCK_ERROR_ACTION_RETRY) {
-        timer_mod(blk->retry_timer, qemu_clock_get_ms(QEMU_CLOCK_REALTIME) +
-                                    blk->retry_interval);
-        send_qmp_error_event(blk, action, is_read, error);
+        if (!blk->quiesce_counter) {
+            timer_mod(blk->retry_timer, qemu_clock_get_ms(QEMU_CLOCK_REALTIME) +
+                                        blk->retry_interval);
+            send_qmp_error_event(blk, action, is_read, error);
+        }
     } else {
         send_qmp_error_event(blk, action, is_read, error);
     }
