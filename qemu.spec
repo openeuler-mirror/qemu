@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 46
+Release: 47
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY-SA-4.0
@@ -309,6 +309,8 @@ Patch0296: configure-Enable-test-and-libs-for-zstd.patch
 Patch0297: ati-use-vga_read_byte-in-ati_cursor_define.patch
 Patch0298: sd-sdhci-assert-data_count-is-within-fifo_buffer.patch
 Patch0299: msix-add-valid.accepts-methods-to-check-address.patch
+Patch0300: ide-atapi-check-io_buffer_index-in-ide_atapi_cmd_rep.patch
+Patch0301: block-backend-Stop-retrying-when-draining.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -688,6 +690,12 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Fri Feb 26 2021 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
+- block-backend: Stop retrying when draining
+
+* Fri Feb 26 2021 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
+- ide:atapi: check io_buffer_index in ide_atapi_cmd_reply_end
+
 * Fri Feb 19 2021 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
 - ati: use vga_read_byte in ati_cursor_define
 - sd: sdhci: assert data_count is within fifo_buffer
