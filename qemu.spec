@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 47
+Release: 48
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY-SA-4.0
@@ -322,6 +322,7 @@ BuildRequires: gettext
 BuildRequires: python-sphinx
 
 BuildRequires: zlib-devel
+BuildRequires: zstd-devel
 BuildRequires: gtk3-devel
 BuildRequires: gnutls-devel
 BuildRequires: numactl-devel
@@ -487,7 +488,8 @@ buildldflags="VL_LDFLAGS=-Wl,--build-id"
     --disable-parallels \
     --disable-sheepdog \
     --disable-capstone \
-    --disable-smartcard
+    --disable-smartcard \
+    --enable-zstd
 
 make %{?_smp_mflags} $buildldflags V=1
 
@@ -690,6 +692,9 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Tue Mar 02 2021 Huawei Technologies Co., Ltd <lijiajie11@huawei.com>
+- qemu.spec: Add --enable-zstd compile parameter
+
 * Fri Feb 26 2021 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
 - block-backend: Stop retrying when draining
 
