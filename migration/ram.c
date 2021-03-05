@@ -1575,9 +1575,9 @@ static bool multifd_channel_connect(MultiFDSendParams *p,
                  * function after the TLS handshake,
                  * so we mustn't call multifd_send_thread until then
                  */
-                return false;
-            } else {
                 return true;
+            } else {
+                return false;
             }
         } else {
             /* update for tls qio channel */
@@ -1585,10 +1585,10 @@ static bool multifd_channel_connect(MultiFDSendParams *p,
             qemu_thread_create(&p->thread, p->name, multifd_send_thread, p,
                                    QEMU_THREAD_JOINABLE);
        }
-       return false;
+       return true;
     }
 
-    return true;
+    return false;
 }
 
 static void multifd_new_send_channel_cleanup(MultiFDSendParams *p,
@@ -1620,7 +1620,7 @@ static void multifd_new_send_channel_async(QIOTask *task, gpointer opaque)
         p->c = QIO_CHANNEL(sioc);
         qio_channel_set_delay(p->c, false);
         p->running = true;
-        if (multifd_channel_connect(p, sioc, local_err)) {
+        if (!multifd_channel_connect(p, sioc, local_err)) {
             goto cleanup;
         }
         return;
