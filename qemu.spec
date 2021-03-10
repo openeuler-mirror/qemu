@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 48
+Release: 49
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY-SA-4.0
@@ -417,6 +417,11 @@ Summary: Qemu-block-ssh
 %description block-ssh
 This package provides block-ssh support for Qemu
 
+%package  block-iscsi
+Summary: Qemu-block-iscsi
+%description block-iscsi
+This package provides block-iscsi support for Qemu
+
 %ifarch %{ix86} x86_64
 %package seabios
 Summary: QEMU seabios
@@ -560,7 +565,6 @@ rm -rf %{buildroot}%{_datadir}/%{name}/qemu-nsis.bmp
 rm -rf %{buildroot}%{_libdir}/%{name}/audio-oss.so
 rm -rf %{buildroot}%{_libdir}/%{name}/audio-pa.so
 rm -rf %{buildroot}%{_libdir}/%{name}/block-curl.so
-rm -rf %{buildroot}%{_libdir}/%{name}/block-iscsi.so
 rm -rf %{buildroot}%{_libdir}/%{name}/block-gluster.so
 rm -rf %{buildroot}%{_libdir}/%{name}/ui-curses.so
 rm -rf %{buildroot}%{_libdir}/%{name}/ui-gtk.so
@@ -685,6 +689,9 @@ getent passwd qemu >/dev/null || \
 %files block-ssh
 %{_libdir}/%{name}/block-ssh.so
 
+%files block-iscsi
+%{_libdir}/%{name}/block-iscsi.so
+
 %ifarch %{ix86} x86_64
 %files seabios
 %{_datadir}/%{name}/bios-256k.bin
@@ -692,6 +699,9 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Wed Mar 10 2021 Huawei Technologies Co., Ltd <lijiajie11@huawei.com>
+- qemu.spec: make iscsi rpm package
+
 * Tue Mar 02 2021 Huawei Technologies Co., Ltd <lijiajie11@huawei.com>
 - qemu.spec: Add --enable-zstd compile parameter
 
