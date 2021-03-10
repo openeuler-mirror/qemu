@@ -1,0 +1,86 @@
+From 483baf4c668fbd2da76e6948576e13eded1c54ec Mon Sep 17 00:00:00 2001
+From: Shenming Lu <lushenming@huawei.com>
+Date: Wed, 10 Mar 2021 11:02:31 +0800
+Subject: [PATCH] vfio: Move the saving of the config space to the right place
+ in VFIO migration
+
+On ARM64 the VFIO SET_IRQS ioctl is dependent on the VM interrupt
+setup, if the restoring of the VFIO PCI device config space is
+before the VGIC, an error might occur in the kernel.
+
+So we move the saving of the config space to the non-iterable
+process, thus it will be called after the VGIC according to
+their priorities.
+
+As for the possible dependence of the device specific migration
+data on it's config space, we can let the vendor driver to
+include any config info it needs in its own data stream.
+
+Signed-off-by: Shenming Lu <lushenming@huawei.com>
+Reviewed-by: Kirti Wankhede <kwankhede@nvidia.com>
+Message-Id: <20210310030233.1133-2-lushenming@huawei.com>
+Signed-off-by: Alex Williamson <alex.williamson@redhat.com>
+---
+ hw/vfio/migration.c | 25 +++++++++++++++----------
+ 1 file changed, 15 insertions(+), 10 deletions(-)
+
+diff --git a/hw/vfio/migration.c b/hw/vfio/migration.c
+index b77c66557e..ea36ae5225 100644
+--- a/hw/vfio/migration.c
++++ b/hw/vfio/migration.c
+@@ -575,11 +575,6 @@ static int vfio_save_complete_precopy(QEMUFile *f, void *opaque)
+         return ret;
+     }
+ 
+-    ret = vfio_save_device_config_state(f, opaque);
+-    if (ret) {
+-        return ret;
+-    }
+-
+     ret = vfio_update_pending(vbasedev);
+     if (ret) {
+         return ret;
+@@ -620,6 +615,19 @@ static int vfio_save_complete_precopy(QEMUFile *f, void *opaque)
+     return ret;
+ }
+ 
++static void vfio_save_state(QEMUFile *f, void *opaque)
++{
++    VFIODevice *vbasedev = opaque;
++    int ret;
++
++    ret = vfio_save_device_config_state(f, opaque);
++    if (ret) {
++        error_report("%s: Failed to save device config space",
++                     vbasedev->name);
++        qemu_file_set_error(f, ret);
++    }
++}
++
+ static int vfio_load_setup(QEMUFile *f, void *opaque)
+ {
+     VFIODevice *vbasedev = opaque;
+@@ -670,11 +678,7 @@ static int vfio_load_state(QEMUFile *f, void *opaque, int version_id)
+         switch (data) {
+         case VFIO_MIG_FLAG_DEV_CONFIG_STATE:
+         {
+-            ret = vfio_load_device_config_state(f, opaque);
+-            if (ret) {
+-                return ret;
+-            }
+-            break;
++            return vfio_load_device_config_state(f, opaque);
+         }
+         case VFIO_MIG_FLAG_DEV_SETUP_STATE:
+         {
+@@ -720,6 +724,7 @@ static SaveVMHandlers savevm_vfio_handlers = {
+     .save_live_pending = vfio_save_pending,
+     .save_live_iterate = vfio_save_iterate,
+     .save_live_complete_precopy = vfio_save_complete_precopy,
++    .save_state = vfio_save_state,
+     .load_setup = vfio_load_setup,
+     .load_cleanup = vfio_load_cleanup,
+     .load_state = vfio_load_state,
+-- 
+2.27.0
+
