@@ -41,7 +41,7 @@ compression ratio. High compression ratio will take more time,
 level 1 stands for the best compression speed, and higher level means higher
 compression ration. For Zlib, users can select a level number between 0 and 9,
 where level 0 stands for no compression. For Zstd, users can select a
-level number between 1 and 22.
+level number between 1 and 19.
 
 
 When to use the multiple thread compression in live migration
