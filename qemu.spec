@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 49
+Release: 50
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY-SA-4.0
@@ -371,6 +371,8 @@ Requires(post): /usr/sbin/useradd
 Requires(post): systemd-units
 Requires(preun): systemd-units
 Requires(postun): systemd-units
+Requires(postun): qemu-block-iscsi
+
 
 %description
 QEMU is a FAST! processor emulator using dynamic translation to achieve good emulation speed.
@@ -699,6 +701,9 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Thu Mar 11 2021 Huawei Technologies Co., Ltd <lijiajie11@huawei.com>
+- qemu.spec: add iscsi rpm package requirement
+
 * Wed Mar 10 2021 Huawei Technologies Co., Ltd <lijiajie11@huawei.com>
 - qemu.spec: make iscsi rpm package
 
