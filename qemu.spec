@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 50
+Release: 51
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY-SA-4.0
@@ -311,6 +311,10 @@ Patch0298: sd-sdhci-assert-data_count-is-within-fifo_buffer.patch
 Patch0299: msix-add-valid.accepts-methods-to-check-address.patch
 Patch0300: ide-atapi-check-io_buffer_index-in-ide_atapi_cmd_rep.patch
 Patch0301: block-backend-Stop-retrying-when-draining.patch
+Patch0302: migration-fix-memory-leak-in-qmp_migrate_set_paramet.patch
+Patch0303: migration-tls-fix-inverted-semantics-in-multifd_chan.patch
+Patch0304: migration-tls-add-error-handling-in-multifd_tls_hand.patch
+Patch0305: net-vmxnet3-validate-configuration-values-during-act.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -701,6 +705,14 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Fri Mar 12 2021 Chen Qun <kuhn.chenqun@huawei.com>
+- net: vmxnet3: validate configuration values during activate (CVE-2021-20203)
+
+* Fri Mar 12 2021 Chen Qun <kuhn.chenqun@huawei.com>
+- migration: fix memory leak in qmp_migrate_set_parameters
+- migration/tls: fix inverted semantics in multifd_channel_connect
+- migration/tls: add error handling in multifd_tls_handshake_thread
+
 * Thu Mar 11 2021 Huawei Technologies Co., Ltd <lijiajie11@huawei.com>
 - qemu.spec: add iscsi rpm package requirement
 
