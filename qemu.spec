@@ -314,6 +314,7 @@ Patch0301: block-backend-Stop-retrying-when-draining.patch
 Patch0302: migration-fix-memory-leak-in-qmp_migrate_set_paramet.patch
 Patch0303: migration-tls-fix-inverted-semantics-in-multifd_chan.patch
 Patch0304: migration-tls-add-error-handling-in-multifd_tls_hand.patch
+Patch0305: net-vmxnet3-validate-configuration-values-during-act.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -704,6 +705,9 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Fri Mar 12 2021 Chen Qun <kuhn.chenqun@huawei.com>
+- net: vmxnet3: validate configuration values during activate (CVE-2021-20203)
+
 * Fri Mar 12 2021 Chen Qun <kuhn.chenqun@huawei.com>
 - migration: fix memory leak in qmp_migrate_set_parameters
 - migration/tls: fix inverted semantics in multifd_channel_connect
