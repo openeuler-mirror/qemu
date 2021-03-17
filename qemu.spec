@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 51
+Release: 52
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY-SA-4.0
@@ -464,7 +464,6 @@ buildldflags="VL_LDFLAGS=-Wl,--build-id"
     --firmwarepath=%{_datadir}/%{name}    \
     --with-pkgversion=%{name}-%{version}-%{release} \
     --python=/usr/bin/python3 \
-    --disable-strip \
     --disable-slirp  \
     --enable-gtk \
     --enable-docs \
@@ -705,6 +704,9 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Wed Mar 17 2021 Huawei Technologies Co., Ltd <lijiajie11@huawei.com>
+- qemu.spec: enable strip for qemu-block-rbd.so and qemu-block-ssh.so
+
 * Fri Mar 12 2021 Chen Qun <kuhn.chenqun@huawei.com>
 - net: vmxnet3: validate configuration values during activate (CVE-2021-20203)
 
