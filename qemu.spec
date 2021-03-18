@@ -315,6 +315,7 @@ Patch0302: migration-fix-memory-leak-in-qmp_migrate_set_paramet.patch
 Patch0303: migration-tls-fix-inverted-semantics-in-multifd_chan.patch
 Patch0304: migration-tls-add-error-handling-in-multifd_tls_hand.patch
 Patch0305: net-vmxnet3-validate-configuration-values-during-act.patch
+Patch0306: block-Add-sanity-check-when-setting-retry-parameters.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -704,6 +705,9 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Thu Mar 18 2021 Chen Qun <kuhn.chenqun@huawei.com>
+- block: Add sanity check when setting retry parameters
+
 * Wed Mar 17 2021 Huawei Technologies Co., Ltd <lijiajie11@huawei.com>
 - qemu.spec: enable strip for qemu-block-rbd.so and qemu-block-ssh.so
 
