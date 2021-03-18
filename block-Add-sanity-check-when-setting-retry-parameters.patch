@@ -1,0 +1,118 @@
+From 6642b2c6fcad2e1099c61b56f4fe78f3180d005e Mon Sep 17 00:00:00 2001
+From: Jiahui Cen <cenjiahui@huawei.com>
+Date: Thu, 18 Mar 2021 19:45:11 +0800
+Subject: [PATCH] block: Add sanity check when setting retry parameters
+
+Add sanity check when setting retry parameters to avoid invalid retry
+configuration.
+
+Signed-off-by: Jiahui Cen <cenjiahui@huawei.com>
+---
+ hw/core/qdev-properties.c    | 45 ++++++++++++++++++++++++++++++++++++
+ include/hw/block/block.h     |  7 +++---
+ include/hw/qdev-properties.h |  8 +++++++
+ 3 files changed, 57 insertions(+), 3 deletions(-)
+
+diff --git a/hw/core/qdev-properties.c b/hw/core/qdev-properties.c
+index 709f9e0f9d..2601091f8f 100644
+--- a/hw/core/qdev-properties.c
++++ b/hw/core/qdev-properties.c
+@@ -628,6 +628,51 @@ const PropertyInfo qdev_prop_blockdev_on_error = {
+     .set_default_value = set_default_value_enum,
+ };
+ 
++static void set_retry_time(Object *obj, Visitor *v, const char *name,
++                           void *opaque, Error **errp)
++{
++    DeviceState *dev = DEVICE(obj);
++    Property *prop = opaque;
++    int64_t value, *ptr = qdev_get_prop_ptr(dev, prop);
++    Error *local_err = NULL;
++
++    if (dev->realized) {
++        qdev_prop_set_after_realize(dev, name, errp);
++        return;
++    }
++
++    visit_type_int64(v, name, &value, &local_err);
++    if (local_err) {
++        error_propagate(errp, local_err);
++        return;
++    }
++
++    /* value should not be negative */
++    if (value < 0) {
++        error_setg(errp, QERR_PROPERTY_VALUE_OUT_OF_RANGE,
++                   dev->id ? : "", name, (int64_t)value, 0L, LONG_MAX);
++        return;
++    }
++
++    *ptr = value;
++}
++
++const PropertyInfo qdev_prop_blockdev_retry_interval = {
++    .name = "BlockdevRetryInterval",
++    .description = "Interval for retry error handling policy",
++    .get   = get_int64,
++    .set   = set_retry_time,
++    .set_default_value = set_default_value_int,
++};
++
++const PropertyInfo qdev_prop_blockdev_retry_timeout = {
++    .name = "BlockdevRetryTimeout",
++    .description = "Timeout for retry error handling policy",
++    .get   = get_int64,
++    .set   = set_retry_time,
++    .set_default_value = set_default_value_int,
++};
++
+ /* --- BIOS CHS translation */
+ 
+ QEMU_BUILD_BUG_ON(sizeof(BiosAtaTranslation) != sizeof(int));
+diff --git a/include/hw/block/block.h b/include/hw/block/block.h
+index d12603aabd..c5276fec0d 100644
+--- a/include/hw/block/block.h
++++ b/include/hw/block/block.h
+@@ -74,9 +74,10 @@ static inline unsigned int get_physical_block_exp(BlockConf *conf)
+                                   BLOCKDEV_ON_ERROR_AUTO),              \
+     DEFINE_PROP_BLOCKDEV_ON_ERROR("werror", _state, _conf.werror,       \
+                                   BLOCKDEV_ON_ERROR_AUTO),              \
+-    DEFINE_PROP_INT64("retry_interval", _state, _conf.retry_interval,   \
+-                      -1),                                              \
+-    DEFINE_PROP_INT64("retry_timeout", _state, _conf.retry_timeout, -1)
++    DEFINE_PROP_BLOCKDEV_RETRY_INTERVAL("retry_interval", _state,       \
++                                        _conf.retry_interval, 1000),    \
++    DEFINE_PROP_BLOCKDEV_RETRY_TIMEOUT("retry_timeout", _state,         \
++                                       _conf.retry_timeout, 0)
+ 
+ /* Backend access helpers */
+ 
+diff --git a/include/hw/qdev-properties.h b/include/hw/qdev-properties.h
+index a22a532eb8..d7742be3bc 100644
+--- a/include/hw/qdev-properties.h
++++ b/include/hw/qdev-properties.h
+@@ -26,6 +26,8 @@ extern const PropertyInfo qdev_prop_on_off_auto;
+ extern const PropertyInfo qdev_prop_compress_method;
+ extern const PropertyInfo qdev_prop_losttickpolicy;
+ extern const PropertyInfo qdev_prop_blockdev_on_error;
++extern const PropertyInfo qdev_prop_blockdev_retry_interval;
++extern const PropertyInfo qdev_prop_blockdev_retry_timeout;
+ extern const PropertyInfo qdev_prop_bios_chs_trans;
+ extern const PropertyInfo qdev_prop_fdc_drive_type;
+ extern const PropertyInfo qdev_prop_drive;
+@@ -215,6 +217,12 @@ extern const PropertyInfo qdev_prop_pcie_link_width;
+ #define DEFINE_PROP_BLOCKDEV_ON_ERROR(_n, _s, _f, _d) \
+     DEFINE_PROP_SIGNED(_n, _s, _f, _d, qdev_prop_blockdev_on_error, \
+                         BlockdevOnError)
++#define DEFINE_PROP_BLOCKDEV_RETRY_INTERVAL(_n, _s, _f, _d) \
++    DEFINE_PROP_SIGNED(_n, _s, _f, _d, qdev_prop_blockdev_retry_interval, \
++                        int64_t)
++#define DEFINE_PROP_BLOCKDEV_RETRY_TIMEOUT(_n, _s, _f, _d) \
++    DEFINE_PROP_SIGNED(_n, _s, _f, _d, qdev_prop_blockdev_retry_timeout, \
++                        int64_t)
+ #define DEFINE_PROP_BIOS_CHS_TRANS(_n, _s, _f, _d) \
+     DEFINE_PROP_SIGNED(_n, _s, _f, _d, qdev_prop_bios_chs_trans, int)
+ #define DEFINE_PROP_BLOCKSIZE(_n, _s, _f) \
+-- 
+2.27.0
+
