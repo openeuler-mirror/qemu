@@ -396,7 +396,7 @@ static void set_uint64(Object *obj, Visitor *v, const char *name,
     visit_type_uint64(v, name, ptr, errp);
 }
 
-static void get_int64(Object *obj, Visitor *v, const char *name,
+void qdev_propinfo_get_int64(Object *obj, Visitor *v, const char *name,
                       void *opaque, Error **errp)
 {
     Property *prop = opaque;
@@ -423,7 +423,7 @@ const PropertyInfo qdev_prop_uint64 = {
 
 const PropertyInfo qdev_prop_int64 = {
     .name  = "int64",
-    .get   = get_int64,
+    .get   = qdev_propinfo_get_int64,
     .set   = set_int64,
     .set_default_value = qdev_propinfo_set_default_value_int,
 };

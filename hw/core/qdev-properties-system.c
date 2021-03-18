@@ -612,6 +612,51 @@ const PropertyInfo qdev_prop_blockdev_on_error = {
     .set_default_value = qdev_propinfo_set_default_value_enum,
 };
 
+static void set_retry_time(Object *obj, Visitor *v, const char *name,
+                           void *opaque, Error **errp)
+{
+    DeviceState *dev = DEVICE(obj);
+    Property *prop = opaque;
+    int64_t value, *ptr = object_field_prop_ptr(obj, prop);
+    Error *local_err = NULL;
+
+    if (dev->realized) {
+        qdev_prop_set_after_realize(dev, name, errp);
+        return;
+    }
+
+    visit_type_int64(v, name, &value, &local_err);
+    if (local_err) {
+        error_propagate(errp, local_err);
+        return;
+    }
+
+    /* value should not be negative */
+    if (value < 0) {
+        error_setg(errp, QERR_PROPERTY_VALUE_OUT_OF_RANGE,
+                   dev->id ? : "", name, (int64_t)value, 0L, LONG_MAX);
+        return;
+    }
+
+    *ptr = value;
+}
+
+const PropertyInfo qdev_prop_blockdev_retry_interval = {
+    .name = "BlockdevRetryInterval",
+    .description = "Interval for retry error handling policy",
+    .get   = qdev_propinfo_get_int64,
+    .set   = set_retry_time,
+    .set_default_value = qdev_propinfo_set_default_value_int,
+};
+
+const PropertyInfo qdev_prop_blockdev_retry_timeout = {
+    .name = "BlockdevRetryTimeout",
+    .description = "Timeout for retry error handling policy",
+    .get   = qdev_propinfo_get_int64,
+    .set   = set_retry_time,
+    .set_default_value = qdev_propinfo_set_default_value_int,
+};
+
 /* --- BIOS CHS translation */
 
 QEMU_BUILD_BUG_ON(sizeof(BiosAtaTranslation) != sizeof(int));
