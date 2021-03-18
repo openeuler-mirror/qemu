@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 36
+Release: 37
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY-SA-4.0
@@ -238,6 +238,7 @@ Patch0225: ati-use-vga_read_byte-in-ati_cursor_define.patch
 Patch0226: sd-sdhci-assert-data_count-is-within-fifo_buffer.patch
 Patch0227: msix-add-valid.accepts-methods-to-check-address.patch
 Patch0228: ide-atapi-check-io_buffer_index-in-ide_atapi_cmd_rep.patch
+Patch0229: net-vmxnet3-validate-configuration-values-during-act.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -583,6 +584,9 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Thu Mar 18 2021 Chen Qun <kuhn.chenqun@huawei.com>
+- net: vmxnet3: validate configuration values during activate (CVE-2021-20203)
+
 * Fri Feb 26 2021 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
 - ide:atapi: check io_buffer_index in ide_atapi_cmd_reply_end
 
