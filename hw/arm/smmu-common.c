@@ -395,6 +395,7 @@ static void smmu_unmap_notifier_range(IOMMUNotifier *n)
     entry.iova = n->start;
     entry.perm = IOMMU_NONE;
     entry.addr_mask = n->end - n->start;
+    entry.granularity = IOMMU_INV_GRAN_DOMAIN;
 
     memory_region_notify_one(n, &entry);
 }
