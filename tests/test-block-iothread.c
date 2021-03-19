@@ -87,7 +87,7 @@ static void test_sync_op_pread(BdrvChild *c)
 
 static void test_sync_op_pwrite(BdrvChild *c)
 {
-    uint8_t buf[512];
+    uint8_t buf[512] = { 0 };
     int ret;
 
     /* Success */
@@ -115,7 +115,7 @@ static void test_sync_op_blk_pread(BlockBackend *blk)
 
 static void test_sync_op_blk_pwrite(BlockBackend *blk)
 {
-    uint8_t buf[512];
+    uint8_t buf[512] = { 0 };
     int ret;
 
     /* Success */
@@ -139,7 +139,7 @@ static void test_sync_op_load_vmstate(BdrvChild *c)
 
 static void test_sync_op_save_vmstate(BdrvChild *c)
 {
-    uint8_t buf[512];
+    uint8_t buf[512] = { 0 };
     int ret;
 
     /* Error: Driver does not support snapshots */
