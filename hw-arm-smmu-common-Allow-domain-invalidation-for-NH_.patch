@@ -1,0 +1,33 @@
+From 8bf9d1dc67335c1fb921a56825f6bf198a568091 Mon Sep 17 00:00:00 2001
+From: Eric Auger <eric.auger@redhat.com>
+Date: Fri, 19 Mar 2021 12:22:48 -0400
+Subject: [PATCH] hw/arm/smmu-common: Allow domain invalidation for
+ NH_ALL/NSNH_ALL
+
+NH_ALL/NSNH_ALL corresponds to a domain granularity invalidation,
+ie. all the notifier range gets invalidation, whatever the ASID.
+So let's set the granularity to IOMMU_INV_GRAN_DOMAIN to allow
+the consumer to benefit from the info if it can.
+
+Signed-off-by: Eric Auger <eric.auger@redhat.com>
+Suggested-by: chenxiang (M) <chenxiang66@hisilicon.com>
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+---
+ hw/arm/smmu-common.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/hw/arm/smmu-common.c b/hw/arm/smmu-common.c
+index 717d22bcbe..de9468d33f 100644
+--- a/hw/arm/smmu-common.c
++++ b/hw/arm/smmu-common.c
+@@ -395,6 +395,7 @@ static void smmu_unmap_notifier_range(IOMMUNotifier *n)
+     entry.iova = n->start;
+     entry.perm = IOMMU_NONE;
+     entry.addr_mask = n->end - n->start;
++    entry.granularity = IOMMU_INV_GRAN_DOMAIN;
+ 
+     memory_region_notify_one(n, &entry);
+ }
+-- 
+2.27.0
+
