@@ -193,7 +193,20 @@ static bool tz_ppc_dummy_accepts(void *opaque, hwaddr addr,
     g_assert_not_reached();
 }
 
+static uint64_t tz_ppc_dummy_read(void *opaque, hwaddr addr, unsigned size)
+{
+    g_assert_not_reached();
+}
+
+static void tz_ppc_dummy_write(void *opaque, hwaddr addr,
+                                        uint64_t data, unsigned size)
+{
+    g_assert_not_reached();
+}
+
 static const MemoryRegionOps tz_ppc_dummy_ops = {
+    .read = tz_ppc_dummy_read,
+    .write = tz_ppc_dummy_write,
     .valid.accepts = tz_ppc_dummy_accepts,
 };
 
