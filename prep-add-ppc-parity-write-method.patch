@@ -1,0 +1,50 @@
+From aedfad7d11fd23087bc5da6480b5a8b1ad0319a7 Mon Sep 17 00:00:00 2001
+From: Prasad J Pandit <pjp@fedoraproject.org>
+Date: Thu, 25 Mar 2021 17:16:14 +0800
+Subject: [PATCH] prep: add ppc-parity write method
+
+fix CVE-2020-15469
+
+Add ppc-parity mmio write method to avoid NULL pointer dereference
+issue.
+
+Reported-by: Lei Sun <slei.casper@gmail.com>
+Acked-by: David Gibson <david@gibson.dropbear.id.au>
+Signed-off-by: Prasad J Pandit <pjp@fedoraproject.org>
+
+Signed-off-by: Jiajie Li <lijiajie11@huawei.com>
+---
+ hw/ppc/prep_systemio.c | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/hw/ppc/prep_systemio.c b/hw/ppc/prep_systemio.c
+index df7603b986..67244ed48c 100644
+--- a/hw/ppc/prep_systemio.c
++++ b/hw/ppc/prep_systemio.c
+@@ -23,6 +23,7 @@
+  */
+ 
+ #include "qemu/osdep.h"
++#include "qemu/log.h"
+ #include "hw/isa/isa.h"
+ #include "exec/address-spaces.h"
+ #include "qemu/error-report.h" /* for error_report() */
+@@ -232,8 +233,15 @@ static uint64_t ppc_parity_error_readl(void *opaque, hwaddr addr,
+     return val;
+ }
+ 
++static void ppc_parity_error_writel(void *opaque, hwaddr addr,
++                                    uint64_t data, unsigned size)
++{
++    qemu_log_mask(LOG_GUEST_ERROR, "%s: invalid write access\n", __func__);
++}
++
+ static const MemoryRegionOps ppc_parity_error_ops = {
+     .read = ppc_parity_error_readl,
++    .write = ppc_parity_error_writel,
+     .valid = {
+         .min_access_size = 4,
+         .max_access_size = 4,
+-- 
+2.27.0
+
