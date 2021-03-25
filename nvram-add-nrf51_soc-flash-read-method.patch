@@ -1,0 +1,44 @@
+From 6f88633406e546eb6a01786b910a2ab12373abf8 Mon Sep 17 00:00:00 2001
+From: Prasad J Pandit <pjp@fedoraproject.org>
+Date: Thu, 25 Mar 2021 17:19:15 +0800
+Subject: [PATCH] nvram: add nrf51_soc flash read method
+
+fix CVE-2020-15469
+
+Add nrf51_soc mmio read method to avoid NULL pointer dereference
+issue.
+
+Reported-by: Lei Sun <slei.casper@gmail.com>
+Signed-off-by: Prasad J Pandit <pjp@fedoraproject.org>
+
+Signed-off-by: Jiajie Li <lijiajie11@huawei.com>
+---
+ hw/nvram/nrf51_nvm.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/hw/nvram/nrf51_nvm.c b/hw/nvram/nrf51_nvm.c
+index eca0cb35b5..7b2b1351f4 100644
+--- a/hw/nvram/nrf51_nvm.c
++++ b/hw/nvram/nrf51_nvm.c
+@@ -271,6 +271,10 @@ static const MemoryRegionOps io_ops = {
+         .endianness = DEVICE_LITTLE_ENDIAN,
+ };
+ 
++static uint64_t flash_read(void *opaque, hwaddr offset, unsigned size)
++{
++    g_assert_not_reached();
++}
+ 
+ static void flash_write(void *opaque, hwaddr offset, uint64_t value,
+         unsigned int size)
+@@ -298,6 +302,7 @@ static void flash_write(void *opaque, hwaddr offset, uint64_t value,
+ 
+ 
+ static const MemoryRegionOps flash_ops = {
++    .read = flash_read,
+     .write = flash_write,
+     .valid.min_access_size = 4,
+     .valid.max_access_size = 4,
+-- 
+2.27.0
+
