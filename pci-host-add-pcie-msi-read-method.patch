@@ -1,0 +1,56 @@
+From 0e7715733eff67efae448d15c7bd995b316c71ec Mon Sep 17 00:00:00 2001
+From: Prasad J Pandit <pjp@fedoraproject.org>
+Date: Thu, 25 Mar 2021 17:08:24 +0800
+Subject: [PATCH] pci-host: add pcie-msi read method
+
+fix CVE-2020-15469
+
+Add pcie-msi mmio read method to avoid NULL pointer dereference
+issue.
+
+Reported-by: Lei Sun <slei.casper@gmail.com>
+Reviewed-by: Li Qiang <liq3ea@gmail.com>
+Signed-off-by: Prasad J Pandit <pjp@fedoraproject.org>
+
+Signed-off-by: Jiajie Li <lijiajie11@huawei.com>
+---
+ hw/pci-host/designware.c | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/hw/pci-host/designware.c b/hw/pci-host/designware.c
+index 9ae8c0deb7..23e3de3cad 100644
+--- a/hw/pci-host/designware.c
++++ b/hw/pci-host/designware.c
+@@ -21,6 +21,7 @@
+ #include "qemu/osdep.h"
+ #include "qapi/error.h"
+ #include "qemu/module.h"
++#include "qemu/log.h"
+ #include "hw/pci/msi.h"
+ #include "hw/pci/pci_bridge.h"
+ #include "hw/pci/pci_host.h"
+@@ -60,6 +61,13 @@ designware_pcie_root_to_host(DesignwarePCIERoot *root)
+     return DESIGNWARE_PCIE_HOST(bus->parent);
+ }
+ 
++static uint64_t designware_pcie_root_msi_read(void *opaque, hwaddr addr,
++                                              unsigned size)
++{
++    qemu_log_mask(LOG_UNIMP, "%s not implemented\n", __func__);
++    return 0;
++}
++
+ static void designware_pcie_root_msi_write(void *opaque, hwaddr addr,
+                                            uint64_t val, unsigned len)
+ {
+@@ -74,6 +82,7 @@ static void designware_pcie_root_msi_write(void *opaque, hwaddr addr,
+ }
+ 
+ static const MemoryRegionOps designware_pci_host_msi_ops = {
++    .read = designware_pcie_root_msi_read,
+     .write = designware_pcie_root_msi_write,
+     .endianness = DEVICE_LITTLE_ENDIAN,
+     .valid = {
+-- 
+2.27.0
+
