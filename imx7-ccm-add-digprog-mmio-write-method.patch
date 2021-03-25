@@ -1,0 +1,41 @@
+From b1fdcea193cd962d107da770c3344409c3c88e82 Mon Sep 17 00:00:00 2001
+From: Prasad J Pandit <pjp@fedoraproject.org>
+Date: Thu, 25 Mar 2021 17:29:28 +0800
+Subject: [PATCH] imx7-ccm: add digprog mmio write method
+
+fix CVE-2020-15469
+
+Add digprog mmio write method to avoid assert failure during
+initialisation.
+
+Reviewed-by: Li Qiang <liq3ea@gmail.com>
+Signed-off-by: Prasad J Pandit <pjp@fedoraproject.org>
+
+Signed-off-by: Jiajie Li <lijiajie11@huawei.com>
+---
+ hw/misc/imx7_ccm.c | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/hw/misc/imx7_ccm.c b/hw/misc/imx7_ccm.c
+index d9bdcf1027..831311a7c8 100644
+--- a/hw/misc/imx7_ccm.c
++++ b/hw/misc/imx7_ccm.c
+@@ -130,8 +130,15 @@ static const struct MemoryRegionOps imx7_set_clr_tog_ops = {
+     },
+ };
+ 
++static void imx7_digprog_write(void *opaque, hwaddr addr,
++                                        uint64_t data, unsigned size)
++{
++    qemu_log_mask(LOG_UNIMP, "%s not implemented\n", __func__);
++}
++
+ static const struct MemoryRegionOps imx7_digprog_ops = {
+     .read = imx7_set_clr_tog_read,
++    .write = imx7_digprog_write,
+     .endianness = DEVICE_NATIVE_ENDIAN,
+     .impl = {
+         .min_access_size = 4,
+-- 
+2.27.0
+
