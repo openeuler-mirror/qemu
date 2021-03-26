@@ -316,6 +316,14 @@ Patch0303: migration-tls-fix-inverted-semantics-in-multifd_chan.patch
 Patch0304: migration-tls-add-error-handling-in-multifd_tls_hand.patch
 Patch0305: net-vmxnet3-validate-configuration-values-during-act.patch
 Patch0306: block-Add-sanity-check-when-setting-retry-parameters.patch
+Patch0307: hw-pci-host-add-pci-intack-write-method.patch
+Patch0308: pci-host-add-pcie-msi-read-method.patch
+Patch0309: vfio-add-quirk-device-write-method.patch
+Patch0310: prep-add-ppc-parity-write-method.patch
+Patch0311: nvram-add-nrf51_soc-flash-read-method.patch
+Patch0312: spapr_pci-add-spapr-msi-read-method.patch
+Patch0313: tz-ppc-add-dummy-read-write-methods.patch
+Patch0314: imx7-ccm-add-digprog-mmio-write-method.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -705,6 +713,16 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Fri Mar 26 2021 Chen Qun <kuhn.chenqun@huawei.com>
+- hw/pci-host: add pci-intack write method
+- pci-host: add pcie-msi read method
+- vfio: add quirk device write method
+- prep: add ppc-parity write method
+- nvram: add nrf51_soc flash read method
+- spapr_pci: add spapr msi read method
+- tz-ppc: add dummy read/write methods
+- imx7-ccm: add digprog mmio write method
+
 * Thu Mar 18 2021 Chen Qun <kuhn.chenqun@huawei.com>
 - block: Add sanity check when setting retry parameters
 
