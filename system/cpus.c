@@ -193,6 +193,20 @@ void cpu_synchronize_pre_loadvm(CPUState *cpu)
     }
 }
 
+void cpus_control_pre_system_reset(void)
+{
+    if (cpus_accel->control_pre_system_reset) {
+        cpus_accel->control_pre_system_reset();
+    }
+}
+
+void cpus_control_post_system_reset(void)
+{
+    if (cpus_accel->control_post_system_reset) {
+        cpus_accel->control_post_system_reset();
+    }
+}
+
 bool cpus_are_resettable(void)
 {
     if (cpus_accel->cpus_are_resettable) {

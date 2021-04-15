@@ -53,6 +53,9 @@ struct AccelOpsClass {
     int (*insert_breakpoint)(CPUState *cpu, int type, vaddr addr, vaddr len);
     int (*remove_breakpoint)(CPUState *cpu, int type, vaddr addr, vaddr len);
     void (*remove_all_breakpoints)(CPUState *cpu);
+
+    void (*control_pre_system_reset)(void);
+    void (*control_post_system_reset)(void);
 };
 
 #endif /* ACCEL_OPS_H */

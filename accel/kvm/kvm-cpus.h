@@ -23,4 +23,7 @@ int kvm_insert_breakpoint(CPUState *cpu, int type, vaddr addr, vaddr len);
 int kvm_remove_breakpoint(CPUState *cpu, int type, vaddr addr, vaddr len);
 void kvm_remove_all_breakpoints(CPUState *cpu);
 
+void kvm_cpus_control_pre_system_reset(void);
+void kvm_cpus_control_post_system_reset(void);
+
 #endif /* KVM_CPUS_H */

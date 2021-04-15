@@ -112,6 +112,9 @@ static void kvm_accel_ops_class_init(ObjectClass *oc, void *data)
     ops->remove_breakpoint = kvm_remove_breakpoint;
     ops->remove_all_breakpoints = kvm_remove_all_breakpoints;
 #endif
+
+    ops->control_pre_system_reset = kvm_cpus_control_pre_system_reset;
+    ops->control_post_system_reset = kvm_cpus_control_post_system_reset;
 }
 
 static const TypeInfo kvm_accel_ops_type = {
