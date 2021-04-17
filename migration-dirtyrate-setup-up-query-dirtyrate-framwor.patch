@@ -1,0 +1,116 @@
+From 18dbd0efc14aa190b2f4c364fa614b0994af5af0 Mon Sep 17 00:00:00 2001
+From: Chuan Zheng <zhengchuan@huawei.com>
+Date: Wed, 16 Sep 2020 14:21:56 +0800
+Subject: [PATCH] migration/dirtyrate: setup up query-dirtyrate framwork
+
+Add get_dirtyrate_thread() functions to setup query-dirtyrate
+framework.
+
+Signed-off-by: Chuan Zheng <zhengchuan@huawei.com>
+Signed-off-by: YanYing Zhuang <ann.zhuangyanying@huawei.com>
+Reviewed-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+Reviewed-by: David Edmondson <david.edmondson@oracle.com>
+Reviewed-by: Li Qiang <liq3ea@gmail.com>
+Message-Id: <1600237327-33618-2-git-send-email-zhengchuan@huawei.com>
+Signed-off-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+---
+ Makefile.target       |  1 +
+ migration/dirtyrate.c | 38 ++++++++++++++++++++++++++++++++++++++
+ migration/dirtyrate.h | 28 ++++++++++++++++++++++++++++
+ 3 files changed, 67 insertions(+)
+ create mode 100644 migration/dirtyrate.c
+ create mode 100644 migration/dirtyrate.h
+
+diff --git a/Makefile.target b/Makefile.target
+index 933b27453a..5ea840964c 100644
+--- a/Makefile.target
++++ b/Makefile.target
+@@ -161,6 +161,7 @@ obj-y += qapi/
+ obj-y += memory.o
+ obj-y += memory_mapping.o
+ obj-y += migration/ram.o
++obj-y += migration/dirtyrate.o
+ LIBS := $(libs_softmmu) $(LIBS)
+ 
+ # Hardware support
+diff --git a/migration/dirtyrate.c b/migration/dirtyrate.c
+new file mode 100644
+index 0000000000..29ef663acb
+--- /dev/null
++++ b/migration/dirtyrate.c
+@@ -0,0 +1,38 @@
++/*
++ * Dirtyrate implement code
++ *
++ * Copyright (c) 2020 HUAWEI TECHNOLOGIES CO.,LTD.
++ *
++ * Authors:
++ *  Chuan Zheng <zhengchuan@huawei.com>
++ *
++ * This work is licensed under the terms of the GNU GPL, version 2 or later.
++ * See the COPYING file in the top-level directory.
++ */
++
++#include "qemu/osdep.h"
++#include "qapi/error.h"
++#include "cpu.h"
++#include "qemu/config-file.h"
++#include "exec/memory.h"
++#include "exec/ram_addr.h"
++#include "exec/target_page.h"
++#include "qemu/rcu_queue.h"
++#include "qapi/qapi-commands-migration.h"
++#include "migration.h"
++#include "dirtyrate.h"
++
++static void calculate_dirtyrate(struct DirtyRateConfig config)
++{
++    /* todo */
++    return;
++}
++
++void *get_dirtyrate_thread(void *arg)
++{
++    struct DirtyRateConfig config = *(struct DirtyRateConfig *)arg;
++
++    calculate_dirtyrate(config);
++
++    return NULL;
++}
+diff --git a/migration/dirtyrate.h b/migration/dirtyrate.h
+new file mode 100644
+index 0000000000..84ab9409ac
+--- /dev/null
++++ b/migration/dirtyrate.h
+@@ -0,0 +1,28 @@
++/*
++ *  Dirtyrate common functions
++ *
++ *  Copyright (c) 2020 HUAWEI TECHNOLOGIES CO., LTD.
++ *
++ *  Authors:
++ *  Chuan Zheng <zhengchuan@huawei.com>
++ *
++ *  This work is licensed under the terms of the GNU GPL, version 2 or later.
++ *  See the COPYING file in the top-level directory.
++ */
++
++#ifndef QEMU_MIGRATION_DIRTYRATE_H
++#define QEMU_MIGRATION_DIRTYRATE_H
++
++/*
++ * Sample 512 pages per GB as default.
++ * TODO: Make it configurable.
++ */
++#define DIRTYRATE_DEFAULT_SAMPLE_PAGES            512
++
++struct DirtyRateConfig {
++    uint64_t sample_pages_per_gigabytes; /* sample pages per GB */
++    int64_t sample_period_seconds; /* time duration between two sampling */
++};
++
++void *get_dirtyrate_thread(void *arg);
++#endif
+-- 
+2.27.0
+
