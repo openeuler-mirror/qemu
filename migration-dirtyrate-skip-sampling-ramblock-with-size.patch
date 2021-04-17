@@ -1,0 +1,92 @@
+From 0fcff073292e78e08ee24eb784783156b2974f4a Mon Sep 17 00:00:00 2001
+From: Chuan Zheng <zhengchuan@huawei.com>
+Date: Wed, 16 Sep 2020 14:22:03 +0800
+Subject: [PATCH] migration/dirtyrate: skip sampling ramblock with size below
+ MIN_RAMBLOCK_SIZE
+
+In order to sample real RAM, skip ramblock with size below MIN_RAMBLOCK_SIZE
+which is set as 128M.
+
+Signed-off-by: Chuan Zheng <zhengchuan@huawei.com>
+Reviewed-by: David Edmondson <david.edmondson@oracle.com>
+Reviewed-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+Reviewed-by: Li Qiang <liq3ea@gmail.com>
+Message-Id: <1600237327-33618-9-git-send-email-zhengchuan@huawei.com>
+Signed-off-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+---
+ migration/dirtyrate.c | 21 +++++++++++++++++++++
+ migration/dirtyrate.h |  5 +++++
+ 2 files changed, 26 insertions(+)
+
+diff --git a/migration/dirtyrate.c b/migration/dirtyrate.c
+index 0412f825dc..97bb883850 100644
+--- a/migration/dirtyrate.c
++++ b/migration/dirtyrate.c
+@@ -138,6 +138,18 @@ static void get_ramblock_dirty_info(RAMBlock *block,
+     strcpy(info->idstr, qemu_ram_get_idstr(block));
+ }
+ 
++static bool skip_sample_ramblock(RAMBlock *block)
++{
++    /*
++     * Sample only blocks larger than MIN_RAMBLOCK_SIZE.
++     */
++    if (qemu_ram_get_used_length(block) < (MIN_RAMBLOCK_SIZE << 10)) {
++        return true;
++    }
++
++    return false;
++}
++
+ static bool record_ramblock_hash_info(struct RamblockDirtyInfo **block_dinfo,
+                                       struct DirtyRateConfig config,
+                                       int *block_count)
+@@ -150,6 +162,9 @@ static bool record_ramblock_hash_info(struct RamblockDirtyInfo **block_dinfo,
+     bool ret = false;
+ 
+     RAMBLOCK_FOREACH_MIGRATABLE(block) {
++        if (skip_sample_ramblock(block)) {
++            continue;
++        }
+         total_count++;
+     }
+ 
+@@ -159,6 +174,9 @@ static bool record_ramblock_hash_info(struct RamblockDirtyInfo **block_dinfo,
+     }
+ 
+     RAMBLOCK_FOREACH_MIGRATABLE(block) {
++        if (skip_sample_ramblock(block)) {
++            continue;
++        }
+         if (index >= total_count) {
+             break;
+         }
+@@ -225,6 +243,9 @@ static bool compare_page_hash_info(struct RamblockDirtyInfo *info,
+     RAMBlock *block = NULL;
+ 
+     RAMBLOCK_FOREACH_MIGRATABLE(block) {
++        if (skip_sample_ramblock(block)) {
++            continue;
++        }
+         block_dinfo = find_block_matched(block, block_count, info);
+         if (block_dinfo == NULL) {
+             continue;
+diff --git a/migration/dirtyrate.h b/migration/dirtyrate.h
+index 312debca6f..be5b8ec2b1 100644
+--- a/migration/dirtyrate.h
++++ b/migration/dirtyrate.h
+@@ -24,6 +24,11 @@
+  */
+ #define RAMBLOCK_INFO_MAX_LEN                     256
+ 
++/*
++ * Minimum RAMBlock size to sample, in megabytes.
++ */
++#define MIN_RAMBLOCK_SIZE                         128
++
+ struct DirtyRateConfig {
+     uint64_t sample_pages_per_gigabytes; /* sample pages per GB */
+     int64_t sample_period_seconds; /* time duration between two sampling */
+-- 
+2.27.0
+

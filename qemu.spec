@@ -239,6 +239,21 @@ Patch0226: sd-sdhci-assert-data_count-is-within-fifo_buffer.patch
 Patch0227: msix-add-valid.accepts-methods-to-check-address.patch
 Patch0228: ide-atapi-check-io_buffer_index-in-ide_atapi_cmd_rep.patch
 Patch0229: net-vmxnet3-validate-configuration-values-during-act.patch
+Patch0230: migration-dirtyrate-setup-up-query-dirtyrate-framwor.patch
+Patch0231: migration-dirtyrate-add-DirtyRateStatus-to-denote-ca.patch
+Patch0232: migration-dirtyrate-Add-RamblockDirtyInfo-to-store-s.patch
+Patch0233: migration-dirtyrate-Add-dirtyrate-statistics-series-.patch
+Patch0234: migration-dirtyrate-move-RAMBLOCK_FOREACH_MIGRATABLE.patch
+Patch0235: migration-dirtyrate-Record-hash-results-for-each-sam.patch
+Patch0236: migration-dirtyrate-Compare-page-hash-results-for-re.patch
+Patch0237: migration-dirtyrate-skip-sampling-ramblock-with-size.patch
+Patch0238: migration-dirtyrate-Implement-set_sample_page_period.patch
+Patch0239: migration-dirtyrate-Implement-calculate_dirtyrate-fu.patch
+Patch0240: migration-dirtyrate-Implement-qmp_cal_dirty_rate-qmp.patch
+Patch0241: migration-dirtyrate-Add-trace_calls-to-make-it-easie.patch
+Patch0242: migration-dirtyrate-record-start_time-and-calc_time-.patch
+Patch0243: migration-dirtyrate-present-dirty-rate-only-when-que.patch
+Patch0244: migration-dirtyrate-simplify-includes-in-dirtyrate.c.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -625,6 +640,9 @@ getent passwd qemu >/dev/null || \
 * Fri Apr 16 2021 Huawei Technologies Co., Ltd <yangming73@huawei.com>
 - add qemu-block-rbd package
 - add qemu-block-ssh package
+
+* Sat Apr 17 2021 Chuan Zheng <zhengchuan@huawei.com>
+- dirtyrate: add migration dirtyrate feature
 
 * Thu Mar 18 2021 Chen Qun <kuhn.chenqun@huawei.com>
 - net: vmxnet3: validate configuration values during activate (CVE-2021-20203)

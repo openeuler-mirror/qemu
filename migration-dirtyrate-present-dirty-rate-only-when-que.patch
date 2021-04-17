@@ -1,0 +1,69 @@
+From ba399ad806d195f31d0b76fa55363a4147459a5b Mon Sep 17 00:00:00 2001
+From: Chuan Zheng <zhengchuan@huawei.com>
+Date: Tue, 29 Sep 2020 11:42:18 +0800
+Subject: [PATCH] migration/dirtyrate: present dirty rate only when querying
+ the rate has completed
+
+Make dirty_rate field optional, present dirty rate only when querying
+the rate has completed.
+The qmp results is shown as follow:
+@unstarted:
+{"return":{"status":"unstarted","start-time":0,"calc-time":0},"id":"libvirt-12"}
+@measuring:
+{"return":{"status":"measuring","start-time":102931,"calc-time":1},"id":"libvirt-85"}
+@measured:
+{"return":{"status":"measured","dirty-rate":4,"start-time":150146,"calc-time":1},"id":"libvirt-15"}
+
+Signed-off-by: Chuan Zheng <zhengchuan@huawei.com>
+Reviewed-by: David Edmondson <david.edmondson@oracle.com>
+Message-Id: <1601350938-128320-3-git-send-email-zhengchuan@huawei.com>
+Signed-off-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+---
+ migration/dirtyrate.c | 3 +--
+ qapi/migration.json   | 8 +++-----
+ 2 files changed, 4 insertions(+), 7 deletions(-)
+
+diff --git a/migration/dirtyrate.c b/migration/dirtyrate.c
+index f1c007d569..00c8085456 100644
+--- a/migration/dirtyrate.c
++++ b/migration/dirtyrate.c
+@@ -69,9 +69,8 @@ static struct DirtyRateInfo *query_dirty_rate_info(void)
+     struct DirtyRateInfo *info = g_malloc0(sizeof(DirtyRateInfo));
+ 
+     if (atomic_read(&CalculatingState) == DIRTY_RATE_STATUS_MEASURED) {
++        info->has_dirty_rate = true;
+         info->dirty_rate = dirty_rate;
+-    } else {
+-        info->dirty_rate = -1;
+     }
+ 
+     info->status = CalculatingState;
+diff --git a/qapi/migration.json b/qapi/migration.json
+index 76f5b42493..6844ddfab3 100644
+--- a/qapi/migration.json
++++ b/qapi/migration.json
+@@ -1468,10 +1468,8 @@
+ #
+ # Information about current dirty page rate of vm.
+ #
+-# @dirty-rate: @dirtyrate describing the dirty page rate of vm
+-#          in units of MB/s.
+-#          If this field returns '-1', it means querying has not
+-#          yet started or completed.
++# @dirty-rate: an estimate of the dirty page rate of the VM in units of
++#              MB/s, present only when estimating the rate has completed.
+ #
+ # @status: status containing dirtyrate query status includes
+ #          'unstarted' or 'measuring' or 'measured'
+@@ -1484,7 +1482,7 @@
+ #
+ ##
+ { 'struct': 'DirtyRateInfo',
+-  'data': {'dirty-rate': 'int64',
++  'data': {'*dirty-rate': 'int64',
+            'status': 'DirtyRateStatus',
+            'start-time': 'int64',
+            'calc-time': 'int64'} }
+-- 
+2.27.0
+
