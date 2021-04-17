@@ -1,0 +1,109 @@
+From 4ffa2ea3749066a0444b69ef16ec4e4d6cdad0e1 Mon Sep 17 00:00:00 2001
+From: Chuan Zheng <zhengchuan@huawei.com>
+Date: Tue, 15 Sep 2020 11:03:58 +0800
+Subject: [PATCH] migration/tls: extract migration_tls_client_create for
+ common-use
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+migration_tls_client_create will be used in multifd-tls, let's
+extract it.
+
+Signed-off-by: Chuan Zheng <zhengchuan@huawei.com>
+Signed-off-by: Yan Jin <jinyan12@huawei.com>
+Reviewed-by: Daniel P. Berrangé <berrange@redhat.com>
+Message-Id: <1600139042-104593-3-git-send-email-zhengchuan@huawei.com>
+Signed-off-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+---
+ migration/tls.c | 26 ++++++++++++++++++--------
+ migration/tls.h |  6 ++++++
+ 2 files changed, 24 insertions(+), 8 deletions(-)
+
+diff --git a/migration/tls.c b/migration/tls.c
+index a0eb553e14..1d5b571d8e 100644
+--- a/migration/tls.c
++++ b/migration/tls.c
+@@ -22,7 +22,6 @@
+ #include "channel.h"
+ #include "migration.h"
+ #include "tls.h"
+-#include "io/channel-tls.h"
+ #include "crypto/tlscreds.h"
+ #include "qemu/error-report.h"
+ #include "qapi/error.h"
+@@ -126,11 +125,10 @@ static void migration_tls_outgoing_handshake(QIOTask *task,
+     object_unref(OBJECT(ioc));
+ }
+ 
+-
+-void migration_tls_channel_connect(MigrationState *s,
+-                                   QIOChannel *ioc,
+-                                   const char *hostname,
+-                                   Error **errp)
++QIOChannelTLS *migration_tls_client_create(MigrationState *s,
++                                           QIOChannel *ioc,
++                                           const char *hostname,
++                                           Error **errp)
+ {
+     QCryptoTLSCreds *creds;
+     QIOChannelTLS *tioc;
+@@ -138,7 +136,7 @@ void migration_tls_channel_connect(MigrationState *s,
+     creds = migration_tls_get_creds(
+         s, QCRYPTO_TLS_CREDS_ENDPOINT_CLIENT, errp);
+     if (!creds) {
+-        return;
++        return NULL;
+     }
+ 
+     if (s->parameters.tls_hostname && *s->parameters.tls_hostname) {
+@@ -146,11 +144,23 @@ void migration_tls_channel_connect(MigrationState *s,
+     }
+     if (!hostname) {
+         error_setg(errp, "No hostname available for TLS");
+-        return;
++        return NULL;
+     }
+ 
+     tioc = qio_channel_tls_new_client(
+         ioc, creds, hostname, errp);
++
++    return tioc;
++}
++
++void migration_tls_channel_connect(MigrationState *s,
++                                   QIOChannel *ioc,
++                                   const char *hostname,
++                                   Error **errp)
++{
++    QIOChannelTLS *tioc;
++
++    tioc = migration_tls_client_create(s, ioc, hostname, errp);
+     if (!tioc) {
+         return;
+     }
+diff --git a/migration/tls.h b/migration/tls.h
+index cdd70001ed..0cfbe368ba 100644
+--- a/migration/tls.h
++++ b/migration/tls.h
+@@ -22,11 +22,17 @@
+ #define QEMU_MIGRATION_TLS_H
+ 
+ #include "io/channel.h"
++#include "io/channel-tls.h"
+ 
+ void migration_tls_channel_process_incoming(MigrationState *s,
+                                             QIOChannel *ioc,
+                                             Error **errp);
+ 
++QIOChannelTLS *migration_tls_client_create(MigrationState *s,
++                                           QIOChannel *ioc,
++                                           const char *hostname,
++                                           Error **errp);
++
+ void migration_tls_channel_connect(MigrationState *s,
+                                    QIOChannel *ioc,
+                                    const char *hostname,
+-- 
+2.27.0
+

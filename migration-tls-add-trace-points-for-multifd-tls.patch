@@ -1,0 +1,73 @@
+From 83cbd3a645e9376a25cd359e8f12f8db025bf071 Mon Sep 17 00:00:00 2001
+From: Ying Fang <fangying1@huawei.com>
+Date: Wed, 2 Dec 2020 13:56:11 +0800
+Subject: [PATCH] migration/tls: add trace points for multifd-tls
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+add trace points for multifd-tls for debug.
+
+Signed-off-by: Chuan Zheng <zhengchuan@huawei.com>
+Signed-off-by: Yan Jin <jinyan12@huawei.com>
+Reviewed-by: Daniel P. Berrangé <berrange@redhat.com>
+Message-Id: <1600139042-104593-7-git-send-email-zhengchuan@huawei.com>
+Signed-off-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+---
+ migration/ram.c        | 10 +++++++++-
+ migration/trace-events |  4 ++++
+ 2 files changed, 13 insertions(+), 1 deletion(-)
+
+diff --git a/migration/ram.c b/migration/ram.c
+index b82c0e6562..3ded38c0be 100644
+--- a/migration/ram.c
++++ b/migration/ram.c
+@@ -1212,7 +1212,11 @@ static void multifd_tls_outgoing_handshake(QIOTask *task,
+     QIOChannel *ioc = QIO_CHANNEL(qio_task_get_source(task));
+     Error *err = NULL;
+ 
+-    qio_task_propagate_error(task, &err);
++    if (qio_task_propagate_error(task, &err)) {
++        trace_multifd_tls_outgoing_handshake_error(ioc, error_get_pretty(err));
++    } else {
++        trace_multifd_tls_outgoing_handshake_complete(ioc);
++    }
+     multifd_channel_connect(p, ioc, err);
+ }
+ 
+@@ -1229,6 +1233,7 @@ static void multifd_tls_channel_connect(MultiFDSendParams *p,
+         return;
+     }
+ 
++    trace_multifd_tls_outgoing_handshake_start(ioc, tioc, hostname);
+     qio_channel_set_name(QIO_CHANNEL(tioc), "multifd-tls-outgoing");
+     qio_channel_tls_handshake(tioc,
+                               multifd_tls_outgoing_handshake,
+@@ -1244,6 +1249,9 @@ static bool multifd_channel_connect(MultiFDSendParams *p,
+ {
+     MigrationState *s = migrate_get_current();
+ 
++    trace_multifd_set_outgoing_channel(
++        ioc, object_get_typename(OBJECT(ioc)), p->tls_hostname, error);
++
+     if (!error) {
+         if (s->parameters.tls_creds &&
+             *s->parameters.tls_creds &&
+diff --git a/migration/trace-events b/migration/trace-events
+index 69620c43c2..c0640cd424 100644
+--- a/migration/trace-events
++++ b/migration/trace-events
+@@ -93,6 +93,10 @@ multifd_send_sync_main_signal(uint8_t id) "channel %d"
+ multifd_send_sync_main_wait(uint8_t id) "channel %d"
+ multifd_send_thread_end(uint8_t id, uint64_t packets, uint64_t pages) "channel %d packets %" PRIu64 " pages %"  PRIu64
+ multifd_send_thread_start(uint8_t id) "%d"
++multifd_tls_outgoing_handshake_start(void *ioc, void *tioc, const char *hostname) "ioc=%p tioc=%p hostname=%s"
++multifd_tls_outgoing_handshake_error(void *ioc, const char *err) "ioc=%p err=%s"
++multifd_tls_outgoing_handshake_complete(void *ioc) "ioc=%p"
++multifd_set_outgoing_channel(void *ioc, const char *ioctype, const char *hostname, void *err)  "ioc=%p ioctype=%s hostname=%s err=%p"
+ ram_discard_range(const char *rbname, uint64_t start, size_t len) "%s: start: %" PRIx64 " %zx"
+ ram_load_loop(const char *rbname, uint64_t addr, int flags, void *host) "%s: addr: 0x%" PRIx64 " flags: 0x%x host: %p"
+ ram_load_postcopy_loop(uint64_t addr, int flags) "@%" PRIx64 " %x"
+-- 
+2.27.0
+
