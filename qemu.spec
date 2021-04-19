@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 39
+Release: 37
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY-SA-4.0
@@ -239,37 +239,6 @@ Patch0226: sd-sdhci-assert-data_count-is-within-fifo_buffer.patch
 Patch0227: msix-add-valid.accepts-methods-to-check-address.patch
 Patch0228: ide-atapi-check-io_buffer_index-in-ide_atapi_cmd_rep.patch
 Patch0229: net-vmxnet3-validate-configuration-values-during-act.patch
-Patch0230: migration-dirtyrate-setup-up-query-dirtyrate-framwor.patch
-Patch0231: migration-dirtyrate-add-DirtyRateStatus-to-denote-ca.patch
-Patch0232: migration-dirtyrate-Add-RamblockDirtyInfo-to-store-s.patch
-Patch0233: migration-dirtyrate-Add-dirtyrate-statistics-series-.patch
-Patch0234: migration-dirtyrate-move-RAMBLOCK_FOREACH_MIGRATABLE.patch
-Patch0235: migration-dirtyrate-Record-hash-results-for-each-sam.patch
-Patch0236: migration-dirtyrate-Compare-page-hash-results-for-re.patch
-Patch0237: migration-dirtyrate-skip-sampling-ramblock-with-size.patch
-Patch0238: migration-dirtyrate-Implement-set_sample_page_period.patch
-Patch0239: migration-dirtyrate-Implement-calculate_dirtyrate-fu.patch
-Patch0240: migration-dirtyrate-Implement-qmp_cal_dirty_rate-qmp.patch
-Patch0241: migration-dirtyrate-Add-trace_calls-to-make-it-easie.patch
-Patch0242: migration-dirtyrate-record-start_time-and-calc_time-.patch
-Patch0243: migration-dirtyrate-present-dirty-rate-only-when-que.patch
-Patch0244: migration-dirtyrate-simplify-includes-in-dirtyrate.c.patch
-Patch0245: migration-tls-save-hostname-into-MigrationState.patch
-Patch0246: migration-tls-extract-migration_tls_client_create-fo.patch
-Patch0247: migration-tls-add-tls_hostname-into-MultiFDSendParam.patch
-Patch0248: migration-tls-extract-cleanup-function-for-common-us.patch
-Patch0249: migration-tls-add-support-for-multifd-tls-handshake.patch
-Patch0250: migration-tls-add-trace-points-for-multifd-tls.patch
-Patch0251: qemu-file-Don-t-do-IO-after-shutdown.patch
-Patch0252: multifd-Make-sure-that-we-don-t-do-any-IO-after-an-e.patch
-Patch0253: migration-Don-t-send-data-if-we-have-stopped.patch
-Patch0254: migration-Create-migration_is_running.patch
-Patch0255: migration-fix-COLO-broken-caused-by-a-previous-commi.patch
-Patch0256: migration-multifd-fix-hangup-with-TLS-Multifd-due-to.patch
-Patch0257: multifd-tls-fix-memoryleak-of-the-QIOChannelSocket-o.patch
-Patch0258: migration-fix-memory-leak-in-qmp_migrate_set_paramet.patch
-Patch0259: migration-tls-fix-inverted-semantics-in-multifd_chan.patch
-Patch0260: migration-tls-add-error-handling-in-multifd_tls_hand.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -615,12 +584,6 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
-* Sat Apr 17 2021 Chuan Zheng <zhengchuan@huawei.com>
-- multifd/tls: add multifd tls feature
-
-* Sat Apr 17 2021 Chuan Zheng <zhengchuan@huawei.com>
-- dirtyrate: add migration dirtyrate feature
-
 * Thu Mar 18 2021 Chen Qun <kuhn.chenqun@huawei.com>
 - net: vmxnet3: validate configuration values during activate (CVE-2021-20203)
 
