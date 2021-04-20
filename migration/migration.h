@@ -259,6 +259,11 @@ struct MigrationState
      * (which is in 4M chunk).
      */
     uint8_t clear_bitmap_shift;
+
+    /*
+     * This save hostname when out-going migration starts
+     */
+    char *hostname;
 };
 
 void migrate_set_state(int *state, int old_state, int new_state);
@@ -277,6 +282,7 @@ void migrate_fd_error(MigrationState *s, const Error *error);
 void migrate_fd_connect(MigrationState *s, Error *error_in);
 
 bool migration_is_setup_or_active(int state);
+bool migration_is_running(int state);
 
 void migrate_init(MigrationState *s);
 bool migration_is_blocked(Error **errp);

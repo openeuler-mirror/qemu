@@ -38,6 +38,7 @@
 #include "ram.h"
 #include "migration.h"
 #include "socket.h"
+#include "tls.h"
 #include "migration/register.h"
 #include "migration/misc.h"
 #include "qemu-file.h"
@@ -159,20 +160,11 @@ out:
     return ret;
 }
 
-static bool ramblock_is_ignored(RAMBlock *block)
+bool ramblock_is_ignored(RAMBlock *block)
 {
     return !qemu_ram_is_migratable(block) ||
            (migrate_ignore_shared() && qemu_ram_is_shared(block));
 }
-
-/* Should be holding either ram_list.mutex, or the RCU lock. */
-#define RAMBLOCK_FOREACH_NOT_IGNORED(block)            \
-    INTERNAL_RAMBLOCK_FOREACH(block)                   \
-        if (ramblock_is_ignored(block)) {} else
-
-#define RAMBLOCK_FOREACH_MIGRATABLE(block)             \
-    INTERNAL_RAMBLOCK_FOREACH(block)                   \
-        if (!qemu_ram_is_migratable(block)) {} else
 
 #undef RAMBLOCK_FOREACH
 
@@ -630,6 +622,8 @@ typedef struct {
     uint8_t id;
     /* channel thread name */
     char *name;
+    /* tls hostname */
+    char *tls_hostname;
     /* channel thread id */
     QemuThread thread;
     /* communication channel */
@@ -1044,6 +1038,8 @@ void multifd_save_cleanup(void)
         qemu_sem_destroy(&p->sem_sync);
         g_free(p->name);
         p->name = NULL;
+        g_free(p->tls_hostname);
+        p->tls_hostname = NULL;
         multifd_pages_clear(p->pages);
         p->pages = NULL;
         p->packet_len = 0;
@@ -1198,6 +1194,123 @@ out:
     return NULL;
 }
 
+static bool multifd_channel_connect(MultiFDSendParams *p,
+                                    QIOChannel *ioc,
+                                    Error *error);
+
+static void multifd_tls_outgoing_handshake(QIOTask *task,
+                                           gpointer opaque)
+{
+    MultiFDSendParams *p = opaque;
+    QIOChannel *ioc = QIO_CHANNEL(qio_task_get_source(task));
+    Error *err = NULL;
+
+    if (qio_task_propagate_error(task, &err)) {
+        trace_multifd_tls_outgoing_handshake_error(ioc, error_get_pretty(err));
+    } else {
+        trace_multifd_tls_outgoing_handshake_complete(ioc);
+    }
+
+    if (!multifd_channel_connect(p, ioc, err)) {
+        /*
+         * Error happen, mark multifd_send_thread status as 'quit' although it
+         * is not created, and then tell who pay attention to me.
+         */
+        p->quit = true;
+        qemu_sem_post(&multifd_send_state->channels_ready);
+        qemu_sem_post(&p->sem_sync);
+    }
+}
+
+static void *multifd_tls_handshake_thread(void *opaque)
+{
+    MultiFDSendParams *p = opaque;
+    QIOChannelTLS *tioc = QIO_CHANNEL_TLS(p->c);
+
+    qio_channel_tls_handshake(tioc,
+                              multifd_tls_outgoing_handshake,
+                              p,
+                              NULL,
+                              NULL);
+    return NULL;
+}
+
+static void multifd_tls_channel_connect(MultiFDSendParams *p,
+                                        QIOChannel *ioc,
+                                        Error **errp)
+{
+    MigrationState *s = migrate_get_current();
+    const char *hostname = p->tls_hostname;
+    QIOChannelTLS *tioc;
+
+    tioc = migration_tls_client_create(s, ioc, hostname, errp);
+    if (!tioc) {
+        return;
+    }
+
+    object_unref(OBJECT(ioc));
+    trace_multifd_tls_outgoing_handshake_start(ioc, tioc, hostname);
+    qio_channel_set_name(QIO_CHANNEL(tioc), "multifd-tls-outgoing");
+    p->c = QIO_CHANNEL(tioc);
+    qemu_thread_create(&p->thread, "multifd-tls-handshake-worker",
+                       multifd_tls_handshake_thread, p,
+                       QEMU_THREAD_JOINABLE);
+}
+
+static bool multifd_channel_connect(MultiFDSendParams *p,
+                                    QIOChannel *ioc,
+                                    Error *error)
+{
+    MigrationState *s = migrate_get_current();
+
+    trace_multifd_set_outgoing_channel(
+        ioc, object_get_typename(OBJECT(ioc)), p->tls_hostname, error);
+
+    if (!error) {
+        if (s->parameters.tls_creds &&
+            *s->parameters.tls_creds &&
+            !object_dynamic_cast(OBJECT(ioc),
+                                 TYPE_QIO_CHANNEL_TLS)) {
+            multifd_tls_channel_connect(p, ioc, &error);
+            if (!error) {
+                /*
+                 * tls_channel_connect will call back to this
+                 * function after the TLS handshake,
+                 * so we mustn't call multifd_send_thread until then
+                 */
+                return true;
+            } else {
+                return false;
+            }
+        } else {
+            /* update for tls qio channel */
+            p->c = ioc;
+            qemu_thread_create(&p->thread, p->name, multifd_send_thread, p,
+                                   QEMU_THREAD_JOINABLE);
+       }
+       return true;
+    }
+
+    return false;
+}
+
+static void multifd_new_send_channel_cleanup(MultiFDSendParams *p,
+                                             QIOChannel *ioc, Error *err)
+{
+     migrate_set_error(migrate_get_current(), err);
+     /* Error happen, we need to tell who pay attention to me */
+     qemu_sem_post(&multifd_send_state->channels_ready);
+     qemu_sem_post(&p->sem_sync);
+     /*
+      * Although multifd_send_thread is not created, but main migration
+      * thread neet to judge whether it is running, so we need to mark
+      * its status.
+      */
+     p->quit = true;
+     object_unref(OBJECT(ioc));
+     error_free(err);
+}
+
 static void multifd_new_send_channel_async(QIOTask *task, gpointer opaque)
 {
     MultiFDSendParams *p = opaque;
@@ -1205,25 +1318,19 @@ static void multifd_new_send_channel_async(QIOTask *task, gpointer opaque)
     Error *local_err = NULL;
 
     if (qio_task_propagate_error(task, &local_err)) {
-        migrate_set_error(migrate_get_current(), local_err);
-        /* Error happen, we need to tell who pay attention to me */
-        qemu_sem_post(&multifd_send_state->channels_ready);
-        qemu_sem_post(&p->sem_sync);
-        /*
-         * Although multifd_send_thread is not created, but main migration
-         * thread neet to judge whether it is running, so we need to mark
-         * its status.
-         */
-        p->quit = true;
-        object_unref(OBJECT(sioc));
-        error_free(local_err);
+        goto cleanup;
     } else {
         p->c = QIO_CHANNEL(sioc);
         qio_channel_set_delay(p->c, false);
         p->running = true;
-        qemu_thread_create(&p->thread, p->name, multifd_send_thread, p,
-                           QEMU_THREAD_JOINABLE);
+        if (!multifd_channel_connect(p, sioc, local_err)) {
+            goto cleanup;
+        }
+        return;
     }
+
+cleanup:
+    multifd_new_send_channel_cleanup(p, sioc, local_err);
 }
 
 int multifd_save_setup(void)
@@ -1231,10 +1338,12 @@ int multifd_save_setup(void)
     int thread_count;
     uint32_t page_count = MULTIFD_PACKET_SIZE / qemu_target_page_size();
     uint8_t i;
+    MigrationState *s;
 
     if (!migrate_use_multifd()) {
         return 0;
     }
+    s = migrate_get_current();
     thread_count = migrate_multifd_channels();
     multifd_send_state = g_malloc0(sizeof(*multifd_send_state));
     multifd_send_state->params = g_new0(MultiFDSendParams, thread_count);
@@ -1255,6 +1364,7 @@ int multifd_save_setup(void)
                       + sizeof(ram_addr_t) * page_count;
         p->packet = g_malloc0(p->packet_len);
         p->name = g_strdup_printf("multifdsend_%d", i);
+        p->tls_hostname = g_strdup(s->hostname);
         socket_send_channel_create(multifd_new_send_channel_async, p);
     }
     return 0;
@@ -3515,7 +3625,7 @@ static int ram_save_iterate(QEMUFile *f, void *opaque)
 {
     RAMState **temp = opaque;
     RAMState *rs = *temp;
-    int ret;
+    int ret = 0;
     int i;
     int64_t t0;
     int done = 0;
@@ -3584,12 +3694,15 @@ static int ram_save_iterate(QEMUFile *f, void *opaque)
     ram_control_after_iterate(f, RAM_CONTROL_ROUND);
 
 out:
-    multifd_send_sync_main(rs);
-    qemu_put_be64(f, RAM_SAVE_FLAG_EOS);
-    qemu_fflush(f);
-    ram_counters.transferred += 8;
+    if (ret >= 0
+        && migration_is_setup_or_active(migrate_get_current()->state)) {
+        multifd_send_sync_main(rs);
+        qemu_put_be64(f, RAM_SAVE_FLAG_EOS);
+        qemu_fflush(f);
+        ram_counters.transferred += 8;
 
-    ret = qemu_file_get_error(f);
+        ret = qemu_file_get_error(f);
+    }
     if (ret < 0) {
         return ret;
     }
@@ -3643,9 +3756,11 @@ static int ram_save_complete(QEMUFile *f, void *opaque)
 
     rcu_read_unlock();
 
-    multifd_send_sync_main(rs);
-    qemu_put_be64(f, RAM_SAVE_FLAG_EOS);
-    qemu_fflush(f);
+    if (ret >= 0) {
+        multifd_send_sync_main(rs);
+        qemu_put_be64(f, RAM_SAVE_FLAG_EOS);
+        qemu_fflush(f);
+    }
 
     return ret;
 }
