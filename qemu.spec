@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 39
+Release: 40
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY-SA-4.0
@@ -252,6 +252,8 @@ Patch0239: virtio-blk-On-restart-process-queued-requests-in-the.patch
 Patch0240: virtio_blk-Add-support-for-retry-on-errors.patch
 Patch0241: block-backend-Stop-retrying-when-draining.patch
 Patch0242: block-Add-sanity-check-when-setting-retry-parameters.patch
+Patch0243: build-smt-processor-structure-to-support-smt-topolog.patch
+Patch0244: Bugfix-hw-acpi-Use-max_cpus-instead-of-cpus-when-bui.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -635,6 +637,10 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Sun Apr 25 2021 imxcc <xingchaochao@huawei.com>
+- hw/acpi: build smt processor structure to support smt topology
+- hw/acpi: Use max_cpus instead of cpus when build PPTT
+
 * Sun Apr 25 2021 Chen Qun <kuhn.chenqun@huawei.com>
 - scsi-bus: Refactor the code that retries requests
 - scsi-disk: Add support for retry on errors
