@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 37
+Release: 38
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY-SA-4.0
@@ -282,6 +282,9 @@ BuildRequires: pam-devel
 BuildRequires: perl-Test-Harness
 BuildRequires: python3-devel
 BuildRequires: librbd-devel
+BuildRequires: krb5-devel
+BuildRequires: libssh-devel
+BuildRequires: glib2
 %ifarch aarch64
 BuildRequires: libfdt-devel
 BuildRequires: virglrenderer-devel
@@ -328,6 +331,21 @@ This package provides documents for qemu related man help and information.
 Summary: QEMU command line tool for manipulating disk images
 %description img
 This package provides a command line tool for manipulating disk images
+
+%package  block-rbd
+Summary: Qemu-block-rbd
+%description block-rbd
+This package provides RBD support for Qemu
+
+%package  block-ssh
+Summary: Qemu-block-ssh
+%description block-ssh
+This package provides block-ssh support for Qemu
+
+%package  block-iscsi
+Summary: Qemu-block-iscsi
+%description block-iscsi
+This package provides block-iscsi support for Qemu
 
 %ifarch %{ix86} x86_64
 %package seabios
@@ -381,6 +399,8 @@ buildldflags="VL_LDFLAGS=-Wl,--build-id"
     --enable-linux-aio \
     --enable-cap-ng \
     --enable-vhost-user \
+    --enable-modules \
+    --enable-libssh \
 %ifarch aarch64
     --enable-fdt \
     --enable-virglrenderer \
@@ -464,6 +484,15 @@ rm -f %{buildroot}%{_datadir}/%{name}/edk2*
 rm -rf %{buildroot}%{_datadir}/%{name}/firmware
 rm -rf %{buildroot}%{_datadir}/%{name}/opensbi*
 rm -rf %{buildroot}%{_datadir}/%{name}/qemu-nsis.bmp
+rm -rf %{buildroot}%{_libdir}/%{name}/audio-oss.so
+rm -rf %{buildroot}%{_libdir}/%{name}/audio-pa.so
+rm -rf %{buildroot}%{_libdir}/%{name}/block-curl.so
+rm -rf %{buildroot}%{_libdir}/%{name}/block-gluster.so
+rm -rf %{buildroot}%{_libdir}/%{name}/ui-curses.so
+rm -rf %{buildroot}%{_libdir}/%{name}/ui-gtk.so
+rm -rf %{buildroot}%{_libdir}/%{name}/ui-sdl.so
+rm -rf %{buildroot}%{_libexecdir}/vhost-user-gpu
+rm -rf %{buildroot}%{_datadir}/%{name}/vhost-user/50-qemu-gpu.json
 
 
 for f in %{buildroot}%{_bindir}/* %{buildroot}%{_libdir}/* \
@@ -577,6 +606,15 @@ getent passwd qemu >/dev/null || \
 %{_bindir}/qemu-io
 %{_bindir}/qemu-nbd
 
+%files block-rbd
+%{_libdir}/%{name}/block-rbd.so
+
+%files block-ssh
+%{_libdir}/%{name}/block-ssh.so
+
+%files block-iscsi
+%{_libdir}/%{name}/block-iscsi.so
+
 %ifarch %{ix86} x86_64
 %files seabios
 %{_datadir}/%{name}/bios-256k.bin
@@ -584,6 +622,13 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Fri Apr 16 2021 Huawei Technologies Co., Ltd <yangming73@huawei.com>
+- add qemu-block-rbd package
+- add qemu-block-ssh package
+
+* Sat Apr 17 2021 Chuan Zheng <zhengchuan@huawei.com>
+- dirtyrate: add migration dirtyrate feature
+
 * Thu Mar 18 2021 Chen Qun <kuhn.chenqun@huawei.com>
 - net: vmxnet3: validate configuration values during activate (CVE-2021-20203)
 
