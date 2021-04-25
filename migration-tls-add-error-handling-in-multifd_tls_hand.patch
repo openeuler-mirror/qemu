@@ -1,0 +1,42 @@
+From 7e31bbdd4ee42fcd1af80c4c882b04184bf8b8bf Mon Sep 17 00:00:00 2001
+From: Chuan Zheng <zhengchuan@huawei.com>
+Date: Fri, 5 Mar 2021 16:10:57 +0800
+Subject: [PATCH 31/31] migration/tls: add error handling in
+ multifd_tls_handshake_thread
+
+If any error happens during multifd send thread creating (e.g. channel broke
+because new domain is destroyed by the dst), multifd_tls_handshake_thread
+may exit silently, leaving main migration thread hanging (ram_save_setup ->
+multifd_send_sync_main -> qemu_sem_wait(&p->sem_sync)).
+Fix that by adding error handling in multifd_tls_handshake_thread.
+
+Signed-off-by: Hao Wang <wanghao232@huawei.com>
+---
+ migration/ram.c | 11 ++++++++++-
+ 1 file changed, 10 insertions(+), 1 deletion(-)
+
+diff --git a/migration/ram.c b/migration/ram.c
+index 5d4c7eb754..c6cd5c0c7a 100644
+--- a/migration/ram.c
++++ b/migration/ram.c
+@@ -1210,7 +1210,16 @@ static void multifd_tls_outgoing_handshake(QIOTask *task,
+     } else {
+         trace_multifd_tls_outgoing_handshake_complete(ioc);
+     }
+-    multifd_channel_connect(p, ioc, err);
++
++    if (!multifd_channel_connect(p, ioc, err)) {
++        /*
++         * Error happen, mark multifd_send_thread status as 'quit' although it
++         * is not created, and then tell who pay attention to me.
++         */
++        p->quit = true;
++        qemu_sem_post(&multifd_send_state->channels_ready);
++        qemu_sem_post(&p->sem_sync);
++    }
+ }
+ 
+ static void *multifd_tls_handshake_thread(void *opaque)
+-- 
+2.27.0
+

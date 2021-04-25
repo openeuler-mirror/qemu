@@ -1,0 +1,71 @@
+From ec54b40b9cef16e793a2cd323b3a16e3c08b1db5 Mon Sep 17 00:00:00 2001
+From: Chuan Zheng <zhengchuan@huawei.com>
+Date: Tue, 29 Sep 2020 11:42:17 +0800
+Subject: [PATCH 13/31] migration/dirtyrate: record start_time and calc_time
+ while at the measuring state
+
+Querying could include both the start-time and the calc-time while at the measuring
+state, allowing a caller to determine when they should expect to come back looking
+for a result.
+
+Signed-off-by: Chuan Zheng <zhengchuan@huawei.com>
+Message-Id: <1601350938-128320-2-git-send-email-zhengchuan@huawei.com>
+Reviewed-by: David Edmondson <david.edmondson@oracle.com>
+Signed-off-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+---
+ migration/dirtyrate.c | 13 +++++++++----
+ 1 file changed, 9 insertions(+), 4 deletions(-)
+
+diff --git a/migration/dirtyrate.c b/migration/dirtyrate.c
+index 80936a4ca6..f1c007d569 100644
+--- a/migration/dirtyrate.c
++++ b/migration/dirtyrate.c
+@@ -83,14 +83,14 @@ static struct DirtyRateInfo *query_dirty_rate_info(void)
+     return info;
+ }
+ 
+-static void reset_dirtyrate_stat(void)
++static void init_dirtyrate_stat(int64_t start_time, int64_t calc_time)
+ {
+     DirtyStat.total_dirty_samples = 0;
+     DirtyStat.total_sample_count = 0;
+     DirtyStat.total_block_mem_MB = 0;
+     DirtyStat.dirty_rate = -1;
+-    DirtyStat.start_time = 0;
+-    DirtyStat.calc_time = 0;
++    DirtyStat.start_time = start_time;
++    DirtyStat.calc_time = calc_time;
+ }
+ 
+ static void update_dirtyrate_stat(struct RamblockDirtyInfo *info)
+@@ -335,7 +335,6 @@ static void calculate_dirtyrate(struct DirtyRateConfig config)
+     int64_t initial_time;
+ 
+     rcu_register_thread();
+-    reset_dirtyrate_stat();
+     rcu_read_lock();
+     initial_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
+     if (!record_ramblock_hash_info(&block_dinfo, config, &block_count)) {
+@@ -365,6 +364,8 @@ void *get_dirtyrate_thread(void *arg)
+ {
+     struct DirtyRateConfig config = *(struct DirtyRateConfig *)arg;
+     int ret;
++    int64_t start_time;
++    int64_t calc_time;
+ 
+     ret = dirtyrate_set_state(&CalculatingState, DIRTY_RATE_STATUS_UNSTARTED,
+                               DIRTY_RATE_STATUS_MEASURING);
+@@ -373,6 +374,10 @@ void *get_dirtyrate_thread(void *arg)
+         return NULL;
+     }
+ 
++    start_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME) / 1000;
++    calc_time = config.sample_period_seconds;
++    init_dirtyrate_stat(start_time, calc_time);
++
+     calculate_dirtyrate(config);
+ 
+     ret = dirtyrate_set_state(&CalculatingState, DIRTY_RATE_STATUS_MEASURING,
+-- 
+2.27.0
+

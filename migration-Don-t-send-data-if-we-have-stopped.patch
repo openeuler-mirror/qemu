@@ -1,0 +1,31 @@
+From be4e43905885b465d4d1a64cea24590147d4be13 Mon Sep 17 00:00:00 2001
+From: Juan Quintela <quintela@redhat.com>
+Date: Wed, 22 Jan 2020 11:36:12 +0100
+Subject: [PATCH 24/31] migration: Don't send data if we have stopped
+
+If we do a cancel, we got out without one error, but we can't do the
+rest of the output as in a normal situation.
+
+Signed-off-by: Juan Quintela <quintela@redhat.com>
+Reviewed-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+---
+ migration/ram.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/migration/ram.c b/migration/ram.c
+index c28cfabfcc..49f742757f 100644
+--- a/migration/ram.c
++++ b/migration/ram.c
+@@ -3673,7 +3673,8 @@ static int ram_save_iterate(QEMUFile *f, void *opaque)
+     ram_control_after_iterate(f, RAM_CONTROL_ROUND);
+ 
+ out:
+-    if (ret >= 0) {
++    if (ret >= 0
++        && migration_is_setup_or_active(migrate_get_current()->state)) {
+         multifd_send_sync_main(rs);
+         qemu_put_be64(f, RAM_SAVE_FLAG_EOS);
+         qemu_fflush(f);
+-- 
+2.27.0
+
