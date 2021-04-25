@@ -1,0 +1,50 @@
+From 80214941ed6ce24983d8f161a7c9532678acc6f1 Mon Sep 17 00:00:00 2001
+From: Prasad J Pandit <pjp@fedoraproject.org>
+Date: Thu, 25 Mar 2021 17:03:57 +0800
+Subject: [PATCH] hw/pci-host: add pci-intack write method
+
+fix CVE-2020-15469
+
+Add pci-intack mmio write method to avoid NULL pointer dereference
+issue.
+
+Reported-by: Lei Sun <slei.casper@gmail.com>
+Reviewed-by: Li Qiang <liq3ea@gmail.com>
+Signed-off-by: Prasad J Pandit <pjp@fedoraproject.org>
+
+Signed-off-by: Jiajie Li <lijiajie11@huawei.com>
+---
+ hw/pci-host/prep.c | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/hw/pci-host/prep.c b/hw/pci-host/prep.c
+index c564f234af..f03c81f651 100644
+--- a/hw/pci-host/prep.c
++++ b/hw/pci-host/prep.c
+@@ -26,6 +26,7 @@
+ #include "qemu/osdep.h"
+ #include "qemu-common.h"
+ #include "qemu/units.h"
++#include "qemu/log.h"
+ #include "qapi/error.h"
+ #include "hw/hw.h"
+ #include "hw/pci/pci.h"
+@@ -117,8 +118,15 @@ static uint64_t raven_intack_read(void *opaque, hwaddr addr,
+     return pic_read_irq(isa_pic);
+ }
+ 
++static void raven_intack_write(void *opaque, hwaddr addr,
++                                        uint64_t data, unsigned size)
++{
++    qemu_log_mask(LOG_UNIMP, "%s not implemented\n", __func__);
++}
++
+ static const MemoryRegionOps raven_intack_ops = {
+     .read = raven_intack_read,
++    .write = raven_intack_write,
+     .valid = {
+         .max_access_size = 1,
+     },
+-- 
+2.27.0
+

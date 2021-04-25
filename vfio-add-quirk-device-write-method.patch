@@ -1,0 +1,40 @@
+From 95ee5273e25ed606aa86f8a154c06887efc20494 Mon Sep 17 00:00:00 2001
+From: Prasad J Pandit <pjp@fedoraproject.org>
+Date: Thu, 25 Mar 2021 17:12:57 +0800
+Subject: [PATCH] vfio: add quirk device write method
+
+---
+ hw/vfio/pci-quirks.c | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/hw/vfio/pci-quirks.c b/hw/vfio/pci-quirks.c
+index b35a640030..9ce790bdd2 100644
+--- a/hw/vfio/pci-quirks.c
++++ b/hw/vfio/pci-quirks.c
+@@ -12,6 +12,7 @@
+ 
+ #include "qemu/osdep.h"
+ #include "qemu/units.h"
++#include "qemu/log.h"
+ #include "qemu/error-report.h"
+ #include "qemu/main-loop.h"
+ #include "qemu/module.h"
+@@ -275,8 +276,15 @@ static uint64_t vfio_ati_3c3_quirk_read(void *opaque,
+     return data;
+ }
+ 
++static void vfio_ati_3c3_quirk_write(void *opaque, hwaddr addr,
++                                        uint64_t data, unsigned size)
++{
++    qemu_log_mask(LOG_GUEST_ERROR, "%s not implemented\n", __func__);
++}
++
+ static const MemoryRegionOps vfio_ati_3c3_quirk = {
+     .read = vfio_ati_3c3_quirk_read,
++    .write = vfio_ati_3c3_quirk_write,
+     .endianness = DEVICE_LITTLE_ENDIAN,
+ };
+ 
+-- 
+2.27.0
+
