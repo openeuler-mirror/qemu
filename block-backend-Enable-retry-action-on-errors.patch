@@ -1,0 +1,42 @@
+From acb77c68d6aba17436554d0255278a934fa70dda Mon Sep 17 00:00:00 2001
+From: Jiahui Cen <cenjiahui@huawei.com>
+Date: Thu, 21 Jan 2021 15:46:48 +0800
+Subject: [PATCH] block-backend: Enable retry action on errors
+
+Enable retry action when backend's retry timer is available. It would
+trigger the timer to do device specific retry action.
+
+Signed-off-by: Jiahui Cen <cenjiahui(a)huawei.com>
+Signed-off-by: Ying Fang <fangying1(a)huawei.com>
+---
+ block/block-backend.c | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/block/block-backend.c b/block/block-backend.c
+index b8f535a5fd..11f8ff4301 100644
+--- a/block/block-backend.c
++++ b/block/block-backend.c
+@@ -1660,6 +1660,9 @@ BlockErrorAction blk_get_error_action(BlockBackend *blk, bool is_read,
+         return BLOCK_ERROR_ACTION_REPORT;
+     case BLOCKDEV_ON_ERROR_IGNORE:
+         return BLOCK_ERROR_ACTION_IGNORE;
++    case BLOCKDEV_ON_ERROR_RETRY:
++        return (blk->retry_timer) ?
++               BLOCK_ERROR_ACTION_RETRY : BLOCK_ERROR_ACTION_REPORT;
+     case BLOCKDEV_ON_ERROR_AUTO:
+     default:
+         abort();
+@@ -1707,6 +1710,10 @@ void blk_error_action(BlockBackend *blk, BlockErrorAction action,
+         qemu_system_vmstop_request_prepare();
+         send_qmp_error_event(blk, action, is_read, error);
+         qemu_system_vmstop_request(RUN_STATE_IO_ERROR);
++    } else if (action == BLOCK_ERROR_ACTION_RETRY) {
++        timer_mod(blk->retry_timer, qemu_clock_get_ms(QEMU_CLOCK_REALTIME) +
++                                    blk->retry_interval);
++        send_qmp_error_event(blk, action, is_read, error);
+     } else {
+         send_qmp_error_event(blk, action, is_read, error);
+     }
+-- 
+2.27.0
+

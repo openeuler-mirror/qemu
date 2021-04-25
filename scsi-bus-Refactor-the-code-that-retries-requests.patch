@@ -1,0 +1,68 @@
+From d870d50c1ddb07c1929eaecd0165d6297c113c9a Mon Sep 17 00:00:00 2001
+From: Jiahui Cen <cenjiahui@huawei.com>
+Date: Thu, 21 Jan 2021 15:46:54 +0800
+Subject: [PATCH] scsi-bus: Refactor the code that retries requests
+
+Move the code that retries requests from scsi_dma_restart_bh() to its own,
+non-static, function. This will allow us to call it from the
+retry_request_cb() of scsi-disk in a future patch.
+
+Signed-off-by: Jiahui Cen <cenjiahui(a)huawei.com>
+Signed-off-by: Ying Fang <fangying1(a)huawei.com>
+---
+ hw/scsi/scsi-bus.c     | 16 +++++++++++-----
+ include/hw/scsi/scsi.h |  1 +
+ 2 files changed, 12 insertions(+), 5 deletions(-)
+
+diff --git a/hw/scsi/scsi-bus.c b/hw/scsi/scsi-bus.c
+index fdc3a0e4e0..9dc09b5f3e 100644
+--- a/hw/scsi/scsi-bus.c
++++ b/hw/scsi/scsi-bus.c
+@@ -99,14 +99,10 @@ void scsi_bus_new(SCSIBus *bus, size_t bus_size, DeviceState *host,
+     qbus_set_bus_hotplug_handler(BUS(bus), &error_abort);
+ }
+ 
+-static void scsi_dma_restart_bh(void *opaque)
++void scsi_retry_requests(SCSIDevice *s)
+ {
+-    SCSIDevice *s = opaque;
+     SCSIRequest *req, *next;
+ 
+-    qemu_bh_delete(s->bh);
+-    s->bh = NULL;
+-
+     aio_context_acquire(blk_get_aio_context(s->conf.blk));
+     QTAILQ_FOREACH_SAFE(req, &s->requests, next, next) {
+         scsi_req_ref(req);
+@@ -128,6 +124,16 @@ static void scsi_dma_restart_bh(void *opaque)
+     aio_context_release(blk_get_aio_context(s->conf.blk));
+ }
+ 
++static void scsi_dma_restart_bh(void *opaque)
++{
++    SCSIDevice *s = opaque;
++
++    qemu_bh_delete(s->bh);
++    s->bh = NULL;
++
++    scsi_retry_requests(s);
++}
++
+ void scsi_req_retry(SCSIRequest *req)
+ {
+     /* No need to save a reference, because scsi_dma_restart_bh just
+diff --git a/include/hw/scsi/scsi.h b/include/hw/scsi/scsi.h
+index 426566a5c6..1231d30b35 100644
+--- a/include/hw/scsi/scsi.h
++++ b/include/hw/scsi/scsi.h
+@@ -184,6 +184,7 @@ void scsi_req_cancel_complete(SCSIRequest *req);
+ void scsi_req_cancel(SCSIRequest *req);
+ void scsi_req_cancel_async(SCSIRequest *req, Notifier *notifier);
+ void scsi_req_retry(SCSIRequest *req);
++void scsi_retry_requests(SCSIDevice *s);
+ void scsi_device_purge_requests(SCSIDevice *sdev, SCSISense sense);
+ void scsi_device_set_ua(SCSIDevice *sdev, SCSISense sense);
+ void scsi_device_report_change(SCSIDevice *dev, SCSISense sense);
+-- 
+2.27.0
+

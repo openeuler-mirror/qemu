@@ -1,0 +1,74 @@
+From 9791384b6919c436be49d9b0e1b4e1a247ac41ab Mon Sep 17 00:00:00 2001
+From: Jiahui Cen <cenjiahui@huawei.com>
+Date: Thu, 21 Jan 2021 15:46:49 +0800
+Subject: [PATCH] block-backend: Add timeout support for retry
+
+Retry should only be triggered when timeout is not reached, so let's check
+timeout before retry. Device should also reset retry_start_time after
+successful retry.
+
+Signed-off-by: Jiahui Cen <cenjiahui(a)huawei.com>
+Signed-off-by: Ying Fang <fangying1(a)huawei.com>
+---
+ block/block-backend.c          | 25 ++++++++++++++++++++++++-
+ include/sysemu/block-backend.h |  1 +
+ 2 files changed, 25 insertions(+), 1 deletion(-)
+
+diff --git a/block/block-backend.c b/block/block-backend.c
+index 11f8ff4301..0fe99ffe52 100644
+--- a/block/block-backend.c
++++ b/block/block-backend.c
+@@ -1633,6 +1633,29 @@ void blk_drain_all(void)
+     bdrv_drain_all_end();
+ }
+ 
++static bool blk_error_retry_timeout(BlockBackend *blk)
++{
++    /* No timeout set, infinite retries. */
++    if (!blk->retry_timeout) {
++        return false;
++    }
++
++    /* The first time an error occurs. */
++    if (!blk->retry_start_time) {
++        blk->retry_start_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
++        return false;
++    }
++
++    return qemu_clock_get_ms(QEMU_CLOCK_REALTIME) > (blk->retry_start_time +
++                                                     blk->retry_timeout);
++}
++
++void blk_error_retry_reset_timeout(BlockBackend *blk)
++{
++    if (blk->retry_timer && blk->retry_start_time)
++        blk->retry_start_time = 0;
++}
++
+ void blk_set_on_error(BlockBackend *blk, BlockdevOnError on_read_error,
+                       BlockdevOnError on_write_error)
+ {
+@@ -1661,7 +1684,7 @@ BlockErrorAction blk_get_error_action(BlockBackend *blk, bool is_read,
+     case BLOCKDEV_ON_ERROR_IGNORE:
+         return BLOCK_ERROR_ACTION_IGNORE;
+     case BLOCKDEV_ON_ERROR_RETRY:
+-        return (blk->retry_timer) ?
++        return (blk->retry_timer && !blk_error_retry_timeout(blk)) ?
+                BLOCK_ERROR_ACTION_RETRY : BLOCK_ERROR_ACTION_REPORT;
+     case BLOCKDEV_ON_ERROR_AUTO:
+     default:
+diff --git a/include/sysemu/block-backend.h b/include/sysemu/block-backend.h
+index b58dc6bde8..58dde446ca 100644
+--- a/include/sysemu/block-backend.h
++++ b/include/sysemu/block-backend.h
+@@ -184,6 +184,7 @@ void blk_inc_in_flight(BlockBackend *blk);
+ void blk_dec_in_flight(BlockBackend *blk);
+ void blk_drain(BlockBackend *blk);
+ void blk_drain_all(void);
++void blk_error_retry_reset_timeout(BlockBackend *blk);
+ void blk_set_on_error(BlockBackend *blk, BlockdevOnError on_read_error,
+                       BlockdevOnError on_write_error);
+ BlockdevOnError blk_get_on_error(BlockBackend *blk, bool is_read);
+-- 
+2.27.0
+
