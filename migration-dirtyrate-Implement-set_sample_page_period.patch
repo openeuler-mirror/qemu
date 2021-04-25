@@ -1,0 +1,75 @@
+From ed999f31105526f5dc343c4f27ac761d299ebfd9 Mon Sep 17 00:00:00 2001
+From: Chuan Zheng <zhengchuan@huawei.com>
+Date: Wed, 16 Sep 2020 14:22:04 +0800
+Subject: [PATCH 09/31] migration/dirtyrate: Implement set_sample_page_period()
+ and is_sample_period_valid()
+
+Implement is_sample_period_valid() to check if the sample period is vaild and
+do set_sample_page_period() to sleep specific time between sample actions.
+
+Signed-off-by: Chuan Zheng <zhengchuan@huawei.com>
+Reviewed-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+Reviewed-by: David Edmondson <david.edmondson@oracle.com>
+Reviewed-by: Li Qiang <liq3ea@gmail.com>
+Message-Id: <1600237327-33618-10-git-send-email-zhengchuan@huawei.com>
+Signed-off-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+---
+ migration/dirtyrate.c | 24 ++++++++++++++++++++++++
+ migration/dirtyrate.h |  6 ++++++
+ 2 files changed, 30 insertions(+)
+
+diff --git a/migration/dirtyrate.c b/migration/dirtyrate.c
+index 97bb883850..485d6467c9 100644
+--- a/migration/dirtyrate.c
++++ b/migration/dirtyrate.c
+@@ -27,6 +27,30 @@
+ static int CalculatingState = DIRTY_RATE_STATUS_UNSTARTED;
+ static struct DirtyRateStat DirtyStat;
+ 
++static int64_t set_sample_page_period(int64_t msec, int64_t initial_time)
++{
++    int64_t current_time;
++
++    current_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
++    if ((current_time - initial_time) >= msec) {
++        msec = current_time - initial_time;
++    } else {
++        g_usleep((msec + initial_time - current_time) * 1000);
++    }
++
++    return msec;
++}
++
++static bool is_sample_period_valid(int64_t sec)
++{
++    if (sec < MIN_FETCH_DIRTYRATE_TIME_SEC ||
++        sec > MAX_FETCH_DIRTYRATE_TIME_SEC) {
++        return false;
++    }
++
++    return true;
++}
++
+ static int dirtyrate_set_state(int *state, int old_state, int new_state)
+ {
+     assert(new_state < DIRTY_RATE_STATUS__MAX);
+diff --git a/migration/dirtyrate.h b/migration/dirtyrate.h
+index be5b8ec2b1..6ec429534d 100644
+--- a/migration/dirtyrate.h
++++ b/migration/dirtyrate.h
+@@ -29,6 +29,12 @@
+  */
+ #define MIN_RAMBLOCK_SIZE                         128
+ 
++/*
++ * Take 1s as minimum time for calculation duration
++ */
++#define MIN_FETCH_DIRTYRATE_TIME_SEC              1
++#define MAX_FETCH_DIRTYRATE_TIME_SEC              60
++
+ struct DirtyRateConfig {
+     uint64_t sample_pages_per_gigabytes; /* sample pages per GB */
+     int64_t sample_period_seconds; /* time duration between two sampling */
+-- 
+2.27.0
+

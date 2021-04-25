@@ -1,0 +1,107 @@
+From 0f5e5a7492af2e0a53758cd898d8c205b80bfacd Mon Sep 17 00:00:00 2001
+From: Ying Fang <fangying1@huawei.com>
+Date: Wed, 2 Dec 2020 14:39:46 +0800
+Subject: [PATCH 25/31] migration: Create migration_is_running()
+
+This function returns true if we are in the middle of a migration.
+It is like migration_is_setup_or_active() with CANCELLING and COLO.
+Adapt all callers that are needed.
+
+Signed-off-by: Juan Quintela <quintela@redhat.com>
+Reviewed-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+---
+ migration/migration.c | 28 +++++++++++++++++++++++-----
+ migration/migration.h |  1 +
+ migration/savevm.c    |  4 +---
+ 3 files changed, 25 insertions(+), 8 deletions(-)
+
+diff --git a/migration/migration.c b/migration/migration.c
+index 01740df471..3aa2a2ca8e 100644
+--- a/migration/migration.c
++++ b/migration/migration.c
+@@ -822,6 +822,26 @@ bool migration_is_setup_or_active(int state)
+     }
+ }
+ 
++bool migration_is_running(int state)
++{
++    switch (state) {
++    case MIGRATION_STATUS_ACTIVE:
++    case MIGRATION_STATUS_POSTCOPY_ACTIVE:
++    case MIGRATION_STATUS_POSTCOPY_PAUSED:
++    case MIGRATION_STATUS_POSTCOPY_RECOVER:
++    case MIGRATION_STATUS_SETUP:
++    case MIGRATION_STATUS_PRE_SWITCHOVER:
++    case MIGRATION_STATUS_DEVICE:
++    case MIGRATION_STATUS_CANCELLING:
++    case MIGRATION_STATUS_COLO:
++        return true;
++
++    default:
++        return false;
++
++    }
++}
++
+ static void populate_ram_info(MigrationInfo *info, MigrationState *s)
+ {
+     info->has_ram = true;
+@@ -1074,7 +1094,7 @@ void qmp_migrate_set_capabilities(MigrationCapabilityStatusList *params,
+     MigrationCapabilityStatusList *cap;
+     bool cap_list[MIGRATION_CAPABILITY__MAX];
+ 
+-    if (migration_is_setup_or_active(s->state)) {
++    if (migration_is_running(s->state)) {
+         error_setg(errp, QERR_MIGRATION_ACTIVE);
+         return;
+     }
+@@ -1588,7 +1608,7 @@ static void migrate_fd_cancel(MigrationState *s)
+ 
+     do {
+         old_state = s->state;
+-        if (!migration_is_setup_or_active(old_state)) {
++        if (!migration_is_running(old_state)) {
+             break;
+         }
+         /* If the migration is paused, kick it out of the pause */
+@@ -1873,9 +1893,7 @@ static bool migrate_prepare(MigrationState *s, bool blk, bool blk_inc,
+         return true;
+     }
+ 
+-    if (migration_is_setup_or_active(s->state) ||
+-        s->state == MIGRATION_STATUS_CANCELLING ||
+-        s->state == MIGRATION_STATUS_COLO) {
++    if (migration_is_running(s->state)) {
+         error_setg(errp, QERR_MIGRATION_ACTIVE);
+         return false;
+     }
+diff --git a/migration/migration.h b/migration/migration.h
+index e5aaf2ef70..f2bd4ebe33 100644
+--- a/migration/migration.h
++++ b/migration/migration.h
+@@ -282,6 +282,7 @@ void migrate_fd_error(MigrationState *s, const Error *error);
+ void migrate_fd_connect(MigrationState *s, Error *error_in);
+ 
+ bool migration_is_setup_or_active(int state);
++bool migration_is_running(int state);
+ 
+ void migrate_init(MigrationState *s);
+ bool migration_is_blocked(Error **errp);
+diff --git a/migration/savevm.c b/migration/savevm.c
+index 480c511b19..74b388da43 100644
+--- a/migration/savevm.c
++++ b/migration/savevm.c
+@@ -1411,9 +1411,7 @@ static int qemu_savevm_state(QEMUFile *f, Error **errp)
+     MigrationState *ms = migrate_get_current();
+     MigrationStatus status;
+ 
+-    if (migration_is_setup_or_active(ms->state) ||
+-        ms->state == MIGRATION_STATUS_CANCELLING ||
+-        ms->state == MIGRATION_STATUS_COLO) {
++    if (migration_is_running(ms->state)) {
+         error_setg(errp, QERR_MIGRATION_ACTIVE);
+         return -EINVAL;
+     }
+-- 
+2.27.0
+

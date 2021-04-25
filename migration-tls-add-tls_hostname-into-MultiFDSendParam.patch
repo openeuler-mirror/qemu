@@ -1,0 +1,66 @@
+From 07514c032bd20e6012b59ecbf07595eb41fd5ff5 Mon Sep 17 00:00:00 2001
+From: Ying Fang <fangying1@huawei.com>
+Date: Wed, 2 Dec 2020 11:25:44 +0800
+Subject: [PATCH 18/31] migration/tls: add tls_hostname into MultiFDSendParams
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Since multifd creation is async with migration_channel_connect, we should
+pass the hostname from MigrationState to MultiFDSendParams.
+
+Signed-off-by: Chuan Zheng <zhengchuan@huawei.com>
+Signed-off-by: Yan Jin <jinyan12@huawei.com>
+Message-Id: <1600139042-104593-4-git-send-email-zhengchuan@huawei.com>
+Reviewed-by: Daniel P. Berrangé <berrange@redhat.com>
+Signed-off-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+---
+ migration/ram.c | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/migration/ram.c b/migration/ram.c
+index 8e80ee20ad..e9b25f78a6 100644
+--- a/migration/ram.c
++++ b/migration/ram.c
+@@ -621,6 +621,8 @@ typedef struct {
+     uint8_t id;
+     /* channel thread name */
+     char *name;
++    /* tls hostname */
++    char *tls_hostname;
+     /* channel thread id */
+     QemuThread thread;
+     /* communication channel */
+@@ -1035,6 +1037,8 @@ void multifd_save_cleanup(void)
+         qemu_sem_destroy(&p->sem_sync);
+         g_free(p->name);
+         p->name = NULL;
++        g_free(p->tls_hostname);
++        p->tls_hostname = NULL;
+         multifd_pages_clear(p->pages);
+         p->pages = NULL;
+         p->packet_len = 0;
+@@ -1222,10 +1226,12 @@ int multifd_save_setup(void)
+     int thread_count;
+     uint32_t page_count = MULTIFD_PACKET_SIZE / qemu_target_page_size();
+     uint8_t i;
++    MigrationState *s;
+ 
+     if (!migrate_use_multifd()) {
+         return 0;
+     }
++    s = migrate_get_current();
+     thread_count = migrate_multifd_channels();
+     multifd_send_state = g_malloc0(sizeof(*multifd_send_state));
+     multifd_send_state->params = g_new0(MultiFDSendParams, thread_count);
+@@ -1246,6 +1252,7 @@ int multifd_save_setup(void)
+                       + sizeof(ram_addr_t) * page_count;
+         p->packet = g_malloc0(p->packet_len);
+         p->name = g_strdup_printf("multifdsend_%d", i);
++        p->tls_hostname = g_strdup(s->hostname);
+         socket_send_channel_create(multifd_new_send_channel_async, p);
+     }
+     return 0;
+-- 
+2.27.0
+

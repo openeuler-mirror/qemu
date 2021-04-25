@@ -1,0 +1,54 @@
+From 71772aab12eb70408c9aa94efd49b19b14ec7852 Mon Sep 17 00:00:00 2001
+From: Chuan Zheng <zhengchuan@huawei.com>
+Date: Wed, 16 Sep 2020 14:21:58 +0800
+Subject: [PATCH 03/31] migration/dirtyrate: Add RamblockDirtyInfo to store
+ sampled page info
+
+Add RamblockDirtyInfo to store sampled page info of each ramblock.
+
+Signed-off-by: Chuan Zheng <zhengchuan@huawei.com>
+Reviewed-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+Reviewed-by: David Edmondson <david.edmondson@oracle.com>
+Reviewed-by: Li Qiang <liq3ea@gmail.com>
+Message-Id: <1600237327-33618-4-git-send-email-zhengchuan@huawei.com>
+Signed-off-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+---
+ migration/dirtyrate.h | 18 ++++++++++++++++++
+ 1 file changed, 18 insertions(+)
+
+diff --git a/migration/dirtyrate.h b/migration/dirtyrate.h
+index 84ab9409ac..8707df852d 100644
+--- a/migration/dirtyrate.h
++++ b/migration/dirtyrate.h
+@@ -19,10 +19,28 @@
+  */
+ #define DIRTYRATE_DEFAULT_SAMPLE_PAGES            512
+ 
++/*
++ * Record ramblock idstr
++ */
++#define RAMBLOCK_INFO_MAX_LEN                     256
++
+ struct DirtyRateConfig {
+     uint64_t sample_pages_per_gigabytes; /* sample pages per GB */
+     int64_t sample_period_seconds; /* time duration between two sampling */
+ };
+ 
++/*
++ * Store dirtypage info for each ramblock.
++ */
++struct RamblockDirtyInfo {
++    char idstr[RAMBLOCK_INFO_MAX_LEN]; /* idstr for each ramblock */
++    uint8_t *ramblock_addr; /* base address of ramblock we measure */
++    uint64_t ramblock_pages; /* ramblock size in TARGET_PAGE_SIZE */
++    uint64_t *sample_page_vfn; /* relative offset address for sampled page */
++    uint64_t sample_pages_count; /* count of sampled pages */
++    uint64_t sample_dirty_count; /* count of dirty pages we measure */
++    uint32_t *hash_result; /* array of hash result for sampled pages */
++};
++
+ void *get_dirtyrate_thread(void *arg);
+ #endif
+-- 
+2.27.0
+

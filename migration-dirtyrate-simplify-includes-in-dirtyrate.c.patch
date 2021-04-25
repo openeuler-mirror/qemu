@@ -1,0 +1,43 @@
+From 7f6f248e2f245938c1fb7a9f7c979079050fc431 Mon Sep 17 00:00:00 2001
+From: Chuan Zheng <zhengchuan@huawei.com>
+Date: Fri, 30 Oct 2020 11:58:01 +0800
+Subject: [PATCH 15/31] migration/dirtyrate: simplify includes in dirtyrate.c
+
+Remove redundant blank line which is left by Commit 662770af7c6e8c,
+also take this opportunity to remove redundant includes in dirtyrate.c.
+
+Signed-off-by: Chuan Zheng <zhengchuan@huawei.com>
+Message-Id: <1604030281-112946-1-git-send-email-zhengchuan@huawei.com>
+Reviewed-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+Signed-off-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+---
+ migration/dirtyrate.c | 5 ++---
+ 1 file changed, 2 insertions(+), 3 deletions(-)
+
+diff --git a/migration/dirtyrate.c b/migration/dirtyrate.c
+index 00c8085456..9a6d0e2cc6 100644
+--- a/migration/dirtyrate.c
++++ b/migration/dirtyrate.c
+@@ -10,17 +10,16 @@
+  * See the COPYING file in the top-level directory.
+  */
+ 
+-#include <zlib.h>
+ #include "qemu/osdep.h"
++#include <zlib.h>
+ #include "qapi/error.h"
+ #include "cpu.h"
+-#include "qemu/config-file.h"
+ #include "exec/memory.h"
+ #include "exec/ram_addr.h"
+ #include "exec/target_page.h"
+ #include "qemu/rcu_queue.h"
++#include "qemu/error-report.h"
+ #include "qapi/qapi-commands-migration.h"
+-#include "migration.h"
+ #include "ram.h"
+ #include "trace.h"
+ #include "dirtyrate.h"
+-- 
+2.27.0
+
