@@ -1,0 +1,32 @@
+From 905c910373b5e6362181f227a1564eb3bef5a353 Mon Sep 17 00:00:00 2001
+From: kevinZhu <zhukeqian94@163.com>
+Date: Thu, 29 Oct 2020 19:24:48 +0800
+Subject: [PATCH] Bugfix: hw/acpi: Use max_cpus instead of cpus when build PPTT
+
+ table The field "cpus" is the initial number of CPU for guest, and the field
+ "max_cpus" is the max number of CPU after CPU hotplug. When building PPTT for
+ guest, we should take all CPUs into account, otherwise the "smp_sockets" is
+ wrong.
+
+Fixes: 7cfcd8c8a2fe ("build smt processor structure to support smt topology")
+Signed-off-by: Keqian Zhu <zhukeqian1@huawei.com>
+---
+ hw/acpi/aml-build.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/hw/acpi/aml-build.c b/hw/acpi/aml-build.c
+index 8a3b51c835..f01669df57 100644
+--- a/hw/acpi/aml-build.c
++++ b/hw/acpi/aml-build.c
+@@ -167,7 +167,7 @@ void build_pptt(GArray *table_data, BIOSLinker *linker, int possible_cpus)
+     struct offset_status offset;
+     const MachineState *ms = MACHINE(qdev_get_machine());
+     unsigned int smp_cores = ms->smp.cores;
+-    unsigned int smp_sockets = ms->smp.cpus / (smp_cores * ms->smp.threads);
++    unsigned int smp_sockets = ms->smp.max_cpus / (smp_cores * ms->smp.threads);
+ 
+     acpi_data_push(table_data, sizeof(AcpiTableHeader));
+ 
+-- 
+2.27.0
+
