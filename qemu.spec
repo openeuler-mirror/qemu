@@ -239,6 +239,19 @@ Patch0226: sd-sdhci-assert-data_count-is-within-fifo_buffer.patch
 Patch0227: msix-add-valid.accepts-methods-to-check-address.patch
 Patch0228: ide-atapi-check-io_buffer_index-in-ide_atapi_cmd_rep.patch
 Patch0229: net-vmxnet3-validate-configuration-values-during-act.patch
+Patch0230: scsi-bus-Refactor-the-code-that-retries-requests.patch
+Patch0231: scsi-disk-Add-support-for-retry-on-errors.patch
+Patch0232: qapi-block-core-Add-retry-option-for-error-action.patch
+Patch0233: block-backend-Introduce-retry-timer.patch
+Patch0234: block-backend-Add-device-specific-retry-callback.patch
+Patch0235: block-backend-Enable-retry-action-on-errors.patch
+Patch0236: block-backend-Add-timeout-support-for-retry.patch
+Patch0237: block-Add-error-retry-param-setting.patch
+Patch0238: virtio-blk-Refactor-the-code-that-processes-queued-r.patch
+Patch0239: virtio-blk-On-restart-process-queued-requests-in-the.patch
+Patch0240: virtio_blk-Add-support-for-retry-on-errors.patch
+Patch0241: block-backend-Stop-retrying-when-draining.patch
+Patch0242: block-Add-sanity-check-when-setting-retry-parameters.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -622,6 +635,21 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Sun Apr 25 2021 Chen Qun <kuhn.chenqun@huawei.com>
+- scsi-bus: Refactor the code that retries requests
+- scsi-disk: Add support for retry on errors
+- qapi/block-core: Add retry option for error action
+- block-backend: Introduce retry timer
+- block-backend: Add device specific retry callback
+- block-backend: Enable retry action on errors
+- block-backend: Add timeout support for retry
+- block: Add error retry param setting
+- virtio-blk: Refactor the code that processes queued requests
+- virtio-blk: On restart, process queued requests in the proper context
+- virtio_blk: Add support for retry on errors
+- block-backend: Stop retrying when draining
+- block: Add sanity check when setting retry parameters
+
 * Fri Apr 16 2021 Huawei Technologies Co., Ltd <yangming73@huawei.com>
 - add qemu-block-rbd package
 - add qemu-block-ssh package
