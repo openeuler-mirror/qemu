@@ -1,0 +1,191 @@
+From 90a6a1ec65d55d27faf79341b2dd9418d99da187 Mon Sep 17 00:00:00 2001
+From: Zenghui Yu <yuzenghui@huawei.com>
+Date: Sat, 8 May 2021 17:31:04 +0800
+Subject: [PATCH] vfio: Maintain DMA mapping range for the container
+
+When synchronizing dirty bitmap from kernel VFIO we do it in a
+per-iova-range fashion and we allocate the userspace bitmap for each of the
+ioctl. This patch introduces `struct VFIODMARange` to describe a range of
+the given DMA mapping with respect to a VFIO_IOMMU_MAP_DMA operation, and
+make the bitmap cache of this range be persistent so that we don't need to
+g_try_malloc0() every time. Note that the new structure is almost a copy of
+`struct vfio_iommu_type1_dma_map` but only internally used by QEMU.
+
+More importantly, the cached per-iova-range dirty bitmap will be further
+used when we want to add support for the CLEAR_BITMAP and this cached
+bitmap will be used to guarantee we don't clear any unknown dirty bits
+otherwise that can be a severe data loss issue for migration code.
+
+It's pretty intuitive to maintain a bitmap per container since we perform
+log_sync at this granule. But I don't know how to deal with things like
+memory hot-{un}plug, sparse DMA mappings, etc. Suggestions welcome.
+
+* yet something to-do:
+  - can't work with guest viommu
+  - no locks
+  - etc
+
+[ The idea and even the commit message are largely inherited from kvm side.
+  See commit 9f4bf4baa8b820c7930e23c9566c9493db7e1d25. ]
+
+Signed-off-by: Zenghui Yu <yuzenghui@huawei.com>
+Signed-off-by: Kunkun Jiang <jinagkunkun@huawei.com>
+---
+ hw/vfio/common.c              | 62 +++++++++++++++++++++++++++++++----
+ include/hw/vfio/vfio-common.h |  9 +++++
+ 2 files changed, 65 insertions(+), 6 deletions(-)
+
+diff --git a/hw/vfio/common.c b/hw/vfio/common.c
+index 245e32df5b..c33c4c539d 100644
+--- a/hw/vfio/common.c
++++ b/hw/vfio/common.c
+@@ -420,6 +420,29 @@ unmap_exit:
+     return ret;
+ }
+ 
++static VFIODMARange *vfio_lookup_match_range(VFIOContainer *container,
++        hwaddr start_addr, hwaddr size)
++{
++    VFIODMARange *qrange;
++
++    QLIST_FOREACH(qrange, &container->dma_list, next) {
++        if (qrange->iova == start_addr && qrange->size == size) {
++            return qrange;
++        }
++    }
++    return NULL;
++}
++
++static void vfio_dma_range_init_dirty_bitmap(VFIODMARange *qrange)
++{
++    uint64_t pages, size;
++
++    pages = REAL_HOST_PAGE_ALIGN(qrange->size) / qemu_real_host_page_size;
++    size = ROUND_UP(pages, sizeof(__u64) * BITS_PER_BYTE) / BITS_PER_BYTE;
++
++    qrange->bitmap = g_malloc0(size);
++}
++
+ /*
+  * DMA - Mapping and unmapping for the "type1" IOMMU interface used on x86
+  */
+@@ -433,12 +456,29 @@ static int vfio_dma_unmap(VFIOContainer *container,
+         .iova = iova,
+         .size = size,
+     };
++    VFIODMARange *qrange;
+ 
+     if (iotlb && container->dirty_pages_supported &&
+         vfio_devices_all_running_and_saving(container)) {
+         return vfio_dma_unmap_bitmap(container, iova, size, iotlb);
+     }
+ 
++    /*
++     * unregister the DMA range
++     *
++     * It seems that the memory layer will give us the same section as the one
++     * used in region_add(). Otherwise it'll be complicated to manipulate the
++     * bitmap across region_{add,del}. Is there any guarantee?
++     *
++     * But there is really not such a restriction on the kernel interface
++     * (VFIO_IOMMU_DIRTY_PAGES_FLAG_{UN}MAP_DMA, etc).
++     */
++    qrange = vfio_lookup_match_range(container, iova, size);
++    assert(qrange);
++    g_free(qrange->bitmap);
++    QLIST_REMOVE(qrange, next);
++    g_free(qrange);
++
+     while (ioctl(container->fd, VFIO_IOMMU_UNMAP_DMA, &unmap)) {
+         /*
+          * The type1 backend has an off-by-one bug in the kernel (71a7d3d78e3c
+@@ -475,6 +515,14 @@ static int vfio_dma_map(VFIOContainer *container, hwaddr iova,
+         .iova = iova,
+         .size = size,
+     };
++    VFIODMARange *qrange;
++
++    qrange = g_malloc0(sizeof(*qrange));
++    qrange->iova = iova;
++    qrange->size = size;
++    QLIST_INSERT_HEAD(&container->dma_list, qrange, next);
++    /* XXX allocate the dirty bitmap on demand */
++    vfio_dma_range_init_dirty_bitmap(qrange);
+ 
+     if (!readonly) {
+         map.flags |= VFIO_DMA_MAP_FLAG_WRITE;
+@@ -986,9 +1034,14 @@ static int vfio_get_dirty_bitmap(VFIOContainer *container, uint64_t iova,
+ {
+     struct vfio_iommu_type1_dirty_bitmap *dbitmap;
+     struct vfio_iommu_type1_dirty_bitmap_get *range;
++    VFIODMARange *qrange;
+     uint64_t pages;
+     int ret;
+ 
++    qrange = vfio_lookup_match_range(container, iova, size);
++    /* the same as vfio_dma_unmap() */
++    assert(qrange);
++
+     dbitmap = g_malloc0(sizeof(*dbitmap) + sizeof(*range));
+ 
+     dbitmap->argsz = sizeof(*dbitmap) + sizeof(*range);
+@@ -1007,11 +1060,8 @@ static int vfio_get_dirty_bitmap(VFIOContainer *container, uint64_t iova,
+     pages = REAL_HOST_PAGE_ALIGN(range->size) / qemu_real_host_page_size;
+     range->bitmap.size = ROUND_UP(pages, sizeof(__u64) * BITS_PER_BYTE) /
+                                          BITS_PER_BYTE;
+-    range->bitmap.data = g_try_malloc0(range->bitmap.size);
+-    if (!range->bitmap.data) {
+-        ret = -ENOMEM;
+-        goto err_out;
+-    }
++
++    range->bitmap.data = (__u64 *)qrange->bitmap;
+ 
+     ret = ioctl(container->fd, VFIO_IOMMU_DIRTY_PAGES, dbitmap);
+     if (ret) {
+@@ -1027,7 +1077,6 @@ static int vfio_get_dirty_bitmap(VFIOContainer *container, uint64_t iova,
+     trace_vfio_get_dirty_bitmap(container->fd, range->iova, range->size,
+                                 range->bitmap.size, ram_addr);
+ err_out:
+-    g_free(range->bitmap.data);
+     g_free(dbitmap);
+ 
+     return ret;
+@@ -1681,6 +1730,7 @@ static int vfio_connect_container(VFIOGroup *group, AddressSpace *as,
+     container->dirty_pages_supported = false;
+     QLIST_INIT(&container->giommu_list);
+     QLIST_INIT(&container->hostwin_list);
++    QLIST_INIT(&container->dma_list);
+ 
+     ret = vfio_init_container(container, group->fd, errp);
+     if (ret) {
+diff --git a/include/hw/vfio/vfio-common.h b/include/hw/vfio/vfio-common.h
+index 475aa9fb40..2853dc861e 100644
+--- a/include/hw/vfio/vfio-common.h
++++ b/include/hw/vfio/vfio-common.h
+@@ -76,6 +76,14 @@ typedef struct VFIOAddressSpace {
+ 
+ struct VFIOGroup;
+ 
++typedef struct VFIODMARange {
++    QLIST_ENTRY(VFIODMARange) next;
++    hwaddr iova;
++    size_t size;
++    void *vaddr; /* unused */
++    unsigned long *bitmap; /* dirty bitmap cache for this range */
++} VFIODMARange;
++
+ typedef struct VFIOContainer {
+     VFIOAddressSpace *space;
+     int fd; /* /dev/vfio/vfio, empowered by the attached groups */
+@@ -91,6 +99,7 @@ typedef struct VFIOContainer {
+     QLIST_HEAD(, VFIOGuestIOMMU) giommu_list;
+     QLIST_HEAD(, VFIOHostDMAWindow) hostwin_list;
+     QLIST_HEAD(, VFIOGroup) group_list;
++    QLIST_HEAD(, VFIODMARange) dma_list;
+     QLIST_ENTRY(VFIOContainer) next;
+ } VFIOContainer;
+ 
+-- 
+2.27.0
+
