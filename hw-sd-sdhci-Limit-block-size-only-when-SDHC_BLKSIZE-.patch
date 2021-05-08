@@ -1,0 +1,55 @@
+From f52bb54b58a81e92956510adb077c8ab416749d0 Mon Sep 17 00:00:00 2001
+From: Bin Meng <bmeng.cn@gmail.com>
+Date: Sat, 8 May 2021 11:02:27 +0800
+Subject: [PATCH] hw/sd: sdhci: Limit block size only when SDHC_BLKSIZE
+ register is writable
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Fixes: CVE-2020-17380
+Fixes: CVE-2020-25085
+Fixes: CVE-2021-3409
+
+The codes to limit the maximum block size is only necessary when
+SDHC_BLKSIZE register is writable.
+
+Signed-off-by: Bin Meng <bmeng.cn@gmail.com>
+Tested-by: Alexander Bulekov <alxndr@bu.edu>
+Reviewed-by: Philippe Mathieu-Daudé <f4bug@amsat.org>
+
+Signed-off-by: Jiajie Li <lijiajie11@huawei.com>
+---
+ hw/sd/sdhci.c | 14 +++++++-------
+ 1 file changed, 7 insertions(+), 7 deletions(-)
+
+diff --git a/hw/sd/sdhci.c b/hw/sd/sdhci.c
+index 8c857d1e40..4b8d9de50b 100644
+--- a/hw/sd/sdhci.c
++++ b/hw/sd/sdhci.c
+@@ -1137,15 +1137,15 @@ sdhci_write(void *opaque, hwaddr offset, uint64_t val, unsigned size)
+         if (!TRANSFERRING_DATA(s->prnsts)) {
+             MASKED_WRITE(s->blksize, mask, extract32(value, 0, 12));
+             MASKED_WRITE(s->blkcnt, mask >> 16, value >> 16);
+-        }
+ 
+-        /* Limit block size to the maximum buffer size */
+-        if (extract32(s->blksize, 0, 12) > s->buf_maxsz) {
+-            qemu_log_mask(LOG_GUEST_ERROR, "%s: Size 0x%x is larger than " \
+-                          "the maximum buffer 0x%x", __func__, s->blksize,
+-                          s->buf_maxsz);
++            /* Limit block size to the maximum buffer size */
++            if (extract32(s->blksize, 0, 12) > s->buf_maxsz) {
++                qemu_log_mask(LOG_GUEST_ERROR, "%s: Size 0x%x is larger than " \
++                            "the maximum buffer 0x%x\n", __func__, s->blksize,
++                            s->buf_maxsz);
+ 
+-            s->blksize = deposit32(s->blksize, 0, 12, s->buf_maxsz);
++                s->blksize = deposit32(s->blksize, 0, 12, s->buf_maxsz);
++            }
+         }
+ 
+         break;
+-- 
+2.27.0
+
