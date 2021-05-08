@@ -1156,6 +1156,7 @@ int vfio_get_dirty_bitmap(VFIOContainer *container, uint64_t iova,
         vfio_devices_all_device_dirty_tracking(container);
     uint64_t dirty_pages;
     VFIOBitmap vbmap;
+    VFIODMARange *qrange;
     int ret;
 
     if (!container->dirty_pages_supported && !all_device_dirty_tracking) {
@@ -1165,10 +1166,16 @@ int vfio_get_dirty_bitmap(VFIOContainer *container, uint64_t iova,
         return 0;
     }
 
+    qrange = vfio_lookup_match_range(container, iova, size);
+    /* the same as vfio_dma_unmap() */
+    assert(qrange);
+
     ret = vfio_bitmap_alloc(&vbmap, size);
     if (ret) {
         return ret;
     }
+    g_free(vbmap.bitmap);
+    vbmap.bitmap = qrange->bitmap;
 
     if (all_device_dirty_tracking) {
         ret = vfio_devices_query_dirty_bitmap(container, &vbmap, iova, size);
@@ -1186,8 +1193,6 @@ int vfio_get_dirty_bitmap(VFIOContainer *container, uint64_t iova,
     trace_vfio_get_dirty_bitmap(container->fd, iova, size, vbmap.size,
                                 ram_addr, dirty_pages);
 out:
-    g_free(vbmap.bitmap);
-
     return ret;
 }
 
