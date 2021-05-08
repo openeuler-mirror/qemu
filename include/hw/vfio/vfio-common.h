@@ -76,6 +76,14 @@ typedef struct VFIOAddressSpace {
 
 struct VFIOGroup;
 
+typedef struct VFIODMARange {
+    QLIST_ENTRY(VFIODMARange) next;
+    hwaddr iova;
+    size_t size;
+    void *vaddr; /* unused */
+    unsigned long *bitmap; /* dirty bitmap cache for this range */
+} VFIODMARange;
+
 typedef struct VFIOContainer {
     VFIOAddressSpace *space;
     int fd; /* /dev/vfio/vfio, empowered by the attached groups */
@@ -93,6 +101,7 @@ typedef struct VFIOContainer {
     QLIST_HEAD(, VFIOHostDMAWindow) hostwin_list;
     QLIST_HEAD(, VFIOGroup) group_list;
     QLIST_HEAD(, VFIORamDiscardListener) vrdl_list;
+    QLIST_HEAD(, VFIODMARange) dma_list;
     QLIST_ENTRY(VFIOContainer) next;
 } VFIOContainer;
 
