@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 41
+Release: 42
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY-SA-4.0
@@ -342,6 +342,7 @@ Requires(post): /usr/sbin/useradd
 Requires(post): systemd-units
 Requires(preun): systemd-units
 Requires(postun): systemd-units
+Requires(postun): qemu-block-iscsi
 
 %description
 QEMU is a FAST! processor emulator using dynamic translation to achieve good emulation speed.
@@ -668,6 +669,9 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Tue May 2021 Ming Yang <yangming73@huawei.com>
+- add qemu-block-iscsi installing requirement
+
 * Sun Apr 25 2021 Chuan Zheng <zhengchuan@huawei.com>
 - migration/dirtyrate: add dirtyrate fearure for migration
 - migration/multifd-tls: add multifd for tls migration
