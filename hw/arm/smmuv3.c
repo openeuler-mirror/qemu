@@ -932,7 +932,7 @@ static void smmuv3_s1_range_inval(SMMUState *s, Cmd *cmd)
     }
 }
 
-static void smmuv3_notify_config_change(SMMUState *bs, uint32_t sid)
+static int smmuv3_notify_config_change(SMMUState *bs, uint32_t sid)
 {
 #ifdef __linux__
     IOMMUMemoryRegion *mr = smmu_iommu_mr(bs, sid);
@@ -941,9 +941,10 @@ static void smmuv3_notify_config_change(SMMUState *bs, uint32_t sid)
     IOMMUConfig iommu_config = {};
     SMMUTransCfg *cfg;
     SMMUDevice *sdev;
+    int ret;
 
     if (!mr) {
-        return;
+        return 0;
     }
 
     sdev = container_of(mr, SMMUDevice, iommu);
@@ -952,13 +953,13 @@ static void smmuv3_notify_config_change(SMMUState *bs, uint32_t sid)
     smmuv3_flush_config(sdev);
 
     if (!pci_device_is_pasid_ops_set(sdev->bus, sdev->devfn)) {
-        return;
+        return 0;
     }
 
     cfg = smmuv3_get_config(sdev, &event);
 
     if (!cfg) {
-        return;
+        return 0;
     }
 
     iommu_config.pasid_cfg.argsz = sizeof(struct iommu_pasid_table_config);
@@ -980,10 +981,13 @@ static void smmuv3_notify_config_change(SMMUState *bs, uint32_t sid)
                                       iommu_config.pasid_cfg.config,
                                       iommu_config.pasid_cfg.base_ptr);
 
-    if (pci_device_set_pasid_table(sdev->bus, sdev->devfn, &iommu_config)) {
+    ret = pci_device_set_pasid_table(sdev->bus, sdev->devfn, &iommu_config);
+    if (ret) {
         error_report("Failed to pass PASID table to host for iommu mr %s (%m)",
                      mr->parent_obj.name);
     }
+
+    return ret;
 #endif
 }
 
@@ -1553,6 +1557,24 @@ static void smmu_realize(DeviceState *d, Error **errp)
     smmu_init_irq(s, dev);
 }
 
+static int smmuv3_post_load(void *opaque, int version_id)
+{
+    SMMUv3State *s3 = opaque;
+    SMMUState *s = &(s3->smmu_state);
+    SMMUDevice *sdev;
+    int ret = 0;
+
+    QLIST_FOREACH(sdev, &s->devices_with_notifiers, next) {
+        uint32_t sid = smmu_get_sid(sdev);
+        ret = smmuv3_notify_config_change(s, sid);
+        if (ret) {
+            break;
+        }
+    }
+
+    return ret;
+}
+
 static const VMStateDescription vmstate_smmuv3_queue = {
     .name = "smmuv3_queue",
     .version_id = 1,
@@ -1571,6 +1593,7 @@ static const VMStateDescription vmstate_smmuv3 = {
     .version_id = 1,
     .minimum_version_id = 1,
     .priority = MIG_PRI_IOMMU,
+    .post_load = smmuv3_post_load,
     .fields = (VMStateField[]) {
         VMSTATE_UINT32(features, SMMUv3State),
         VMSTATE_UINT8(sid_size, SMMUv3State),
