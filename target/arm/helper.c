@@ -284,6 +284,7 @@ bool write_cpustate_to_list(ARMCPU *cpu, bool kvm_sync)
 
         newval = read_raw_cp_reg(&cpu->env, ri);
         if (kvm_sync) {
+#ifdef CONFIG_KVM
             if (is_id_reg(ri)) {
                 /* Only sync if we can sync to KVM successfully. */
                 uint64_t oldval;
@@ -306,6 +307,7 @@ bool write_cpustate_to_list(ARMCPU *cpu, bool kvm_sync)
 
                 kvm_arm_set_one_reg(cpu, cpu->cpreg_indexes[i], &oldval);
             } else {
+#endif
                 /*
                  * Only sync if the previous list->cpustate sync succeeded.
                  * Rather than tracking the success/failure state for every
@@ -324,7 +326,9 @@ bool write_cpustate_to_list(ARMCPU *cpu, bool kvm_sync)
                 }
 
                 write_raw_cp_reg(&cpu->env, ri, newval);
+#ifdef CONFIG_KVM
             }
+#endif
         }
         cpu->cpreg_values[i] = newval;
     }
