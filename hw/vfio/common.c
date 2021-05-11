@@ -1501,12 +1501,34 @@ static void vfio_listener_log_global_start(MemoryListener *listener)
 {
     VFIOContainer *container = container_of(listener, VFIOContainer, listener);
 
+    /* For nested mode, vfio_prereg_listener is used to start dirty tracking */
+    if (container->iommu_type != VFIO_TYPE1_NESTING_IOMMU) {
+        vfio_set_dirty_page_tracking(container, true);
+    }
+}
+
+static void vfio_prereg_listener_log_global_start(MemoryListener *listener)
+{
+    VFIOContainer *container =
+        container_of(listener, VFIOContainer, prereg_listener);
+
     vfio_set_dirty_page_tracking(container, true);
 }
 
 static void vfio_listener_log_global_stop(MemoryListener *listener)
 {
     VFIOContainer *container = container_of(listener, VFIOContainer, listener);
+
+    /* For nested mode, vfio_prereg_listener is used to stop dirty tracking */
+    if (container->iommu_type != VFIO_TYPE1_NESTING_IOMMU) {
+        vfio_set_dirty_page_tracking(container, false);
+    }
+}
+
+static void vfio_prereg_listener_log_global_stop(MemoryListener *listener)
+{
+    VFIOContainer *container =
+        container_of(listener, VFIOContainer, prereg_listener);
 
     vfio_set_dirty_page_tracking(container, false);
 }
@@ -1922,6 +1944,8 @@ static const MemoryListener vfio_memory_listener = {
 static MemoryListener vfio_memory_prereg_listener = {
     .region_add = vfio_prereg_listener_region_add,
     .region_del = vfio_prereg_listener_region_del,
+    .log_global_start = vfio_prereg_listener_log_global_start,
+    .log_global_stop = vfio_prereg_listener_log_global_stop,
     .log_sync = vfio_prereg_listener_log_sync,
     .log_clear = vfio_prereg_listener_log_clear,
 };
