@@ -1579,6 +1579,22 @@ static int vfio_dma_sync_ram_section_dirty_bitmap(VFIOContainer *container,
                     int128_get64(section->size), ram_addr);
 }
 
+static void vfio_prereg_listener_log_sync(MemoryListener *listener,
+                                          MemoryRegionSection *section)
+{
+    VFIOContainer *container =
+        container_of(listener, VFIOContainer, prereg_listener);
+
+    if (!memory_region_is_ram(section->mr) ||
+        !container->dirty_pages_supported) {
+        return;
+    }
+
+    if (vfio_devices_all_dirty_tracking(container)) {
+        vfio_dma_sync_ram_section_dirty_bitmap(container, section);
+    }
+}
+
 typedef struct {
     IOMMUNotifier n;
     VFIOGuestIOMMU *giommu;
@@ -1665,6 +1681,16 @@ static int vfio_sync_dirty_bitmap(VFIOContainer *container,
 {
     if (memory_region_is_iommu(section->mr)) {
         VFIOGuestIOMMU *giommu;
+
+        /*
+         * In nested mode, stage 2 (gpa->hpa) and stage 1 (giova->gpa) are
+         * set up separately. It is inappropriate to pass 'giova' to kernel
+         * to get dirty pages. We only need to focus on stage 2 mapping when
+         * marking dirty pages.
+         */
+        if (container->iommu_type == VFIO_TYPE1_NESTING_IOMMU) {
+            return 0;
+        }
 
         QLIST_FOREACH(giommu, &container->giommu_list, giommu_next) {
             if (MEMORY_REGION(giommu->iommu) == section->mr &&
@@ -1859,6 +1885,7 @@ static const MemoryListener vfio_memory_listener = {
 static MemoryListener vfio_memory_prereg_listener = {
     .region_add = vfio_prereg_listener_region_add,
     .region_del = vfio_prereg_listener_region_del,
+    .log_sync = vfio_prereg_listener_log_sync,
 };
 
 static void vfio_listener_release(VFIOContainer *container)
