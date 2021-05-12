@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 42
+Release: 43
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY-SA-4.0
@@ -285,6 +285,7 @@ Patch0272: multifd-tls-fix-memoryleak-of-the-QIOChannelSocket-o.patch
 Patch0273: migration-fix-memory-leak-in-qmp_migrate_set_paramet.patch
 Patch0274: migration-tls-fix-inverted-semantics-in-multifd_chan.patch
 Patch0275: migration-tls-add-error-handling-in-multifd_tls_hand.patch
+Patch0276: arm-cpu-Fixed-function-undefined-error-at-compile-ti.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -669,6 +670,9 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Tue May 11 2021 Chen Qun <kuhn.chenqun@huawei.com>
+- arm/cpu: Fixed function undefined error at compile time under arm
+
 * Tue May 2021 Ming Yang <yangming73@huawei.com>
 - add qemu-block-iscsi installing requirement
 
