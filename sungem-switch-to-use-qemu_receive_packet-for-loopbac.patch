@@ -1,0 +1,43 @@
+From e36764a070b9caccf2ac7502f4656a81e2283823 Mon Sep 17 00:00:00 2001
+From: Jason Wang <jasowang@redhat.com>
+Date: Fri, 14 May 2021 10:30:23 +0800
+Subject: [PATCH] sungem: switch to use qemu_receive_packet() for loopback
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Fix CVE-2021-3416
+
+This patch switches to use qemu_receive_packet() which can detect
+reentrancy and return early.
+
+This is intended to address CVE-2021-3416.
+
+Cc: Prasad J Pandit <ppandit@redhat.com>
+Cc: qemu-stable@nongnu.org
+Reviewed-by: Mark Cave-Ayland <mark.cave-ayland@ilande.co.uk>
+Reviewed-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+Reviewed-by: Alistair Francis <alistair.francis@wdc.com>
+Signed-off-by: Jason Wang <jasowang@redhat.com>
+
+Signed-off-by: Jiajie Li <lijiajie11@huawei.com>
+---
+ hw/net/sungem.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/hw/net/sungem.c b/hw/net/sungem.c
+index 89bcf749d1..37b62f62b8 100644
+--- a/hw/net/sungem.c
++++ b/hw/net/sungem.c
+@@ -303,7 +303,7 @@ static void sungem_send_packet(SunGEMState *s, const uint8_t *buf,
+     NetClientState *nc = qemu_get_queue(s->nic);
+ 
+     if (s->macregs[MAC_XIFCFG >> 2] & MAC_XIFCFG_LBCK) {
+-        nc->info->receive(nc, buf, size);
++        qemu_receive_packet(nc, buf, size);
+     } else {
+         qemu_send_packet(nc, buf, size);
+     }
+-- 
+2.27.0
+
