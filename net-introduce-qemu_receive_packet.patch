@@ -1,0 +1,167 @@
+From f34f6b6e78b8b3f401cc31a0d7c06a1c9ea9ad08 Mon Sep 17 00:00:00 2001
+From: Jason Wang <jasowang@redhat.com>
+Date: Fri, 14 May 2021 10:14:02 +0800
+Subject: [PATCH] net: introduce qemu_receive_packet()
+
+Fix CVE-2021-3416
+
+Some NIC supports loopback mode and this is done by calling
+nc->info->receive() directly which in fact suppresses the effort of
+reentrancy check that is done in qemu_net_queue_send().
+
+Unfortunately we can use qemu_net_queue_send() here since for loop
+back there's no sender as peer, so this patch introduce a
+qemu_receive_packet() which is used for implementing loopback mode
+for a NIC with this check.
+
+NIC that supports loopback mode will be converted to this helper.
+
+Signed-off-by: Jason Wang <jasowang@redhat.com>
+Signed-off-by: Jiajie Li <lijiajie11@huawei.com>
+---
+ include/net/net.h   |  5 +++++
+ include/net/queue.h |  8 ++++++++
+ net/net.c           | 38 +++++++++++++++++++++++++++++++-------
+ net/queue.c         | 22 ++++++++++++++++++++++
+ 4 files changed, 66 insertions(+), 7 deletions(-)
+
+diff --git a/include/net/net.h b/include/net/net.h
+index acf0451fc4..5609b2ecba 100644
+--- a/include/net/net.h
++++ b/include/net/net.h
+@@ -143,12 +143,17 @@ void *qemu_get_nic_opaque(NetClientState *nc);
+ void qemu_del_net_client(NetClientState *nc);
+ typedef void (*qemu_nic_foreach)(NICState *nic, void *opaque);
+ void qemu_foreach_nic(qemu_nic_foreach func, void *opaque);
++int qemu_can_receive_packet(NetClientState *nc);
+ int qemu_can_send_packet(NetClientState *nc);
+ ssize_t qemu_sendv_packet(NetClientState *nc, const struct iovec *iov,
+                           int iovcnt);
+ ssize_t qemu_sendv_packet_async(NetClientState *nc, const struct iovec *iov,
+                                 int iovcnt, NetPacketSent *sent_cb);
+ ssize_t qemu_send_packet(NetClientState *nc, const uint8_t *buf, int size);
++ssize_t qemu_receive_packet(NetClientState *nc, const uint8_t *buf,int size);
++ssize_t qemu_receive_packet_iov(NetClientState *nc,
++                                const struct iovec *iov,
++                                int iovcnt);
+ ssize_t qemu_send_packet_raw(NetClientState *nc, const uint8_t *buf, int size);
+ ssize_t qemu_send_packet_async(NetClientState *nc, const uint8_t *buf,
+                                int size, NetPacketSent *sent_cb);
+diff --git a/include/net/queue.h b/include/net/queue.h
+index c0269bb1dc..9f2f289d77 100644
+--- a/include/net/queue.h
++++ b/include/net/queue.h
+@@ -55,6 +55,14 @@ void qemu_net_queue_append_iov(NetQueue *queue,
+ 
+ void qemu_del_net_queue(NetQueue *queue);
+ 
++ssize_t qemu_net_queue_receive(NetQueue *queue,
++                               const uint8_t *data,
++                               size_t size);
++
++ssize_t qemu_net_queue_receive_iov(NetQueue *queue,
++                                   const struct iovec *iov,
++                                   int iovcnt);
++
+ ssize_t qemu_net_queue_send(NetQueue *queue,
+                             NetClientState *sender,
+                             unsigned flags,
+diff --git a/net/net.c b/net/net.c
+index 7d4098254f..3b5631879c 100644
+--- a/net/net.c
++++ b/net/net.c
+@@ -514,6 +514,17 @@ int qemu_set_vnet_be(NetClientState *nc, bool is_be)
+ #endif
+ }
+ 
++int qemu_can_receive_packet(NetClientState *nc)
++{
++    if (nc->receive_disabled) {
++        return 0;
++    } else if (nc->info->can_receive &&
++               !nc->info->can_receive(nc)) {
++        return 0;
++    }
++    return 1;
++}
++
+ int qemu_can_send_packet(NetClientState *sender)
+ {
+     int vm_running = runstate_is_running();
+@@ -526,13 +537,7 @@ int qemu_can_send_packet(NetClientState *sender)
+         return 1;
+     }
+ 
+-    if (sender->peer->receive_disabled) {
+-        return 0;
+-    } else if (sender->peer->info->can_receive &&
+-               !sender->peer->info->can_receive(sender->peer)) {
+-        return 0;
+-    }
+-    return 1;
++    return qemu_can_receive_packet(sender->peer);
+ }
+ 
+ static ssize_t filter_receive_iov(NetClientState *nc,
+@@ -665,6 +670,25 @@ ssize_t qemu_send_packet(NetClientState *nc, const uint8_t *buf, int size)
+     return qemu_send_packet_async(nc, buf, size, NULL);
+ }
+ 
++ssize_t qemu_receive_packet(NetClientState *nc, const uint8_t *buf, int size)
++{
++    if (!qemu_can_receive_packet(nc)) {
++        return 0;
++    }
++
++    return qemu_net_queue_receive(nc->incoming_queue, buf, size);
++}
++
++ssize_t qemu_receive_packet_iov(NetClientState *nc, const struct iovec *iov,
++                                int iovcnt)
++{
++    if (!qemu_can_receive_packet(nc)) {
++        return 0;
++    }
++
++    return qemu_net_queue_receive_iov(nc->incoming_queue, iov, iovcnt);
++}
++
+ ssize_t qemu_send_packet_raw(NetClientState *nc, const uint8_t *buf, int size)
+ {
+     return qemu_send_packet_async_with_flags(nc, QEMU_NET_PACKET_FLAG_RAW,
+diff --git a/net/queue.c b/net/queue.c
+index 61276ca4be..7c0b72c8ef 100644
+--- a/net/queue.c
++++ b/net/queue.c
+@@ -182,6 +182,28 @@ static ssize_t qemu_net_queue_deliver_iov(NetQueue *queue,
+     return ret;
+ }
+ 
++ssize_t qemu_net_queue_receive(NetQueue *queue,
++                               const uint8_t *data,
++                               size_t size)
++{
++    if (queue->delivering) {
++        return 0;
++    }
++
++    return qemu_net_queue_deliver(queue, NULL, 0, data, size);
++}
++
++ssize_t qemu_net_queue_receive_iov(NetQueue *queue,
++                                   const struct iovec *iov,
++                                   int iovcnt)
++{
++    if (queue->delivering) {
++        return 0;
++    }
++
++    return qemu_net_queue_deliver_iov(queue, NULL, 0, iov, iovcnt);
++}
++
+ ssize_t qemu_net_queue_send(NetQueue *queue,
+                             NetClientState *sender,
+                             unsigned flags,
+-- 
+2.27.0
+
