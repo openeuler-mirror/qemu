@@ -1,0 +1,41 @@
+From 0eb0e31d48fa80dd1e57fc4b3c6ba288850ce380 Mon Sep 17 00:00:00 2001
+From: Jason Wang <jasowang@redhat.com>
+Date: Fri, 14 May 2021 10:21:33 +0800
+Subject: [PATCH] e1000: switch to use qemu_receive_packet() for loopback
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Fix CVE-2021-3416
+
+This patch switches to use qemu_receive_packet() which can detect
+reentrancy and return early.
+
+This is intended to address CVE-2021-3416.
+
+Cc: Prasad J Pandit <ppandit@redhat.com>
+Cc: qemu-stable@nongnu.org
+Reviewed-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+Signed-off-by: Jason Wang <jasowang@redhat.com>
+
+Signed-off-by: Jiajie Li <lijiajie11@huawei.com>
+---
+ hw/net/e1000.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/hw/net/e1000.c b/hw/net/e1000.c
+index a023ceb27c..a99aa3ccc3 100644
+--- a/hw/net/e1000.c
++++ b/hw/net/e1000.c
+@@ -546,7 +546,7 @@ e1000_send_packet(E1000State *s, const uint8_t *buf, int size)
+ 
+     NetClientState *nc = qemu_get_queue(s->nic);
+     if (s->phy_reg[PHY_CTRL] & MII_CR_LOOPBACK) {
+-        nc->info->receive(nc, buf, size);
++        qemu_receive_packet(nc, buf, size);
+     } else {
+         qemu_send_packet(nc, buf, size);
+     }
+-- 
+2.27.0
+
