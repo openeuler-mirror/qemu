@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 54
+Release: 55
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY-SA-4.0
@@ -324,6 +324,7 @@ Patch0311: nvram-add-nrf51_soc-flash-read-method.patch
 Patch0312: spapr_pci-add-spapr-msi-read-method.patch
 Patch0313: tz-ppc-add-dummy-read-write-methods.patch
 Patch0314: imx7-ccm-add-digprog-mmio-write-method.patch
+Patch0315: util-cacheinfo-fix-crash-when-compiling-with-uClibc.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -713,6 +714,9 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Wed 19 May 2021 zhouli57 <zhouli57@huawei.com>
+- util/cacheinfo: fix crash when compiling with uClibc
+
 * Fri Mar 26 2021 Chen Qun <kuhn.chenqun@huawei.com>
 - hw/pci-host: add pci-intack write method
 - pci-host: add pcie-msi read method
