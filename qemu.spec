@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 54
+Release: 55
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY-SA-4.0
@@ -586,6 +586,10 @@ rm -rf %{buildroot}%{_libdir}/%{name}/ui-sdl.so
 rm -rf %{buildroot}%{_libexecdir}/vhost-user-gpu
 rm -rf %{buildroot}%{_datadir}/%{name}/vhost-user/50-qemu-gpu.json
 
+strip %{buildroot}%{_libdir}/%{name}/block-rbd.so
+strip %{buildroot}%{_libdir}/%{name}/block-iscsi.so
+strip %{buildroot}%{_libdir}/%{name}/block-ssh.so
+
 for f in %{buildroot}%{_bindir}/* %{buildroot}%{_libdir}/* \
          %{buildroot}%{_libexecdir}/*; do
   if file $f | grep -q ELF | grep -q -i shared; then chrpath --delete $f; fi
@@ -713,6 +717,9 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Wed May 19 2021 Ming Yang <yangming73@huawei.com>
+- add strip for block-iscsi.so, block-rbd.so and block-ssh.so.
+
 * Fri Mar 26 2021 Chen Qun <kuhn.chenqun@huawei.com>
 - hw/pci-host: add pci-intack write method
 - pci-host: add pcie-msi read method
