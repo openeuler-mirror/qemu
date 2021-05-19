@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 56
+Release: 57
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY-SA-4.0
@@ -325,6 +325,7 @@ Patch0312: spapr_pci-add-spapr-msi-read-method.patch
 Patch0313: tz-ppc-add-dummy-read-write-methods.patch
 Patch0314: imx7-ccm-add-digprog-mmio-write-method.patch
 Patch0315: util-cacheinfo-fix-crash-when-compiling-with-uClibc.patch
+Patch0316: arm-cpu-Fixed-function-undefined-error-at-compile-ti.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -718,6 +719,9 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Thu 20 May 2021 zhouli57 <zhouli57@huawei.com>
+- arm/cpu: Fixed function undefined error at compile time under arm
+
 * Wed May 19 2021 Ming Yang <yangming73@huawei.com>
 - add strip for block-iscsi.so, block-rbd.so and block-ssh.so.
 
