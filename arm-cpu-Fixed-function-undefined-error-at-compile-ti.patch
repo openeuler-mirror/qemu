@@ -1,0 +1,68 @@
+From 6d795b30ff09bc1f799daa454f776d682cc77197 Mon Sep 17 00:00:00 2001
+From: zhanghao1 <zhanghao1@kylinos.cn>
+Date: Tue, 11 May 2021 20:17:16 +0800
+Subject: [PATCH] arm/cpu: Fixed function undefined error at compile time under
+ arm
+
+    Add the compilation option CONFIG_KVM while using
+    "kvm_arm_cpu_feature_supported" and "kvm_arm_get_one_reg".
+    In arm, the default value of CONFIG_KVM is no.
+
+    While the target is arm, the compilation fails because
+    the function "kvm_arm_cpu_feature_supporte" is declared
+    or the function "kvm_arm_get_one_reg" is not defined.
+
+Signed-off-by: zhanghao1 <zhanghao1@kylinos.cn>
+---
+ target/arm/helper.c  | 4 ++++
+ target/arm/kvm_arm.h | 4 ++++
+ 2 files changed, 8 insertions(+)
+
+diff --git a/target/arm/helper.c b/target/arm/helper.c
+index bddd355fa0..9d2b2659f6 100644
+--- a/target/arm/helper.c
++++ b/target/arm/helper.c
+@@ -284,6 +284,7 @@ bool write_cpustate_to_list(ARMCPU *cpu, bool kvm_sync)
+ 
+         newval = read_raw_cp_reg(&cpu->env, ri);
+         if (kvm_sync) {
++#ifdef CONFIG_KVM
+             if (is_id_reg(ri)) {
+                 /* Only sync if we can sync to KVM successfully. */
+                 uint64_t oldval;
+@@ -306,6 +307,7 @@ bool write_cpustate_to_list(ARMCPU *cpu, bool kvm_sync)
+ 
+                 kvm_arm_set_one_reg(cpu, cpu->cpreg_indexes[i], &oldval);
+             } else {
++#endif
+                 /*
+                  * Only sync if the previous list->cpustate sync succeeded.
+                  * Rather than tracking the success/failure state for every
+@@ -324,7 +326,9 @@ bool write_cpustate_to_list(ARMCPU *cpu, bool kvm_sync)
+                 }
+ 
+                 write_raw_cp_reg(&cpu->env, ri, newval);
++#ifdef CONFIG_KVM
+             }
++#endif
+         }
+         cpu->cpreg_values[i] = newval;
+     }
+diff --git a/target/arm/kvm_arm.h b/target/arm/kvm_arm.h
+index 49e80878f4..a223967d4d 100644
+--- a/target/arm/kvm_arm.h
++++ b/target/arm/kvm_arm.h
+@@ -312,6 +312,10 @@ static inline void kvm_arm_set_cpu_features_from_host(ARMCPU *cpu)
+ 
+ static inline void kvm_arm_add_vcpu_properties(Object *obj) {}
+ 
++static inline bool kvm_arm_cpu_feature_supported(void) {
++    return false;
++}
++
+ static inline int kvm_arm_get_max_vm_ipa_size(MachineState *ms)
+ {
+     return -ENOENT;
+-- 
+2.27.0
+
