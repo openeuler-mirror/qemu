@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 44
+Release: 45
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY-SA-4.0
@@ -287,6 +287,20 @@ Patch0274: migration-tls-fix-inverted-semantics-in-multifd_chan.patch
 Patch0275: migration-tls-add-error-handling-in-multifd_tls_hand.patch
 Patch0276: arm-cpu-Fixed-function-undefined-error-at-compile-ti.patch
 Patch0277: scsi-mptsas-dequeue-request-object-in-case-of-an-err.patch
+Patch0278: hw-sd-sdhci-Don-t-transfer-any-data-when-command-tim.patch
+Patch0279: hw-sd-sdhci-Don-t-write-to-SDHC_SYSAD-register-when-.patch
+Patch0280: hw-sd-sdhci-Correctly-set-the-controller-status-for-.patch
+Patch0281: hw-sd-sdhci-Limit-block-size-only-when-SDHC_BLKSIZE-.patch
+Patch0282: hw-sd-sdhci-Reset-the-data-pointer-of-s-fifo_buffer-.patch
+Patch0283: net-introduce-qemu_receive_packet.patch
+Patch0284: e1000-switch-to-use-qemu_receive_packet-for-loopback.patch
+Patch0285: dp8393x-switch-to-use-qemu_receive_packet-for-loopba.patch
+Patch0286: sungem-switch-to-use-qemu_receive_packet-for-loopbac.patch
+Patch0287: tx_pkt-switch-to-use-qemu_receive_packet_iov-for-loo.patch
+Patch0288: rtl8139-switch-to-use-qemu_receive_packet-for-loopba.patch
+Patch0289: pcnet-switch-to-use-qemu_receive_packet-for-loopback.patch
+Patch0290: cadence_gem-switch-to-use-qemu_receive_packet-for-lo.patch
+Patch0291: lan9118-switch-to-use-qemu_receive_packet-for-loopba.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -671,6 +685,22 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Thu May 20 2021 Chen Qun <kuhn.chenqun@huawei.com>
+- hw/sd: sdhci: Don't transfer any data when command time out
+- hw/sd: sdhci: Don't write to SDHC_SYSAD register when transfer is in progress
+- hw/sd: sdhci: Correctly set the controller status for ADMA
+- hw/sd: sdhci: Limit block size only when SDHC_BLKSIZE register is writable
+- hw/sd: sdhci: Reset the data pointer of s->fifo_buffer[] when a different block size is programmed
+- net: introduce qemu_receive_packet()
+- e1000: switch to use qemu_receive_packet() for loopback
+- dp8393x: switch to use qemu_receive_packet() for loopback packet
+- sungem: switch to use qemu_receive_packet() for loopback
+- tx_pkt: switch to use qemu_receive_packet_iov() for loopback
+- rtl8139: switch to use qemu_receive_packet() for loopback
+- pcnet: switch to use qemu_receive_packet() for loopback
+- cadence_gem: switch to use qemu_receive_packet() for loopback
+- lan9118: switch to use qemu_receive_packet() for loopback
+
 * Wed May 19 2021 Chen Qun <kuhn.chenqun@huawei.com>
 - scsi: mptsas: dequeue request object in case of an error
 

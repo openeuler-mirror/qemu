@@ -1,0 +1,42 @@
+From 827610834ff2a32522c73bee48984fff5521c389 Mon Sep 17 00:00:00 2001
+From: Alexander Bulekov <alxndr@bu.edu>
+Date: Fri, 14 May 2021 10:41:41 +0800
+Subject: [PATCH] lan9118: switch to use qemu_receive_packet() for loopback
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Fix CVE-2021-3416
+
+This patch switches to use qemu_receive_packet() which can detect
+reentrancy and return early.
+
+This is intended to address CVE-2021-3416.
+
+Cc: Prasad J Pandit <ppandit@redhat.com>
+Cc: qemu-stable@nongnu.org
+Reviewed-by: Philippe Mathieu-Daudé <philmd@redhat.com
+Signed-off-by: Alexander Bulekov <alxndr@bu.edu>
+Signed-off-by: Jason Wang <jasowang@redhat.com>
+
+Signed-off-by: Jiajie Li <lijiajie11@huawei.com>
+---
+ hw/net/lan9118.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/hw/net/lan9118.c b/hw/net/lan9118.c
+index f6120be219..f1a1d2351e 100644
+--- a/hw/net/lan9118.c
++++ b/hw/net/lan9118.c
+@@ -662,7 +662,7 @@ static void do_tx_packet(lan9118_state *s)
+     /* FIXME: Honor TX disable, and allow queueing of packets.  */
+     if (s->phy_control & 0x4000)  {
+         /* This assumes the receive routine doesn't touch the VLANClient.  */
+-        lan9118_receive(qemu_get_queue(s->nic), s->txp->data, s->txp->len);
++        qemu_receive_packet(qemu_get_queue(s->nic), s->txp->data, s->txp->len);
+     } else {
+         qemu_send_packet(qemu_get_queue(s->nic), s->txp->data, s->txp->len);
+     }
+-- 
+2.27.0
+

@@ -1,0 +1,96 @@
+From 6fd51eacd097284a68be623a455900ac26bb4604 Mon Sep 17 00:00:00 2001
+From: Bin Meng <bmeng.cn@gmail.com>
+Date: Sat, 8 May 2021 11:05:47 +0800
+Subject: [PATCH] hw/sd: sdhci: Reset the data pointer of s->fifo_buffer[] when
+ a different block size is programmed
+
+Fixes: CVE-2020-17380
+Fixes: CVE-2020-25085
+Fixes: CVE-2021-3409
+
+If the block size is programmed to a different value from the
+previous one, reset the data pointer of s->fifo_buffer[] so that
+s->fifo_buffer[] can be filled in using the new block size in
+the next transfer.
+
+With this fix, the following reproducer:
+
+outl 0xcf8 0x80001010
+outl 0xcfc 0xe0000000
+outl 0xcf8 0x80001001
+outl 0xcfc 0x06000000
+write 0xe000002c 0x1 0x05
+write 0xe0000005 0x1 0x02
+write 0xe0000007 0x1 0x01
+write 0xe0000028 0x1 0x10
+write 0x0 0x1 0x23
+write 0x2 0x1 0x08
+write 0xe000000c 0x1 0x01
+write 0xe000000e 0x1 0x20
+write 0xe000000f 0x1 0x00
+write 0xe000000c 0x1 0x32
+write 0xe0000004 0x2 0x0200
+write 0xe0000028 0x1 0x00
+write 0xe0000003 0x1 0x40
+
+cannot be reproduced with the following QEMU command line:
+
+$ qemu-system-x86_64 -nographic -machine accel=qtest -m 512M \
+      -nodefaults -device sdhci-pci,sd-spec-version=3 \
+      -drive if=sd,index=0,file=null-co://,format=raw,id=mydrive \
+      -device sd-card,drive=mydrive -qtest stdio
+
+Cc: qemu-stable@nongnu.org
+Fixes: CVE-2020-17380
+Fixes: CVE-2020-25085
+Fixes: CVE-2021-3409
+Fixes: d7dfca0807a0 ("hw/sdhci: introduce standard SD host controller")
+Reported-by: Alexander Bulekov <alxndr@bu.edu>
+Reported-by: Cornelius Aschermann (Ruhr-University Bochum)
+Reported-by: Muhammad Ramdhan
+Reported-by: Sergej Schumilo (Ruhr-University Bochum)
+Reported-by: Simon Wrner (Ruhr-University Bochum)
+Buglink: https://bugs.launchpad.net/qemu/+bug/1892960
+Buglink: https://bugs.launchpad.net/qemu/+bug/1909418
+Buglink: https://bugzilla.redhat.com/show_bug.cgi?id=1928146
+Signed-off-by: Bin Meng <bmeng.cn@gmail.com>
+Tested-by: Alexander Bulekov <alxndr@bu.edu>
+
+Signed-off-by: Jiajie Li <lijiajie11@huawei.com>
+---
+ hw/sd/sdhci.c | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
+
+diff --git a/hw/sd/sdhci.c b/hw/sd/sdhci.c
+index 4b8d9de50b..bcfba25691 100644
+--- a/hw/sd/sdhci.c
++++ b/hw/sd/sdhci.c
+@@ -1135,6 +1135,8 @@ sdhci_write(void *opaque, hwaddr offset, uint64_t val, unsigned size)
+         break;
+     case SDHC_BLKSIZE:
+         if (!TRANSFERRING_DATA(s->prnsts)) {
++            uint16_t blksize = s->blksize;
++
+             MASKED_WRITE(s->blksize, mask, extract32(value, 0, 12));
+             MASKED_WRITE(s->blkcnt, mask >> 16, value >> 16);
+ 
+@@ -1146,6 +1148,16 @@ sdhci_write(void *opaque, hwaddr offset, uint64_t val, unsigned size)
+ 
+                 s->blksize = deposit32(s->blksize, 0, 12, s->buf_maxsz);
+             }
++
++            /*
++             * If the block size is programmed to a different value from
++             * the previous one, reset the data pointer of s->fifo_buffer[]
++             * so that s->fifo_buffer[] can be filled in using the new block
++             * size in the next transfer.
++             */
++            if (blksize != s->blksize) {
++                s->data_count = 0;
++            }
+         }
+ 
+         break;
+-- 
+2.27.0
+

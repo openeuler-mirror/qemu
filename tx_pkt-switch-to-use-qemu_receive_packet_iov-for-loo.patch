@@ -1,0 +1,41 @@
+From c75b8239c9505269c2ea9704a7af890f084edd7b Mon Sep 17 00:00:00 2001
+From: Jason Wang <jasowang@redhat.com>
+Date: Fri, 14 May 2021 10:32:24 +0800
+Subject: [PATCH] tx_pkt: switch to use qemu_receive_packet_iov() for loopback
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Fix CVE-2021-3416
+
+This patch switches to use qemu_receive_receive_iov() which can detect
+reentrancy and return early.
+
+This is intended to address CVE-2021-3416.
+
+Cc: Prasad J Pandit <ppandit@redhat.com>
+Cc: qemu-stable@nongnu.org
+Reviewed-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+Signed-off-by: Jason Wang <jasowang@redhat.com>
+
+Signed-off-by: Jiajie Li <lijiajie11@huawei.com>
+---
+ hw/net/net_tx_pkt.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/hw/net/net_tx_pkt.c b/hw/net/net_tx_pkt.c
+index 54d4c3bbd0..646cdfaf4d 100644
+--- a/hw/net/net_tx_pkt.c
++++ b/hw/net/net_tx_pkt.c
+@@ -544,7 +544,7 @@ static inline void net_tx_pkt_sendv(struct NetTxPkt *pkt,
+     NetClientState *nc, const struct iovec *iov, int iov_cnt)
+ {
+     if (pkt->is_loopback) {
+-        nc->info->receive_iov(nc, iov, iov_cnt);
++        qemu_receive_packet_iov(nc, iov, iov_cnt);
+     } else {
+         qemu_sendv_packet(nc, iov, iov_cnt);
+     }
+-- 
+2.27.0
+
