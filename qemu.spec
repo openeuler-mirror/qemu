@@ -326,6 +326,7 @@ Patch0313: tz-ppc-add-dummy-read-write-methods.patch
 Patch0314: imx7-ccm-add-digprog-mmio-write-method.patch
 Patch0315: util-cacheinfo-fix-crash-when-compiling-with-uClibc.patch
 Patch0316: arm-cpu-Fixed-function-undefined-error-at-compile-ti.patch
+Patch0317: blockjob-Fix-crash-with-IOthread-when-block-commit-a.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -719,6 +720,9 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Fri May 28 2021 Chen Qun <kuhn.chenqun@huawei.com>
+- blockjob: Fix crash with IOthread when block commit after snapshot
+
 * Thu 20 May 2021 zhouli57 <zhouli57@huawei.com>
 - arm/cpu: Fixed function undefined error at compile time under arm
 
