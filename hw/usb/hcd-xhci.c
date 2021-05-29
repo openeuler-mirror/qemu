@@ -1860,6 +1860,13 @@ static void xhci_kick_ep(XHCIState *xhci, unsigned int slotid,
     xhci_kick_epctx(epctx, streamid);
 }
 
+static bool xhci_slot_ok(XHCIState *xhci, int slotid)
+{
+    return (xhci->slots[slotid - 1].uport &&
+            xhci->slots[slotid - 1].uport->dev &&
+            xhci->slots[slotid - 1].uport->dev->attached);
+}
+
 static void xhci_kick_epctx(XHCIEPContext *epctx, unsigned int streamid)
 {
     XHCIState *xhci = epctx->xhci;
@@ -1877,9 +1884,7 @@ static void xhci_kick_epctx(XHCIEPContext *epctx, unsigned int streamid)
 
     /* If the device has been detached, but the guest has not noticed this
        yet the 2 above checks will succeed, but we must NOT continue */
-    if (!xhci->slots[epctx->slotid - 1].uport ||
-        !xhci->slots[epctx->slotid - 1].uport->dev ||
-        !xhci->slots[epctx->slotid - 1].uport->dev->attached) {
+    if (!xhci_slot_ok(xhci, epctx->slotid)) {
         return;
     }
 
@@ -1985,6 +1990,10 @@ static void xhci_kick_epctx(XHCIEPContext *epctx, unsigned int streamid)
             xhci_fire_ctl_transfer(xhci, xfer);
         } else {
             xhci_fire_transfer(xhci, xfer, epctx);
+        }
+        if (!xhci_slot_ok(xhci, epctx->slotid)) {
+            /* surprise removal -> stop processing */
+            break;
         }
         if (xfer->complete) {
             /* update ring dequeue ptr */
