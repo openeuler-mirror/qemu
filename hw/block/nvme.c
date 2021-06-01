@@ -216,15 +216,26 @@ static uint16_t nvme_map_prp(QEMUSGList *qsg, QEMUIOVector *iov, uint64_t prp1,
     return NVME_SUCCESS;
 
  unmap:
-    qemu_sglist_destroy(qsg);
+    if (iov && iov->iov) {
+        qemu_iovec_destroy(iov);
+    }
+
+    if (qsg && qsg->sg) {
+        qemu_sglist_destroy(qsg);
+    }
+
     return NVME_INVALID_FIELD | NVME_DNR;
 }
 
 static uint16_t nvme_dma_write_prp(NvmeCtrl *n, uint8_t *ptr, uint32_t len,
                                    uint64_t prp1, uint64_t prp2)
 {
-    QEMUSGList qsg;
-    QEMUIOVector iov;
+    QEMUSGList qsg = {
+        .sg = NULL,
+    };
+    QEMUIOVector iov = {
+        .iov = NULL,
+    };
     uint16_t status = NVME_SUCCESS;
 
     if (nvme_map_prp(&qsg, &iov, prp1, prp2, len, n)) {
@@ -247,8 +258,12 @@ static uint16_t nvme_dma_write_prp(NvmeCtrl *n, uint8_t *ptr, uint32_t len,
 static uint16_t nvme_dma_read_prp(NvmeCtrl *n, uint8_t *ptr, uint32_t len,
     uint64_t prp1, uint64_t prp2)
 {
-    QEMUSGList qsg;
-    QEMUIOVector iov;
+    QEMUSGList qsg = {
+        .sg = NULL,
+    };
+    QEMUIOVector iov = {
+        .iov = NULL,
+    };
     uint16_t status = NVME_SUCCESS;
 
     trace_nvme_dma_read(prp1, prp2);
@@ -500,7 +515,7 @@ static void nvme_init_sq(NvmeSQueue *sq, NvmeCtrl *n, uint64_t dma_addr,
     sq->size = size;
     sq->cqid = cqid;
     sq->head = sq->tail = 0;
-    sq->io_req = g_new(NvmeRequest, sq->size);
+    sq->io_req = g_new0(NvmeRequest, sq->size);
 
     QTAILQ_INIT(&sq->req_list);
     QTAILQ_INIT(&sq->out_req_list);
