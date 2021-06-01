@@ -1578,7 +1578,6 @@ static void external_snapshot_prepare(BlkActionState *common,
                              DO_UPCAST(ExternalSnapshotState, common, common);
     TransactionAction *action = common->action;
     AioContext *aio_context;
-    int ret;
 
     /* 'blockdev-snapshot' and 'blockdev-snapshot-sync' have similar
      * purpose but a different set of parameters */
@@ -1718,11 +1717,6 @@ static void external_snapshot_prepare(BlkActionState *common,
         goto out;
     }
 
-    ret = bdrv_try_set_aio_context(state->new_bs, aio_context, errp);
-    if (ret < 0) {
-        goto out;
-    }
-
     /* This removes our old bs and adds the new bs. This is an operation that
      * can fail, so we need to do it in .prepare; undoing it for abort is
      * always possible. */
@@ -1764,6 +1758,8 @@ static void external_snapshot_abort(BlkActionState *common)
     if (state->new_bs) {
         if (state->overlay_appended) {
             AioContext *aio_context;
+            AioContext *tmp_context;
+            int ret;
 
             aio_context = bdrv_get_aio_context(state->old_bs);
             aio_context_acquire(aio_context);
@@ -1771,6 +1767,25 @@ static void external_snapshot_abort(BlkActionState *common)
             bdrv_ref(state->old_bs);   /* we can't let bdrv_set_backind_hd()
                                           close state->old_bs; we need it */
             bdrv_set_backing_hd(state->new_bs, NULL, &error_abort);
+
+            /*
+             * The call to bdrv_set_backing_hd() above returns state->old_bs to
+             * the main AioContext. As we're still going to be using it, return
+             * it to the AioContext it was before.
+             */
+            tmp_context = bdrv_get_aio_context(state->old_bs);
+            if (aio_context != tmp_context) {
+                aio_context_release(aio_context);
+                aio_context_acquire(tmp_context);
+
+                ret = bdrv_try_set_aio_context(state->old_bs,
+                                               aio_context, NULL);
+                assert(ret == 0);
+
+                aio_context_release(tmp_context);
+                aio_context_acquire(aio_context);
+            }
+
             bdrv_replace_node(state->new_bs, state->old_bs, &error_abort);
             bdrv_unref(state->old_bs); /* bdrv_replace_node() ref'ed old_bs */
 
@@ -1804,22 +1819,42 @@ typedef struct DriveBackupState {
     BlockJob *job;
 } DriveBackupState;
 
-static BlockJob *do_drive_backup(DriveBackup *backup, JobTxn *txn,
-                            Error **errp);
+static BlockJob *do_backup_common(BackupCommon *backup,
+                                  BlockDriverState *bs,
+                                  BlockDriverState *target_bs,
+                                  AioContext *aio_context,
+                                  JobTxn *txn, Error **errp);
 
 static void drive_backup_prepare(BlkActionState *common, Error **errp)
 {
     DriveBackupState *state = DO_UPCAST(DriveBackupState, common, common);
-    BlockDriverState *bs;
     DriveBackup *backup;
+    BlockDriverState *bs;
+    BlockDriverState *target_bs;
+    BlockDriverState *source = NULL;
     AioContext *aio_context;
+    AioContext *old_context;
+    QDict *options;
     Error *local_err = NULL;
+    int flags;
+    int64_t size;
+    bool set_backing_hd = false;
+    int ret;
 
     assert(common->action->type == TRANSACTION_ACTION_KIND_DRIVE_BACKUP);
     backup = common->action->u.drive_backup.data;
 
+    if (!backup->has_mode) {
+        backup->mode = NEW_IMAGE_MODE_ABSOLUTE_PATHS;
+    }
+
     bs = bdrv_lookup_bs(backup->device, backup->device, errp);
     if (!bs) {
+        return;
+    }
+
+    if (!bs->drv) {
+        error_setg(errp, "Device has no medium");
         return;
     }
 
@@ -1829,14 +1864,100 @@ static void drive_backup_prepare(BlkActionState *common, Error **errp)
     /* Paired with .clean() */
     bdrv_drained_begin(bs);
 
-    state->bs = bs;
+    if (!backup->has_format) {
+        backup->format = backup->mode == NEW_IMAGE_MODE_EXISTING ?
+                         NULL : (char *) bs->drv->format_name;
+    }
 
-    state->job = do_drive_backup(backup, common->block_job_txn, &local_err);
+    /* Early check to avoid creating target */
+    if (bdrv_op_is_blocked(bs, BLOCK_OP_TYPE_BACKUP_SOURCE, errp)) {
+        goto out;
+    }
+
+    flags = bs->open_flags | BDRV_O_RDWR;
+
+    /*
+     * See if we have a backing HD we can use to create our new image
+     * on top of.
+     */
+    if (backup->sync == MIRROR_SYNC_MODE_TOP) {
+        source = backing_bs(bs);
+        if (!source) {
+            backup->sync = MIRROR_SYNC_MODE_FULL;
+        }
+    }
+    if (backup->sync == MIRROR_SYNC_MODE_NONE) {
+        source = bs;
+        flags |= BDRV_O_NO_BACKING;
+        set_backing_hd = true;
+    }
+
+    size = bdrv_getlength(bs);
+    if (size < 0) {
+        error_setg_errno(errp, -size, "bdrv_getlength failed");
+        goto out;
+    }
+
+    if (backup->mode != NEW_IMAGE_MODE_EXISTING) {
+        assert(backup->format);
+        if (source) {
+            bdrv_refresh_filename(source);
+            bdrv_img_create(backup->target, backup->format, source->filename,
+                            source->drv->format_name, NULL,
+                            size, flags, false, &local_err);
+        } else {
+            bdrv_img_create(backup->target, backup->format, NULL, NULL, NULL,
+                            size, flags, false, &local_err);
+        }
+    }
+
     if (local_err) {
         error_propagate(errp, local_err);
         goto out;
     }
 
+    options = qdict_new();
+    qdict_put_str(options, "discard", "unmap");
+    qdict_put_str(options, "detect-zeroes", "unmap");
+    if (backup->format) {
+        qdict_put_str(options, "driver", backup->format);
+    }
+
+    target_bs = bdrv_open(backup->target, NULL, options, flags, errp);
+    if (!target_bs) {
+        goto out;
+    }
+
+    /* Honor bdrv_try_set_aio_context() context acquisition requirements. */
+    old_context = bdrv_get_aio_context(target_bs);
+    aio_context_release(aio_context);
+    aio_context_acquire(old_context);
+
+    ret = bdrv_try_set_aio_context(target_bs, aio_context, errp);
+    if (ret < 0) {
+        bdrv_unref(target_bs);
+        aio_context_release(old_context);
+        return;
+    }
+
+    aio_context_release(old_context);
+    aio_context_acquire(aio_context);
+
+    if (set_backing_hd) {
+        bdrv_set_backing_hd(target_bs, source, &local_err);
+        if (local_err) {
+            goto unref;
+        }
+    }
+
+    state->bs = bs;
+
+    state->job = do_backup_common(qapi_DriveBackup_base(backup),
+                                  bs, target_bs, aio_context,
+                                  common->block_job_txn, errp);
+
+unref:
+    bdrv_unref(target_bs);
 out:
     aio_context_release(aio_context);
 }
@@ -1894,16 +2015,15 @@ typedef struct BlockdevBackupState {
     BlockJob *job;
 } BlockdevBackupState;
 
-static BlockJob *do_blockdev_backup(BlockdevBackup *backup, JobTxn *txn,
-                                    Error **errp);
-
 static void blockdev_backup_prepare(BlkActionState *common, Error **errp)
 {
     BlockdevBackupState *state = DO_UPCAST(BlockdevBackupState, common, common);
     BlockdevBackup *backup;
-    BlockDriverState *bs, *target;
+    BlockDriverState *bs;
+    BlockDriverState *target_bs;
     AioContext *aio_context;
-    Error *local_err = NULL;
+    AioContext *old_context;
+    int ret;
 
     assert(common->action->type == TRANSACTION_ACTION_KIND_BLOCKDEV_BACKUP);
     backup = common->action->u.blockdev_backup.data;
@@ -1913,25 +2033,33 @@ static void blockdev_backup_prepare(BlkActionState *common, Error **errp)
         return;
     }
 
-    target = bdrv_lookup_bs(backup->target, backup->target, errp);
-    if (!target) {
+    target_bs = bdrv_lookup_bs(backup->target, backup->target, errp);
+    if (!target_bs) {
         return;
     }
 
+    /* Honor bdrv_try_set_aio_context() context acquisition requirements. */
     aio_context = bdrv_get_aio_context(bs);
+    old_context = bdrv_get_aio_context(target_bs);
+    aio_context_acquire(old_context);
+
+    ret = bdrv_try_set_aio_context(target_bs, aio_context, errp);
+    if (ret < 0) {
+        aio_context_release(old_context);
+        return;
+    }
+
+    aio_context_release(old_context);
     aio_context_acquire(aio_context);
     state->bs = bs;
 
     /* Paired with .clean() */
     bdrv_drained_begin(state->bs);
 
-    state->job = do_blockdev_backup(backup, common->block_job_txn, &local_err);
-    if (local_err) {
-        error_propagate(errp, local_err);
-        goto out;
-    }
+    state->job = do_backup_common(qapi_BlockdevBackup_base(backup),
+                                  bs, target_bs, aio_context,
+                                  common->block_job_txn, errp);
 
-out:
     aio_context_release(aio_context);
 }
 
@@ -3469,21 +3597,16 @@ out:
     aio_context_release(aio_context);
 }
 
-static BlockJob *do_drive_backup(DriveBackup *backup, JobTxn *txn,
-                                 Error **errp)
+/* Common QMP interface for drive-backup and blockdev-backup */
+static BlockJob *do_backup_common(BackupCommon *backup,
+                                  BlockDriverState *bs,
+                                  BlockDriverState *target_bs,
+                                  AioContext *aio_context,
+                                  JobTxn *txn, Error **errp)
 {
-    BlockDriverState *bs;
-    BlockDriverState *target_bs;
-    BlockDriverState *source = NULL;
     BlockJob *job = NULL;
     BdrvDirtyBitmap *bmap = NULL;
-    AioContext *aio_context;
-    QDict *options = NULL;
-    Error *local_err = NULL;
-    int flags, job_flags = JOB_DEFAULT;
-    int64_t size;
-    bool set_backing_hd = false;
-    int ret;
+    int job_flags = JOB_DEFAULT;
 
     if (!backup->has_speed) {
         backup->speed = 0;
@@ -3493,9 +3616,6 @@ static BlockJob *do_drive_backup(DriveBackup *backup, JobTxn *txn,
     }
     if (!backup->has_on_target_error) {
         backup->on_target_error = BLOCKDEV_ON_ERROR_REPORT;
-    }
-    if (!backup->has_mode) {
-        backup->mode = NEW_IMAGE_MODE_ABSOLUTE_PATHS;
     }
     if (!backup->has_job_id) {
         backup->job_id = NULL;
@@ -3510,104 +3630,46 @@ static BlockJob *do_drive_backup(DriveBackup *backup, JobTxn *txn,
         backup->compress = false;
     }
 
-    bs = bdrv_lookup_bs(backup->device, backup->device, errp);
-    if (!bs) {
-        return NULL;
-    }
-
-    if (!bs->drv) {
-        error_setg(errp, "Device has no medium");
-        return NULL;
-    }
-
-    aio_context = bdrv_get_aio_context(bs);
-    aio_context_acquire(aio_context);
-
-    if (!backup->has_format) {
-        backup->format = backup->mode == NEW_IMAGE_MODE_EXISTING ?
-                         NULL : (char*) bs->drv->format_name;
-    }
-
-    /* Early check to avoid creating target */
-    if (bdrv_op_is_blocked(bs, BLOCK_OP_TYPE_BACKUP_SOURCE, errp)) {
-        goto out;
-    }
-
-    flags = bs->open_flags | BDRV_O_RDWR;
-
-    /* See if we have a backing HD we can use to create our new image
-     * on top of. */
-    if (backup->sync == MIRROR_SYNC_MODE_TOP) {
-        source = backing_bs(bs);
-        if (!source) {
-            backup->sync = MIRROR_SYNC_MODE_FULL;
-        }
-    }
-    if (backup->sync == MIRROR_SYNC_MODE_NONE) {
-        source = bs;
-        flags |= BDRV_O_NO_BACKING;
-        set_backing_hd = true;
-    }
-
-    size = bdrv_getlength(bs);
-    if (size < 0) {
-        error_setg_errno(errp, -size, "bdrv_getlength failed");
-        goto out;
-    }
-
-    if (backup->mode != NEW_IMAGE_MODE_EXISTING) {
-        assert(backup->format);
-        if (source) {
-            bdrv_refresh_filename(source);
-            bdrv_img_create(backup->target, backup->format, source->filename,
-                            source->drv->format_name, NULL,
-                            size, flags, false, &local_err);
-        } else {
-            bdrv_img_create(backup->target, backup->format, NULL, NULL, NULL,
-                            size, flags, false, &local_err);
+    if ((backup->sync == MIRROR_SYNC_MODE_BITMAP) ||
+        (backup->sync == MIRROR_SYNC_MODE_INCREMENTAL)) {
+        /* done before desugaring 'incremental' to print the right message */
+        if (!backup->has_bitmap) {
+            error_setg(errp, "must provide a valid bitmap name for "
+                       "'%s' sync mode", MirrorSyncMode_str(backup->sync));
+            return NULL;
         }
     }
 
-    if (local_err) {
-        error_propagate(errp, local_err);
-        goto out;
-    }
-
-    if (backup->format) {
-        if (!options) {
-            options = qdict_new();
+    if (backup->sync == MIRROR_SYNC_MODE_INCREMENTAL) {
+        if (backup->has_bitmap_mode &&
+            backup->bitmap_mode != BITMAP_SYNC_MODE_ON_SUCCESS) {
+            error_setg(errp, "Bitmap sync mode must be '%s' "
+                       "when using sync mode '%s'",
+                       BitmapSyncMode_str(BITMAP_SYNC_MODE_ON_SUCCESS),
+                       MirrorSyncMode_str(backup->sync));
+            return NULL;
         }
-        qdict_put_str(options, "driver", backup->format);
-    }
-
-    target_bs = bdrv_open(backup->target, NULL, options, flags, errp);
-    if (!target_bs) {
-        goto out;
-    }
-
-    ret = bdrv_try_set_aio_context(target_bs, aio_context, errp);
-    if (ret < 0) {
-        bdrv_unref(target_bs);
-        goto out;
-    }
-
-    if (set_backing_hd) {
-        bdrv_set_backing_hd(target_bs, source, &local_err);
-        if (local_err) {
-            goto unref;
-        }
+        backup->has_bitmap_mode = true;
+        backup->sync = MIRROR_SYNC_MODE_BITMAP;
+        backup->bitmap_mode = BITMAP_SYNC_MODE_ON_SUCCESS;
     }
 
     if (backup->has_bitmap) {
         bmap = bdrv_find_dirty_bitmap(bs, backup->bitmap);
         if (!bmap) {
             error_setg(errp, "Bitmap '%s' could not be found", backup->bitmap);
-            goto unref;
+            return NULL;
         }
-        if (bdrv_dirty_bitmap_check(bmap, BDRV_BITMAP_DEFAULT, errp)) {
-            goto unref;
+        if (!backup->has_bitmap_mode) {
+            error_setg(errp, "Bitmap sync mode must be given "
+                       "when providing a bitmap");
+            return NULL;
+        }
+        if (bdrv_dirty_bitmap_check(bmap, BDRV_BITMAP_ALLOW_RO, errp)) {
+            return NULL;
         }
     }
+
     if (!backup->auto_finalize) {
         job_flags |= JOB_MANUAL_FINALIZE;
     }
@@ -3616,29 +3678,21 @@ static BlockJob *do_drive_backup(DriveBackup *backup, JobTxn *txn,
     }
 
     job = backup_job_create(backup->job_id, bs, target_bs, backup->speed,
-                            backup->sync, bmap, backup->compress,
-                            backup->on_source_error, backup->on_target_error,
-                            job_flags, NULL, NULL, txn, &local_err);
-    if (local_err != NULL) {
-        error_propagate(errp, local_err);
-        goto unref;
-    }
-
-unref:
-    bdrv_unref(target_bs);
-out:
-    aio_context_release(aio_context);
+                            backup->sync, bmap, backup->bitmap_mode,
+                            backup->compress,
+                            backup->on_source_error,
+                            backup->on_target_error,
+                            job_flags, NULL, NULL, txn, errp);
     return job;
 }
 
-void qmp_drive_backup(DriveBackup *arg, Error **errp)
+void qmp_drive_backup(DriveBackup *backup, Error **errp)
 {
-
-    BlockJob *job;
-    job = do_drive_backup(arg, NULL, errp);
-    if (job) {
-        job_start(&job->job);
-    }
+    TransactionAction action = {
+        .type = TRANSACTION_ACTION_KIND_DRIVE_BACKUP,
+        .u.drive_backup.data = backup,
+    };
+    blockdev_do_action(&action, errp);
 }
 
 BlockDeviceInfoList *qmp_query_named_block_nodes(Error **errp)
@@ -3651,94 +3705,13 @@ XDbgBlockGraph *qmp_x_debug_query_block_graph(Error **errp)
     return bdrv_get_xdbg_block_graph(errp);
 }
 
-BlockJob *do_blockdev_backup(BlockdevBackup *backup, JobTxn *txn,
-                             Error **errp)
+void qmp_blockdev_backup(BlockdevBackup *backup, Error **errp)
 {
-    BlockDriverState *bs;
-    BlockDriverState *target_bs;
-    Error *local_err = NULL;
-    BdrvDirtyBitmap *bmap = NULL;
-    AioContext *aio_context;
-    BlockJob *job = NULL;
-    int job_flags = JOB_DEFAULT;
-    int ret;
-
-    if (!backup->has_speed) {
-        backup->speed = 0;
-    }
-    if (!backup->has_on_source_error) {
-        backup->on_source_error = BLOCKDEV_ON_ERROR_REPORT;
-    }
-    if (!backup->has_on_target_error) {
-        backup->on_target_error = BLOCKDEV_ON_ERROR_REPORT;
-    }
-    if (!backup->has_job_id) {
-        backup->job_id = NULL;
-    }
-    if (!backup->has_auto_finalize) {
-        backup->auto_finalize = true;
-    }
-    if (!backup->has_auto_dismiss) {
-        backup->auto_dismiss = true;
-    }
-    if (!backup->has_compress) {
-        backup->compress = false;
-    }
-
-    bs = bdrv_lookup_bs(backup->device, backup->device, errp);
-    if (!bs) {
-        return NULL;
-    }
-
-    aio_context = bdrv_get_aio_context(bs);
-    aio_context_acquire(aio_context);
-
-    target_bs = bdrv_lookup_bs(backup->target, backup->target, errp);
-    if (!target_bs) {
-        goto out;
-    }
-
-    ret = bdrv_try_set_aio_context(target_bs, aio_context, errp);
-    if (ret < 0) {
-        goto out;
-    }
-
-    if (backup->has_bitmap) {
-        bmap = bdrv_find_dirty_bitmap(bs, backup->bitmap);
-        if (!bmap) {
-            error_setg(errp, "Bitmap '%s' could not be found", backup->bitmap);
-            goto out;
-        }
-        if (bdrv_dirty_bitmap_check(bmap, BDRV_BITMAP_DEFAULT, errp)) {
-            goto out;
-        }
-    }
-
-    if (!backup->auto_finalize) {
-        job_flags |= JOB_MANUAL_FINALIZE;
-    }
-    if (!backup->auto_dismiss) {
-        job_flags |= JOB_MANUAL_DISMISS;
-    }
-    job = backup_job_create(backup->job_id, bs, target_bs, backup->speed,
-                            backup->sync, bmap, backup->compress,
-                            backup->on_source_error, backup->on_target_error,
-                            job_flags, NULL, NULL, txn, &local_err);
-    if (local_err != NULL) {
-        error_propagate(errp, local_err);
-    }
-out:
-    aio_context_release(aio_context);
-    return job;
-}
-
-void qmp_blockdev_backup(BlockdevBackup *arg, Error **errp)
-{
-    BlockJob *job;
-    job = do_blockdev_backup(arg, NULL, errp);
-    if (job) {
-        job_start(&job->job);
-    }
+    TransactionAction action = {
+        .type = TRANSACTION_ACTION_KIND_BLOCKDEV_BACKUP,
+        .u.blockdev_backup.data = backup,
+    };
+    blockdev_do_action(&action, errp);
 }
 
 /* Parameter check and block job starting for drive mirroring.
@@ -3749,6 +3722,7 @@ static void blockdev_mirror_common(const char *job_id, BlockDriverState *bs,
                                    bool has_replaces, const char *replaces,
                                    enum MirrorSyncMode sync,
                                    BlockMirrorBackingMode backing_mode,
+                                   bool zero_target,
                                    bool has_speed, int64_t speed,
                                    bool has_granularity, uint32_t granularity,
                                    bool has_buf_size, int64_t buf_size,
@@ -3857,7 +3831,7 @@ static void blockdev_mirror_common(const char *job_id, BlockDriverState *bs,
      */
     mirror_start(job_id, bs, target,
                  has_replaces ? replaces : NULL, job_flags,
-                 speed, granularity, buf_size, sync, backing_mode,
+                 speed, granularity, buf_size, sync, backing_mode, zero_target,
                  on_source_error, on_target_error, unmap, filter_node_name,
                  copy_mode, errp);
 }
@@ -3867,12 +3841,14 @@ void qmp_drive_mirror(DriveMirror *arg, Error **errp)
     BlockDriverState *bs;
     BlockDriverState *source, *target_bs;
     AioContext *aio_context;
+    AioContext *old_context;
     BlockMirrorBackingMode backing_mode;
     Error *local_err = NULL;
     QDict *options = NULL;
     int flags;
     int64_t size;
     const char *format = arg->format;
+    bool zero_target;
     int ret;
 
     bs = qmp_get_root_bs(arg->device, errp);
@@ -3974,15 +3950,30 @@ void qmp_drive_mirror(DriveMirror *arg, Error **errp)
         goto out;
     }
 
+    zero_target = (arg->sync == MIRROR_SYNC_MODE_FULL &&
+                   (arg->mode == NEW_IMAGE_MODE_EXISTING ||
+                    !bdrv_has_zero_init(target_bs)));
+
+
+    /* Honor bdrv_try_set_aio_context() context acquisition requirements. */
+    old_context = bdrv_get_aio_context(target_bs);
+    aio_context_release(aio_context);
+    aio_context_acquire(old_context);
+
     ret = bdrv_try_set_aio_context(target_bs, aio_context, errp);
     if (ret < 0) {
         bdrv_unref(target_bs);
-        goto out;
+        aio_context_release(old_context);
+        return;
     }
+
+    aio_context_release(old_context);
+    aio_context_acquire(aio_context);
 
     blockdev_mirror_common(arg->has_job_id ? arg->job_id : NULL, bs, target_bs,
                            arg->has_replaces, arg->replaces, arg->sync,
-                           backing_mode, arg->has_speed, arg->speed,
+                           backing_mode, zero_target,
+                           arg->has_speed, arg->speed,
                            arg->has_granularity, arg->granularity,
                            arg->has_buf_size, arg->buf_size,
                            arg->has_on_source_error, arg->on_source_error,
@@ -4020,8 +4011,10 @@ void qmp_blockdev_mirror(bool has_job_id, const char *job_id,
     BlockDriverState *bs;
     BlockDriverState *target_bs;
     AioContext *aio_context;
+    AioContext *old_context;
     BlockMirrorBackingMode backing_mode = MIRROR_LEAVE_BACKING_CHAIN;
     Error *local_err = NULL;
+    bool zero_target;
     int ret;
 
     bs = qmp_get_root_bs(device, errp);
@@ -4034,17 +4027,25 @@ void qmp_blockdev_mirror(bool has_job_id, const char *job_id,
         return;
     }
 
+    zero_target = (sync == MIRROR_SYNC_MODE_FULL);
+
+    /* Honor bdrv_try_set_aio_context() context acquisition requirements. */
+    old_context = bdrv_get_aio_context(target_bs);
     aio_context = bdrv_get_aio_context(bs);
-    aio_context_acquire(aio_context);
+    aio_context_acquire(old_context);
 
     ret = bdrv_try_set_aio_context(target_bs, aio_context, errp);
+
+    aio_context_release(old_context);
+    aio_context_acquire(aio_context);
+
     if (ret < 0) {
         goto out;
     }
 
     blockdev_mirror_common(has_job_id ? job_id : NULL, bs, target_bs,
                            has_replaces, replaces, sync, backing_mode,
-                           has_speed, speed,
+                           zero_target, has_speed, speed,
                            has_granularity, granularity,
                            has_buf_size, buf_size,
                            has_on_source_error, on_source_error,
