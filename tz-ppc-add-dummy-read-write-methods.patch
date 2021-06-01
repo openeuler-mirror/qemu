@@ -1,0 +1,45 @@
+From bbe130bf59e2640f2f5a6ab24aac7763b17c636a Mon Sep 17 00:00:00 2001
+From: Prasad J Pandit <pjp@fedoraproject.org>
+Date: Thu, 25 Mar 2021 17:27:07 +0800
+Subject: [PATCH] tz-ppc: add dummy read/write methods
+
+fix CVE-2020-15469
+
+Add tz-ppc-dummy mmio read/write methods to avoid assert failure
+during initialisation.
+
+Signed-off-by: Prasad J Pandit <pjp@fedoraproject.org>
+
+Signed-off-by: Jiajie Li <lijiajie11@huawei.com>
+---
+ hw/misc/tz-ppc.c | 13 +++++++++++++
+ 1 file changed, 13 insertions(+)
+
+diff --git a/hw/misc/tz-ppc.c b/hw/misc/tz-ppc.c
+index 2a14a26f29..5b7b883866 100644
+--- a/hw/misc/tz-ppc.c
++++ b/hw/misc/tz-ppc.c
+@@ -193,7 +193,20 @@ static bool tz_ppc_dummy_accepts(void *opaque, hwaddr addr,
+     g_assert_not_reached();
+ }
+ 
++static uint64_t tz_ppc_dummy_read(void *opaque, hwaddr addr, unsigned size)
++{
++    g_assert_not_reached();
++}
++
++static void tz_ppc_dummy_write(void *opaque, hwaddr addr,
++                                        uint64_t data, unsigned size)
++{
++    g_assert_not_reached();
++}
++
+ static const MemoryRegionOps tz_ppc_dummy_ops = {
++    .read = tz_ppc_dummy_read,
++    .write = tz_ppc_dummy_write,
+     .valid.accepts = tz_ppc_dummy_accepts,
+ };
+ 
+-- 
+2.27.0
+
