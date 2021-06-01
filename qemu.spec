@@ -301,6 +301,14 @@ Patch0288: rtl8139-switch-to-use-qemu_receive_packet-for-loopba.patch
 Patch0289: pcnet-switch-to-use-qemu_receive_packet-for-loopback.patch
 Patch0290: cadence_gem-switch-to-use-qemu_receive_packet-for-lo.patch
 Patch0291: lan9118-switch-to-use-qemu_receive_packet-for-loopba.patch
+Patch0292: hw-pci-host-add-pci-intack-write-method.patch
+Patch0293: pci-host-add-pcie-msi-read-method.patch
+Patch0294: vfio-add-quirk-device-write-method.patch
+Patch0295: prep-add-ppc-parity-write-method.patch
+Patch0296: nvram-add-nrf51_soc-flash-read-method.patch
+Patch0297: spapr_pci-add-spapr-msi-read-method.patch
+Patch0298: tz-ppc-add-dummy-read-write-methods.patch
+Patch0299: imx7-ccm-add-digprog-mmio-write-method.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -685,6 +693,16 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Tue Jun 01 2021 Chen Qun <kuhn.chenqun@huawei.com>
+- hw/pci-host: add pci-intack write method
+- pci-host: add pcie-msi read method
+- vfio: add quirk device write method
+- prep: add ppc-parity write method
+- nvram: add nrf51_soc flash read method
+- spapr_pci: add spapr msi read method
+- tz-ppc: add dummy read/write methods
+- imx7-ccm: add digprog mmio write method
+
 * Thu May 20 2021 Chen Qun <kuhn.chenqun@huawei.com>
 - hw/sd: sdhci: Don't transfer any data when command time out
 - hw/sd: sdhci: Don't write to SDHC_SYSAD register when transfer is in progress
