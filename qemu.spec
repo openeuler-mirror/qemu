@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 46
+Release: 47
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY-SA-4.0
@@ -309,6 +309,7 @@ Patch0296: nvram-add-nrf51_soc-flash-read-method.patch
 Patch0297: spapr_pci-add-spapr-msi-read-method.patch
 Patch0298: tz-ppc-add-dummy-read-write-methods.patch
 Patch0299: imx7-ccm-add-digprog-mmio-write-method.patch
+Patch0300: bugfix-fix-Uninitialized-Free-Vulnerability.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -693,6 +694,9 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Wed Jun 02 2021 Chen Qun <kuhn.chenqun@huawei.com>
+- bugfix: fix Uninitialized Free Vulnerability
+
 * Tue Jun 01 2021 Chen Qun <kuhn.chenqun@huawei.com>
 - hw/pci-host: add pci-intack write method
 - pci-host: add pcie-msi read method
