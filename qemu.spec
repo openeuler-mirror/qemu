@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 47
+Release: 48
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY-SA-4.0
@@ -566,6 +566,9 @@ rm -rf %{buildroot}%{_libdir}/%{name}/ui-sdl.so
 rm -rf %{buildroot}%{_libexecdir}/vhost-user-gpu
 rm -rf %{buildroot}%{_datadir}/%{name}/vhost-user/50-qemu-gpu.json
 
+strip %{buildroot}%{_libdir}/%{name}/block-rbd.so
+strip %{buildroot}%{_libdir}/%{name}/block-iscsi.so
+strip %{buildroot}%{_libdir}/%{name}/block-ssh.so
 
 for f in %{buildroot}%{_bindir}/* %{buildroot}%{_libdir}/* \
          %{buildroot}%{_libexecdir}/*; do
@@ -694,6 +697,9 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Wed Jun 02 2021 imxcc <xingchaochao@huawei.com>
+- add strip for block-iscsi.so, block-rbd.so and block-ssh.so
+
 * Wed Jun 02 2021 Chen Qun <kuhn.chenqun@huawei.com>
 - bugfix: fix Uninitialized Free Vulnerability
 
