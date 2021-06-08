@@ -310,6 +310,7 @@ Patch0297: spapr_pci-add-spapr-msi-read-method.patch
 Patch0298: tz-ppc-add-dummy-read-write-methods.patch
 Patch0299: imx7-ccm-add-digprog-mmio-write-method.patch
 Patch0300: bugfix-fix-Uninitialized-Free-Vulnerability.patch
+Patch0301: 9pfs-Fully-restart-unreclaim-loop-CVE-2021-20181.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -697,6 +698,9 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Tue Jun 08 2021 Chen Qun <kuhn.chenqun@huawei.com>
+- 9pfs: Fully restart unreclaim loop (CVE-2021-20181)
+
 * Wed Jun 02 2021 imxcc <xingchaochao@huawei.com>
 - add strip for block-iscsi.so, block-rbd.so and block-ssh.so
 
