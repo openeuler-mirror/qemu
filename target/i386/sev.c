@@ -152,6 +152,8 @@ QEMU_BUILD_BUG_ON(sizeof(PaddedSevHashTable) % 16 != 0);
 static SevGuestState *sev_guest;
 static Error *sev_mig_blocker;
 
+bool sev_kvm_has_msr_ghcb;
+
 static const char *const sev_fw_errlist[] = {
     [SEV_RET_SUCCESS]                = "",
     [SEV_RET_INVALID_PLATFORM_STATE] = "Platform state is invalid",
@@ -1197,6 +1199,14 @@ int sev_kvm_init(ConfidentialGuestSupport *cgs, Error **errp)
 
     cgs_class->memory_encryption_ops = &sev_memory_encryption_ops;
     QTAILQ_INIT(&sev->shared_regions_list);
+
+    /* Determine whether support MSR_AMD64_SEV_ES_GHCB */
+    if (sev_es_enabled()) {
+        sev_kvm_has_msr_ghcb =
+                kvm_vm_check_extension(kvm_state, KVM_CAP_SEV_ES_GHCB);
+    } else {
+        sev_kvm_has_msr_ghcb = false;
+    }
 
     cgs->ready = true;
 

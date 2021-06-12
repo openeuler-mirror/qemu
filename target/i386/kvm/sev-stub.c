@@ -14,6 +14,8 @@
 #include "qemu/osdep.h"
 #include "sev.h"
 
+bool sev_kvm_has_msr_ghcb;
+
 int sev_kvm_init(ConfidentialGuestSupport *cgs, Error **errp)
 {
     /* If we get here, cgs must be some non-SEV thing */

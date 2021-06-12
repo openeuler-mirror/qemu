@@ -78,4 +78,6 @@ void sev_del_migrate_blocker(void);
 
 int sev_kvm_init(ConfidentialGuestSupport *cgs, Error **errp);
 
+extern bool sev_kvm_has_msr_ghcb;
+
 #endif

@@ -3625,6 +3625,10 @@ static int kvm_put_msrs(X86CPU *cpu, int level)
         }
     }
 
+    if (sev_kvm_has_msr_ghcb) {
+        kvm_msr_entry_add(cpu, MSR_AMD64_SEV_ES_GHCB, env->ghcb_gpa);
+    }
+
     return kvm_buf_set_msrs(cpu);
 }
 
@@ -3999,6 +4003,10 @@ static int kvm_get_msrs(X86CPU *cpu)
         }
     }
 
+    if (sev_kvm_has_msr_ghcb) {
+        kvm_msr_entry_add(cpu, MSR_AMD64_SEV_ES_GHCB, 0);
+    }
+
     ret = kvm_vcpu_ioctl(CPU(cpu), KVM_GET_MSRS, cpu->kvm_msr_buf);
     if (ret < 0) {
         return ret;
@@ -4318,6 +4326,9 @@ static int kvm_get_msrs(X86CPU *cpu)
             break;
         case MSR_ARCH_LBR_INFO_0 ... MSR_ARCH_LBR_INFO_0 + 31:
             env->lbr_records[index - MSR_ARCH_LBR_INFO_0].info = msrs[i].data;
+            break;
+        case MSR_AMD64_SEV_ES_GHCB:
+            env->ghcb_gpa = msrs[i].data;
             break;
         }
     }

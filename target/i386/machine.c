@@ -1605,6 +1605,27 @@ static const VMStateDescription vmstate_triple_fault = {
     }
 };
 
+#if defined(CONFIG_KVM) && defined(TARGET_X86_64)
+static bool msr_ghcb_gpa_needed(void *opaque)
+{
+    X86CPU *cpu = opaque;
+    CPUX86State *env = &cpu->env;
+
+    return env->ghcb_gpa != 0;
+}
+
+static const VMStateDescription vmstate_msr_ghcb_gpa = {
+    .name = "cpu/svm_msr_ghcb_gpa",
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .needed = msr_ghcb_gpa_needed,
+    .fields = (VMStateField[]) {
+        VMSTATE_UINT64(env.ghcb_gpa, X86CPU),
+        VMSTATE_END_OF_LIST()
+    }
+};
+#endif
+
 const VMStateDescription vmstate_x86_cpu = {
     .name = "cpu",
     .version_id = 12,
@@ -1751,6 +1772,9 @@ const VMStateDescription vmstate_x86_cpu = {
 #endif
         &vmstate_arch_lbr,
         &vmstate_triple_fault,
+#if defined(CONFIG_KVM) && defined(TARGET_X86_64)
+        &vmstate_msr_ghcb_gpa,
+#endif
         NULL
     }
 };

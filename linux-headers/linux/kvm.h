@@ -1203,6 +1203,8 @@ struct kvm_ppc_resize_hpt {
 
 #define KVM_CAP_ARM_TMM 300
 
+#define KVM_CAP_SEV_ES_GHCB 500
+
 #define KVM_CAP_ARM_VIRT_MSI_BYPASS 799
 
 #define KVM_EXIT_HYPERCALL_VALID_MASK (1 << KVM_HC_MAP_GPA_RANGE)
