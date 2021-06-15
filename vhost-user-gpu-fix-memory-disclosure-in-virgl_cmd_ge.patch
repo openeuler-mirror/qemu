@@ -1,0 +1,44 @@
+From faa84f70ddac04cf2794a9f94d08d7f5da4f4ee8 Mon Sep 17 00:00:00 2001
+From: Li Qiang <liq3ea@163.com>
+Date: Tue, 15 Jun 2021 10:11:17 +0800
+Subject: [PATCH] vhost-user-gpu: fix memory disclosure in
+ virgl_cmd_get_capset_info (CVE-2021-3545)
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Fix CVE-2021-3544
+
+Otherwise some of the 'resp' will be leaked to guest.
+
+Fixes: CVE-2021-3545
+Reported-by: default avatarLi Qiang <liq3ea@163.com>
+virtio-gpu fix: 42a8dadc
+
+ ("virtio-gpu: fix information leak
+in getting capset info dispatch")
+Signed-off-by: default avatarLi Qiang <liq3ea@163.com>
+Reviewed-by: Marc-André Lureau's avatarMarc-André Lureau <marcandre.lureau@redhat.com>
+Message-Id: <20210516030403.107723-2-liq3ea@163.com>
+Signed-off-by: Gerd Hoffmann's avatarGerd Hoffmann <kraxel@redhat.com>
+
+Signed-off-by: Jiajie Li <lijiajie11@huawei.com>
+---
+ contrib/vhost-user-gpu/virgl.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/contrib/vhost-user-gpu/virgl.c b/contrib/vhost-user-gpu/virgl.c
+index 79556df094..44e79ab82a 100644
+--- a/contrib/vhost-user-gpu/virgl.c
++++ b/contrib/vhost-user-gpu/virgl.c
+@@ -131,6 +131,7 @@ virgl_cmd_get_capset_info(VuGpu *g,
+ 
+     VUGPU_FILL_CMD(info);
+ 
++    memset(&resp, 0, sizeof(resp));
+     if (info.capset_index == 0) {
+         resp.capset_id = VIRTIO_GPU_CAPSET_VIRGL;
+         virgl_renderer_get_cap_set(resp.capset_id,
+-- 
+2.27.0
+

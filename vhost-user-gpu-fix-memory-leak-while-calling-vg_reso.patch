@@ -1,0 +1,51 @@
+From 3adab03319b6330c4024a65fddb3369630c02231 Mon Sep 17 00:00:00 2001
+From: Li Qiang <liq3ea@163.com>
+Date: Tue, 15 Jun 2021 10:02:08 +0800
+Subject: [PATCH] vhost-user-gpu: fix memory leak while calling
+ 'vg_resource_unref' (CVE-2021-3544)
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Fix CVE-2021-3544
+
+If the guest trigger following sequences, the attach_backing will be leaked:
+
+	vg_resource_create_2d
+	vg_resource_attach_backing
+	vg_resource_unref
+
+This patch fix this by freeing 'res->iov' in vg_resource_destroy.
+
+Fixes: CVE-2021-3544
+Reported-by: default avatarLi Qiang <liq3ea@163.com>
+virtio-gpu fix: 5e8e3c4c
+
+ ("virtio-gpu: fix resource leak
+in virgl_cmd_resource_unref")
+Reviewed-by: default avatarPrasad J Pandit <pjp@fedoraproject.org>
+Signed-off-by: default avatarLi Qiang <liq3ea@163.com>
+Reviewed-by: Marc-André Lureau's avatarMarc-André Lureau <marcandre.lureau@redhat.com>
+Message-Id: <20210516030403.107723-5-liq3ea@163.com>
+Signed-off-by: Gerd Hoffmann's avatarGerd Hoffmann <kraxel@redhat.com>
+
+Signed-off-by: Jiajie Li <lijiajie11@huawei.com>
+---
+ contrib/vhost-user-gpu/main.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/contrib/vhost-user-gpu/main.c b/contrib/vhost-user-gpu/main.c
+index 4f087d6000..43d9851800 100644
+--- a/contrib/vhost-user-gpu/main.c
++++ b/contrib/vhost-user-gpu/main.c
+@@ -379,6 +379,7 @@ vg_resource_destroy(VuGpu *g,
+     }
+ 
+     vugbm_buffer_destroy(&res->buffer);
++    g_free(res->iov);
+     pixman_image_unref(res->image);
+     QTAILQ_REMOVE(&g->reslist, res, next);
+     g_free(res);
+-- 
+2.27.0
+
