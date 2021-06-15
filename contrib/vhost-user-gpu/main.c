@@ -328,6 +328,7 @@ vg_resource_create_2d(VuGpu *g,
         g_critical("%s: resource creation failed %d %d %d",
                    __func__, c2d.resource_id, c2d.width, c2d.height);
         g_free(res);
+        vugbm_buffer_destroy(&res->buffer);
         cmd->error = VIRTIO_GPU_RESP_ERR_OUT_OF_MEMORY;
         return;
     }
@@ -378,6 +379,7 @@ vg_resource_destroy(VuGpu *g,
     }
 
     vugbm_buffer_destroy(&res->buffer);
+    g_free(res->iov);
     pixman_image_unref(res->image);
     QTAILQ_REMOVE(&g->reslist, res, next);
     g_free(res);
@@ -464,6 +466,11 @@ vg_resource_attach_backing(VuGpu *g,
         g_critical("%s: illegal resource specified %d",
                    __func__, ab.resource_id);
         cmd->error = VIRTIO_GPU_RESP_ERR_INVALID_RESOURCE_ID;
+        return;
+    }
+
+    if (res->iov) {
+        cmd->error = VIRTIO_GPU_RESP_ERR_UNSPEC;
         return;
     }
 
