@@ -1,0 +1,49 @@
+From b9f6004899adb8e501e1b9ce1cb0976a2268ad60 Mon Sep 17 00:00:00 2001
+From: Li Qiang <liq3ea@163.com>
+Date: Tue, 15 Jun 2021 09:56:42 +0800
+Subject: [PATCH] vhost-user-gpu: fix memory leak in vg_resource_attach_backing
+ (CVE-2021-3544)
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Fix CVE-2021-3544
+
+Check whether the 'res' has already been attach_backing to avoid
+memory leak.
+
+Fixes: CVE-2021-3544
+Reported-by: default avatarLi Qiang <liq3ea@163.com>
+virtio-gpu fix: 204f01b3
+
+ ("virtio-gpu: fix memory leak
+in resource attach backing")
+Signed-off-by: default avatarLi Qiang <liq3ea@163.com>
+Reviewed-by: Marc-André Lureau's avatarMarc-André Lureau <marcandre.lureau@redhat.com>
+Message-Id: <20210516030403.107723-4-liq3ea@163.com>
+Signed-off-by: Gerd Hoffmann's avatarGerd Hoffmann <kraxel@redhat.com>
+
+Signed-off-by: Jiajie Li <lijiajie11@huawei.com>
+---
+ contrib/vhost-user-gpu/main.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/contrib/vhost-user-gpu/main.c b/contrib/vhost-user-gpu/main.c
+index f69af7d17f..4f087d6000 100644
+--- a/contrib/vhost-user-gpu/main.c
++++ b/contrib/vhost-user-gpu/main.c
+@@ -468,6 +468,11 @@ vg_resource_attach_backing(VuGpu *g,
+         return;
+     }
+ 
++    if (res->iov) {
++        cmd->error = VIRTIO_GPU_RESP_ERR_UNSPEC;
++        return;
++    }
++
+     ret = vg_create_mapping_iov(g, &ab, cmd, &res->iov);
+     if (ret != 0) {
+         cmd->error = VIRTIO_GPU_RESP_ERR_UNSPEC;
+-- 
+2.27.0
+

@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 58
+Release: 59
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY-SA-4.0
@@ -327,6 +327,13 @@ Patch0314: imx7-ccm-add-digprog-mmio-write-method.patch
 Patch0315: util-cacheinfo-fix-crash-when-compiling-with-uClibc.patch
 Patch0316: arm-cpu-Fixed-function-undefined-error-at-compile-ti.patch
 Patch0317: blockjob-Fix-crash-with-IOthread-when-block-commit-a.patch
+Patch0318: vhost-user-gpu-fix-resource-leak-in-vg_resource_crea.patch
+Patch0319: vhost-user-gpu-fix-memory-leak-in-vg_resource_attach.patch
+Patch0320: vhost-user-gpu-fix-memory-leak-while-calling-vg_reso.patch
+Patch0321: vhost-user-gpu-fix-memory-leak-in-virgl_cmd_resource.patch
+Patch0322: vhost-user-gpu-fix-memory-leak-in-virgl_resource_att.patch
+Patch0323: vhost-user-gpu-fix-memory-disclosure-in-virgl_cmd_ge.patch
+Patch0324: vhost-user-gpu-fix-OOB-write-in-virgl_cmd_get_capset.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -720,6 +727,15 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Tue Jun 15 2021 Chen Qun <kuhn.chenqun@huawei.com>
+- vhost-user-gpu: fix resource leak in 'vg_resource_create_2d' (CVE-2021-3544)
+- vhost-user-gpu: fix memory leak in vg_resource_attach_backing (CVE-2021-3544)
+- vhost-user-gpu: fix memory leak while calling 'vg_resource_unref' (CVE-2021-3544)
+- vhost-user-gpu: fix memory leak in 'virgl_cmd_resource_unref' (CVE-2021-3544)
+- vhost-user-gpu: fix memory leak in 'virgl_resource_attach_backing' (CVE-2021-3544)
+- vhost-user-gpu: fix memory disclosure in virgl_cmd_get_capset_info (CVE-2021-3545)
+- vhost-user-gpu: fix OOB write in 'virgl_cmd_get_capset' (CVE-2021-3546)
+
 * Fri May 28 2021 Chen Qun <kuhn.chenqun@huawei.com>
 - blockjob: Fix crash with IOthread when block commit after snapshot
 
