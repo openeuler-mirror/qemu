@@ -1,0 +1,70 @@
+From 3c392b69da78fa025ea93f89ee90ec1a03104b4d Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Philippe=20Mathieu-Daud=C3=A9?= <f4bug@amsat.org>
+Date: Mon, 21 Jun 2021 10:12:41 +0800
+Subject: [PATCH] hw/intc/arm_gic: Fix interrupt ID in GICD_SGIR register
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Fix CVE-2021-20221
+
+Per the ARM Generic Interrupt Controller Architecture specification
+(document "ARM IHI 0048B.b (ID072613)"), the SGIINTID field is 4 bit,
+not 10:
+
+  - 4.3 Distributor register descriptions
+  - 4.3.15 Software Generated Interrupt Register, GICD_SG
+
+    - Table 4-21 GICD_SGIR bit assignments
+
+    The Interrupt ID of the SGI to forward to the specified CPU
+    interfaces. The value of this field is the Interrupt ID, in
+    the range 0-15, for example a value of 0b0011 specifies
+    Interrupt ID 3.
+
+Correct the irq mask to fix an undefined behavior (which eventually
+lead to a heap-buffer-overflow, see [Buglink]):
+
+   $ echo 'writel 0x8000f00 0xff4affb0' | qemu-system-aarch64 -M virt,accel=qtest -qtest stdio
+   [I 1612088147.116987] OPENED
+  [R +0.278293] writel 0x8000f00 0xff4affb0
+  ../hw/intc/arm_gic.c:1498:13: runtime error: index 944 out of bounds for type 'uint8_t [16][8]'
+  SUMMARY: UndefinedBehaviorSanitizer: undefined-behavior ../hw/intc/arm_gic.c:1498:13
+
+This fixes a security issue when running with KVM on Arm with
+kernel-irqchip=off. (The default is kernel-irqchip=on, which is
+unaffected, and which is also the correct choice for performance.)
+
+Cc: qemu-stable@nongnu.org
+Fixes: CVE-2021-20221
+Fixes: 9ee6e8bb ("ARMv7 support.")
+Buglink: https://bugs.launchpad.net/qemu/+bug/1913916
+Buglink: https://bugs.launchpad.net/qemu/+bug/1913917
+
+Reported-by: Alexander Bulekov's avatarAlexander Bulekov <alxndr@bu.edu>
+Signed-off-by: Philippe Mathieu-Daudé's avatarPhilippe Mathieu-Daudé <f4bug@amsat.org>
+Message-id: 20210131103401.217160-1-f4bug@amsat.org
+Reviewed-by: Peter Maydell's avatarPeter Maydell <peter.maydell@linaro.org>
+Signed-off-by: Peter Maydell's avatarPeter Maydell <peter.maydell@linaro.org>
+
+Signed-off-by: Jiajie Li <lijiajie11@huawei.com>
+---
+ hw/intc/arm_gic.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/hw/intc/arm_gic.c b/hw/intc/arm_gic.c
+index 77427a4188..492dabaa1c 100644
+--- a/hw/intc/arm_gic.c
++++ b/hw/intc/arm_gic.c
+@@ -1454,7 +1454,7 @@ static void gic_dist_writel(void *opaque, hwaddr offset,
+         int target_cpu;
+ 
+         cpu = gic_get_current_cpu(s);
+-        irq = value & 0x3ff;
++        irq = value & 0xf;
+         switch ((value >> 24) & 3) {
+         case 0:
+             mask = (value >> 16) & ALL_CPU_MASK;
+-- 
+2.27.0
+
