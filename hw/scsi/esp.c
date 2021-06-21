@@ -79,6 +79,7 @@ void esp_request_cancelled(SCSIRequest *req)
         scsi_req_unref(s->current_req);
         s->current_req = NULL;
         s->current_dev = NULL;
+        s->async_len = 0;
     }
 }
 
@@ -113,7 +114,6 @@ static uint32_t get_cmd(ESPState *s, uint8_t *buf, uint8_t buflen)
     if (s->current_req) {
         /* Started a new command before the old one finished.  Cancel it.  */
         scsi_req_cancel(s->current_req);
-        s->async_len = 0;
     }
 
     s->current_dev = scsi_device_find(&s->bus, 0, target, 0);
@@ -136,6 +136,9 @@ static void do_busid_cmd(ESPState *s, uint8_t *buf, uint8_t busid)
 
     trace_esp_do_busid_cmd(busid);
     lun = busid & 7;
+    if (!s->current_dev) {
+        return;
+    }
     current_lun = scsi_device_find(&s->bus, 0, s->current_dev->id, lun);
     s->current_req = scsi_req_new(current_lun, 0, lun, buf, s);
     datalen = scsi_req_enqueue(s->current_req);
