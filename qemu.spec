@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 59
+Release: 60
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY-SA-4.0
@@ -334,6 +334,9 @@ Patch0321: vhost-user-gpu-fix-memory-leak-in-virgl_cmd_resource.patch
 Patch0322: vhost-user-gpu-fix-memory-leak-in-virgl_resource_att.patch
 Patch0323: vhost-user-gpu-fix-memory-disclosure-in-virgl_cmd_ge.patch
 Patch0324: vhost-user-gpu-fix-OOB-write-in-virgl_cmd_get_capset.patch
+Patch0325: ide-ahci-add-check-to-avoid-null-dereference-CVE-201.patch
+Patch0326: hw-intc-arm_gic-Fix-interrupt-ID-in-GICD_SGIR-regist.patch
+Patch0327: usb-limit-combined-packets-to-1-MiB-CVE-2021-3527.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -727,6 +730,11 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Mon Jun 21 2021 Chen Qun <kuhn.chenqun@huawei.com>
+- ide: ahci: add check to avoid null dereference (CVE-2019-12067)
+- hw/intc/arm_gic: Fix interrupt ID in GICD_SGIR register
+- usb: limit combined packets to 1 MiB (CVE-2021-3527)
+
 * Tue Jun 15 2021 Chen Qun <kuhn.chenqun@huawei.com>
 - vhost-user-gpu: fix resource leak in 'vg_resource_create_2d' (CVE-2021-3544)
 - vhost-user-gpu: fix memory leak in vg_resource_attach_backing (CVE-2021-3544)
