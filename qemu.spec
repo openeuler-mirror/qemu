@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 60
+Release: 61
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY-SA-4.0
@@ -339,6 +339,7 @@ Patch0326: hw-intc-arm_gic-Fix-interrupt-ID-in-GICD_SGIR-regist.patch
 Patch0327: usb-limit-combined-packets-to-1-MiB-CVE-2021-3527.patch
 
 BuildRequires: flex
+BuildRequires: gcc
 BuildRequires: bison
 BuildRequires: texinfo
 BuildRequires: perl-podlators
@@ -730,6 +731,9 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Mon Jun 28 2021 imxcc <xingchaochao@huawei.com>
+- spec: add gcc buildrequire
+
 * Mon Jun 21 2021 Chen Qun <kuhn.chenqun@huawei.com>
 - ide: ahci: add check to avoid null dereference (CVE-2019-12067)
 - hw/intc/arm_gic: Fix interrupt ID in GICD_SGIR register
