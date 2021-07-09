@@ -1,0 +1,35 @@
+From da65efa79676baad4d3377ebeae578481753e991 Mon Sep 17 00:00:00 2001
+From: Jingyi Wang <wangjingyi11@huawei.com>
+Date: Fri, 9 Jul 2021 11:17:19 +0800
+Subject: [PATCH] target/i386: Add missed security features to Cooperlake CPU
+ model
+
+It lacks two security feature bits in MSR_IA32_ARCH_CAPABILITIES in
+current Cooperlake CPU model, so add them.
+
+This is part of uptream commit 2dea9d9
+
+Signed-off-by: Xiaoyao Li <xiaoyao.li@intel.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+Signed-off-by: Jingyi Wang <wangjingyi11@huawei.com>
+---
+ target/i386/cpu.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/target/i386/cpu.c b/target/i386/cpu.c
+index 5329d73316..50d6ef9de4 100644
+--- a/target/i386/cpu.c
++++ b/target/i386/cpu.c
+@@ -2420,7 +2420,8 @@ static X86CPUDefinition builtin_x86_defs[] = {
+             CPUID_7_0_EDX_SPEC_CTRL_SSBD | CPUID_7_0_EDX_ARCH_CAPABILITIES,
+         .features[FEAT_ARCH_CAPABILITIES] =
+             MSR_ARCH_CAP_RDCL_NO | MSR_ARCH_CAP_IBRS_ALL |
+-            MSR_ARCH_CAP_SKIP_L1DFL_VMENTRY | MSR_ARCH_CAP_MDS_NO,
++            MSR_ARCH_CAP_SKIP_L1DFL_VMENTRY | MSR_ARCH_CAP_MDS_NO |
++            MSR_ARCH_CAP_PSCHANGE_MC_NO | MSR_ARCH_CAP_TAA_NO,
+         .features[FEAT_7_1_EAX] =
+             CPUID_7_1_EAX_AVX512_BF16,
+         /*
+-- 
+2.27.0
+
