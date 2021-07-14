@@ -1,0 +1,39 @@
+From 9997745aade411cc5fe27bb3c314f24698c7e20a Mon Sep 17 00:00:00 2001
+From: Qiang Ning <ningqiang1@huawei.com>
+Date: Mon, 12 Jul 2021 17:30:45 +0800
+Subject: [PATCH] hw/net/rocker_of_dpa: fix double free bug of rocker device
+
+The of_dpa_cmd_add_l2_flood function of the rocker device
+releases the memory of group->l2_flood.group_ids before
+applying for new memory. If the l2_group configured by
+the guest does not match the input group->l2_flood.group_ids,
+the err_out branch is redirected to release the memory of the
+group->l2_flood.group_ids branch. The pointer is not set to
+NULL after the memory is freed. When the guest accesses the
+of_dpa_cmd_add_l2_flood function again, the memory of
+group->l2_flood.group_ids is released again. As a result,
+the memory is double free.
+
+Fix that by setting group->l2_flood.group_ids to NULL after free.
+
+Signed-off-by: Jiajie Li <lijiajie11@huawei.com>
+Signed-off-by: Qiang Ning <ningqiang1@huawei.com>
+---
+ hw/net/rocker/rocker_of_dpa.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/hw/net/rocker/rocker_of_dpa.c b/hw/net/rocker/rocker_of_dpa.c
+index 8e347d1ee4..0c9de5f014 100644
+--- a/hw/net/rocker/rocker_of_dpa.c
++++ b/hw/net/rocker/rocker_of_dpa.c
+@@ -2070,6 +2070,7 @@ static int of_dpa_cmd_add_l2_flood(OfDpa *of_dpa, OfDpaGroup *group,
+ err_out:
+     group->l2_flood.group_count = 0;
+     g_free(group->l2_flood.group_ids);
++    group->l2_flood.group_ids = NULL;
+     g_free(tlvs);
+ 
+     return err;
+-- 
+2.27.0
+

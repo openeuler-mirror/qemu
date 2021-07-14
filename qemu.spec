@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 51
+Release: 52
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY-SA-4.0
@@ -321,6 +321,7 @@ Patch0308: vhost-user-gpu-fix-OOB-write-in-virgl_cmd_get_capset.patch
 Patch0309: ide-ahci-add-check-to-avoid-null-dereference-CVE-201.patch
 Patch0310: hw-intc-arm_gic-Fix-interrupt-ID-in-GICD_SGIR-regist.patch
 Patch0311: usb-limit-combined-packets-to-1-MiB-CVE-2021-3527.patch
+Patch0312: hw-net-rocker_of_dpa-fix-double-free-bug-of-rocker-d.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -708,6 +709,9 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Tue Jul 13 2021 Chen Qun <kuhn.chenqun@huawei.com>
+- hw/net/rocker_of_dpa: fix double free bug of rocker device
+
 * Mon Jun 21 2021 Chen Qun <kuhn.chenqun@huawei.com>
 - ide: ahci: add check to avoid null dereference (CVE-2019-12067)
 - hw/intc/arm_gic: Fix interrupt ID in GICD_SGIR register
