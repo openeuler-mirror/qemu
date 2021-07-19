@@ -337,6 +337,7 @@ Patch0324: vhost-user-gpu-fix-OOB-write-in-virgl_cmd_get_capset.patch
 Patch0325: ide-ahci-add-check-to-avoid-null-dereference-CVE-201.patch
 Patch0326: hw-intc-arm_gic-Fix-interrupt-ID-in-GICD_SGIR-regist.patch
 Patch0327: usb-limit-combined-packets-to-1-MiB-CVE-2021-3527.patch
+Patch0328: hw-net-rocker_of_dpa-fix-double-free-bug-of-rocker-d.patch
 
 BuildRequires: flex
 BuildRequires: gcc
@@ -731,6 +732,9 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Mon Jul 19 2021 Chen Qun <kuhn.chenqun@huawei.com>
+- hw/net/rocker_of_dpa: fix double free bug of rocker device
+
 * Mon Jun 28 2021 imxcc <xingchaochao@huawei.com>
 - spec: add gcc buildrequire
 
