@@ -1,0 +1,32 @@
+From 6fdd7126026a19c3292a8106917d901979501d80 Mon Sep 17 00:00:00 2001
+From: Paolo Bonzini <pbonzini@redhat.com>
+Date: Wed, 13 Nov 2019 15:54:35 +0100
+Subject: [PATCH] target/i386: add PSCHANGE_NO bit for the ARCH_CAPABILITIES
+ MSR
+
+This is required to disable ITLB multihit mitigations in nested
+hypervisors.
+
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+
+Signed-off-by: Jingyi Wang <wangjingyi11@huawei.com>
+---
+ target/i386/cpu.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/target/i386/cpu.c b/target/i386/cpu.c
+index 50d6ef9de4..29836cb2a5 100644
+--- a/target/i386/cpu.c
++++ b/target/i386/cpu.c
+@@ -1208,7 +1208,7 @@ static FeatureWordInfo feature_word_info[FEATURE_WORDS] = {
+         .type = MSR_FEATURE_WORD,
+         .feat_names = {
+             "rdctl-no", "ibrs-all", "rsba", "skip-l1dfl-vmentry",
+-            "ssb-no", "mds-no", NULL, NULL,
++            "ssb-no", "mds-no", "pschange-mc-no", NULL,
+             NULL, NULL, NULL, NULL,
+             NULL, NULL, NULL, NULL,
+             NULL, NULL, NULL, NULL,
+-- 
+2.27.0
+
