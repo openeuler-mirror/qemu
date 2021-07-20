@@ -1,0 +1,44 @@
+From a6206163d42156cb9de290f914c6883c77b012b9 Mon Sep 17 00:00:00 2001
+From: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Date: Wed, 25 Sep 2019 23:49:48 +0200
+Subject: [PATCH] i386: Add CPUID bit for CLZERO and XSAVEERPTR
+
+The CPUID bits CLZERO and XSAVEERPTR are availble on AMD's ZEN platform
+and could be passed to the guest.
+
+Signed-off-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ target/i386/cpu.c | 2 +-
+ target/i386/cpu.h | 2 ++
+ 2 files changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/target/i386/cpu.c b/target/i386/cpu.c
+index f09612f9da..e65f372f25 100644
+--- a/target/i386/cpu.c
++++ b/target/i386/cpu.c
+@@ -1134,7 +1134,7 @@ static FeatureWordInfo feature_word_info[FEATURE_WORDS] = {
+     [FEAT_8000_0008_EBX] = {
+         .type = CPUID_FEATURE_WORD,
+         .feat_names = {
+-            NULL, NULL, NULL, NULL,
++            "clzero", NULL, "xsaveerptr", NULL,
+             NULL, NULL, NULL, NULL,
+             NULL, "wbnoinvd", NULL, NULL,
+             "ibpb", NULL, NULL, NULL,
+diff --git a/target/i386/cpu.h b/target/i386/cpu.h
+index 7ff8ddd464..24d489db0f 100644
+--- a/target/i386/cpu.h
++++ b/target/i386/cpu.h
+@@ -696,6 +696,8 @@ typedef uint32_t FeatureWordArray[FEATURE_WORDS];
+ 
+ #define CPUID_7_1_EAX_AVX512_BF16 (1U << 5) /* AVX512 BFloat16 Instruction */
+ 
++#define CPUID_8000_0008_EBX_CLZERO		(1U << 0) /* CLZERO instruction */
++#define CPUID_8000_0008_EBX_XSAVEERPTR	(1U << 2) /* Always save/restore FP error pointers */
+ #define CPUID_8000_0008_EBX_WBNOINVD  (1U << 9)  /* Write back and
+                                                                              do not invalidate cache */
+ #define CPUID_8000_0008_EBX_IBPB    (1U << 12) /* Indirect Branch Prediction Barrier */
+-- 
+2.27.0
+
