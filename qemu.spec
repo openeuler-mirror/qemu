@@ -346,6 +346,9 @@ Patch0333: target-i386-Add-new-bit-definitions-of-MSR_IA32_ARCH.patch
 Patch0334: target-i386-Add-missed-security-features-to-Cooperla.patch
 Patch0335: target-i386-add-PSCHANGE_NO-bit-for-the-ARCH_CAPABIL.patch
 Patch0336: target-i386-Export-TAA_NO-bit-to-guests.patch
+Patch0337: target-i386-Introduce-Denverton-CPU-model.patch
+Patch0338: target-i386-Add-Snowridge-v2-no-MPX-CPU-model.patch
+Patch0339: i386-Add-CPUID-bit-for-CLZERO-and-XSAVEERPTR.patch
 
 BuildRequires: flex
 BuildRequires: gcc
@@ -740,6 +743,11 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Tue Jul 20 2021 Chen Qun <kuhn.chenqun@huawei.com>
+- target/i386: Introduce Denverton CPU model
+- target/i386: Add Snowridge-v2 (no MPX) CPU model
+- i386: Add CPUID bit for CLZERO and XSAVEERPTR
+
 * Mon Jul 19 2021 Chen Qun <kuhn.chenqun@huawei.com>
 - x86: Intel AVX512_BF16 feature enabling
 - i386: Add MSR feature bit for MDS-NO
