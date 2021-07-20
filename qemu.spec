@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 61
+Release: 62
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY-SA-4.0
@@ -337,6 +337,15 @@ Patch0324: vhost-user-gpu-fix-OOB-write-in-virgl_cmd_get_capset.patch
 Patch0325: ide-ahci-add-check-to-avoid-null-dereference-CVE-201.patch
 Patch0326: hw-intc-arm_gic-Fix-interrupt-ID-in-GICD_SGIR-regist.patch
 Patch0327: usb-limit-combined-packets-to-1-MiB-CVE-2021-3527.patch
+Patch0328: hw-net-rocker_of_dpa-fix-double-free-bug-of-rocker-d.patch
+Patch0329: x86-Intel-AVX512_BF16-feature-enabling.patch
+Patch0330: i386-Add-MSR-feature-bit-for-MDS-NO.patch
+Patch0331: i386-Add-macro-for-stibp.patch
+Patch0332: i386-Add-new-CPU-model-Cooperlake.patch
+Patch0333: target-i386-Add-new-bit-definitions-of-MSR_IA32_ARCH.patch
+Patch0334: target-i386-Add-missed-security-features-to-Cooperla.patch
+Patch0335: target-i386-add-PSCHANGE_NO-bit-for-the-ARCH_CAPABIL.patch
+Patch0336: target-i386-Export-TAA_NO-bit-to-guests.patch
 
 BuildRequires: flex
 BuildRequires: gcc
@@ -731,6 +740,19 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Mon Jul 19 2021 Chen Qun <kuhn.chenqun@huawei.com>
+- x86: Intel AVX512_BF16 feature enabling
+- i386: Add MSR feature bit for MDS-NO
+- i386: Add macro for stibp
+- i386: Add new CPU model Cooperlake
+- target/i386: Add new bit definitions of MSR_IA32_ARCH_CAPABILITIES
+- target/i386: Add missed security features to Cooperlake CPU model
+- target/i386: add PSCHANGE_NO bit for the ARCH_CAPABILITIES MSR
+- target/i386: Export TAA_NO bit to guests
+
+* Mon Jul 19 2021 Chen Qun <kuhn.chenqun@huawei.com>
+- hw/net/rocker_of_dpa: fix double free bug of rocker device
+
 * Mon Jun 28 2021 imxcc <xingchaochao@huawei.com>
 - spec: add gcc buildrequire
 
