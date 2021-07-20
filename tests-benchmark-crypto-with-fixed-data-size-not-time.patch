@@ -1,0 +1,150 @@
+From c151519a7f5c08dde9a32534bc485588a5793967 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Daniel=20P=2E=20Berrang=C3=A9?= <berrange@redhat.com>
+Date: Thu, 17 Oct 2019 14:22:19 +0100
+Subject: [PATCH] tests: benchmark crypto with fixed data size, not time period
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Currently the crypto benchmarks are processing data in varying chunk
+sizes, over a fixed time period. This turns out to be a terrible idea
+because with small chunk sizes the overhead of checking the elapsed
+time on each loop iteration masks the true performance.
+
+Benchmarking over a fixed data size avoids the loop running any system
+calls which can interfere with the performance measurements.
+
+Before this change
+
+Enc chunk 512 bytes 2283.47 MB/sec Dec chunk 512 bytes 2236.23 MB/sec OK
+Enc chunk 4096 bytes 2744.97 MB/sec Dec chunk 4096 bytes 2614.71 MB/sec OK
+Enc chunk 16384 bytes 2777.53 MB/sec Dec chunk 16384 bytes 2678.44 MB/sec OK
+Enc chunk 65536 bytes 2809.34 MB/sec Dec chunk 65536 bytes 2699.47 MB/sec OK
+
+After this change
+
+Enc chunk 512 bytes 2058.22 MB/sec Dec chunk 512 bytes 2030.11 MB/sec OK
+Enc chunk 4096 bytes 2699.27 MB/sec Dec chunk 4096 bytes 2573.78 MB/sec OK
+Enc chunk 16384 bytes 2748.52 MB/sec Dec chunk 16384 bytes 2653.76 MB/sec OK
+Enc chunk 65536 bytes 2814.08 MB/sec Dec chunk 65536 bytes 2712.74 MB/sec OK
+
+The actual crypto performance hasn't changed, which shows how
+significant the mis-measurement has been for small data sizes.
+
+Reviewed-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+Reviewed-by: Stefano Garzarella <sgarzare@redhat.com>
+Signed-off-by: Daniel P. Berrangé <berrange@redhat.com>
+---
+ tests/benchmark-crypto-cipher.c | 26 ++++++++++++++------------
+ tests/benchmark-crypto-hash.c   | 17 +++++++++--------
+ 2 files changed, 23 insertions(+), 20 deletions(-)
+
+diff --git a/tests/benchmark-crypto-cipher.c b/tests/benchmark-crypto-cipher.c
+index 67fdf8c31d..cb6b7200a5 100644
+--- a/tests/benchmark-crypto-cipher.c
++++ b/tests/benchmark-crypto-cipher.c
+@@ -21,11 +21,12 @@ static void test_cipher_speed(size_t chunk_size,
+ {
+     QCryptoCipher *cipher;
+     Error *err = NULL;
+-    double total = 0.0;
+     uint8_t *key = NULL, *iv = NULL;
+     uint8_t *plaintext = NULL, *ciphertext = NULL;
+     size_t nkey;
+     size_t niv;
++    const size_t total = 2 * GiB;
++    size_t remain;
+ 
+     if (!qcrypto_cipher_supports(alg, mode)) {
+         return;
+@@ -58,33 +59,34 @@ static void test_cipher_speed(size_t chunk_size,
+                                       &err) == 0);
+ 
+     g_test_timer_start();
+-    do {
++    remain = total;
++    while (remain) {
+         g_assert(qcrypto_cipher_encrypt(cipher,
+                                         plaintext,
+                                         ciphertext,
+                                         chunk_size,
+                                         &err) == 0);
+-        total += chunk_size;
+-    } while (g_test_timer_elapsed() < 1.0);
++        remain -= chunk_size;
++    }
++    g_test_timer_elapsed();
+ 
+-    total /= MiB;
+     g_print("Enc chunk %zu bytes ", chunk_size);
+-    g_print("%.2f MB/sec ", total / g_test_timer_last());
++    g_print("%.2f MB/sec ", (double)total / MiB / g_test_timer_last());
+ 
+-    total = 0.0;
+     g_test_timer_start();
+-    do {
++    remain = total;
++    while (remain) {
+         g_assert(qcrypto_cipher_decrypt(cipher,
+                                         plaintext,
+                                         ciphertext,
+                                         chunk_size,
+                                         &err) == 0);
+-        total += chunk_size;
+-    } while (g_test_timer_elapsed() < 1.0);
++        remain -= chunk_size;
++    }
++    g_test_timer_elapsed();
+ 
+-    total /= MiB;
+     g_print("Dec chunk %zu bytes ", chunk_size);
+-    g_print("%.2f MB/sec ", total / g_test_timer_last());
++    g_print("%.2f MB/sec ", (double)total / MiB / g_test_timer_last());
+ 
+     qcrypto_cipher_free(cipher);
+     g_free(plaintext);
+diff --git a/tests/benchmark-crypto-hash.c b/tests/benchmark-crypto-hash.c
+index 9b6f7a9155..7f659f7323 100644
+--- a/tests/benchmark-crypto-hash.c
++++ b/tests/benchmark-crypto-hash.c
+@@ -20,7 +20,8 @@ static void test_hash_speed(const void *opaque)
+     size_t chunk_size = (size_t)opaque;
+     uint8_t *in = NULL, *out = NULL;
+     size_t out_len = 0;
+-    double total = 0.0;
++    const size_t total = 2 * GiB;
++    size_t remain;
+     struct iovec iov;
+     int ret;
+ 
+@@ -31,20 +32,20 @@ static void test_hash_speed(const void *opaque)
+     iov.iov_len = chunk_size;
+ 
+     g_test_timer_start();
+-    do {
++    remain = total;
++    while (remain) {
+         ret = qcrypto_hash_bytesv(QCRYPTO_HASH_ALG_SHA256,
+                                   &iov, 1, &out, &out_len,
+                                   NULL);
+         g_assert(ret == 0);
+ 
+-        total += chunk_size;
+-    } while (g_test_timer_elapsed() < 5.0);
++        remain -= chunk_size;
++    }
++    g_test_timer_elapsed();
+ 
+-    total /= MiB;
+     g_print("sha256: ");
+-    g_print("Testing chunk_size %zu bytes ", chunk_size);
+-    g_print("done: %.2f MB in %.2f secs: ", total, g_test_timer_last());
+-    g_print("%.2f MB/sec\n", total / g_test_timer_last());
++    g_print("Hash %zu GB chunk size %zu bytes ", total / GiB, chunk_size);
++    g_print("%.2f MB/sec ", (double)total / MiB / g_test_timer_last());
+ 
+     g_free(out);
+     g_free(in);
+-- 
+2.27.0
+

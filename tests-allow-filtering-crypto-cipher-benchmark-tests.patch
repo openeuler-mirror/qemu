@@ -1,0 +1,56 @@
+From c2a6b4b3204aef2efc39f1b59bc110b54ca24587 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Daniel=20P=2E=20Berrang=C3=A9?= <berrange@redhat.com>
+Date: Tue, 15 Oct 2019 11:19:29 +0100
+Subject: [PATCH] tests: allow filtering crypto cipher benchmark tests
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Add support for specifying a cipher mode and chunk size as argv to
+filter which combinations are benchmarked. For example to only
+benchmark XTS mode with 512 byte chunks:
+
+  ./tests/benchmark-crypto-cipher xts 512
+
+Reviewed-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+Reviewed-by: Stefano Garzarella <sgarzare@redhat.com>
+Signed-off-by: Daniel P. Berrangé <berrange@redhat.com>
+---
+ tests/benchmark-crypto-cipher.c | 13 ++++++++++++-
+ 1 file changed, 12 insertions(+), 1 deletion(-)
+
+diff --git a/tests/benchmark-crypto-cipher.c b/tests/benchmark-crypto-cipher.c
+index cb6b7200a5..53032334ec 100644
+--- a/tests/benchmark-crypto-cipher.c
++++ b/tests/benchmark-crypto-cipher.c
+@@ -163,15 +163,26 @@ static void test_cipher_speed_xts_aes_256(const void *opaque)
+ 
+ int main(int argc, char **argv)
+ {
++    char *alg = NULL;
++    char *size = NULL;
+     g_test_init(&argc, &argv, NULL);
+     g_assert(qcrypto_init(NULL) == 0);
+ 
+ #define ADD_TEST(mode, cipher, keysize, chunk)                          \
+-    g_test_add_data_func(                                               \
++    if ((!alg || g_str_equal(alg, #mode)) &&                            \
++        (!size || g_str_equal(size, #chunk)))                           \
++        g_test_add_data_func(                                           \
+         "/crypto/cipher/" #mode "-" #cipher "-" #keysize "/chunk-" #chunk, \
+         (void *)chunk,                                                  \
+         test_cipher_speed_ ## mode ## _ ## cipher ## _ ## keysize)
+ 
++    if (argc >= 2) {
++        alg = argv[1];
++    }
++    if (argc >= 3) {
++        size = argv[2];
++    }
++
+ #define ADD_TESTS(chunk)                        \
+     do {                                        \
+         ADD_TEST(ecb, aes, 128, chunk);         \
+-- 
+2.27.0
+
