@@ -349,6 +349,10 @@ Patch0336: target-i386-Export-TAA_NO-bit-to-guests.patch
 Patch0337: target-i386-Introduce-Denverton-CPU-model.patch
 Patch0338: target-i386-Add-Snowridge-v2-no-MPX-CPU-model.patch
 Patch0339: i386-Add-CPUID-bit-for-CLZERO-and-XSAVEERPTR.patch
+Patch0340: crypto-add-support-for-nettle-s-native-XTS-impl.patch
+Patch0341: crypto-add-support-for-gcrypt-s-native-XTS-impl.patch
+Patch0342: tests-benchmark-crypto-with-fixed-data-size-not-time.patch
+Patch0343: tests-allow-filtering-crypto-cipher-benchmark-tests.patch
 
 BuildRequires: flex
 BuildRequires: gcc
@@ -743,6 +747,12 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Tue Jul 20 2021 Chen Qun <kuhn.chenqun@huawei.com>
+- crypto: add support for nettle's native XTS impl
+- crypto: add support for gcrypt's native XTS impl
+- tests: benchmark crypto with fixed data size, not time period
+- tests: allow filtering crypto cipher benchmark tests
+
 * Tue Jul 20 2021 Chen Qun <kuhn.chenqun@huawei.com>
 - target/i386: Introduce Denverton CPU model
 - target/i386: Add Snowridge-v2 (no MPX) CPU model
