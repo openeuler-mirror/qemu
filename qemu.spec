@@ -367,6 +367,15 @@ Patch0354: i386-cpu-Don-t-add-unavailable_features-to-env-user_.patch
 Patch0355: target-i386-do-not-set-unsupported-VMX-secondary-exe.patch
 Patch0356: migration-fix-multifd_send_pages-next-channel.patch
 Patch0357: migration-Make-sure-that-we-don-t-call-write-in-case.patch
+Patch0358: virtio-don-t-enable-notifications-during-polling.patch
+Patch0359: usbredir-Prevent-recursion-in-usbredir_write.patch
+Patch0360: xhci-recheck-slot-status.patch
+Patch0361: vhost-Add-names-to-section-rounded-warning.patch
+Patch0362: vhost-user-Print-unexpected-slave-message-types.patch
+Patch0363: contrib-libvhost-user-Protect-slave-fd-with-mutex.patch
+Patch0364: libvhost-user-Fix-some-memtable-remap-cases.patch
+Patch0365: xics-Don-t-deassert-outputs.patch
+Patch0366: i386-Resolve-CPU-models-to-v1-by-default.patch
 
 BuildRequires: flex
 BuildRequires: gcc
@@ -761,6 +770,17 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Wed Jul 21 2021 Chen Qun <kuhn.chenqun@huawei.com>
+- virtio: don't enable notifications during polling
+- usbredir: Prevent recursion in usbredir_write
+- xhci: recheck slot status
+- vhost: Add names to section rounded warning
+- vhost-user: Print unexpected slave message types
+- contrib/libvhost-user: Protect slave fd with mutex
+- libvhost-user: Fix some memtable remap cases
+- xics: Don't deassert outputs
+- i386: Resolve CPU models to v1 by default
+
 * Wed Jul 21 2021 imxcc <xingchaochao@huawei.com>
 - target/i386: handle filtered_features in a new function mark_unavailable_features
 - target/i386: introduce generic feature dependency mechanism
