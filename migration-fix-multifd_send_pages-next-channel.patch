@@ -1,0 +1,50 @@
+From c11a23b92334ae86eddfdc2b155d404293891985 Mon Sep 17 00:00:00 2001
+From: alexchen <alex.chen@huawei.com>
+Date: Tue, 8 Sep 2020 11:18:50 +0000
+Subject: [PATCH 08/11] migration: fix multifd_send_pages() next channel
+
+multifd_send_pages() loops around the available channels,
+the next channel to use between two calls to multifd_send_pages() is stored
+inside a local static variable, next_channel.
+
+It works well, except if the number of channels decreases between two calls
+to multifd_send_pages(). In this case, the loop can try to access the
+data of a channel that doesn't exist anymore.
+
+The problem can be triggered if we start a migration with a given number of
+channels and then we cancel the migration to restart it with a lower number.
+This ends generally with an error like:
+qemu-system-ppc64: .../util/qemu-thread-posix.c:77: qemu_mutex_lock_impl: Assertion `mutex->initialized' failed.
+
+This patch fixes the error by capping next_channel with the current number
+of channels before using it.
+
+Signed-off-by: Laurent Vivier <lvivier@redhat.com>
+Message-Id: <20200617113154.593233-1-lvivier@redhat.com>
+Reviewed-by: Juan Quintela <quintela@redhat.com>
+Signed-off-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+Signed-off-by: BiaoXiang Ye <yebiaoxiang@huawei.com>
+---
+ migration/ram.c | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/migration/ram.c b/migration/ram.c
+index 83cabec6..ac033f22 100644
+--- a/migration/ram.c
++++ b/migration/ram.c
+@@ -931,6 +931,12 @@ static int multifd_send_pages(RAMState *rs)
+     uint64_t transferred;
+ 
+     qemu_sem_wait(&multifd_send_state->channels_ready);
++    /*
++     * next_channel can remain from a previous migration that was
++     * using more channels, so ensure it doesn't overflow if the
++     * limit is lower now.
++     */
++    next_channel %= migrate_multifd_channels();
+     for (i = next_channel;; i = (i + 1) % migrate_multifd_channels()) {
+         p = &multifd_send_state->params[i];
+ 
+-- 
+2.27.0.dirty
+

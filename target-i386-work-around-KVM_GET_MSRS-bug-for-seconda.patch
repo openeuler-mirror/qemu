@@ -1,0 +1,49 @@
+From 70e4d278b89e04d7f9397ea25163feb6a7dbaa2d Mon Sep 17 00:00:00 2001
+From: Paolo Bonzini <pbonzini@redhat.com>
+Date: Tue, 2 Jul 2019 14:58:48 +0200
+Subject: [PATCH] target/i386: work around KVM_GET_MSRS bug for secondary
+ execution controls
+
+Some secondary controls are automatically enabled/disabled based on the CPUID
+values that are set for the guest.  However, they are still available at a
+global level and therefore should be present when KVM_GET_MSRS is sent to
+/dev/kvm.
+
+Unfortunately KVM forgot to include those, so fix that.
+
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ target/i386/kvm.c | 17 +++++++++++++++++
+ 1 file changed, 17 insertions(+)
+
+diff --git a/target/i386/kvm.c b/target/i386/kvm.c
+index fafb9fb26d..b97f40df6b 100644
+--- a/target/i386/kvm.c
++++ b/target/i386/kvm.c
+@@ -474,6 +474,23 @@ uint64_t kvm_arch_get_supported_msr_feature(KVMState *s, uint32_t index)
+     value = msr_data.entries[0].data;
+     switch (index) {
+     case MSR_IA32_VMX_PROCBASED_CTLS2:
++        /* KVM forgot to add these bits for some time, do this ourselves.  */
++        if (kvm_arch_get_supported_cpuid(s, 0xD, 1, R_ECX) & CPUID_XSAVE_XSAVES) {
++            value |= (uint64_t)VMX_SECONDARY_EXEC_XSAVES << 32;
++        }
++        if (kvm_arch_get_supported_cpuid(s, 1, 0, R_ECX) & CPUID_EXT_RDRAND) {
++            value |= (uint64_t)VMX_SECONDARY_EXEC_RDRAND_EXITING << 32;
++        }
++        if (kvm_arch_get_supported_cpuid(s, 7, 0, R_EBX) & CPUID_7_0_EBX_INVPCID) {
++            value |= (uint64_t)VMX_SECONDARY_EXEC_ENABLE_INVPCID << 32;
++        }
++        if (kvm_arch_get_supported_cpuid(s, 7, 0, R_EBX) & CPUID_7_0_EBX_RDSEED) {
++            value |= (uint64_t)VMX_SECONDARY_EXEC_RDSEED_EXITING << 32;
++        }
++        if (kvm_arch_get_supported_cpuid(s, 0x80000001, 0, R_EDX) & CPUID_EXT2_RDTSCP) {
++            value |= (uint64_t)VMX_SECONDARY_EXEC_RDTSCP << 32;
++        }
++        /* fall through */
+     case MSR_IA32_VMX_TRUE_PINBASED_CTLS:
+     case MSR_IA32_VMX_TRUE_PROCBASED_CTLS:
+     case MSR_IA32_VMX_TRUE_ENTRY_CTLS:
+-- 
+2.27.0
+
