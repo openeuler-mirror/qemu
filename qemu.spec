@@ -376,6 +376,14 @@ Patch0363: contrib-libvhost-user-Protect-slave-fd-with-mutex.patch
 Patch0364: libvhost-user-Fix-some-memtable-remap-cases.patch
 Patch0365: xics-Don-t-deassert-outputs.patch
 Patch0366: i386-Resolve-CPU-models-to-v1-by-default.patch
+Patch0367: block-curl-HTTP-header-fields-allow-whitespace-aroun.patch
+Patch0368: block-curl-HTTP-header-field-names-are-case-insensit.patch
+Patch0369: backup-Improve-error-for-bdrv_getlength-failure.patch
+Patch0370: mirror-Make-sure-that-source-and-target-size-match.patch
+Patch0371: iotests-143-Create-socket-in-SOCK_DIR.patch
+Patch0372: nbd-server-Avoid-long-error-message-assertions-CVE-2.patch
+Patch0373: block-Call-attention-to-truncation-of-long-NBD-expor.patch
+Patch0374: qemu-img-convert-Don-t-pre-zero-images.patch
 
 BuildRequires: flex
 BuildRequires: gcc
@@ -770,6 +778,16 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Wed Jul 21 2021 Chen Qun <kuhn.chenqun@huawei.com>
+- block/curl: HTTP header fields allow whitespace around values
+- block/curl: HTTP header field names are case insensitive
+- backup: Improve error for bdrv_getlength() failure
+- mirror: Make sure that source and target size match
+- iotests/143: Create socket in $SOCK_DIR
+- nbd/server: Avoid long error message assertions CVE-2020-10761
+- block: Call attention to truncation of long NBD exports
+- qemu-img convert: Don't pre-zero images
+
 * Wed Jul 21 2021 Chen Qun <kuhn.chenqun@huawei.com>
 - virtio: don't enable notifications during polling
 - usbredir: Prevent recursion in usbredir_write
