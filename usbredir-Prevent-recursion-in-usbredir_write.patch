@@ -1,0 +1,90 @@
+From 30203c01fa1bb2a7b92575683f85695a2d420b38 Mon Sep 17 00:00:00 2001
+From: "Dr. David Alan Gilbert" <dgilbert@redhat.com>
+Date: Wed, 18 Dec 2019 11:30:12 +0000
+Subject: [PATCH] usbredir: Prevent recursion in usbredir_write
+
+I've got a case where usbredir_write manages to call back into itself
+via spice; this patch causes the recursion to fail (0 bytes) the write;
+this seems to avoid the deadlock I was previously seeing.
+
+I can't say I fully understand the interaction of usbredir and spice;
+but there are a few similar guards in spice and usbredir
+to catch other cases especially onces also related to spice_server_char_device_wakeup
+
+This case seems to be triggered by repeated migration+repeated
+reconnection of the viewer; but my debugging suggests the migration
+finished before this hits.
+
+The backtrace of the hang looks like:
+  reds_handle_ticket
+  reds_handle_other_links
+  reds_channel_do_link
+  red_channel_connect
+  spicevmc_connect
+  usbredir_create_parser
+  usbredirparser_do_write
+  usbredir_write
+  qemu_chr_fe_write
+  qemu_chr_write
+  qemu_chr_write_buffer
+  spice_chr_write
+  spice_server_char_device_wakeup
+  red_char_device_wakeup
+  red_char_device_write_to_device
+  vmc_write
+  usbredirparser_do_write
+  usbredir_write
+  qemu_chr_fe_write
+  qemu_chr_write
+  qemu_chr_write_buffer
+  qemu_mutex_lock_impl
+
+and we fail as we lang through qemu_chr_write_buffer's lock
+twice.
+
+Bug: https://bugzilla.redhat.com/show_bug.cgi?id=1752320
+
+Signed-off-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+Message-Id: <20191218113012.13331-1-dgilbert@redhat.com>
+Signed-off-by: Gerd Hoffmann <kraxel@redhat.com>
+---
+ hw/usb/redirect.c | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/hw/usb/redirect.c b/hw/usb/redirect.c
+index 9764a57987..3cf82589ed 100644
+--- a/hw/usb/redirect.c
++++ b/hw/usb/redirect.c
+@@ -109,6 +109,7 @@ struct USBRedirDevice {
+     /* Properties */
+     CharBackend cs;
+     bool enable_streams;
++    bool in_write;
+     uint8_t debug;
+     int32_t bootindex;
+     char *filter_str;
+@@ -286,6 +287,13 @@ static int usbredir_write(void *priv, uint8_t *data, int count)
+         return 0;
+     }
+ 
++    /* Recursion check */
++    if (dev->in_write) {
++        DPRINTF("usbredir_write recursion\n");
++        return 0;
++    }
++    dev->in_write = true;
++
+     r = qemu_chr_fe_write(&dev->cs, data, count);
+     if (r < count) {
+         if (!dev->watch) {
+@@ -296,6 +304,7 @@ static int usbredir_write(void *priv, uint8_t *data, int count)
+             r = 0;
+         }
+     }
++    dev->in_write = false;
+     return r;
+ }
+ 
+-- 
+2.27.0
+

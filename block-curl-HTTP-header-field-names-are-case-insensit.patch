@@ -1,0 +1,54 @@
+From ae2c6d13c4ac625a2c6b217a7f6a17506a2b26e5 Mon Sep 17 00:00:00 2001
+From: Richard Jones <rjones@redhat.com>
+Date: Thu, 28 May 2020 14:27:37 +0100
+Subject: [PATCH] block/curl: HTTP header field names are case insensitive
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+RH-Author: Richard Jones <rjones@redhat.com>
+Message-id: <20200528142737.17318-3-rjones@redhat.com>
+Patchwork-id: 96895
+O-Subject: [RHEL-AV-8.2.1 qemu-kvm PATCH 2/2] block/curl: HTTP header field names are case insensitive
+Bugzilla: 1841038
+RH-Acked-by: Eric Blake <eblake@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+
+From: David Edmondson <david.edmondson@oracle.com>
+
+RFC 7230 section 3.2 indicates that HTTP header field names are case
+insensitive.
+
+Signed-off-by: David Edmondson <david.edmondson@oracle.com>
+Message-Id: <20200224101310.101169-3-david.edmondson@oracle.com>
+Reviewed-by: Max Reitz <mreitz@redhat.com>
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+(cherry picked from commit 69032253c33ae1774233c63cedf36d32242a85fc)
+Signed-off-by: Danilo C. L. de Paula <ddepaula@redhat.com>
+---
+ block/curl.c | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/block/curl.c b/block/curl.c
+index bfabe7eabd..a298fcc591 100644
+--- a/block/curl.c
++++ b/block/curl.c
+@@ -214,11 +214,12 @@ static size_t curl_header_cb(void *ptr, size_t size, size_t nmemb, void *opaque)
+     size_t realsize = size * nmemb;
+     const char *header = (char *)ptr;
+     const char *end = header + realsize;
+-    const char *accept_ranges = "Accept-Ranges:";
++    const char *accept_ranges = "accept-ranges:";
+     const char *bytes = "bytes";
+ 
+     if (realsize >= strlen(accept_ranges)
+-        && strncmp(header, accept_ranges, strlen(accept_ranges)) == 0) {
++        && g_ascii_strncasecmp(header, accept_ranges,
++                               strlen(accept_ranges)) == 0) {
+ 
+         char *p = strchr(header, ':') + 1;
+ 
+-- 
+2.27.0
+

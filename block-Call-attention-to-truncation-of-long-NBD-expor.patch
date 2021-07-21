@@ -1,0 +1,105 @@
+From e94c1625c0f8155740b1bb7b2c749df759e04526 Mon Sep 17 00:00:00 2001
+From: Eric Blake <eblake@redhat.com>
+Date: Wed, 10 Jun 2020 18:32:02 -0400
+Subject: [PATCH] block: Call attention to truncation of long NBD exports
+
+RH-Author: Eric Blake <eblake@redhat.com>
+Message-id: <20200610183202.3780750-3-eblake@redhat.com>
+Patchwork-id: 97495
+O-Subject: [RHEL-AV-8.2.1 qemu-kvm PATCH 2/2] block: Call attention to truncation of long NBD exports
+Bugzilla: 1845384
+RH-Acked-by: Sergio Lopez Pascual <slp@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefan Hajnoczi <stefanha@redhat.com>
+
+Commit 93676c88 relaxed our NBD client code to request export names up
+to the NBD protocol maximum of 4096 bytes without NUL terminator, even
+though the block layer can't store anything longer than 4096 bytes
+including NUL terminator for display to the user.  Since this means
+there are some export names where we have to truncate things, we can
+at least try to make the truncation a bit more obvious for the user.
+Note that in spite of the truncated display name, we can still
+communicate with an NBD server using such a long export name; this was
+deemed nicer than refusing to even connect to such a server (since the
+server may not be under our control, and since determining our actual
+length limits gets tricky when nbd://host:port/export and
+nbd+unix:///export?socket=/path are themselves variable-length
+expansions beyond the export name but count towards the block layer
+name length).
+
+Reported-by: Xueqiang Wei <xuwei@redhat.com>
+Fixes: https://bugzilla.redhat.com/1843684
+Signed-off-by: Eric Blake <eblake@redhat.com>
+Reviewed-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Message-Id: <20200610163741.3745251-3-eblake@redhat.com>
+(cherry picked from commit 5c86bdf1208916ece0b87e1151c9b48ee54faa3e)
+Signed-off-by: Eric Blake <eblake@redhat.com>
+Signed-off-by: Eduardo Lima (Etrunko) <etrunko@redhat.com>
+---
+ block.c     |  7 +++++--
+ block/nbd.c | 21 +++++++++++++--------
+ 2 files changed, 18 insertions(+), 10 deletions(-)
+
+diff --git a/block.c b/block.c
+index 38880eabf8..ba36b53a00 100644
+--- a/block.c
++++ b/block.c
+@@ -6444,8 +6444,11 @@ void bdrv_refresh_filename(BlockDriverState *bs)
+         pstrcpy(bs->filename, sizeof(bs->filename), bs->exact_filename);
+     } else {
+         QString *json = qobject_to_json(QOBJECT(bs->full_open_options));
+-        snprintf(bs->filename, sizeof(bs->filename), "json:%s",
+-                 qstring_get_str(json));
++        if (snprintf(bs->filename, sizeof(bs->filename), "json:%s",
++                     qstring_get_str(json)) >= sizeof(bs->filename)) {
++            /* Give user a hint if we truncated things. */
++            strcpy(bs->filename + sizeof(bs->filename) - 4, "...");
++        }
+         qobject_unref(json);
+     }
+ }
+diff --git a/block/nbd.c b/block/nbd.c
+index 3977b1efc7..63cdd051ab 100644
+--- a/block/nbd.c
++++ b/block/nbd.c
+@@ -1714,6 +1714,7 @@ static void nbd_refresh_filename(BlockDriverState *bs)
+ {
+     BDRVNBDState *s = bs->opaque;
+     const char *host = NULL, *port = NULL, *path = NULL;
++    size_t len = 0;
+ 
+     if (s->saddr->type == SOCKET_ADDRESS_TYPE_INET) {
+         const InetSocketAddress *inet = &s->saddr->u.inet;
+@@ -1726,17 +1727,21 @@ static void nbd_refresh_filename(BlockDriverState *bs)
+     } /* else can't represent as pseudo-filename */
+ 
+     if (path && s->export) {
+-        snprintf(bs->exact_filename, sizeof(bs->exact_filename),
+-                 "nbd+unix:///%s?socket=%s", s->export, path);
++        len = snprintf(bs->exact_filename, sizeof(bs->exact_filename),
++                       "nbd+unix:///%s?socket=%s", s->export, path);
+     } else if (path && !s->export) {
+-        snprintf(bs->exact_filename, sizeof(bs->exact_filename),
+-                 "nbd+unix://?socket=%s", path);
++        len = snprintf(bs->exact_filename, sizeof(bs->exact_filename),
++                       "nbd+unix://?socket=%s", path);
+     } else if (host && s->export) {
+-        snprintf(bs->exact_filename, sizeof(bs->exact_filename),
+-                 "nbd://%s:%s/%s", host, port, s->export);
++        len = snprintf(bs->exact_filename, sizeof(bs->exact_filename),
++                       "nbd://%s:%s/%s", host, port, s->export);
+     } else if (host && !s->export) {
+-        snprintf(bs->exact_filename, sizeof(bs->exact_filename),
+-                 "nbd://%s:%s", host, port);
++        len = snprintf(bs->exact_filename, sizeof(bs->exact_filename),
++                       "nbd://%s:%s", host, port);
++    }
++    if (len > sizeof(bs->exact_filename)) {
++        /* Name is too long to represent exactly, so leave it empty. */
++        bs->exact_filename[0] = '\0';
+     }
+ }
+ 
+-- 
+2.27.0
+

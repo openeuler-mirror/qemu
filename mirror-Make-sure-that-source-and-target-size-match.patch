@@ -1,0 +1,89 @@
+From 9f57569d541acaa4a76513d09ede7d2b19aa69ea Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Wed, 3 Jun 2020 16:03:24 +0100
+Subject: [PATCH] mirror: Make sure that source and target size match
+
+RH-Author: Kevin Wolf <kwolf@redhat.com>
+Message-id: <20200603160325.67506-11-kwolf@redhat.com>
+Patchwork-id: 97110
+O-Subject: [RHEL-AV-8.2.1 qemu-kvm PATCH v2 10/11] mirror: Make sure that source and target size match
+Bugzilla: 1778593
+RH-Acked-by: Eric Blake <eblake@redhat.com>
+RH-Acked-by: Max Reitz <mreitz@redhat.com>
+RH-Acked-by: Stefano Garzarella <sgarzare@redhat.com>
+
+If the target is shorter than the source, mirror would copy data until
+it reaches the end of the target and then fail with an I/O error when
+trying to write past the end.
+
+If the target is longer than the source, the mirror job would complete
+successfully, but the target wouldn't actually be an accurate copy of
+the source image (it would contain some additional garbage at the end).
+
+Fix this by checking that both images have the same size when the job
+starts.
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+Message-Id: <20200511135825.219437-4-kwolf@redhat.com>
+Reviewed-by: Max Reitz <mreitz@redhat.com>
+Reviewed-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+(cherry picked from commit e83dd6808c6e0975970f37b49b27cc37bb54eea8)
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Danilo C. L. de Paula <ddepaula@redhat.com>
+---
+ block/mirror.c | 21 ++++++++++++---------
+ 1 file changed, 12 insertions(+), 9 deletions(-)
+
+diff --git a/block/mirror.c b/block/mirror.c
+index ef6c958ff9..8f0d4544d8 100644
+--- a/block/mirror.c
++++ b/block/mirror.c
+@@ -853,6 +853,7 @@ static int coroutine_fn mirror_run(Job *job, Error **errp)
+     BlockDriverState *target_bs = blk_bs(s->target);
+     bool need_drain = true;
+     int64_t length;
++    int64_t target_length;
+     BlockDriverInfo bdi;
+     char backing_filename[2]; /* we only need 2 characters because we are only
+                                  checking for a NULL string */
+@@ -868,24 +869,26 @@ static int coroutine_fn mirror_run(Job *job, Error **errp)
+         goto immediate_exit;
+     }
+ 
++    target_length = blk_getlength(s->target);
++    if (target_length < 0) {
++        ret = target_length;
++        goto immediate_exit;
++    }
++
+     /* Active commit must resize the base image if its size differs from the
+      * active layer. */
+     if (s->base == blk_bs(s->target)) {
+-        int64_t base_length;
+-
+-        base_length = blk_getlength(s->target);
+-        if (base_length < 0) {
+-            ret = base_length;
+-            goto immediate_exit;
+-        }
+-
+-        if (s->bdev_length > base_length) {
++        if (s->bdev_length > target_length) {
+             ret = blk_truncate(s->target, s->bdev_length, PREALLOC_MODE_OFF,
+                                NULL);
+             if (ret < 0) {
+                 goto immediate_exit;
+             }
+         }
++    } else if (s->bdev_length != target_length) {
++        error_setg(errp, "Source and target image have different sizes");
++        ret = -EINVAL;
++        goto immediate_exit;
+     }
+ 
+     if (s->bdev_length == 0) {
+-- 
+2.27.0
+
