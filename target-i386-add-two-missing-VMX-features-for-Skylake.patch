@@ -1,0 +1,42 @@
+From 1faa48f4de44c123143d43e67cd5a478628a45a4 Mon Sep 17 00:00:00 2001
+From: Paolo Bonzini <pbonzini@redhat.com>
+Date: Mon, 25 Nov 2019 19:12:16 +0100
+Subject: [PATCH] target/i386: add two missing VMX features for Skylake and
+ CascadeLake Server
+
+They are present in client (Core) Skylake but pasted wrong into the server
+SKUs.
+
+Reported-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ target/i386/cpu.c | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/target/i386/cpu.c b/target/i386/cpu.c
+index 2f32d67aa5..6f27a5170a 100644
+--- a/target/i386/cpu.c
++++ b/target/i386/cpu.c
+@@ -2997,7 +2997,8 @@ static X86CPUDefinition builtin_x86_defs[] = {
+              VMX_SECONDARY_EXEC_APIC_REGISTER_VIRT |
+              VMX_SECONDARY_EXEC_VIRTUAL_INTR_DELIVERY |
+              VMX_SECONDARY_EXEC_RDRAND_EXITING | VMX_SECONDARY_EXEC_ENABLE_INVPCID |
+-             VMX_SECONDARY_EXEC_ENABLE_VMFUNC | VMX_SECONDARY_EXEC_SHADOW_VMCS,
++             VMX_SECONDARY_EXEC_ENABLE_VMFUNC | VMX_SECONDARY_EXEC_SHADOW_VMCS |
++             VMX_SECONDARY_EXEC_RDSEED_EXITING | VMX_SECONDARY_EXEC_ENABLE_PML,
+         .xlevel = 0x80000008,
+         .model_id = "Intel Xeon Processor (Skylake)",
+         .versions = (X86CPUVersionDefinition[]) {
+@@ -3113,7 +3114,8 @@ static X86CPUDefinition builtin_x86_defs[] = {
+              VMX_SECONDARY_EXEC_APIC_REGISTER_VIRT |
+              VMX_SECONDARY_EXEC_VIRTUAL_INTR_DELIVERY |
+              VMX_SECONDARY_EXEC_RDRAND_EXITING | VMX_SECONDARY_EXEC_ENABLE_INVPCID |
+-             VMX_SECONDARY_EXEC_ENABLE_VMFUNC | VMX_SECONDARY_EXEC_SHADOW_VMCS,
++             VMX_SECONDARY_EXEC_ENABLE_VMFUNC | VMX_SECONDARY_EXEC_SHADOW_VMCS |
++             VMX_SECONDARY_EXEC_RDSEED_EXITING | VMX_SECONDARY_EXEC_ENABLE_PML,
+         .xlevel = 0x80000008,
+         .model_id = "Intel Xeon Processor (Cascadelake)",
+         .versions = (X86CPUVersionDefinition[]) {
+-- 
+2.27.0
+

@@ -1,0 +1,43 @@
+From 26f01427d155510edcab07e312a72f5bacddafb2 Mon Sep 17 00:00:00 2001
+From: Yang Zhong <yang.zhong@intel.com>
+Date: Fri, 6 Dec 2019 15:11:11 +0800
+Subject: [PATCH] target/i386: disable VMX features if nested=0
+
+If kvm does not support VMX feature by nested=0, the kvm_vmx_basic
+can't get the right value from MSR_IA32_VMX_BASIC register, which
+make qemu coredump when qemu do KVM_SET_MSRS.
+
+The coredump info:
+error: failed to set MSR 0x480 to 0x0
+kvm_put_msrs: Assertion `ret == cpu->kvm_msr_buf->nmsrs' failed.
+
+Signed-off-by: Yang Zhong <yang.zhong@intel.com>
+Message-Id: <20191206071111.12128-1-yang.zhong@intel.com>
+Reported-by: Catherine Ho <catherine.hecx@gmail.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ target/i386/kvm.c | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/target/i386/kvm.c b/target/i386/kvm.c
+index b97f40df6b..5ee0c50d7c 100644
+--- a/target/i386/kvm.c
++++ b/target/i386/kvm.c
+@@ -2493,6 +2493,14 @@ static void kvm_msr_entry_add_vmx(X86CPU *cpu, FeatureWordArray f)
+     uint64_t kvm_vmx_basic =
+         kvm_arch_get_supported_msr_feature(kvm_state,
+                                            MSR_IA32_VMX_BASIC);
++
++    if (!kvm_vmx_basic) {
++        /* If the kernel doesn't support VMX feature (kvm_intel.nested=0),
++         * then kvm_vmx_basic will be 0 and KVM_SET_MSR will fail.
++         */
++        return;
++    }
++
+     uint64_t kvm_vmx_misc =
+         kvm_arch_get_supported_msr_feature(kvm_state,
+                                            MSR_IA32_VMX_MISC);
+-- 
+2.27.0
+

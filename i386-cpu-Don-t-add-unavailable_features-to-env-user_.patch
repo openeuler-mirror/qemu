@@ -1,0 +1,33 @@
+From e6f3e08acd55d13cbb154ff8abb1b3c2ed658285 Mon Sep 17 00:00:00 2001
+From: Xiaoyao Li <xiaoyao.li@intel.com>
+Date: Tue, 14 Jul 2020 01:44:36 +0800
+Subject: [PATCH] i386/cpu: Don't add unavailable_features to
+ env->user_features
+
+Features unavailable due to absent of their dependent features should
+not be added to env->user_features. env->user_features only contains the
+feature explicity specified with -feature/+feature by user.
+
+Fixes: 99e24dbdaa68 ("target/i386: introduce generic feature dependency mechanism")
+Signed-off-by: Xiaoyao Li <xiaoyao.li@intel.com>
+Message-Id: <20200713174436.41070-3-xiaoyao.li@intel.com>
+Signed-off-by: Eduardo Habkost <ehabkost@redhat.com>
+---
+ target/i386/cpu.c | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/target/i386/cpu.c b/target/i386/cpu.c
+index 6f27a5170a..e0f3a2dd99 100644
+--- a/target/i386/cpu.c
++++ b/target/i386/cpu.c
+@@ -6173,7 +6173,6 @@ static void x86_cpu_expand_features(X86CPU *cpu, Error **errp)
+                                       unavailable_features & env->user_features[d->to.index],
+                                       "This feature depends on other features that were not requested");
+ 
+-            env->user_features[d->to.index] |= unavailable_features;
+             env->features[d->to.index] &= ~unavailable_features;
+         }
+     }
+-- 
+2.27.0
+

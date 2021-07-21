@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 64
+Release: 65
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY-SA-4.0
@@ -353,6 +353,20 @@ Patch0340: crypto-add-support-for-nettle-s-native-XTS-impl.patch
 Patch0341: crypto-add-support-for-gcrypt-s-native-XTS-impl.patch
 Patch0342: tests-benchmark-crypto-with-fixed-data-size-not-time.patch
 Patch0343: tests-allow-filtering-crypto-cipher-benchmark-tests.patch
+Patch0344: target-i386-handle-filtered_features-in-a-new-functi.patch
+Patch0345: target-i386-introduce-generic-feature-dependency-mec.patch
+Patch0346: target-i386-expand-feature-words-to-64-bits.patch
+Patch0347: target-i386-add-VMX-definitions.patch
+Patch0348: vmxcap-correct-the-name-of-the-variables.patch
+Patch0349: target-i386-add-VMX-features.patch
+Patch0350: target-i386-work-around-KVM_GET_MSRS-bug-for-seconda.patch
+Patch0351: target-i386-add-VMX-features-to-named-CPU-models.patch
+Patch0352: target-i386-add-two-missing-VMX-features-for-Skylake.patch
+Patch0353: target-i386-disable-VMX-features-if-nested-0.patch
+Patch0354: i386-cpu-Don-t-add-unavailable_features-to-env-user_.patch
+Patch0355: target-i386-do-not-set-unsupported-VMX-secondary-exe.patch
+Patch0356: migration-fix-multifd_send_pages-next-channel.patch
+Patch0357: migration-Make-sure-that-we-don-t-call-write-in-case.patch
 
 BuildRequires: flex
 BuildRequires: gcc
@@ -747,6 +761,22 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Wed Jul 21 2021 imxcc <xingchaochao@huawei.com>
+- target/i386: handle filtered_features in a new function mark_unavailable_features
+- target/i386: introduce generic feature dependency mechanism
+- target/i386: expand feature words to 64 bits
+- target/i386: add VMX definitions
+- vmxcap: correct the name of the variables
+- target/i386: add VMX features
+- target/i386: work around KVM_GET_MSRS bug for secondary execution controls
+- target/i386: add VMX features to named CPU models
+- target/i386: add two missing VMX features for Skylake and CascadeLake Server
+- target/i386: disable VMX features if nested=0
+- i386/cpu: Don't add unavailable_features to env->user_features
+- target/i386: do not set unsupported VMX secondary execution controls
+- migration: fix multifd_send_pages() next channel
+- migration: Make sure that we don't call write() in case of error
+
 * Tue Jul 20 2021 Chen Qun <kuhn.chenqun@huawei.com>
 - crypto: add support for nettle's native XTS impl
 - crypto: add support for gcrypt's native XTS impl
