@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 67
+Release: 68
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY-SA-4.0
@@ -386,6 +386,11 @@ Patch0373: block-Call-attention-to-truncation-of-long-NBD-expor.patch
 Patch0374: qemu-img-convert-Don-t-pre-zero-images.patch
 Patch0375: qcow2-Fix-qcow2_alloc_cluster_abort-for-external-dat.patch
 Patch0376: mirror-Wait-only-for-in-flight-operations.patch
+Patch0377: virtio-net-delete-also-control-queue-when-TX-RX-dele.patch
+Patch0378: target-i386-enable-monitor-and-ucode-revision-with-c.patch
+Patch0379: target-i386-set-the-CPUID-level-to-0x14-on-old-machi.patch
+Patch0380: target-i386-kvm-initialize-feature-MSRs-very-early.patch
+Patch0381: target-i386-add-a-ucode-rev-property.patch
 
 BuildRequires: flex
 BuildRequires: gcc
@@ -780,6 +785,13 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Thu Jul 22 2021 Chen Qun <kuhn.chenqun@huawei.com>
+- virtio-net: delete also control queue when TX/RX deleted
+- target/i386: enable monitor and ucode revision with -cpu max
+- target/i386: set the CPUID level to 0x14 on old machine-type
+- target/i386: kvm: initialize feature MSRs very early
+- target/i386: add a ucode-rev property
+
 * Thu Jul 22 2021 Chen Qun <kuhn.chenqun@huawei.com>
 - qcow2: Fix qcow2_alloc_cluster_abort() for external data file
 - mirror: Wait only for in-flight operations
