@@ -393,6 +393,7 @@ Patch0380: target-i386-kvm-initialize-feature-MSRs-very-early.patch
 Patch0381: target-i386-add-a-ucode-rev-property.patch
 Patch0382: migration-use-migration_is_active-to-represent-activ.patch
 Patch0383: migration-Rate-limit-inside-host-pages.patch
+Patch0384: hw-pci-pcie-Move-hot-plug-capability-check-to-pre_pl.patch
 
 BuildRequires: flex
 BuildRequires: gcc
@@ -787,6 +788,9 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Thu Jul 22 2021 Chen Qun <kuhn.chenqun@huawei.com>
+- hw/pci/pcie: Move hot plug capability check to pre_plug callback
+
 * Thu Jul 22 2021 Chen Qun <kuhn.chenqun@huawei.com>
 - migration: use migration_is_active to represent active state
 - migration: Rate limit inside host pages
