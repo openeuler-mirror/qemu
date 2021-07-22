@@ -38,9 +38,9 @@ typedef struct CowRequest {
 typedef struct BackupBlockJob {
     BlockJob common;
     BlockBackend *target;
-    /* bitmap for sync=incremental */
     BdrvDirtyBitmap *sync_bitmap;
     MirrorSyncMode sync_mode;
+    BitmapSyncMode bitmap_mode;
     BlockdevOnError on_source_error;
     BlockdevOnError on_target_error;
     CoRwlock flush_rwlock;
@@ -110,7 +110,10 @@ static int coroutine_fn backup_cow_with_bounce_buffer(BackupBlockJob *job,
     BlockBackend *blk = job->common.blk;
     int nbytes;
     int read_flags = is_write_notifier ? BDRV_REQ_NO_SERIALISING : 0;
-    int write_flags = job->serialize_target_writes ? BDRV_REQ_SERIALISING : 0;
+    int write_flags =
+            (job->serialize_target_writes ? BDRV_REQ_SERIALISING : 0) |
+            (job->compress ? BDRV_REQ_WRITE_COMPRESSED : 0);
+
 
     assert(QEMU_IS_ALIGNED(start, job->cluster_size));
     hbitmap_reset(job->copy_bitmap, start, job->cluster_size);
@@ -128,14 +131,8 @@ static int coroutine_fn backup_cow_with_bounce_buffer(BackupBlockJob *job,
         goto fail;
     }
 
-    if (buffer_is_zero(*bounce_buffer, nbytes)) {
-        ret = blk_co_pwrite_zeroes(job->target, start,
-                                   nbytes, write_flags | BDRV_REQ_MAY_UNMAP);
-    } else {
-        ret = blk_co_pwrite(job->target, start,
-                            nbytes, *bounce_buffer, write_flags |
-                            (job->compress ? BDRV_REQ_WRITE_COMPRESSED : 0));
-    }
+    ret = blk_co_pwrite(job->target, start, nbytes, *bounce_buffer,
+                        write_flags);
     if (ret < 0) {
         trace_backup_do_cow_write_fail(job, start, ret);
         if (error_is_read) {
@@ -274,8 +271,11 @@ static void backup_cleanup_sync_bitmap(BackupBlockJob *job, int ret)
     BdrvDirtyBitmap *bm;
     BlockDriverState *bs = blk_bs(job->common.blk);
 
-    if (ret < 0) {
-        /* Merge the successor back into the parent, delete nothing. */
+    if (ret < 0 || job->bitmap_mode == BITMAP_SYNC_MODE_NEVER) {
+        /*
+         * Failure, or we don't want to synchronize the bitmap.
+         * Merge the successor back into the parent, delete nothing.
+         */
         bm = bdrv_reclaim_dirty_bitmap(bs, job->sync_bitmap, NULL);
         assert(bm);
     } else {
@@ -461,7 +461,7 @@ static int coroutine_fn backup_run(Job *job, Error **errp)
 
     job_progress_set_remaining(job, s->len);
 
-    if (s->sync_mode == MIRROR_SYNC_MODE_INCREMENTAL) {
+    if (s->sync_mode == MIRROR_SYNC_MODE_BITMAP) {
         backup_incremental_init_copy_bitmap(s);
     } else {
         hbitmap_set(s->copy_bitmap, 0, s->len);
@@ -545,6 +545,7 @@ static int64_t backup_calculate_cluster_size(BlockDriverState *target,
 BlockJob *backup_job_create(const char *job_id, BlockDriverState *bs,
                   BlockDriverState *target, int64_t speed,
                   MirrorSyncMode sync_mode, BdrvDirtyBitmap *sync_bitmap,
+                  BitmapSyncMode bitmap_mode,
                   bool compress,
                   BlockdevOnError on_source_error,
                   BlockdevOnError on_target_error,
@@ -560,6 +561,10 @@ BlockJob *backup_job_create(const char *job_id, BlockDriverState *bs,
 
     assert(bs);
     assert(target);
+
+    /* QMP interface protects us from these cases */
+    assert(sync_mode != MIRROR_SYNC_MODE_INCREMENTAL);
+    assert(sync_bitmap || sync_mode != MIRROR_SYNC_MODE_BITMAP);
 
     if (bs == target) {
         error_setg(errp, "Source and target cannot be the same");
@@ -592,10 +597,10 @@ BlockJob *backup_job_create(const char *job_id, BlockDriverState *bs,
         return NULL;
     }
 
-    if (sync_mode == MIRROR_SYNC_MODE_INCREMENTAL) {
-        if (!sync_bitmap) {
-            error_setg(errp, "must provide a valid bitmap name for "
-                             "\"incremental\" sync mode");
+    if (sync_mode == MIRROR_SYNC_MODE_BITMAP) {
+        /* If we need to write to this bitmap, check that we can: */
+        if (bitmap_mode != BITMAP_SYNC_MODE_NEVER &&
+            bdrv_dirty_bitmap_check(sync_bitmap, BDRV_BITMAP_DEFAULT, errp)) {
             return NULL;
         }
 
@@ -605,8 +610,8 @@ BlockJob *backup_job_create(const char *job_id, BlockDriverState *bs,
         }
     } else if (sync_bitmap) {
         error_setg(errp,
-                   "a sync_bitmap was provided to backup_run, "
-                   "but received an incompatible sync_mode (%s)",
+                   "a bitmap was given to backup_job_create, "
+                   "but it received an incompatible sync_mode (%s)",
                    MirrorSyncMode_str(sync_mode));
         return NULL;
     }
@@ -648,8 +653,8 @@ BlockJob *backup_job_create(const char *job_id, BlockDriverState *bs,
     job->on_source_error = on_source_error;
     job->on_target_error = on_target_error;
     job->sync_mode = sync_mode;
-    job->sync_bitmap = sync_mode == MIRROR_SYNC_MODE_INCREMENTAL ?
-                       sync_bitmap : NULL;
+    job->sync_bitmap = sync_bitmap;
+    job->bitmap_mode = bitmap_mode;
     job->compress = compress;
 
     /* Detect image-fleecing (and similar) schemes */
