@@ -6206,9 +6206,14 @@ static void x86_cpu_expand_features(X86CPU *cpu, Error **errp)
         x86_cpu_adjust_feat_level(cpu, FEAT_XSAVE);
 
         /* Intel Processor Trace requires CPUID[0x14] */
-        if ((env->features[FEAT_7_0_EBX] & CPUID_7_0_EBX_INTEL_PT) &&
-             kvm_enabled() && cpu->intel_pt_auto_level) {
-            x86_cpu_adjust_level(cpu, &cpu->env.cpuid_min_level, 0x14);
+        if ((env->features[FEAT_7_0_EBX] & CPUID_7_0_EBX_INTEL_PT)) {
+            if (cpu->intel_pt_auto_level) {
+                x86_cpu_adjust_level(cpu, &cpu->env.cpuid_min_level, 0x14);
+            } else if (cpu->env.cpuid_min_level < 0x14) {
+                mark_unavailable_features(cpu, FEAT_7_0_EBX,
+                    CPUID_7_0_EBX_INTEL_PT,
+                    "Intel PT need CPUID leaf 0x14, please set by \"-cpu ...,+intel-pt,level=0x14\"");
+            }
         }
 
         /* CPU topology with multi-dies support requires CPUID[0x1F] */
@@ -6317,11 +6322,22 @@ static void x86_cpu_realizefn(DeviceState *dev, Error **errp)
             g_free(name);
             goto out;
         }
+    }
 
+    if (cpu->max_features && accel_uses_host_cpuid()) {
         if (enable_cpu_pm) {
             host_cpuid(5, 0, &cpu->mwait.eax, &cpu->mwait.ebx,
                        &cpu->mwait.ecx, &cpu->mwait.edx);
             env->features[FEAT_1_ECX] |= CPUID_EXT_MONITOR;
+        }
+    }
+
+    if (cpu->ucode_rev == 0) {
+        /* The default is the same as KVM's.  */
+        if (IS_AMD_CPU(env)) {
+            cpu->ucode_rev = 0x01000065;
+        } else {
+            cpu->ucode_rev = 0x100000000ULL;
         }
     }
 
@@ -7004,6 +7020,7 @@ static Property x86_cpu_properties[] = {
     DEFINE_PROP_UINT32("min-level", X86CPU, env.cpuid_min_level, 0),
     DEFINE_PROP_UINT32("min-xlevel", X86CPU, env.cpuid_min_xlevel, 0),
     DEFINE_PROP_UINT32("min-xlevel2", X86CPU, env.cpuid_min_xlevel2, 0),
+    DEFINE_PROP_UINT64("ucode-rev", X86CPU, ucode_rev, 0),
     DEFINE_PROP_BOOL("full-cpuid-auto-level", X86CPU, full_cpuid_auto_level, true),
     DEFINE_PROP_STRING("hv-vendor-id", X86CPU, hyperv_vendor_id),
     DEFINE_PROP_BOOL("cpuid-0xb", X86CPU, enable_cpuid_0xb, true),
