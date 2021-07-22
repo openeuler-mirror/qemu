@@ -394,6 +394,22 @@ Patch0381: target-i386-add-a-ucode-rev-property.patch
 Patch0382: migration-use-migration_is_active-to-represent-activ.patch
 Patch0383: migration-Rate-limit-inside-host-pages.patch
 Patch0384: hw-pci-pcie-Move-hot-plug-capability-check-to-pre_pl.patch
+Patch0385: qapi-block-core-Introduce-BackupCommon.patch
+Patch0386: drive-backup-create-do_backup_common.patch
+Patch0387: blockdev-backup-utilize-do_backup_common.patch
+Patch0388: qapi-add-BitmapSyncMode-enum.patch
+Patch0389: block-backup-Add-mirror-sync-mode-bitmap.patch
+Patch0390: block-backup-add-never-policy-to-bitmap-sync-mode.patch
+Patch0391: block-backup-loosen-restriction-on-readonly-bitmaps.patch
+Patch0392: block-backup-hoist-bitmap-check-into-QMP-interface.patch
+Patch0393: block-backup-deal-with-zero-detection.patch
+Patch0394: mirror-Fix-bdrv_has_zero_init-use.patch
+Patch0395: blockdev-fix-coding-style-issues-in-drive_backup_pre.patch
+Patch0396: blockdev-unify-qmp_drive_backup-and-drive-backup-tra.patch
+Patch0397: blockdev-unify-qmp_blockdev_backup-and-blockdev-back.patch
+Patch0398: blockdev-honor-bdrv_try_set_aio_context-context-requ.patch
+Patch0399: blockdev-Return-bs-to-the-proper-context-on-snapshot.patch
+Patch0400: block-Fix-cross-AioContext-blockdev-snapshot.patch
 
 BuildRequires: flex
 BuildRequires: gcc
@@ -788,6 +804,24 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Thu Jul 22 2021 Chen Qun <kuhn.chenqun@huawei.com>
+- qapi/block-core: Introduce BackupCommon
+- drive-backup: create do_backup_common
+- blockdev-backup: utilize do_backup_common
+- qapi: add BitmapSyncMode enum
+- block/backup: Add mirror sync mode 'bitmap'
+- block/backup: add 'never' policy to bitmap sync mode
+- block/backup: loosen restriction on readonly bitmaps
+- block/backup: hoist bitmap check into QMP interface
+- block/backup: deal with zero detection
+- mirror: Fix bdrv_has_zero_init() use
+- blockdev: fix coding style issues in drive_backup_prepare
+- blockdev: unify qmp_drive_backup and drive-backup transaction paths
+- blockdev: unify qmp_blockdev_backup and blockdev-backup transaction paths
+- blockdev: honor bdrv_try_set_aio_context() context requirements
+- blockdev: Return bs to the proper context on snapshot abort
+- block: Fix cross-AioContext blockdev-snapshot
+
 * Thu Jul 22 2021 Chen Qun <kuhn.chenqun@huawei.com>
 - hw/pci/pcie: Move hot plug capability check to pre_plug callback
 
