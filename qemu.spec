@@ -391,6 +391,8 @@ Patch0378: target-i386-enable-monitor-and-ucode-revision-with-c.patch
 Patch0379: target-i386-set-the-CPUID-level-to-0x14-on-old-machi.patch
 Patch0380: target-i386-kvm-initialize-feature-MSRs-very-early.patch
 Patch0381: target-i386-add-a-ucode-rev-property.patch
+Patch0382: migration-use-migration_is_active-to-represent-activ.patch
+Patch0383: migration-Rate-limit-inside-host-pages.patch
 
 BuildRequires: flex
 BuildRequires: gcc
@@ -785,6 +787,10 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Thu Jul 22 2021 Chen Qun <kuhn.chenqun@huawei.com>
+- migration: use migration_is_active to represent active state
+- migration: Rate limit inside host pages
+
 * Thu Jul 22 2021 Chen Qun <kuhn.chenqun@huawei.com>
 - virtio-net: delete also control queue when TX/RX deleted
 - target/i386: enable monitor and ucode revision with -cpu max
