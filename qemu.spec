@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 66
+Release: 67
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY-SA-4.0
@@ -384,6 +384,8 @@ Patch0371: iotests-143-Create-socket-in-SOCK_DIR.patch
 Patch0372: nbd-server-Avoid-long-error-message-assertions-CVE-2.patch
 Patch0373: block-Call-attention-to-truncation-of-long-NBD-expor.patch
 Patch0374: qemu-img-convert-Don-t-pre-zero-images.patch
+Patch0375: qcow2-Fix-qcow2_alloc_cluster_abort-for-external-dat.patch
+Patch0376: mirror-Wait-only-for-in-flight-operations.patch
 
 BuildRequires: flex
 BuildRequires: gcc
@@ -778,6 +780,10 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Thu Jul 22 2021 Chen Qun <kuhn.chenqun@huawei.com>
+- qcow2: Fix qcow2_alloc_cluster_abort() for external data file
+- mirror: Wait only for in-flight operations
+
 * Wed Jul 21 2021 Chen Qun <kuhn.chenqun@huawei.com>
 - block/curl: HTTP header fields allow whitespace around values
 - block/curl: HTTP header field names are case insensitive
