@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 69
+Release: 70
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY-SA-4.0
@@ -410,6 +410,10 @@ Patch0397: blockdev-unify-qmp_blockdev_backup-and-blockdev-back.patch
 Patch0398: blockdev-honor-bdrv_try_set_aio_context-context-requ.patch
 Patch0399: blockdev-Return-bs-to-the-proper-context-on-snapshot.patch
 Patch0400: block-Fix-cross-AioContext-blockdev-snapshot.patch
+Patch0401: vl-Don-t-mismatch-g_strsplit-g_free.patch
+Patch0402: seqlock-fix-seqlock_write_unlock_impl-function.patch
+Patch0403: target-i386-kvm-initialize-microcode-revision-from-K.patch
+Patch0404: target-i386-check-for-availability-of-MSR_IA32_UCODE.patch
 
 BuildRequires: flex
 BuildRequires: gcc
@@ -804,6 +808,12 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Fri Jul 23 2021 Chen Qun <kuhn.chenqun@huawei.com>
+- vl: Don't mismatch g_strsplit()/g_free()
+- seqlock: fix seqlock_write_unlock_impl function
+- target/i386: kvm: initialize microcode revision from KVM
+- target/i386: check for availability of MSR_IA32_UCODE_REV as an emulated MSR
+
 * Thu Jul 22 2021 Chen Qun <kuhn.chenqun@huawei.com>
 - qapi/block-core: Introduce BackupCommon
 - drive-backup: create do_backup_common
