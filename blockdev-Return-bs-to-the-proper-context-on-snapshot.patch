@@ -1,0 +1,93 @@
+From dc6b61f12750b3ab5a3965af2ec758750389233d Mon Sep 17 00:00:00 2001
+From: Sergio Lopez <slp@redhat.com>
+Date: Wed, 8 Jan 2020 15:31:37 +0100
+Subject: [PATCH] blockdev: Return bs to the proper context on snapshot abort
+
+external_snapshot_abort() calls to bdrv_set_backing_hd(), which
+returns state->old_bs to the main AioContext, as it's intended to be
+used then the BDS is going to be released. As that's not the case when
+aborting an external snapshot, return it to the AioContext it was
+before the call.
+
+This issue can be triggered by issuing a transaction with two actions,
+a proper blockdev-snapshot-sync and a bogus one, so the second will
+trigger a transaction abort. This results in a crash with an stack
+trace like this one:
+
+ #0  0x00007fa1048b28df in __GI_raise (sig=sig@entry=6) at ../sysdeps/unix/sysv/linux/raise.c:50
+ #1  0x00007fa10489ccf5 in __GI_abort () at abort.c:79
+ #2  0x00007fa10489cbc9 in __assert_fail_base
+     (fmt=0x7fa104a03300 "%s%s%s:%u: %s%sAssertion `%s' failed.\n%n", assertion=0x5572240b44d8 "bdrv_get_aio_context(old_bs) == bdrv_get_aio_context(new_bs)", file=0x557224014d30 "block.c", line=2240, function=<optimized out>) at assert.c:92
+ #3  0x00007fa1048aae96 in __GI___assert_fail
+     (assertion=assertion@entry=0x5572240b44d8 "bdrv_get_aio_context(old_bs) == bdrv_get_aio_context(new_bs)", file=file@entry=0x557224014d30 "block.c", line=line@entry=2240, function=function@entry=0x5572240b5d60 <__PRETTY_FUNCTION__.31620> "bdrv_replace_child_noperm") at assert.c:101
+ #4  0x0000557223e631f8 in bdrv_replace_child_noperm (child=0x557225b9c980, new_bs=new_bs@entry=0x557225c42e40) at block.c:2240
+ #5  0x0000557223e68be7 in bdrv_replace_node (from=0x557226951a60, to=0x557225c42e40, errp=0x5572247d6138 <error_abort>) at block.c:4196
+ #6  0x0000557223d069c4 in external_snapshot_abort (common=0x557225d7e170) at blockdev.c:1731
+ #7  0x0000557223d069c4 in external_snapshot_abort (common=0x557225d7e170) at blockdev.c:1717
+ #8  0x0000557223d09013 in qmp_transaction (dev_list=<optimized out>, has_props=<optimized out>, props=0x557225cc7d70, errp=errp@entry=0x7ffe704c0c98) at blockdev.c:2360
+ #9  0x0000557223e32085 in qmp_marshal_transaction (args=<optimized out>, ret=<optimized out>, errp=0x7ffe704c0d08) at qapi/qapi-commands-transaction.c:44
+ #10 0x0000557223ee798c in do_qmp_dispatch (errp=0x7ffe704c0d00, allow_oob=<optimized out>, request=<optimized out>, cmds=0x5572247d3cc0 <qmp_commands>) at qapi/qmp-dispatch.c:132
+ #11 0x0000557223ee798c in qmp_dispatch (cmds=0x5572247d3cc0 <qmp_commands>, request=<optimized out>, allow_oob=<optimized out>) at qapi/qmp-dispatch.c:175
+ #12 0x0000557223e06141 in monitor_qmp_dispatch (mon=0x557225c69ff0, req=<optimized out>) at monitor/qmp.c:120
+ #13 0x0000557223e0678a in monitor_qmp_bh_dispatcher (data=<optimized out>) at monitor/qmp.c:209
+ #14 0x0000557223f2f366 in aio_bh_call (bh=0x557225b9dc60) at util/async.c:117
+ #15 0x0000557223f2f366 in aio_bh_poll (ctx=ctx@entry=0x557225b9c840) at util/async.c:117
+ #16 0x0000557223f32754 in aio_dispatch (ctx=0x557225b9c840) at util/aio-posix.c:459
+ #17 0x0000557223f2f242 in aio_ctx_dispatch (source=<optimized out>, callback=<optimized out>, user_data=<optimized out>) at util/async.c:260
+ #18 0x00007fa10913467d in g_main_dispatch (context=0x557225c28e80) at gmain.c:3176
+ #19 0x00007fa10913467d in g_main_context_dispatch (context=context@entry=0x557225c28e80) at gmain.c:3829
+ #20 0x0000557223f31808 in glib_pollfds_poll () at util/main-loop.c:219
+ #21 0x0000557223f31808 in os_host_main_loop_wait (timeout=<optimized out>) at util/main-loop.c:242
+ #22 0x0000557223f31808 in main_loop_wait (nonblocking=<optimized out>) at util/main-loop.c:518
+ #23 0x0000557223d13201 in main_loop () at vl.c:1828
+ #24 0x0000557223bbfb82 in main (argc=<optimized out>, argv=<optimized out>, envp=<optimized out>) at vl.c:4504
+
+RHBZ: https://bugzilla.redhat.com/show_bug.cgi?id=1779036
+Signed-off-by: Sergio Lopez <slp@redhat.com>
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+---
+ blockdev.c | 21 +++++++++++++++++++++
+ 1 file changed, 21 insertions(+)
+
+diff --git a/blockdev.c b/blockdev.c
+index 5088541591..79112be2e6 100644
+--- a/blockdev.c
++++ b/blockdev.c
+@@ -1774,6 +1774,8 @@ static void external_snapshot_abort(BlkActionState *common)
+     if (state->new_bs) {
+         if (state->overlay_appended) {
+             AioContext *aio_context;
++            AioContext *tmp_context;
++            int ret;
+ 
+             aio_context = bdrv_get_aio_context(state->old_bs);
+             aio_context_acquire(aio_context);
+@@ -1781,6 +1783,25 @@ static void external_snapshot_abort(BlkActionState *common)
+             bdrv_ref(state->old_bs);   /* we can't let bdrv_set_backind_hd()
+                                           close state->old_bs; we need it */
+             bdrv_set_backing_hd(state->new_bs, NULL, &error_abort);
++
++            /*
++             * The call to bdrv_set_backing_hd() above returns state->old_bs to
++             * the main AioContext. As we're still going to be using it, return
++             * it to the AioContext it was before.
++             */
++            tmp_context = bdrv_get_aio_context(state->old_bs);
++            if (aio_context != tmp_context) {
++                aio_context_release(aio_context);
++                aio_context_acquire(tmp_context);
++
++                ret = bdrv_try_set_aio_context(state->old_bs,
++                                               aio_context, NULL);
++                assert(ret == 0);
++
++                aio_context_release(tmp_context);
++                aio_context_acquire(aio_context);
++            }
++
+             bdrv_replace_node(state->new_bs, state->old_bs, &error_abort);
+             bdrv_unref(state->old_bs); /* bdrv_replace_node() ref'ed old_bs */
+ 
+-- 
+2.27.0
+

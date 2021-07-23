@@ -1,0 +1,83 @@
+From 3cf14b9a7daf0a40eb2af7a86e67cb05f6d2bea6 Mon Sep 17 00:00:00 2001
+From: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Date: Tue, 30 Jul 2019 19:32:49 +0300
+Subject: [PATCH] block/backup: deal with zero detection
+
+We have detect_zeroes option, so at least for blockdev-backup user
+should define it if zero-detection is needed. For drive-backup leave
+detection enabled by default but do it through existing option instead
+of open-coding.
+
+Signed-off-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Reviewed-by: John Snow <jsnow@redhat.com>
+Reviewed-by: Max Reitz <mreitz@redhat.com>
+Message-id: 20190730163251.755248-2-vsementsov@virtuozzo.com
+Signed-off-by: John Snow <jsnow@redhat.com>
+---
+ block/backup.c | 15 ++++++---------
+ blockdev.c     |  8 ++++----
+ 2 files changed, 10 insertions(+), 13 deletions(-)
+
+diff --git a/block/backup.c b/block/backup.c
+index cc19643b47..6023573299 100644
+--- a/block/backup.c
++++ b/block/backup.c
+@@ -110,7 +110,10 @@ static int coroutine_fn backup_cow_with_bounce_buffer(BackupBlockJob *job,
+     BlockBackend *blk = job->common.blk;
+     int nbytes;
+     int read_flags = is_write_notifier ? BDRV_REQ_NO_SERIALISING : 0;
+-    int write_flags = job->serialize_target_writes ? BDRV_REQ_SERIALISING : 0;
++    int write_flags =
++            (job->serialize_target_writes ? BDRV_REQ_SERIALISING : 0) |
++            (job->compress ? BDRV_REQ_WRITE_COMPRESSED : 0);
++
+ 
+     assert(QEMU_IS_ALIGNED(start, job->cluster_size));
+     hbitmap_reset(job->copy_bitmap, start, job->cluster_size);
+@@ -128,14 +131,8 @@ static int coroutine_fn backup_cow_with_bounce_buffer(BackupBlockJob *job,
+         goto fail;
+     }
+ 
+-    if (buffer_is_zero(*bounce_buffer, nbytes)) {
+-        ret = blk_co_pwrite_zeroes(job->target, start,
+-                                   nbytes, write_flags | BDRV_REQ_MAY_UNMAP);
+-    } else {
+-        ret = blk_co_pwrite(job->target, start,
+-                            nbytes, *bounce_buffer, write_flags |
+-                            (job->compress ? BDRV_REQ_WRITE_COMPRESSED : 0));
+-    }
++    ret = blk_co_pwrite(job->target, start, nbytes, *bounce_buffer,
++                        write_flags);
+     if (ret < 0) {
+         trace_backup_do_cow_write_fail(job, start, ret);
+         if (error_is_read) {
+diff --git a/blockdev.c b/blockdev.c
+index 0a71a15fa2..94e5aee30b 100644
+--- a/blockdev.c
++++ b/blockdev.c
+@@ -3572,7 +3572,7 @@ static BlockJob *do_drive_backup(DriveBackup *backup, JobTxn *txn,
+     BlockDriverState *source = NULL;
+     BlockJob *job = NULL;
+     AioContext *aio_context;
+-    QDict *options = NULL;
++    QDict *options;
+     Error *local_err = NULL;
+     int flags;
+     int64_t size;
+@@ -3645,10 +3645,10 @@ static BlockJob *do_drive_backup(DriveBackup *backup, JobTxn *txn,
+         goto out;
+     }
+ 
++    options = qdict_new();
++    qdict_put_str(options, "discard", "unmap");
++    qdict_put_str(options, "detect-zeroes", "unmap");
+     if (backup->format) {
+-        if (!options) {
+-            options = qdict_new();
+-        }
+         qdict_put_str(options, "driver", backup->format);
+     }
+ 
+-- 
+2.27.0
+

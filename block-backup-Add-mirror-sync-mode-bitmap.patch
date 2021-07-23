@@ -1,0 +1,252 @@
+From e0a0150e671e8129f11aa3df907e444e91711f53 Mon Sep 17 00:00:00 2001
+From: John Snow <jsnow@redhat.com>
+Date: Mon, 29 Jul 2019 16:35:52 -0400
+Subject: [PATCH] block/backup: Add mirror sync mode 'bitmap'
+
+We don't need or want a new sync mode for simple differences in
+semantics.  Create a new mode simply named "BITMAP" that is designed to
+make use of the new Bitmap Sync Mode field.
+
+Because the only bitmap sync mode is 'on-success', this adds no new
+functionality to the backup job (yet). The old incremental backup mode
+is maintained as a syntactic sugar for sync=bitmap, mode=on-success.
+
+Add all of the plumbing necessary to support this new instruction.
+
+Signed-off-by: John Snow <jsnow@redhat.com>
+Reviewed-by: Max Reitz <mreitz@redhat.com>
+Message-id: 20190709232550.10724-6-jsnow@redhat.com
+Signed-off-by: John Snow <jsnow@redhat.com>
+---
+ block/backup.c            | 20 ++++++++++++--------
+ block/mirror.c            |  6 ++++--
+ block/replication.c       |  2 +-
+ blockdev.c                | 25 +++++++++++++++++++++++--
+ include/block/block_int.h |  4 +++-
+ qapi/block-core.json      | 21 +++++++++++++++------
+ 6 files changed, 58 insertions(+), 20 deletions(-)
+
+diff --git a/block/backup.c b/block/backup.c
+index 88354dcb32..e37eda80cd 100644
+--- a/block/backup.c
++++ b/block/backup.c
+@@ -38,9 +38,9 @@ typedef struct CowRequest {
+ typedef struct BackupBlockJob {
+     BlockJob common;
+     BlockBackend *target;
+-    /* bitmap for sync=incremental */
+     BdrvDirtyBitmap *sync_bitmap;
+     MirrorSyncMode sync_mode;
++    BitmapSyncMode bitmap_mode;
+     BlockdevOnError on_source_error;
+     BlockdevOnError on_target_error;
+     CoRwlock flush_rwlock;
+@@ -461,7 +461,7 @@ static int coroutine_fn backup_run(Job *job, Error **errp)
+ 
+     job_progress_set_remaining(job, s->len);
+ 
+-    if (s->sync_mode == MIRROR_SYNC_MODE_INCREMENTAL) {
++    if (s->sync_mode == MIRROR_SYNC_MODE_BITMAP) {
+         backup_incremental_init_copy_bitmap(s);
+     } else {
+         hbitmap_set(s->copy_bitmap, 0, s->len);
+@@ -545,6 +545,7 @@ static int64_t backup_calculate_cluster_size(BlockDriverState *target,
+ BlockJob *backup_job_create(const char *job_id, BlockDriverState *bs,
+                   BlockDriverState *target, int64_t speed,
+                   MirrorSyncMode sync_mode, BdrvDirtyBitmap *sync_bitmap,
++                  BitmapSyncMode bitmap_mode,
+                   bool compress,
+                   BlockdevOnError on_source_error,
+                   BlockdevOnError on_target_error,
+@@ -592,10 +593,13 @@ BlockJob *backup_job_create(const char *job_id, BlockDriverState *bs,
+         return NULL;
+     }
+ 
+-    if (sync_mode == MIRROR_SYNC_MODE_INCREMENTAL) {
++    /* QMP interface should have handled translating this to bitmap mode */
++    assert(sync_mode != MIRROR_SYNC_MODE_INCREMENTAL);
++
++    if (sync_mode == MIRROR_SYNC_MODE_BITMAP) {
+         if (!sync_bitmap) {
+             error_setg(errp, "must provide a valid bitmap name for "
+-                             "\"incremental\" sync mode");
++                       "'%s' sync mode", MirrorSyncMode_str(sync_mode));
+             return NULL;
+         }
+ 
+@@ -605,8 +609,8 @@ BlockJob *backup_job_create(const char *job_id, BlockDriverState *bs,
+         }
+     } else if (sync_bitmap) {
+         error_setg(errp,
+-                   "a sync_bitmap was provided to backup_run, "
+-                   "but received an incompatible sync_mode (%s)",
++                   "a bitmap was given to backup_job_create, "
++                   "but it received an incompatible sync_mode (%s)",
+                    MirrorSyncMode_str(sync_mode));
+         return NULL;
+     }
+@@ -648,8 +652,8 @@ BlockJob *backup_job_create(const char *job_id, BlockDriverState *bs,
+     job->on_source_error = on_source_error;
+     job->on_target_error = on_target_error;
+     job->sync_mode = sync_mode;
+-    job->sync_bitmap = sync_mode == MIRROR_SYNC_MODE_INCREMENTAL ?
+-                       sync_bitmap : NULL;
++    job->sync_bitmap = sync_bitmap;
++    job->bitmap_mode = bitmap_mode;
+     job->compress = compress;
+ 
+     /* Detect image-fleecing (and similar) schemes */
+diff --git a/block/mirror.c b/block/mirror.c
+index abcf60a961..ccae49a28e 100644
+--- a/block/mirror.c
++++ b/block/mirror.c
+@@ -1770,8 +1770,10 @@ void mirror_start(const char *job_id, BlockDriverState *bs,
+     bool is_none_mode;
+     BlockDriverState *base;
+ 
+-    if (mode == MIRROR_SYNC_MODE_INCREMENTAL) {
+-        error_setg(errp, "Sync mode 'incremental' not supported");
++    if ((mode == MIRROR_SYNC_MODE_INCREMENTAL) ||
++        (mode == MIRROR_SYNC_MODE_BITMAP)) {
++        error_setg(errp, "Sync mode '%s' not supported",
++                   MirrorSyncMode_str(mode));
+         return;
+     }
+     is_none_mode = mode == MIRROR_SYNC_MODE_NONE;
+diff --git a/block/replication.c b/block/replication.c
+index 23b2993d74..936b2f8b5a 100644
+--- a/block/replication.c
++++ b/block/replication.c
+@@ -543,7 +543,7 @@ static void replication_start(ReplicationState *rs, ReplicationMode mode,
+ 
+         s->backup_job = backup_job_create(
+                                 NULL, s->secondary_disk->bs, s->hidden_disk->bs,
+-                                0, MIRROR_SYNC_MODE_NONE, NULL, false,
++                                0, MIRROR_SYNC_MODE_NONE, NULL, 0, false,
+                                 BLOCKDEV_ON_ERROR_REPORT,
+                                 BLOCKDEV_ON_ERROR_REPORT, JOB_INTERNAL,
+                                 backup_job_completed, bs, NULL, &local_err);
+diff --git a/blockdev.c b/blockdev.c
+index aa15ed1f00..34c8b651e1 100644
+--- a/blockdev.c
++++ b/blockdev.c
+@@ -3508,12 +3508,31 @@ static BlockJob *do_backup_common(BackupCommon *backup,
+         return NULL;
+     }
+ 
++    if (backup->sync == MIRROR_SYNC_MODE_INCREMENTAL) {
++        if (backup->has_bitmap_mode &&
++            backup->bitmap_mode != BITMAP_SYNC_MODE_ON_SUCCESS) {
++            error_setg(errp, "Bitmap sync mode must be '%s' "
++                       "when using sync mode '%s'",
++                       BitmapSyncMode_str(BITMAP_SYNC_MODE_ON_SUCCESS),
++                       MirrorSyncMode_str(backup->sync));
++            return NULL;
++        }
++        backup->has_bitmap_mode = true;
++        backup->sync = MIRROR_SYNC_MODE_BITMAP;
++        backup->bitmap_mode = BITMAP_SYNC_MODE_ON_SUCCESS;
++    }
++
+     if (backup->has_bitmap) {
+         bmap = bdrv_find_dirty_bitmap(bs, backup->bitmap);
+         if (!bmap) {
+             error_setg(errp, "Bitmap '%s' could not be found", backup->bitmap);
+             return NULL;
+         }
++        if (!backup->has_bitmap_mode) {
++            error_setg(errp, "Bitmap sync mode must be given "
++                       "when providing a bitmap");
++            return NULL;
++        }
+         if (bdrv_dirty_bitmap_check(bmap, BDRV_BITMAP_DEFAULT, errp)) {
+             return NULL;
+         }
+@@ -3527,8 +3546,10 @@ static BlockJob *do_backup_common(BackupCommon *backup,
+     }
+ 
+     job = backup_job_create(backup->job_id, bs, target_bs, backup->speed,
+-                            backup->sync, bmap, backup->compress,
+-                            backup->on_source_error, backup->on_target_error,
++                            backup->sync, bmap, backup->bitmap_mode,
++                            backup->compress,
++                            backup->on_source_error,
++                            backup->on_target_error,
+                             job_flags, NULL, NULL, txn, errp);
+     return job;
+ }
+diff --git a/include/block/block_int.h b/include/block/block_int.h
+index 05ee6b4866..76117a761a 100644
+--- a/include/block/block_int.h
++++ b/include/block/block_int.h
+@@ -1152,7 +1152,8 @@ void mirror_start(const char *job_id, BlockDriverState *bs,
+  * @target: Block device to write to.
+  * @speed: The maximum speed, in bytes per second, or 0 for unlimited.
+  * @sync_mode: What parts of the disk image should be copied to the destination.
+- * @sync_bitmap: The dirty bitmap if sync_mode is MIRROR_SYNC_MODE_INCREMENTAL.
++ * @sync_bitmap: The dirty bitmap if sync_mode is 'bitmap' or 'incremental'
++ * @bitmap_mode: The bitmap synchronization policy to use.
+  * @on_source_error: The action to take upon error reading from the source.
+  * @on_target_error: The action to take upon error writing to the target.
+  * @creation_flags: Flags that control the behavior of the Job lifetime.
+@@ -1168,6 +1169,7 @@ BlockJob *backup_job_create(const char *job_id, BlockDriverState *bs,
+                             BlockDriverState *target, int64_t speed,
+                             MirrorSyncMode sync_mode,
+                             BdrvDirtyBitmap *sync_bitmap,
++                            BitmapSyncMode bitmap_mode,
+                             bool compress,
+                             BlockdevOnError on_source_error,
+                             BlockdevOnError on_target_error,
+diff --git a/qapi/block-core.json b/qapi/block-core.json
+index b8d12a4951..97baff3a8c 100644
+--- a/qapi/block-core.json
++++ b/qapi/block-core.json
+@@ -1127,12 +1127,15 @@
+ #
+ # @none: only copy data written from now on
+ #
+-# @incremental: only copy data described by the dirty bitmap. Since: 2.4
++# @incremental: only copy data described by the dirty bitmap. (since: 2.4)
++#
++# @bitmap: only copy data described by the dirty bitmap. (since: 4.2)
++#          Behavior on completion is determined by the BitmapSyncMode.
+ #
+ # Since: 1.3
+ ##
+ { 'enum': 'MirrorSyncMode',
+-  'data': ['top', 'full', 'none', 'incremental'] }
++  'data': ['top', 'full', 'none', 'incremental', 'bitmap'] }
+ 
+ ##
+ # @BitmapSyncMode:
+@@ -1343,9 +1346,14 @@
+ # @speed: the maximum speed, in bytes per second. The default is 0,
+ #         for unlimited.
+ #
+-# @bitmap: the name of dirty bitmap if sync is "incremental".
+-#          Must be present if sync is "incremental", must NOT be present
+-#          otherwise. (Since 2.4 (drive-backup), 3.1 (blockdev-backup))
++# @bitmap: the name of a dirty bitmap if sync is "bitmap" or "incremental".
++#          Must be present if sync is "bitmap" or "incremental".
++#          Must not be present otherwise.
++#          (Since 2.4 (drive-backup), 3.1 (blockdev-backup))
++#
++# @bitmap-mode: Specifies the type of data the bitmap should contain after
++#               the operation concludes. Must be present if sync is "bitmap".
++#               Must NOT be present otherwise. (Since 4.2)
+ #
+ # @compress: true to compress data, if the target format supports it.
+ #            (default: false) (since 2.8)
+@@ -1380,7 +1388,8 @@
+ { 'struct': 'BackupCommon',
+   'data': { '*job-id': 'str', 'device': 'str',
+             'sync': 'MirrorSyncMode', '*speed': 'int',
+-            '*bitmap': 'str', '*compress': 'bool',
++            '*bitmap': 'str', '*bitmap-mode': 'BitmapSyncMode',
++            '*compress': 'bool',
+             '*on-source-error': 'BlockdevOnError',
+             '*on-target-error': 'BlockdevOnError',
+             '*auto-finalize': 'bool', '*auto-dismiss': 'bool' } }
+-- 
+2.27.0
+

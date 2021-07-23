@@ -1,0 +1,68 @@
+From 9662d44633dd4582dc47d58f63ee63b2c8f60a4f Mon Sep 17 00:00:00 2001
+From: Wei Yang <richardw.yang@linux.intel.com>
+Date: Wed, 17 Jul 2019 08:53:41 +0800
+Subject: [PATCH] migration: use migration_is_active to represent active state
+
+Wrap the check into a function to make it easy to read.
+
+Signed-off-by: Wei Yang <richardw.yang@linux.intel.com>
+Message-Id: <20190717005341.14140-1-richardw.yang@linux.intel.com>
+Reviewed-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+Signed-off-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+---
+ include/migration/misc.h |  1 +
+ migration/migration.c    | 12 ++++++++----
+ 2 files changed, 9 insertions(+), 4 deletions(-)
+
+diff --git a/include/migration/misc.h b/include/migration/misc.h
+index 5cdbabd094..42d6abc920 100644
+--- a/include/migration/misc.h
++++ b/include/migration/misc.h
+@@ -61,6 +61,7 @@ void migration_object_init(void);
+ void migration_shutdown(void);
+ void qemu_start_incoming_migration(const char *uri, Error **errp);
+ bool migration_is_idle(void);
++bool migration_is_active(MigrationState *);
+ void add_migration_state_change_notifier(Notifier *notify);
+ void remove_migration_state_change_notifier(Notifier *notify);
+ bool migration_in_setup(MigrationState *);
+diff --git a/migration/migration.c b/migration/migration.c
+index 9b40380d7c..fd7d81d4b6 100644
+--- a/migration/migration.c
++++ b/migration/migration.c
+@@ -1578,8 +1578,7 @@ static void migrate_fd_cleanup(MigrationState *s)
+         qemu_fclose(tmp);
+     }
+ 
+-    assert((s->state != MIGRATION_STATUS_ACTIVE) &&
+-           (s->state != MIGRATION_STATUS_POSTCOPY_ACTIVE));
++    assert(!migration_is_active(s));
+ 
+     if (s->state == MIGRATION_STATUS_CANCELLING) {
+         migrate_set_state(&s->state, MIGRATION_STATUS_CANCELLING,
+@@ -1741,6 +1740,12 @@ bool migration_is_idle(void)
+     return false;
+ }
+ 
++bool migration_is_active(MigrationState *s)
++{
++    return (s->state == MIGRATION_STATUS_ACTIVE ||
++            s->state == MIGRATION_STATUS_POSTCOPY_ACTIVE);
++}
++
+ void migrate_init(MigrationState *s)
+ {
+     /*
+@@ -3307,8 +3312,7 @@ static void *migration_thread(void *opaque)
+ 
+     trace_migration_thread_setup_complete();
+ 
+-    while (s->state == MIGRATION_STATUS_ACTIVE ||
+-           s->state == MIGRATION_STATUS_POSTCOPY_ACTIVE) {
++    while (migration_is_active(s)) {
+         int64_t current_time;
+ 
+         if (urgent || !qemu_file_rate_limit(s->to_dst_file)) {
+-- 
+2.27.0
+
