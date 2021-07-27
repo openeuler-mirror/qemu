@@ -38,6 +38,9 @@ typedef struct SevKernelLoaderContext {
     size_t cmdline_size;
 } SevKernelLoaderContext;
 
+#define RAM_SAVE_ENCRYPTED_PAGE           0x1
+#define RAM_SAVE_SHARED_REGIONS_LIST      0x2
+
 #ifdef CONFIG_SEV
 bool sev_enabled(void);
 bool sev_es_enabled(void);
@@ -66,6 +69,7 @@ int sev_remove_shared_regions_list(unsigned long gfn_start,
 int sev_add_shared_regions_list(unsigned long gfn_start, unsigned long gfn_end);
 int sev_save_outgoing_shared_regions_list(QEMUFile *f, uint64_t *bytes_sent);
 int sev_load_incoming_shared_regions_list(QEMUFile *f);
+bool sev_is_gfn_in_unshared_region(unsigned long gfn);
 
 int sev_kvm_init(ConfidentialGuestSupport *cgs, Error **errp);
 
