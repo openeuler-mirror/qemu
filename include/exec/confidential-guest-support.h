@@ -73,7 +73,7 @@ struct ConfidentialGuestMemoryEncryptionOps {
     bool (*is_gfn_in_unshared_region)(unsigned long gfn);
 
     /* Write the shared regions list */
-    int (*save_outgoing_shared_regions_list)(QEMUFile *f);
+    int (*save_outgoing_shared_regions_list)(QEMUFile *f, uint64_t *bytes_sent);
 
     /* Load the shared regions list */
     int (*load_incoming_shared_regions_list)(QEMUFile *f);

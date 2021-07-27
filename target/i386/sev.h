@@ -64,6 +64,8 @@ void sev_es_set_reset_vector(CPUState *cpu);
 int sev_remove_shared_regions_list(unsigned long gfn_start,
                                    unsigned long gfn_end);
 int sev_add_shared_regions_list(unsigned long gfn_start, unsigned long gfn_end);
+int sev_save_outgoing_shared_regions_list(QEMUFile *f, uint64_t *bytes_sent);
+int sev_load_incoming_shared_regions_list(QEMUFile *f);
 
 int sev_kvm_init(ConfidentialGuestSupport *cgs, Error **errp);
 
