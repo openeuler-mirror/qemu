@@ -2488,6 +2488,32 @@ static bool kvm_rdmsr_core_thread_count(X86CPU *cpu, uint32_t msr,
     return true;
 }
 
+/*
+ * Currently this exit is only used by SEV guests for
+ * MSR_KVM_MIGRATION_CONTROL to indicate if the guest
+ * is ready for migration.
+ */
+static uint64_t msr_kvm_migration_control;
+
+static bool kvm_rdmsr_kvm_migration_control(X86CPU *cpu, uint32_t msr,
+                                            uint64_t *val)
+{
+    *val = msr_kvm_migration_control;
+
+    return true;
+}
+
+static bool kvm_wrmsr_kvm_migration_control(X86CPU *cpu, uint32_t msr,
+                                            uint64_t val)
+{
+    msr_kvm_migration_control = val;
+
+    if (val == KVM_MIGRATION_READY)
+        sev_del_migrate_blocker();
+
+    return true;
+}
+
 static Notifier smram_machine_done;
 static KVMMemoryListener smram_listener;
 static AddressSpace smram_address_space;
@@ -2732,6 +2758,15 @@ int kvm_arch_init(MachineState *ms, KVMState *s)
                            kvm_rdmsr_core_thread_count, NULL);
         if (!r) {
             error_report("Could not install MSR_CORE_THREAD_COUNT handler: %s",
+                         strerror(-ret));
+            exit(1);
+        }
+
+        r = kvm_filter_msr(s, MSR_KVM_MIGRATION_CONTROL,
+                           kvm_rdmsr_kvm_migration_control,
+                           kvm_wrmsr_kvm_migration_control);
+        if (!r) {
+            error_report("Could not install MSR_KVM_MIGRATION_CONTROL handler: %s",
                          strerror(-ret));
             exit(1);
         }
