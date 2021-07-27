@@ -395,6 +395,19 @@ void hmp_info_migrate_parameters(Monitor *mon, const QDict *qdict)
         monitor_printf(mon, "%s: %s\n",
             MigrationParameter_str(MIGRATION_PARAMETER_MODE),
             qapi_enum_lookup(&MigMode_lookup, params->mode));
+
+        assert(params->sev_pdh);
+        monitor_printf(mon, "%s: %s\n",
+            MigrationParameter_str(MIGRATION_PARAMETER_SEV_PDH),
+            params->sev_pdh);
+        assert(params->sev_plat_cert);
+        monitor_printf(mon, "%s: %s\n",
+            MigrationParameter_str(MIGRATION_PARAMETER_SEV_PLAT_CERT),
+            params->sev_plat_cert);
+        assert(params->sev_amd_cert);
+        monitor_printf(mon, "%s: %s\n",
+            MigrationParameter_str(MIGRATION_PARAMETER_SEV_AMD_CERT),
+            params->sev_amd_cert);
     }
 
     qapi_free_MigrationParameters(params);
@@ -690,6 +703,21 @@ void hmp_migrate_set_parameter(Monitor *mon, const QDict *qdict)
     case MIGRATION_PARAMETER_MODE:
         p->has_mode = true;
         visit_type_MigMode(v, param, &p->mode, &err);
+        break;
+    case MIGRATION_PARAMETER_SEV_PDH:
+        p->sev_pdh = g_new0(StrOrNull, 1);
+        p->sev_pdh->type = QTYPE_QSTRING;
+        visit_type_str(v, param, &p->sev_pdh->u.s, &err);
+        break;
+    case MIGRATION_PARAMETER_SEV_PLAT_CERT:
+        p->sev_plat_cert = g_new0(StrOrNull, 1);
+        p->sev_plat_cert->type = QTYPE_QSTRING;
+        visit_type_str(v, param, &p->sev_plat_cert->u.s, &err);
+        break;
+    case MIGRATION_PARAMETER_SEV_AMD_CERT:
+        p->sev_amd_cert = g_new0(StrOrNull, 1);
+        p->sev_amd_cert->type = QTYPE_QSTRING;
+        visit_type_str(v, param, &p->sev_amd_cert->u.s, &err);
         break;
     default:
         assert(0);
