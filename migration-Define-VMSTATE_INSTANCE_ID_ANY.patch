@@ -1,0 +1,237 @@
+From 21e049e2941b108df45c9089cbf7539caae538e6 Mon Sep 17 00:00:00 2001
+From: Peter Xu <peterx@redhat.com>
+Date: Wed, 16 Oct 2019 10:29:30 +0800
+Subject: [PATCH 5/8] migration: Define VMSTATE_INSTANCE_ID_ANY
+
+Define the new macro VMSTATE_INSTANCE_ID_ANY for callers who wants to
+auto-generate the vmstate instance ID.  Previously it was hard coded
+as -1 instead of this macro.  It helps to change this default value in
+the follow up patches.  No functional change.
+
+Signed-off-by: Peter Xu <peterx@redhat.com>
+Reviewed-by: Juan Quintela <quintela@redhat.com>
+Signed-off-by: Juan Quintela <quintela@redhat.com>
+---
+ hw/arm/stellaris.c          | 2 +-
+ hw/core/qdev.c              | 4 +++-
+ hw/display/ads7846.c        | 2 +-
+ hw/i2c/core.c               | 2 +-
+ hw/input/stellaris_input.c  | 3 ++-
+ hw/intc/apic_common.c       | 2 +-
+ hw/misc/max111x.c           | 3 ++-
+ hw/net/eepro100.c           | 3 ++-
+ hw/pci/pci.c                | 2 +-
+ hw/ppc/spapr.c              | 2 +-
+ hw/timer/arm_timer.c        | 2 +-
+ hw/tpm/tpm_emulator.c       | 3 ++-
+ include/migration/vmstate.h | 2 ++
+ migration/savevm.c          | 8 ++++----
+ 14 files changed, 24 insertions(+), 16 deletions(-)
+
+diff --git a/hw/arm/stellaris.c b/hw/arm/stellaris.c
+index 499035f..3432033 100644
+--- a/hw/arm/stellaris.c
++++ b/hw/arm/stellaris.c
+@@ -705,7 +705,7 @@ static int stellaris_sys_init(uint32_t base, qemu_irq irq,
+     memory_region_init_io(&s->iomem, NULL, &ssys_ops, s, "ssys", 0x00001000);
+     memory_region_add_subregion(get_system_memory(), base, &s->iomem);
+     ssys_reset(s);
+-    vmstate_register(NULL, -1, &vmstate_stellaris_sys, s);
++    vmstate_register(NULL, VMSTATE_INSTANCE_ID_ANY, &vmstate_stellaris_sys, s);
+     return 0;
+ }
+ 
+diff --git a/hw/core/qdev.c b/hw/core/qdev.c
+index 94ebc0a..4b32f2f 100644
+--- a/hw/core/qdev.c
++++ b/hw/core/qdev.c
+@@ -848,7 +848,9 @@ static void device_set_realized(Object *obj, bool value, Error **errp)
+         dev->canonical_path = object_get_canonical_path(OBJECT(dev));
+ 
+         if (qdev_get_vmsd(dev)) {
+-            if (vmstate_register_with_alias_id(dev, -1, qdev_get_vmsd(dev), dev,
++            if (vmstate_register_with_alias_id(dev, 
++                                               VMSTATE_INSTANCE_ID_ANY,
++                                               qdev_get_vmsd(dev), dev,
+                                                dev->instance_id_alias,
+                                                dev->alias_required_for_version,
+                                                &local_err) < 0) {
+diff --git a/hw/display/ads7846.c b/hw/display/ads7846.c
+index 1a97e97..be1802e 100644
+--- a/hw/display/ads7846.c
++++ b/hw/display/ads7846.c
+@@ -152,7 +152,7 @@ static void ads7846_realize(SSISlave *d, Error **errp)
+ 
+     ads7846_int_update(s);
+ 
+-    vmstate_register(NULL, -1, &vmstate_ads7846, s);
++    vmstate_register(NULL, VMSTATE_INSTANCE_ID_ANY, &vmstate_ads7846, s);
+ }
+ 
+ static void ads7846_class_init(ObjectClass *klass, void *data)
+diff --git a/hw/i2c/core.c b/hw/i2c/core.c
+index 20f36f1..186702b 100644
+--- a/hw/i2c/core.c
++++ b/hw/i2c/core.c
+@@ -59,7 +59,7 @@ I2CBus *i2c_init_bus(DeviceState *parent, const char *name)
+ 
+     bus = I2C_BUS(qbus_create(TYPE_I2C_BUS, parent, name));
+     QLIST_INIT(&bus->current_devs);
+-    vmstate_register(NULL, -1, &vmstate_i2c_bus, bus);
++    vmstate_register(NULL, VMSTATE_INSTANCE_ID_ANY, &vmstate_i2c_bus, bus);
+     return bus;
+ }
+ 
+diff --git a/hw/input/stellaris_input.c b/hw/input/stellaris_input.c
+index 3a666d6..6c5b6d8 100644
+--- a/hw/input/stellaris_input.c
++++ b/hw/input/stellaris_input.c
+@@ -86,5 +86,6 @@ void stellaris_gamepad_init(int n, qemu_irq *irq, const int *keycode)
+     }
+     s->num_buttons = n;
+     qemu_add_kbd_event_handler(stellaris_gamepad_put_key, s);
+-    vmstate_register(NULL, -1, &vmstate_stellaris_gamepad, s);
++    vmstate_register(NULL, VMSTATE_INSTANCE_ID_ANY,
++                     &vmstate_stellaris_gamepad, s);
+ }
+diff --git a/hw/intc/apic_common.c b/hw/intc/apic_common.c
+index e764a2b..faea1af 100644
+--- a/hw/intc/apic_common.c
++++ b/hw/intc/apic_common.c
+@@ -329,7 +329,7 @@ static void apic_common_realize(DeviceState *dev, Error **errp)
+     }
+ 
+     if (s->legacy_instance_id) {
+-        instance_id = -1;
++        instance_id = VMSTATE_INSTANCE_ID_ANY;
+     }
+     vmstate_register_with_alias_id(NULL, instance_id, &vmstate_apic_common,
+                                    s, -1, 0, NULL);
+diff --git a/hw/misc/max111x.c b/hw/misc/max111x.c
+index d373ece..364cb01 100644
+--- a/hw/misc/max111x.c
++++ b/hw/misc/max111x.c
+@@ -144,7 +144,8 @@ static int max111x_init(SSISlave *d, int inputs)
+     s->input[7] = 0x80;
+     s->com = 0;
+ 
+-    vmstate_register(dev, -1, &vmstate_max111x, s);
++    vmstate_register(dev, VMSTATE_INSTANCE_ID_ANY,
++                     &vmstate_max111x, s);
+     return 0;
+ }
+ 
+diff --git a/hw/net/eepro100.c b/hw/net/eepro100.c
+index 6607c91..03edd25 100644
+--- a/hw/net/eepro100.c
++++ b/hw/net/eepro100.c
+@@ -1872,7 +1872,8 @@ static void e100_nic_realize(PCIDevice *pci_dev, Error **errp)
+ 
+     s->vmstate = g_memdup(&vmstate_eepro100, sizeof(vmstate_eepro100));
+     s->vmstate->name = qemu_get_queue(s->nic)->model;
+-    vmstate_register(&pci_dev->qdev, -1, s->vmstate, s);
++    vmstate_register(&pci_dev->qdev, VMSTATE_INSTANCE_ID_ANY,
++                     s->vmstate, s);
+ }
+ 
+ static void eepro100_instance_init(Object *obj)
+diff --git a/hw/pci/pci.c b/hw/pci/pci.c
+index 8076a80..e74143c 100644
+--- a/hw/pci/pci.c
++++ b/hw/pci/pci.c
+@@ -118,7 +118,7 @@ static void pci_bus_realize(BusState *qbus, Error **errp)
+     bus->machine_done.notify = pcibus_machine_done;
+     qemu_add_machine_init_done_notifier(&bus->machine_done);
+ 
+-    vmstate_register(NULL, -1, &vmstate_pcibus, bus);
++    vmstate_register(NULL, VMSTATE_INSTANCE_ID_ANY, &vmstate_pcibus, bus);
+ }
+ 
+ static void pcie_bus_realize(BusState *qbus, Error **errp)
+diff --git a/hw/ppc/spapr.c b/hw/ppc/spapr.c
+index 12ed4b0..b0f37c3 100644
+--- a/hw/ppc/spapr.c
++++ b/hw/ppc/spapr.c
+@@ -3069,7 +3069,7 @@ static void spapr_machine_init(MachineState *machine)
+      * interface, this is a legacy from the sPAPREnvironment structure
+      * which predated MachineState but had a similar function */
+     vmstate_register(NULL, 0, &vmstate_spapr, spapr);
+-    register_savevm_live(NULL, "spapr/htab", -1, 1,
++    register_savevm_live(NULL, "spapr/htab", VMSTATE_INSTANCE_ID_ANY, 1,
+                          &savevm_htab_handlers, spapr);
+ 
+     qbus_set_hotplug_handler(sysbus_get_default(), OBJECT(machine),
+diff --git a/hw/timer/arm_timer.c b/hw/timer/arm_timer.c
+index f0a7534..1ce4e01 100644
+--- a/hw/timer/arm_timer.c
++++ b/hw/timer/arm_timer.c
+@@ -172,7 +172,7 @@ static arm_timer_state *arm_timer_init(uint32_t freq)
+ 
+     bh = qemu_bh_new(arm_timer_tick, s);
+     s->timer = ptimer_init(bh, PTIMER_POLICY_DEFAULT);
+-    vmstate_register(NULL, -1, &vmstate_arm_timer, s);
++    vmstate_register(NULL, VMSTATE_INSTANCE_ID_ANY, &vmstate_arm_timer, s);
+     return s;
+ }
+ 
+diff --git a/hw/tpm/tpm_emulator.c b/hw/tpm/tpm_emulator.c
+index 38bf5fd..836c489 100644
+--- a/hw/tpm/tpm_emulator.c
++++ b/hw/tpm/tpm_emulator.c
+@@ -914,7 +914,8 @@ static void tpm_emulator_inst_init(Object *obj)
+     tpm_emu->cur_locty_number = ~0;
+     qemu_mutex_init(&tpm_emu->mutex);
+ 
+-    vmstate_register(NULL, -1, &vmstate_tpm_emulator, obj);
++    vmstate_register(NULL, VMSTATE_INSTANCE_ID_ANY,
++                     &vmstate_tpm_emulator, obj);
+ }
+ 
+ /*
+diff --git a/include/migration/vmstate.h b/include/migration/vmstate.h
+index c2bfa7a..92f531a 100644
+--- a/include/migration/vmstate.h
++++ b/include/migration/vmstate.h
+@@ -1114,6 +1114,8 @@ int vmstate_save_state_v(QEMUFile *f, const VMStateDescription *vmsd,
+ 
+ bool vmstate_save_needed(const VMStateDescription *vmsd, void *opaque);
+ 
++#define  VMSTATE_INSTANCE_ID_ANY  -1
++
+ /* Returns: 0 on success, -1 on failure */
+ int vmstate_register_with_alias_id(DeviceState *dev, int instance_id,
+                                    const VMStateDescription *vmsd,
+diff --git a/migration/savevm.c b/migration/savevm.c
+index 480c511..62552ab 100644
+--- a/migration/savevm.c
++++ b/migration/savevm.c
+@@ -722,7 +722,7 @@ int register_savevm_live(DeviceState *dev,
+     }
+     pstrcat(se->idstr, sizeof(se->idstr), idstr);
+ 
+-    if (instance_id == -1) {
++    if (instance_id == VMSTATE_INSTANCE_ID_ANY) {
+         se->instance_id = calculate_new_instance_id(se->idstr);
+     } else {
+         se->instance_id = instance_id;
+@@ -789,14 +789,14 @@ int vmstate_register_with_alias_id(DeviceState *dev, int instance_id,
+ 
+             se->compat = g_new0(CompatEntry, 1);
+             pstrcpy(se->compat->idstr, sizeof(se->compat->idstr), vmsd->name);
+-            se->compat->instance_id = instance_id == -1 ?
++            se->compat->instance_id = instance_id == VMSTATE_INSTANCE_ID_ANY ?
+                          calculate_compat_instance_id(vmsd->name) : instance_id;
+-            instance_id = -1;
++            instance_id = VMSTATE_INSTANCE_ID_ANY;
+         }
+     }
+     pstrcat(se->idstr, sizeof(se->idstr), vmsd->name);
+ 
+-    if (instance_id == -1) {
++    if (instance_id == VMSTATE_INSTANCE_ID_ANY) {
+         se->instance_id = calculate_new_instance_id(se->idstr);
+     } else {
+         se->instance_id = instance_id;
+-- 
+1.8.3.1
+

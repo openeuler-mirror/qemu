@@ -1,0 +1,28 @@
+From df35f8fe2687df32cb65f6a03b8dd80314cc4c53 Mon Sep 17 00:00:00 2001
+From: lizhengui <lizhengui@huawei.com>
+Date: Wed, 9 Sep 2020 15:00:08 +0800
+Subject: [PATCH] ide: fix leak from qemu_allocate_irqs
+
+The array returned by qemu_allocate_irqs is malloced, free it.
+
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+Reviewed-by: Thomas Huth <thuth@redhat.com>
+---
+ hw/ide/cmd646.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/hw/ide/cmd646.c b/hw/ide/cmd646.c
+index ed23aabf..a149cd6c 100644
+--- a/hw/ide/cmd646.c
++++ b/hw/ide/cmd646.c
+@@ -299,6 +299,7 @@ static void pci_cmd646_ide_realize(PCIDevice *dev, Error **errp)
+         d->bmdma[i].bus = &d->bus[i];
+         ide_register_restart_cb(&d->bus[i]);
+     }
++    g_free(irq);
+ 
+     vmstate_register(DEVICE(dev), 0, &vmstate_ide_pci, d);
+     qemu_register_reset(cmd646_reset, d);
+-- 
+2.19.1
+

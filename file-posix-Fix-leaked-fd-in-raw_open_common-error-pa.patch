@@ -1,0 +1,31 @@
+From 94be73a20d42482cdf30115e672c36af2fe9068d Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Fri, 17 Jul 2020 12:54:26 +0200
+Subject: [PATCH 5/5] file-posix: Fix leaked fd in raw_open_common() error path
+
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Message-Id: <20200717105426.51134-4-kwolf@redhat.com>
+Reviewed-by: Max Reitz <mreitz@redhat.com>
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: Zhenyu Ye <yezhenyu2@huawei.com>
+---
+ block/file-posix.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/block/file-posix.c b/block/file-posix.c
+index 2184aa98..1259bf58 100644
+--- a/block/file-posix.c
++++ b/block/file-posix.c
+@@ -671,6 +671,9 @@ static int raw_open_common(BlockDriverState *bs, QDict *options,
+     bs->supported_zero_flags = BDRV_REQ_MAY_UNMAP | BDRV_REQ_NO_FALLBACK;
+     ret = 0;
+ fail:
++    if (ret < 0 && s->fd != -1) {
++        qemu_close(s->fd);
++    }
+     if (filename && (bdrv_flags & BDRV_O_TEMPORARY)) {
+         unlink(filename);
+     }
+-- 
+2.22.0.windows.1
+

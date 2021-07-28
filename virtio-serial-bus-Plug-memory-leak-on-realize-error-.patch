@@ -1,0 +1,65 @@
+From 0d93f5455489274201b1054d987b12f8e8a6206e Mon Sep 17 00:00:00 2001
+From: Pan Nengyuan <pannengyuan@huawei.com>
+Date: Mon, 9 Mar 2020 10:17:38 +0800
+Subject: [PATCH 11/14] virtio-serial-bus: Plug memory leak on realize() error
+ paths
+
+We neglect to free port->bh on the error paths.  Fix that.
+Reproducer:
+    {'execute': 'device_add', 'arguments': {'id': 'virtio_serial_pci0', 'driver': 'virtio-serial-pci', 'bus': 'pci.0', 'addr': '0x5'}, 'id': 'yVkZcGgV'}
+    {'execute': 'device_add', 'arguments': {'id': 'port1', 'driver': 'virtserialport', 'name': 'port1', 'chardev': 'channel1', 'bus': 'virtio_serial_pci0.0', 'nr': 1}, 'id': '3dXdUgJA'}
+    {'execute': 'device_add', 'arguments': {'id': 'port2', 'driver': 'virtserialport', 'name': 'port2', 'chardev': 'channel2', 'bus': 'virtio_serial_pci0.0', 'nr': 1}, 'id': 'qLzcCkob'}
+    {'execute': 'device_add', 'arguments': {'id': 'port2', 'driver': 'virtserialport', 'name': 'port2', 'chardev': 'channel2', 'bus': 'virtio_serial_pci0.0', 'nr': 2}, 'id': 'qLzcCkob'}
+
+The leak stack:
+Direct leak of 40 byte(s) in 1 object(s) allocated from:
+    #0 0x7f04a8008ae8 in __interceptor_malloc (/lib64/libasan.so.5+0xefae8)
+    #1 0x7f04a73cf1d5 in g_malloc (/lib64/libglib-2.0.so.0+0x531d5)
+    #2 0x56273eaee484 in aio_bh_new /mnt/sdb/backup/qemu/util/async.c:125
+    #3 0x56273eafe9a8 in qemu_bh_new /mnt/sdb/backup/qemu/util/main-loop.c:532
+    #4 0x56273d52e62e in virtser_port_device_realize /mnt/sdb/backup/qemu/hw/char/virtio-serial-bus.c:946
+    #5 0x56273dcc5040 in device_set_realized /mnt/sdb/backup/qemu/hw/core/qdev.c:891
+    #6 0x56273e5ebbce in property_set_bool /mnt/sdb/backup/qemu/qom/object.c:2238
+    #7 0x56273e5e5a9c in object_property_set /mnt/sdb/backup/qemu/qom/object.c:1324
+    #8 0x56273e5ef5f8 in object_property_set_qobject /mnt/sdb/backup/qemu/qom/qom-qobject.c:26
+    #9 0x56273e5e5e6a in object_property_set_bool /mnt/sdb/backup/qemu/qom/object.c:1390
+    #10 0x56273daa40de in qdev_device_add /mnt/sdb/backup/qemu/qdev-monitor.c:680
+    #11 0x56273daa53e9 in qmp_device_add /mnt/sdb/backup/qemu/qdev-monitor.c:805
+
+Fixes: 199646d81522509ac2dba6d28c31e8c7d807bc93
+Reported-by: Euler Robot <euler.robot@huawei.com>
+Signed-off-by: Pan Nengyuan <pannengyuan@huawei.com>
+Reviewed-by: Markus Armbruster <armbru@redhat.com>
+Reviewed-by: Amit Shah <amit@kernel.org>
+Message-Id: <20200309021738.30072-1-pannengyuan@huawei.com>
+Reviewed-by: Laurent Vivier <lvivier@redhat.com>
+Reviewed-by: Michael S. Tsirkin <mst@redhat.com>
+Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+Signed-off-by: Peng Liang <liangpeng10@huawei.com>
+---
+ hw/char/virtio-serial-bus.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/hw/char/virtio-serial-bus.c b/hw/char/virtio-serial-bus.c
+index f7a54f261b21..2d23dae6d2b7 100644
+--- a/hw/char/virtio-serial-bus.c
++++ b/hw/char/virtio-serial-bus.c
+@@ -940,7 +940,6 @@ static void virtser_port_device_realize(DeviceState *dev, Error **errp)
+     Error *err = NULL;
+ 
+     port->vser = bus->vser;
+-    port->bh = qemu_bh_new(flush_queued_data_bh, port);
+ 
+     assert(vsc->have_data);
+ 
+@@ -989,6 +988,7 @@ static void virtser_port_device_realize(DeviceState *dev, Error **errp)
+         return;
+     }
+ 
++    port->bh = qemu_bh_new(flush_queued_data_bh, port);
+     port->elem = NULL;
+ }
+ 
+-- 
+2.26.2
+

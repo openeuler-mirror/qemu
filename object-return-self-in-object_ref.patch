@@ -1,0 +1,58 @@
+From b77ade9bb37b2e9813a42008cb21d0c743aa50a1 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Marc-Andr=C3=A9=20Lureau?= <marcandre.lureau@redhat.com>
+Date: Fri, 10 Jan 2020 19:30:31 +0400
+Subject: [PATCH] object: return self in object_ref()
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+This allow for simpler assignment with ref: foo = object_ref(bar)
+
+Signed-off-by: Marc-André Lureau <marcandre.lureau@redhat.com>
+Reviewed-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+Message-Id: <20200110153039.1379601-19-marcandre.lureau@redhat.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+Signed-off-by: Zhenyu Ye <yezhenyu2@huawei.com>
+---
+ include/qom/object.h | 3 ++-
+ qom/object.c         | 5 +++--
+ 2 files changed, 5 insertions(+), 3 deletions(-)
+
+diff --git a/include/qom/object.h b/include/qom/object.h
+index 5e2f60d4b0..18660fde1c 100644
+--- a/include/qom/object.h
++++ b/include/qom/object.h
+@@ -1005,8 +1005,9 @@ GSList *object_class_get_list_sorted(const char *implements_type,
+  *
+  * Increase the reference count of a object.  A object cannot be freed as long
+  * as its reference count is greater than zero.
++ * Returns: @obj
+  */
+-void object_ref(Object *obj);
++Object *object_ref(Object *obj);
+ 
+ /**
+  * object_unref:
+diff --git a/qom/object.c b/qom/object.c
+index 66c4a5f1cb..555c8b9d07 100644
+--- a/qom/object.c
++++ b/qom/object.c
+@@ -1107,12 +1107,13 @@ GSList *object_class_get_list_sorted(const char *implements_type,
+                         object_class_cmp);
+ }
+ 
+-void object_ref(Object *obj)
++Object *object_ref(Object *obj)
+ {
+     if (!obj) {
+-        return;
++        return NULL;
+     }
+     atomic_inc(&obj->ref);
++    return obj;
+ }
+ 
+ void object_unref(Object *obj)
+-- 
+2.22.0.windows.1
+

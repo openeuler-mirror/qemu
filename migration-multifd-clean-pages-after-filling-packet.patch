@@ -1,0 +1,51 @@
+From 0f7e704a4faa661583ea6d82659f206e561f23d4 Mon Sep 17 00:00:00 2001
+From: Wei Yang <richardw.yang@linux.intel.com>
+Date: Sat, 26 Oct 2019 07:19:59 +0800
+Subject: [PATCH 3/8] migration/multifd: clean pages after filling packet
+
+This is a preparation for the next patch:
+
+    not use multifd during postcopy.
+
+Without enabling postcopy, everything looks good. While after enabling
+postcopy, migration may fail even not use multifd during postcopy. The
+reason is the pages is not properly cleared and *old* target page will
+continue to be transferred.
+
+After clean pages, migration succeeds.
+
+Signed-off-by: Wei Yang <richardw.yang@linux.intel.com>
+Reviewed-by: Juan Quintela <quintela@redhat.com>
+Signed-off-by: Juan Quintela <quintela@redhat.com>
+---
+ migration/ram.c | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/migration/ram.c b/migration/ram.c
+index 840e354..c2eb1ed 100644
+--- a/migration/ram.c
++++ b/migration/ram.c
+@@ -947,10 +947,10 @@ static int multifd_send_pages(RAMState *rs)
+         }
+         qemu_mutex_unlock(&p->mutex);
+     }
+-    p->pages->used = 0;
++    assert(!p->pages->used);
++    assert(!p->pages->block);
+ 
+     p->packet_num = multifd_send_state->packet_num++;
+-    p->pages->block = NULL;
+     multifd_send_state->pages = p->pages;
+     p->pages = pages;
+     transferred = ((uint64_t) pages->used) * TARGET_PAGE_SIZE + p->packet_len;
+@@ -1137,6 +1137,7 @@ static void *multifd_send_thread(void *opaque)
+             p->num_packets++;
+             p->num_pages += used;
+             p->pages->used = 0;
++            p->pages->block = NULL;
+             qemu_mutex_unlock(&p->mutex);
+ 
+             trace_multifd_send(p->id, packet_num, used, flags,
+-- 
+1.8.3.1
+

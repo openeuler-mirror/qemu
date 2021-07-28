@@ -1,0 +1,41 @@
+From 7331554bd6ab230404b20d612aed20a95c20eba6 Mon Sep 17 00:00:00 2001
+From: Wei Yang <richardw.yang@linux.intel.com>
+Date: Sat, 26 Oct 2019 07:20:00 +0800
+Subject: [PATCH 4/8] migration/multifd: not use multifd during postcopy
+
+We don't support multifd during postcopy, but user still could enable
+both multifd and postcopy. This leads to migration failure.
+
+Skip multifd during postcopy.
+
+Signed-off-by: Wei Yang <richardw.yang@linux.intel.com>
+Reviewed-by: Juan Quintela <quintela@redhat.com>
+Signed-off-by: Juan Quintela <quintela@redhat.com>
+---
+ migration/ram.c | 9 ++++++---
+ 1 file changed, 6 insertions(+), 3 deletions(-)
+
+diff --git a/migration/ram.c b/migration/ram.c
+index c2eb1ed..aace3a5 100644
+--- a/migration/ram.c
++++ b/migration/ram.c
+@@ -2571,10 +2571,13 @@ static int ram_save_target_page(RAMState *rs, PageSearchStatus *pss,
+     }
+ 
+     /*
+-     * do not use multifd for compression as the first page in the new
+-     * block should be posted out before sending the compressed page
++     * Do not use multifd for:
++     * 1. Compression as the first page in the new block should be posted out
++     *    before sending the compressed page
++     * 2. In postcopy as one whole host page should be placed
+      */
+-    if (!save_page_use_compression(rs) && migrate_use_multifd()) {
++    if (!save_page_use_compression(rs) && migrate_use_multifd()
++        && !migration_in_postcopy()) {
+         return ram_save_multifd_page(rs, block, offset);
+     }
+ 
+-- 
+1.8.3.1
+

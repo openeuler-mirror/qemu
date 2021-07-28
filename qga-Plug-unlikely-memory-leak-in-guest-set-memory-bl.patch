@@ -1,0 +1,40 @@
+From 1580682eafb489eaf417456778267662629cf696 Mon Sep 17 00:00:00 2001
+From: Markus Armbruster <armbru@redhat.com>
+Date: Tue, 30 Jun 2020 11:03:33 +0200
+Subject: [PATCH 05/11] qga: Plug unlikely memory leak in
+ guest-set-memory-blocks
+
+transfer_memory_block() leaks an Error object when reading file
+/sys/devices/system/memory/memory<INDEX>/state fails with errno other
+than ENOENT, and @sys2memblk is false, i.e. when the state file exists
+but cannot be read (seems quite unlikely), and this is
+guest-set-memory-blocks, not guest-get-memory-blocks.
+
+Plug the leak.
+
+Fixes: bd240fca42d5f072fb758a71720d9de9990ac553
+Cc: Michael Roth <mdroth@linux.vnet.ibm.com>
+Cc: Hailiang Zhang <zhang.zhanghailiang@huawei.com>
+Signed-off-by: Markus Armbruster <armbru@redhat.com>
+Reviewed-by: zhanghailiang <zhang.zhanghailiang@huawei.com>
+Message-Id: <20200630090351.1247703-9-armbru@redhat.com>
+Signed-off-by: BiaoXiang Ye <yebiaoxiang@huawei.com>
+---
+ qga/commands-posix.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/qga/commands-posix.c b/qga/commands-posix.c
+index dfc05f5b..c318cee7 100644
+--- a/qga/commands-posix.c
++++ b/qga/commands-posix.c
+@@ -2420,6 +2420,7 @@ static void transfer_memory_block(GuestMemoryBlock *mem_blk, bool sys2memblk,
+             if (sys2memblk) {
+                 error_propagate(errp, local_err);
+             } else {
++                error_free(local_err);
+                 result->response =
+                     GUEST_MEMORY_BLOCK_RESPONSE_TYPE_OPERATION_FAILED;
+             }
+-- 
+2.27.0.dirty
+

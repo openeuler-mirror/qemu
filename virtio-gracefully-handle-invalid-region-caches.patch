@@ -1,0 +1,238 @@
+From 63a3c25baa9c7372b80df80be4447552af6d6ba0 Mon Sep 17 00:00:00 2001
+From: Stefan Hajnoczi <stefanha@redhat.com>
+Date: Fri, 7 Feb 2020 10:46:19 +0000
+Subject: [PATCH 7/9] virtio: gracefully handle invalid region caches
+
+The virtqueue code sets up MemoryRegionCaches to access the virtqueue
+guest RAM data structures.  The code currently assumes that
+VRingMemoryRegionCaches is initialized before device emulation code
+accesses the virtqueue.  An assertion will fail in
+vring_get_region_caches() when this is not true.  Device fuzzing found a
+case where this assumption is false (see below).
+
+Virtqueue guest RAM addresses can also be changed from a vCPU thread
+while an IOThread is accessing the virtqueue.  This breaks the same
+assumption but this time the caches could become invalid partway through
+the virtqueue code.  The code fetches the caches RCU pointer multiple
+times so we will need to validate the pointer every time it is fetched.
+
+Add checks each time we call vring_get_region_caches() and treat invalid
+caches as a nop: memory stores are ignored and memory reads return 0.
+
+The fuzz test failure is as follows:
+
+  $ qemu -M pc -device virtio-blk-pci,id=drv0,drive=drive0,addr=4.0 \
+         -drive if=none,id=drive0,file=null-co://,format=raw,auto-read-only=off \
+         -drive if=none,id=drive1,file=null-co://,file.read-zeroes=on,format=raw \
+         -display none \
+         -qtest stdio
+  endianness
+  outl 0xcf8 0x80002020
+  outl 0xcfc 0xe0000000
+  outl 0xcf8 0x80002004
+  outw 0xcfc 0x7
+  write 0xe0000000 0x24 0x00ffffffabffffffabffffffabffffffabffffffabffffffabffffffabffffffabffffffabffffffabffffffabffffffabffffffabffffffab5cffffffabffffffabffffffabffffffabffffffabffffffabffffffabffffffabffffffabffffffabffffffabffffffabffffffabffffffabffffffab0000000001
+  inb 0x4
+  writew 0xe000001c 0x1
+  write 0xe0000014 0x1 0x0d
+
+The following error message is produced:
+
+  qemu-system-x86_64: /home/stefanha/qemu/hw/virtio/virtio.c:286: vring_get_region_caches: Assertion `caches != NULL' failed.
+
+The backtrace looks like this:
+
+  #0  0x00007ffff5520625 in raise () at /lib64/libc.so.6
+  #1  0x00007ffff55098d9 in abort () at /lib64/libc.so.6
+  #2  0x00007ffff55097a9 in _nl_load_domain.cold () at /lib64/libc.so.6
+  #3  0x00007ffff5518a66 in annobin_assert.c_end () at /lib64/libc.so.6
+  #4  0x00005555559073da in vring_get_region_caches (vq=<optimized out>) at qemu/hw/virtio/virtio.c:286
+  #5  vring_get_region_caches (vq=<optimized out>) at qemu/hw/virtio/virtio.c:283
+  #6  0x000055555590818d in vring_used_flags_set_bit (mask=1, vq=0x5555575ceea0) at qemu/hw/virtio/virtio.c:398
+  #7  virtio_queue_split_set_notification (enable=0, vq=0x5555575ceea0) at qemu/hw/virtio/virtio.c:398
+  #8  virtio_queue_set_notification (vq=vq@entry=0x5555575ceea0, enable=enable@entry=0) at qemu/hw/virtio/virtio.c:451
+  #9  0x0000555555908512 in virtio_queue_set_notification (vq=vq@entry=0x5555575ceea0, enable=enable@entry=0) at qemu/hw/virtio/virtio.c:444
+  #10 0x00005555558c697a in virtio_blk_handle_vq (s=0x5555575c57e0, vq=0x5555575ceea0) at qemu/hw/block/virtio-blk.c:775
+  #11 0x0000555555907836 in virtio_queue_notify_aio_vq (vq=0x5555575ceea0) at qemu/hw/virtio/virtio.c:2244
+  #12 0x0000555555cb5dd7 in aio_dispatch_handlers (ctx=ctx@entry=0x55555671a420) at util/aio-posix.c:429
+  #13 0x0000555555cb67a8 in aio_dispatch (ctx=0x55555671a420) at util/aio-posix.c:460
+  #14 0x0000555555cb307e in aio_ctx_dispatch (source=<optimized out>, callback=<optimized out>, user_data=<optimized out>) at util/async.c:260
+  #15 0x00007ffff7bbc510 in g_main_context_dispatch () at /lib64/libglib-2.0.so.0
+  #16 0x0000555555cb5848 in glib_pollfds_poll () at util/main-loop.c:219
+  #17 os_host_main_loop_wait (timeout=<optimized out>) at util/main-loop.c:242
+  #18 main_loop_wait (nonblocking=<optimized out>) at util/main-loop.c:518
+  #19 0x00005555559b20c9 in main_loop () at vl.c:1683
+  #20 0x0000555555838115 in main (argc=<optimized out>, argv=<optimized out>, envp=<optimized out>) at vl.c:4441
+
+Reported-by: Alexander Bulekov <alxndr@bu.edu>
+Cc: Michael Tsirkin <mst@redhat.com>
+Cc: Cornelia Huck <cohuck@redhat.com>
+Cc: Paolo Bonzini <pbonzini@redhat.com>
+Cc: qemu-stable@nongnu.org
+Signed-off-by: Stefan Hajnoczi <stefanha@redhat.com>
+Message-Id: <20200207104619.164892-1-stefanha@redhat.com>
+Reviewed-by: Michael S. Tsirkin <mst@redhat.com>
+Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+Signed-off-by: AlexChen <alex.chen@huawei.com>
+---
+ hw/virtio/virtio.c | 66 ++++++++++++++++++++++++++++++++++++++++++++++++------
+ 1 file changed, 59 insertions(+), 7 deletions(-)
+
+diff --git a/hw/virtio/virtio.c b/hw/virtio/virtio.c
+index 3d027d3..90971f4 100644
+--- a/hw/virtio/virtio.c
++++ b/hw/virtio/virtio.c
+@@ -221,15 +221,19 @@ static void vring_desc_read(VirtIODevice *vdev, VRingDesc *desc,
+ 
+ static VRingMemoryRegionCaches *vring_get_region_caches(struct VirtQueue *vq)
+ {
+-    VRingMemoryRegionCaches *caches = atomic_rcu_read(&vq->vring.caches);
+-    assert(caches != NULL);
+-    return caches;
++    return atomic_rcu_read(&vq->vring.caches);
+ }
++
+ /* Called within rcu_read_lock().  */
+ static inline uint16_t vring_avail_flags(VirtQueue *vq)
+ {
+     VRingMemoryRegionCaches *caches = vring_get_region_caches(vq);
+     hwaddr pa = offsetof(VRingAvail, flags);
++
++    if (!caches) {
++        return 0;
++    }
++
+     return virtio_lduw_phys_cached(vq->vdev, &caches->avail, pa);
+ }
+ 
+@@ -238,6 +242,11 @@ static inline uint16_t vring_avail_idx(VirtQueue *vq)
+ {
+     VRingMemoryRegionCaches *caches = vring_get_region_caches(vq);
+     hwaddr pa = offsetof(VRingAvail, idx);
++
++    if (!caches) {
++        return 0;
++    }
++
+     vq->shadow_avail_idx = virtio_lduw_phys_cached(vq->vdev, &caches->avail, pa);
+     return vq->shadow_avail_idx;
+ }
+@@ -247,6 +256,11 @@ static inline uint16_t vring_avail_ring(VirtQueue *vq, int i)
+ {
+     VRingMemoryRegionCaches *caches = vring_get_region_caches(vq);
+     hwaddr pa = offsetof(VRingAvail, ring[i]);
++
++    if (!caches) {
++        return 0;
++    }
++
+     return virtio_lduw_phys_cached(vq->vdev, &caches->avail, pa);
+ }
+ 
+@@ -262,6 +276,11 @@ static inline void vring_used_write(VirtQueue *vq, VRingUsedElem *uelem,
+ {
+     VRingMemoryRegionCaches *caches = vring_get_region_caches(vq);
+     hwaddr pa = offsetof(VRingUsed, ring[i]);
++
++    if (!caches) {
++        return;
++    }
++
+     virtio_tswap32s(vq->vdev, &uelem->id);
+     virtio_tswap32s(vq->vdev, &uelem->len);
+     address_space_write_cached(&caches->used, pa, uelem, sizeof(VRingUsedElem));
+@@ -273,6 +292,11 @@ static uint16_t vring_used_idx(VirtQueue *vq)
+ {
+     VRingMemoryRegionCaches *caches = vring_get_region_caches(vq);
+     hwaddr pa = offsetof(VRingUsed, idx);
++
++    if (!caches) {
++        return 0;
++    }
++
+     return virtio_lduw_phys_cached(vq->vdev, &caches->used, pa);
+ }
+ 
+@@ -281,8 +305,12 @@ static inline void vring_used_idx_set(VirtQueue *vq, uint16_t val)
+ {
+     VRingMemoryRegionCaches *caches = vring_get_region_caches(vq);
+     hwaddr pa = offsetof(VRingUsed, idx);
+-    virtio_stw_phys_cached(vq->vdev, &caches->used, pa, val);
+-    address_space_cache_invalidate(&caches->used, pa, sizeof(val));
++
++    if (caches) {
++        virtio_stw_phys_cached(vq->vdev, &caches->used, pa, val);
++        address_space_cache_invalidate(&caches->used, pa, sizeof(val));
++    }
++
+     vq->used_idx = val;
+ }
+ 
+@@ -292,8 +320,13 @@ static inline void vring_used_flags_set_bit(VirtQueue *vq, int mask)
+     VRingMemoryRegionCaches *caches = vring_get_region_caches(vq);
+     VirtIODevice *vdev = vq->vdev;
+     hwaddr pa = offsetof(VRingUsed, flags);
+-    uint16_t flags = virtio_lduw_phys_cached(vq->vdev, &caches->used, pa);
++    uint16_t flags;
++
++    if (!caches) {
++        return;
++    }
+ 
++    flags = virtio_lduw_phys_cached(vq->vdev, &caches->used, pa);
+     virtio_stw_phys_cached(vdev, &caches->used, pa, flags | mask);
+     address_space_cache_invalidate(&caches->used, pa, sizeof(flags));
+ }
+@@ -304,8 +337,13 @@ static inline void vring_used_flags_unset_bit(VirtQueue *vq, int mask)
+     VRingMemoryRegionCaches *caches = vring_get_region_caches(vq);
+     VirtIODevice *vdev = vq->vdev;
+     hwaddr pa = offsetof(VRingUsed, flags);
+-    uint16_t flags = virtio_lduw_phys_cached(vq->vdev, &caches->used, pa);
++    uint16_t flags;
+ 
++    if (!caches) {
++        return;
++    }
++
++    flags = virtio_lduw_phys_cached(vq->vdev, &caches->used, pa);
+     virtio_stw_phys_cached(vdev, &caches->used, pa, flags & ~mask);
+     address_space_cache_invalidate(&caches->used, pa, sizeof(flags));
+ }
+@@ -320,6 +358,10 @@ static inline void vring_set_avail_event(VirtQueue *vq, uint16_t val)
+     }
+ 
+     caches = vring_get_region_caches(vq);
++    if (!caches) {
++        return;
++    }
++
+     pa = offsetof(VRingUsed, ring[vq->vring.num]);
+     virtio_stw_phys_cached(vq->vdev, &caches->used, pa, val);
+     address_space_cache_invalidate(&caches->used, pa, sizeof(val));
+@@ -626,6 +668,11 @@ void virtqueue_get_avail_bytes(VirtQueue *vq, unsigned int *in_bytes,
+ 
+     max = vq->vring.num;
+     caches = vring_get_region_caches(vq);
++    if (!caches) {
++        virtio_error(vdev, "Region cached not initialized");
++        goto err;
++    }
++
+     if (caches->desc.len < max * sizeof(VRingDesc)) {
+         virtio_error(vdev, "Cannot map descriptor ring");
+         goto err;
+@@ -894,6 +941,11 @@ void *virtqueue_pop(VirtQueue *vq, size_t sz)
+     i = head;
+ 
+     caches = vring_get_region_caches(vq);
++    if (!caches) {
++        virtio_error(vdev, "Region caches not initialized");
++        goto done;
++    }
++
+     if (caches->desc.len < max * sizeof(VRingDesc)) {
+         virtio_error(vdev, "Cannot map descriptor ring");
+         goto done;
+-- 
+1.8.3.1
+

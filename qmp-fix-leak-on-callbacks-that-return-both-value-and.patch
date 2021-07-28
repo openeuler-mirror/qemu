@@ -1,0 +1,47 @@
+From 1f1949368d4ac7a18973aa83a074daf01daf97ad Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Marc-Andr=C3=A9=20Lureau?= <marcandre.lureau@redhat.com>
+Date: Wed, 25 Mar 2020 19:47:22 +0100
+Subject: [PATCH 3/5] qmp: fix leak on callbacks that return both value and
+ error
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Direct leak of 4120 byte(s) in 1 object(s) allocated from:
+    #0 0x7fa114931887 in __interceptor_calloc (/lib64/libasan.so.6+0xb0887)
+    #1 0x7fa1144ad8f0 in g_malloc0 (/lib64/libglib-2.0.so.0+0x588f0)
+    #2 0x561e3c9c8897 in qmp_object_add /home/elmarco/src/qemu/qom/qom-qmp-cmds.c:291
+    #3 0x561e3cf48736 in qmp_dispatch /home/elmarco/src/qemu/qapi/qmp-dispatch.c:155
+    #4 0x561e3c8efb36 in monitor_qmp_dispatch /home/elmarco/src/qemu/monitor/qmp.c:145
+    #5 0x561e3c8f09ed in monitor_qmp_bh_dispatcher /home/elmarco/src/qemu/monitor/qmp.c:234
+    #6 0x561e3d08c993 in aio_bh_call /home/elmarco/src/qemu/util/async.c:136
+    #7 0x561e3d08d0a5 in aio_bh_poll /home/elmarco/src/qemu/util/async.c:164
+    #8 0x561e3d0a535a in aio_dispatch /home/elmarco/src/qemu/util/aio-posix.c:380
+    #9 0x561e3d08e3ca in aio_ctx_dispatch /home/elmarco/src/qemu/util/async.c:298
+    #10 0x7fa1144a776e in g_main_context_dispatch (/lib64/libglib-2.0.so.0+0x5276e)
+
+Signed-off-by: Marc-André Lureau <marcandre.lureau@redhat.com>
+Message-Id: <20200325184723.2029630-3-marcandre.lureau@redhat.com>
+Reviewed-by: Markus Armbruster <armbru@redhat.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+Signed-off-by: Zhenyu Ye <yezhenyu2@huawei.com>
+---
+ qapi/qmp-dispatch.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/qapi/qmp-dispatch.c b/qapi/qmp-dispatch.c
+index 6dfdad57..a635abb9 100644
+--- a/qapi/qmp-dispatch.c
++++ b/qapi/qmp-dispatch.c
+@@ -189,6 +189,8 @@ QDict *qmp_dispatch(QmpCommandList *cmds, QObject *request,
+ 
+     ret = do_qmp_dispatch(cmds, request, allow_oob, &err);
+     if (err) {
++        /* or assert(!ret) after reviewing all handlers: */
++        qobject_unref(ret);
+         rsp = qmp_error_response(err);
+     } else if (ret) {
+         rsp = qdict_new();
+-- 
+2.22.0.windows.1
+

@@ -1,0 +1,62 @@
+From 1aa42c9269c762ad1b7efa41e92f734b093dce1c Mon Sep 17 00:00:00 2001
+From: Klaus Jensen <k.jensen@samsung.com>
+Date: Tue, 9 Jun 2020 21:03:12 +0200
+Subject: [PATCH 10/11] hw/block/nvme: fix pci doorbell size calculation
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+The size of the BAR is 0x1000 (main registers) + 8 bytes for each
+queue. Currently, the size of the BAR is calculated like so:
+
+    n->reg_size = pow2ceil(0x1004 + 2 * (n->num_queues + 1) * 4);
+
+Since the 'num_queues' parameter already accounts for the admin queue,
+this should in any case not need to be incremented by one. Also, the
+size should be initialized to (0x1000).
+
+    n->reg_size = pow2ceil(0x1000 + 2 * n->num_queues * 4);
+
+This, with the default value of num_queues (64), we will set aside room
+for 1 admin queue and 63 I/O queues (4 bytes per doorbell, 2 doorbells
+per queue).
+
+Signed-off-by: Klaus Jensen <k.jensen@samsung.com>
+Reviewed-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+Reviewed-by: Maxim Levitsky <mlevitsk@redhat.com>
+Reviewed-by: Keith Busch <kbusch@kernel.org>
+Message-Id: <20200609190333.59390-2-its@irrelevant.dk>
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: BiaoXiang Ye <yebiaoxiang@huawei.com>
+---
+ hw/block/nvme.c | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/hw/block/nvme.c b/hw/block/nvme.c
+index 417068d8..edac2f1d 100644
+--- a/hw/block/nvme.c
++++ b/hw/block/nvme.c
+@@ -42,6 +42,9 @@
+ #include "trace.h"
+ #include "nvme.h"
+ 
++#define NVME_REG_SIZE 0x1000
++#define NVME_DB_SIZE  4
++
+ #define NVME_GUEST_ERR(trace, fmt, ...) \
+     do { \
+         (trace_##trace)(__VA_ARGS__); \
+@@ -1348,7 +1351,9 @@ static void nvme_realize(PCIDevice *pci_dev, Error **errp)
+     pcie_endpoint_cap_init(pci_dev, 0x80);
+ 
+     n->num_namespaces = 1;
+-    n->reg_size = pow2ceil(0x1004 + 2 * (n->num_queues + 1) * 4);
++
++    /* num_queues is really number of pairs, so each has two doorbells */
++    n->reg_size = pow2ceil(NVME_REG_SIZE + 2 * n->num_queues * NVME_DB_SIZE);
+     n->ns_size = bs_size / (uint64_t)n->num_namespaces;
+ 
+     n->namespaces = g_new0(NvmeNamespace, n->num_namespaces);
+-- 
+2.27.0.dirty
+

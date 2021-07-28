@@ -1,0 +1,40 @@
+From 41077af2c4283c15c0a822017ea51612d15b68f8 Mon Sep 17 00:00:00 2001
+From: Andrew Melnychenko <andrew@daynix.com>
+Date: Wed, 4 Mar 2020 16:20:58 +0200
+Subject: [PATCH 1/5] Fixed integer overflow in e1000e
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Buglink: https://bugzilla.redhat.com/show_bug.cgi?id=1737400
+Fixed setting max_queue_num if there are no peers in
+NICConf. qemu_new_nic() creates NICState with 1 NetClientState(index
+0) without peers, set max_queue_num to 0 - It prevents undefined
+behavior and possible crashes, especially during pcie hotplug.
+
+Fixes: 6f3fbe4ed06 ("net: Introduce e1000e device emulation")
+Signed-off-by: Andrew Melnychenko <andrew@daynix.com>
+Reviewed-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+Reviewed-by: Dmitry Fleytman <dmitry.fleytman@gmail.com>
+Signed-off-by: Jason Wang <jasowang@redhat.com>
+Signed-off-by: Zhenyu Ye <yezhenyu2@huawei.com>
+---
+ hw/net/e1000e.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/hw/net/e1000e.c b/hw/net/e1000e.c
+index 581f7d03..1e827c4f 100644
+--- a/hw/net/e1000e.c
++++ b/hw/net/e1000e.c
+@@ -325,7 +325,7 @@ e1000e_init_net_peer(E1000EState *s, PCIDevice *pci_dev, uint8_t *macaddr)
+     s->nic = qemu_new_nic(&net_e1000e_info, &s->conf,
+         object_get_typename(OBJECT(s)), dev->id, s);
+ 
+-    s->core.max_queue_num = s->conf.peers.queues - 1;
++    s->core.max_queue_num = s->conf.peers.queues ? s->conf.peers.queues - 1 : 0;
+ 
+     trace_e1000e_mac_set_permanent(MAC_ARG(macaddr));
+     memcpy(s->core.permanent_mac, macaddr, sizeof(s->core.permanent_mac));
+-- 
+2.22.0.windows.1
+

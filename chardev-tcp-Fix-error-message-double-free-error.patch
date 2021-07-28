@@ -1,0 +1,43 @@
+From 4488ab4700d344b049ddef808a64eda4b5867902 Mon Sep 17 00:00:00 2001
+From: lichun <lichun@ruijie.com.cn>
+Date: Mon, 22 Jun 2020 05:30:17 +0800
+Subject: [PATCH 06/11] chardev/tcp: Fix error message double free error
+
+Errors are already freed by error_report_err, so we only need to call
+error_free when that function is not called.
+
+Cc: qemu-stable@nongnu.org
+Signed-off-by: lichun <lichun@ruijie.com.cn>
+Message-Id: <20200621213017.17978-1-lichun@ruijie.com.cn>
+Reviewed-by: Markus Armbruster <armbru@redhat.com>
+[Commit message improved, cc: qemu-stable]
+Signed-off-by: Markus Armbruster <armbru@redhat.com>
+Signed-off-by: BiaoXiang Ye <yebiaoxiang@huawei.com>
+---
+ chardev/char-socket.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/chardev/char-socket.c b/chardev/char-socket.c
+index 701b62f9..9b06c8aa 100644
+--- a/chardev/char-socket.c
++++ b/chardev/char-socket.c
+@@ -141,6 +141,8 @@ static void check_report_connect_error(Chardev *chr,
+         error_report("Unable to connect character device %s: %s",
+                      chr->label, error_get_pretty(err));
+         s->connect_err_reported = true;
++    } else {
++        error_free(err);
+     }
+     qemu_chr_socket_restart_timer(chr);
+ }
+@@ -1074,7 +1076,6 @@ static void qemu_chr_socket_connected(QIOTask *task, void *opaque)
+     if (qio_task_propagate_error(task, &err)) {
+         tcp_chr_change_state(s, TCP_CHARDEV_STATE_DISCONNECTED);
+         check_report_connect_error(chr, err);
+-        error_free(err);
+         goto cleanup;
+     }
+ 
+-- 
+2.27.0.dirty
+

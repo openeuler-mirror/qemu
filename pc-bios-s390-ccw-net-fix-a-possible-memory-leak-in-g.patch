@@ -1,0 +1,34 @@
+From d2bb5b4c4ed3b1dbc0096deb195b6df33f813f23 Mon Sep 17 00:00:00 2001
+From: Yifan Luo <luoyifan@cmss.chinamobile.com>
+Date: Wed, 14 Aug 2019 14:14:26 +0800
+Subject: [PATCH 5/5] pc-bios/s390-ccw/net: fix a possible memory leak in
+ get_uuid()
+
+There is a possible memory leak in get_uuid(). Should free allocated mem
+before
+return NULL.
+
+Signed-off-by: Yifan Luo <luoyifan@cmss.chinamobile.com>
+Message-Id: <02cf01d55267$86cf2850$946d78f0$@cmss.chinamobile.com>
+Reviewed-by: Thomas Huth <thuth@redhat.com>
+Reviewed-by: Cornelia Huck <cohuck@redhat.com>
+Signed-off-by: Thomas Huth <thuth@redhat.com>
+---
+ pc-bios/s390-ccw/netmain.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/pc-bios/s390-ccw/netmain.c b/pc-bios/s390-ccw/netmain.c
+index f3542cb2..f2dcc01e 100644
+--- a/pc-bios/s390-ccw/netmain.c
++++ b/pc-bios/s390-ccw/netmain.c
+@@ -269,6 +269,7 @@ static const char *get_uuid(void)
+                  : "d" (r0), "d" (r1), [addr] "a" (buf)
+                  : "cc", "memory");
+     if (cc) {
++        free(mem);
+         return NULL;
+     }
+ 
+-- 
+2.23.0
+

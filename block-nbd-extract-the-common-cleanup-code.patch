@@ -1,0 +1,67 @@
+From 1196a2079a558cbb673e06142fa67a401c5e6c30 Mon Sep 17 00:00:00 2001
+From: Pan Nengyuan <pannengyuan@huawei.com>
+Date: Thu, 5 Dec 2019 11:45:27 +0800
+Subject: [PATCH 6/9] block/nbd: extract the common cleanup code
+
+The BDRVNBDState cleanup code is common in two places, add
+nbd_clear_bdrvstate() function to do these cleanups.
+
+Suggested-by: Stefano Garzarella <sgarzare@redhat.com>
+Signed-off-by: Pan Nengyuan <pannengyuan@huawei.com>
+Reviewed-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Message-Id: <1575517528-44312-2-git-send-email-pannengyuan@huawei.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+[eblake: fix compilation error and commit message]
+Signed-off-by: Eric Blake <eblake@redhat.com>
+Signed-off-by: AlexChen <alex.chen@huawei.com>
+---
+ block/nbd.c | 19 ++++++++++++-------
+ 1 file changed, 12 insertions(+), 7 deletions(-)
+
+diff --git a/block/nbd.c b/block/nbd.c
+index 57c1a20..3977b1e 100644
+--- a/block/nbd.c
++++ b/block/nbd.c
+@@ -73,6 +73,16 @@ typedef struct BDRVNBDState {
+     char *export, *tlscredsid;
+ } BDRVNBDState;
+ 
++static void nbd_clear_bdrvstate(BDRVNBDState *s)
++{
++    qapi_free_SocketAddress(s->saddr);
++    s->saddr = NULL;
++    g_free(s->export);
++    s->export = NULL;
++    g_free(s->tlscredsid);
++    s->tlscredsid = NULL;
++}
++
+ static void nbd_recv_coroutines_wake_all(BDRVNBDState *s)
+ {
+     int i;
+@@ -1640,9 +1650,7 @@ static int nbd_open(BlockDriverState *bs, QDict *options, int flags,
+         object_unref(OBJECT(tlscreds));
+     }
+     if (ret < 0) {
+-        qapi_free_SocketAddress(s->saddr);
+-        g_free(s->export);
+-        g_free(s->tlscredsid);
++        nbd_clear_bdrvstate(s);
+     }
+     qemu_opts_del(opts);
+     return ret;
+@@ -1692,10 +1700,7 @@ static void nbd_close(BlockDriverState *bs)
+     BDRVNBDState *s = bs->opaque;
+ 
+     nbd_client_close(bs);
+-
+-    qapi_free_SocketAddress(s->saddr);
+-    g_free(s->export);
+-    g_free(s->tlscredsid);
++    nbd_clear_bdrvstate(s);
+ }
+ 
+ static int64_t nbd_getlength(BlockDriverState *bs)
+-- 
+1.8.3.1
+

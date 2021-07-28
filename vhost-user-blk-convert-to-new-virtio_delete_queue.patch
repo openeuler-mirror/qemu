@@ -1,0 +1,99 @@
+From 30d20e1258722431198cd2a8298c85b7af2a0c1b Mon Sep 17 00:00:00 2001
+From: Pan Nengyuan <pannengyuan@huawei.com>
+Date: Mon, 24 Feb 2020 12:13:36 +0800
+Subject: [PATCH 5/9] vhost-user-blk: convert to new virtio_delete_queue
+
+use the new virtio_delete_queue function to cleanup.
+
+Signed-off-by: Pan Nengyuan <pannengyuan@huawei.com>
+Message-Id: <20200224041336.30790-3-pannengyuan@huawei.com>
+Reviewed-by: Stefan Hajnoczi <stefanha@redhat.com>
+Reviewed-by: Michael S. Tsirkin <mst@redhat.com>
+Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+Signed-off-by: AlexChen <alex.chen@huawei.com>
+---
+ hw/block/vhost-user-blk.c          | 20 ++++++++++++--------
+ include/hw/virtio/vhost-user-blk.h |  4 +++-
+ 2 files changed, 15 insertions(+), 9 deletions(-)
+
+diff --git a/hw/block/vhost-user-blk.c b/hw/block/vhost-user-blk.c
+index dbc0a2e..146b927 100644
+--- a/hw/block/vhost-user-blk.c
++++ b/hw/block/vhost-user-blk.c
+@@ -303,7 +303,7 @@ static int vhost_user_blk_connect(DeviceState *dev)
+     s->connected = true;
+ 
+     s->dev.nvqs = s->num_queues;
+-    s->dev.vqs = s->vqs;
++    s->dev.vqs = s->vhost_vqs;
+     s->dev.vq_index = 0;
+     s->dev.backend_features = 0;
+ 
+@@ -430,13 +430,15 @@ static void vhost_user_blk_device_realize(DeviceState *dev, Error **errp)
+     virtio_init(vdev, "virtio-blk", VIRTIO_ID_BLOCK,
+                 sizeof(struct virtio_blk_config));
+ 
++    s->virtqs = g_new(VirtQueue *, s->num_queues);
+     for (i = 0; i < s->num_queues; i++) {
+-        virtio_add_queue(vdev, s->queue_size,
+-                         vhost_user_blk_handle_output);
++        s->virtqs[i] = virtio_add_queue(vdev, s->queue_size,
++                                        vhost_user_blk_handle_output);
+     }
+ 
+     s->inflight = g_new0(struct vhost_inflight, 1);
+-    s->vqs = g_new(struct vhost_virtqueue, s->num_queues);
++    s->vhost_vqs = g_new0(struct vhost_virtqueue, s->num_queues);
++    s->watch = 0;
+     s->connected = false;
+ 
+     qemu_chr_fe_set_handlers(&s->chardev,  NULL, NULL, vhost_user_blk_event,
+@@ -467,11 +469,12 @@ reconnect:
+     return;
+ 
+ virtio_err:
+-    g_free(s->vqs);
++    g_free(s->vhost_vqs);
+     g_free(s->inflight);
+     for (i = 0; i < s->num_queues; i++) {
+-        virtio_del_queue(vdev, i);
++        virtio_delete_queue(s->virtqs[i]);
+     }
++    g_free(s->virtqs);
+     virtio_cleanup(vdev);
+     vhost_user_cleanup(&s->vhost_user);
+ }
+@@ -487,12 +490,13 @@ static void vhost_user_blk_device_unrealize(DeviceState *dev, Error **errp)
+                              NULL, NULL, NULL, false);
+     vhost_dev_cleanup(&s->dev);
+     vhost_dev_free_inflight(s->inflight);
+-    g_free(s->vqs);
++    g_free(s->vhost_vqs);
+     g_free(s->inflight);
+ 
+     for (i = 0; i < s->num_queues; i++) {
+-        virtio_del_queue(vdev, i);
++        virtio_delete_queue(s->virtqs[i]);
+     }
++    g_free(s->virtqs);
+     virtio_cleanup(vdev);
+     vhost_user_cleanup(&s->vhost_user);
+ }
+diff --git a/include/hw/virtio/vhost-user-blk.h b/include/hw/virtio/vhost-user-blk.h
+index ad9b742..29375dd 100644
+--- a/include/hw/virtio/vhost-user-blk.h
++++ b/include/hw/virtio/vhost-user-blk.h
+@@ -37,7 +37,9 @@ typedef struct VHostUserBlk {
+     struct vhost_dev dev;
+     struct vhost_inflight *inflight;
+     VhostUserState vhost_user;
+-    struct vhost_virtqueue *vqs;
++    struct vhost_virtqueue *vhost_vqs;
++    VirtQueue **virtqs;
++    guint watch;
+     bool connected;
+ } VHostUserBlk;
+ 
+-- 
+1.8.3.1
+

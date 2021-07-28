@@ -1,0 +1,34 @@
+From 682d23829adf0a872d5a3ca6eb4b31c424f558fc Mon Sep 17 00:00:00 2001
+From: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Date: Tue, 24 Mar 2020 18:36:26 +0300
+Subject: [PATCH 09/14] block/mirror: fix use after free of local_err
+
+local_err is used again in mirror_exit_common() after
+bdrv_set_backing_hd(), so we must zero it. Otherwise try to set
+non-NULL local_err will crash.
+
+Signed-off-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Message-Id: <20200324153630.11882-3-vsementsov@virtuozzo.com>
+Reviewed-by: Eric Blake <eblake@redhat.com>
+Reviewed-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+Signed-off-by: Peng Liang <liangpeng10@huawei.com>
+---
+ block/mirror.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/block/mirror.c b/block/mirror.c
+index 681b305de650..ef6c958ff9b3 100644
+--- a/block/mirror.c
++++ b/block/mirror.c
+@@ -674,6 +674,7 @@ static int mirror_exit_common(Job *job)
+             bdrv_set_backing_hd(target_bs, backing, &local_err);
+             if (local_err) {
+                 error_report_err(local_err);
++                local_err = NULL;
+                 ret = -EPERM;
+             }
+         }
+-- 
+2.26.2
+

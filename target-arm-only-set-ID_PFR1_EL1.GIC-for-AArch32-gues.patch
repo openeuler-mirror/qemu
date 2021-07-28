@@ -1,0 +1,31 @@
+From 88e3146118230de8b99280db219a6a6c47bebce1 Mon Sep 17 00:00:00 2001
+From: Peng Liang <liangpeng10@huawei.com>
+Date: Wed, 16 Sep 2020 19:40:28 +0800
+Subject: [PATCH] target/arm: only set ID_PFR1_EL1.GIC for AArch32 guest
+
+Some AArch64 CPU doesn't support AArch32 mode, and the values of AArch32
+registers are all 0.  Hence, We'd better not to modify AArch32 registers
+in AArch64 mode.
+
+Signed-off-by: zhanghailiang <zhang.zhanghailiang@huawei.com>
+Signed-off-by: Peng Liang <liangpeng10@huawei.com>
+---
+ target/arm/helper.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/target/arm/helper.c b/target/arm/helper.c
+index 97b6b86197..b262f5d6c5 100644
+--- a/target/arm/helper.c
++++ b/target/arm/helper.c
+@@ -5672,7 +5672,7 @@ static uint64_t id_pfr1_read(CPUARMState *env, const ARMCPRegInfo *ri)
+     ARMCPU *cpu = env_archcpu(env);
+     uint64_t pfr1 = cpu->id_pfr1;
+ 
+-    if (env->gicv3state) {
++    if (!arm_feature(&cpu->env, ARM_FEATURE_AARCH64) && env->gicv3state) {
+         pfr1 |= 1 << 28;
+     }
+     return pfr1;
+-- 
+2.23.0
+

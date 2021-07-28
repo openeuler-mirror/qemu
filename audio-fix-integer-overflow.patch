@@ -1,0 +1,37 @@
+From d0c4e8cc25dc3bfed1659c35fb59b2f0418ba1d5 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Volker=20R=C3=BCmelin?= <vr_qemu@t-online.de>
+Date: Thu, 19 Dec 2019 21:34:05 +0100
+Subject: [PATCH 2/8] audio: fix integer overflow
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Tell the compiler to do a 32bit * 32bit -> 64bit multiplication
+because period_ticks is a 64bit variable. The overflow occurs
+for audio timer periods larger than 4294967us.
+
+Fixes: be1092afa0 "audio: fix audio timer rate conversion bug"
+
+Signed-off-by: Volker Rümelin <vr_qemu@t-online.de>
+Message-id: 8893a235-66a8-8fbe-7d95-862e29da90b1@t-online.de
+Signed-off-by: Gerd Hoffmann <kraxel@redhat.com>
+---
+ audio/audio.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/audio/audio.c b/audio/audio.c
+index 05adf7f..efcb5d4 100644
+--- a/audio/audio.c
++++ b/audio/audio.c
+@@ -1473,7 +1473,7 @@ static int audio_init(Audiodev *dev)
+     if (dev->timer_period <= 0) {
+         s->period_ticks = 1;
+     } else {
+-        s->period_ticks = dev->timer_period * SCALE_US;
++        s->period_ticks = dev->timer_period * (int64_t)SCALE_US;
+     }
+ 
+     e = qemu_add_vm_change_state_handler (audio_vm_change_state_handler, s);
+-- 
+1.8.3.1
+

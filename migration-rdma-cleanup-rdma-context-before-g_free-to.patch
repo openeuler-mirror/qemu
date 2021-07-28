@@ -1,0 +1,58 @@
+From 9867dc6fc3f131324b73664b9617376270d8d013 Mon Sep 17 00:00:00 2001
+From: Pan Nengyuan <pannengyuan@huawei.com>
+Date: Fri, 8 May 2020 06:07:55 -0400
+Subject: [PATCH 4/5] migration/rdma: cleanup rdma context before g_free to
+ avoid memleaks
+
+When error happen in initializing 'rdma_return_path', we should cleanup rdma context
+before g_free(rdma) to avoid some memleaks. This patch fix that.
+
+Reported-by: Euler Robot <euler.robot@huawei.com>
+Signed-off-by: Pan Nengyuan <pannengyuan@huawei.com>
+Message-Id: <20200508100755.7875-3-pannengyuan@huawei.com>
+Reviewed-by: Juan Quintela <quintela@redhat.com>
+Signed-off-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+---
+ migration/rdma.c | 8 +++++---
+ 1 file changed, 5 insertions(+), 3 deletions(-)
+
+diff --git a/migration/rdma.c b/migration/rdma.c
+index 3036221e..bb24dac5 100644
+--- a/migration/rdma.c
++++ b/migration/rdma.c
+@@ -4103,20 +4103,20 @@ void rdma_start_outgoing_migration(void *opaque,
+         rdma_return_path = qemu_rdma_data_init(host_port, errp);
+ 
+         if (rdma_return_path == NULL) {
+-            goto err;
++            goto return_path_err;
+         }
+ 
+         ret = qemu_rdma_source_init(rdma_return_path,
+             s->enabled_capabilities[MIGRATION_CAPABILITY_RDMA_PIN_ALL], errp);
+ 
+         if (ret) {
+-            goto err;
++            goto return_path_err;
+         }
+ 
+         ret = qemu_rdma_connect(rdma_return_path, errp);
+ 
+         if (ret) {
+-            goto err;
++            goto return_path_err;
+         }
+ 
+         rdma->return_path = rdma_return_path;
+@@ -4129,6 +4129,8 @@ void rdma_start_outgoing_migration(void *opaque,
+     s->to_dst_file = qemu_fopen_rdma(rdma, "wb");
+     migrate_fd_connect(s, NULL);
+     return;
++return_path_err:
++    qemu_rdma_cleanup(rdma);
+ err:
+     g_free(rdma);
+     g_free(rdma_return_path);
+-- 
+2.23.0
+

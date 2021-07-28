@@ -1,0 +1,50 @@
+From 3bdd21c4b7d80cacc6b5f1b26ab52ef3a0aceb06 Mon Sep 17 00:00:00 2001
+From: Peter Xu <peterx@redhat.com>
+Date: Wed, 16 Oct 2019 10:29:32 +0800
+Subject: [PATCH 7/8] apic: Use 32bit APIC ID for migration instance ID
+
+Migration is silently broken now with x2apic config like this:
+
+     -smp 200,maxcpus=288,sockets=2,cores=72,threads=2 \
+     -device intel-iommu,intremap=on,eim=on
+
+After migration, the guest kernel could hang at anything, due to
+x2apic bit not migrated correctly in IA32_APIC_BASE on some vcpus, so
+any operations related to x2apic could be broken then (e.g., RDMSR on
+x2apic MSRs could fail because KVM would think that the vcpu hasn't
+enabled x2apic at all).
+
+The issue is that the x2apic bit was never applied correctly for vcpus
+whose ID > 255 when migrate completes, and that's because when we
+migrate APIC we use the APICCommonState.id as instance ID of the
+migration stream, while that's too short for x2apic.
+
+Let's use the newly introduced initial_apic_id for that.
+
+Signed-off-by: Peter Xu <peterx@redhat.com>
+Reviewed-by: Juan Quintela <quintela@redhat.com>
+Reviewed-by: Eduardo Habkost <ehabkost@redhat.com>
+Signed-off-by: Juan Quintela <quintela@redhat.com>
+---
+ hw/intc/apic_common.c | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/hw/intc/apic_common.c b/hw/intc/apic_common.c
+index 07adba0..2c0cb1e 100644
+--- a/hw/intc/apic_common.c
++++ b/hw/intc/apic_common.c
+@@ -313,7 +313,10 @@ static void apic_common_realize(DeviceState *dev, Error **errp)
+     APICCommonState *s = APIC_COMMON(dev);
+     APICCommonClass *info;
+     static DeviceState *vapic;
+-    uint32_t instance_id = s->id;
++    uint32_t instance_id = s->initial_apic_id;
++
++    /* Normally initial APIC ID should be no more than hundreds */
++    assert(instance_id != VMSTATE_INSTANCE_ID_ANY);
+ 
+     info = APIC_COMMON_GET_CLASS(s);
+     info->realize(dev, errp);
+-- 
+1.8.3.1
+

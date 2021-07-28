@@ -1,0 +1,47 @@
+From aeccff89333c565c7a894f99c17c0044d7d43be2 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Marc-Andr=C3=A9=20Lureau?= <marcandre.lureau@redhat.com>
+Date: Thu, 4 Jun 2020 11:44:25 +0200
+Subject: [PATCH 02/11] qga: fix assert regression on guest-shutdown
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Since commit 781f2b3d1e ("qga: process_event() simplification"),
+send_response() is called unconditionally, but will assert when "rsp" is
+NULL. This may happen with QCO_NO_SUCCESS_RESP commands, such as
+"guest-shutdown".
+
+Fixes: 781f2b3d1e5ef389b44016a897fd55e7a780bf35
+Cc: Michael Roth <mdroth@linux.vnet.ibm.com>
+Reported-by: Christian Ehrhardt <christian.ehrhardt@canonical.com>
+Signed-off-by: Marc-André Lureau <marcandre.lureau@redhat.com>
+Reviewed-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+Reviewed-by: Christian Ehrhardt <christian.ehrhardt@canonical.com>
+Tested-by: Christian Ehrhardt <christian.ehrhardt@canonical.com>
+Cc: qemu-stable@nongnu.org
+Signed-off-by: Michael Roth <mdroth@linux.vnet.ibm.com>
+Signed-off-by: BiaoXiang Ye <yebiaoxiang@huawei.com>
+---
+ qga/main.c | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/qga/main.c b/qga/main.c
+index c35c2a21..12fa463f 100644
+--- a/qga/main.c
++++ b/qga/main.c
+@@ -529,7 +529,11 @@ static int send_response(GAState *s, const QDict *rsp)
+     QString *payload_qstr, *response_qstr;
+     GIOStatus status;
+ 
+-    g_assert(rsp && s->channel);
++    g_assert(s->channel);
++
++    if (!rsp) {
++        return 0;
++    }
+ 
+     payload_qstr = qobject_to_json(QOBJECT(rsp));
+     if (!payload_qstr) {
+-- 
+2.27.0.dirty
+
