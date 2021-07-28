@@ -1,0 +1,58 @@
+From aebd6a1512e03ba51f6824fcdbaa09f67e9ff5e2 Mon Sep 17 00:00:00 2001
+From: Jason Wang <jasowang@redhat.com>
+Date: Wed, 10 Jun 2020 13:43:51 +0800
+Subject: [PATCH 11/11] virtio-pci: fix queue_enable write
+
+Spec said: The driver uses this to selectively prevent the device from
+executing requests from this virtqueue. 1 - enabled; 0 - disabled.
+
+Though write 0 to queue_enable is forbidden by the spec, we should not
+assume that the value is 1.
+
+Fix this by ignore the write value other than 1.
+
+Signed-off-by: Jason Wang <jasowang@redhat.com>
+Message-Id: <20200610054351.15811-1-jasowang@redhat.com>
+Reviewed-by: Michael S. Tsirkin <mst@redhat.com>
+Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+Reviewed-by: Stefano Garzarella <sgarzare@redhat.com>
+Reviewed-by: Stefan Hajnoczi <stefanha@redhat.com>
+Reviewed-by: Michael S. Tsirkin <mst@redhat.com>
+Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+Signed-off-by: BiaoXiang Ye <yebiaoxiang@huawei.com>
+---
+ hw/virtio/virtio-pci.c | 12 ++++++++----
+ 1 file changed, 8 insertions(+), 4 deletions(-)
+
+diff --git a/hw/virtio/virtio-pci.c b/hw/virtio/virtio-pci.c
+index b4b0ed26..4b8845a6 100644
+--- a/hw/virtio/virtio-pci.c
++++ b/hw/virtio/virtio-pci.c
+@@ -1259,16 +1259,20 @@ static void virtio_pci_common_write(void *opaque, hwaddr addr,
+         virtio_queue_set_vector(vdev, vdev->queue_sel, val);
+         break;
+     case VIRTIO_PCI_COMMON_Q_ENABLE:
+-        virtio_queue_set_num(vdev, vdev->queue_sel,
+-                             proxy->vqs[vdev->queue_sel].num);
+-        virtio_queue_set_rings(vdev, vdev->queue_sel,
++        if (val == 1) {
++            virtio_queue_set_num(vdev, vdev->queue_sel,
++                                 proxy->vqs[vdev->queue_sel].num);
++            virtio_queue_set_rings(vdev, vdev->queue_sel,
+                        ((uint64_t)proxy->vqs[vdev->queue_sel].desc[1]) << 32 |
+                        proxy->vqs[vdev->queue_sel].desc[0],
+                        ((uint64_t)proxy->vqs[vdev->queue_sel].avail[1]) << 32 |
+                        proxy->vqs[vdev->queue_sel].avail[0],
+                        ((uint64_t)proxy->vqs[vdev->queue_sel].used[1]) << 32 |
+                        proxy->vqs[vdev->queue_sel].used[0]);
+-        proxy->vqs[vdev->queue_sel].enabled = 1;
++            proxy->vqs[vdev->queue_sel].enabled = 1;
++        } else {
++            virtio_error(vdev, "wrong value for queue_enable %"PRIx64, val);
++        }
+         break;
+     case VIRTIO_PCI_COMMON_Q_DESCLO:
+         proxy->vqs[vdev->queue_sel].desc[0] = val;
+-- 
+2.27.0.dirty
+

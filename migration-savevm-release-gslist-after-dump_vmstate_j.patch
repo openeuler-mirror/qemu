@@ -1,0 +1,63 @@
+From 0d8c145e986d4f500f065d2d8645e95175324e62 Mon Sep 17 00:00:00 2001
+From: Pan Nengyuan <pannengyuan@huawei.com>
+Date: Wed, 19 Feb 2020 17:47:05 +0800
+Subject: [PATCH 8/9] migration/savevm: release gslist after dump_vmstate_json
+
+'list' forgot to free at the end of dump_vmstate_json_to_file(), although it's called only once, but seems like a clean code.
+
+Fix the leak as follow:
+Direct leak of 16 byte(s) in 1 object(s) allocated from:
+    #0 0x7fb946abd768 in __interceptor_malloc (/lib64/libasan.so.5+0xef768)
+    #1 0x7fb945eca445 in g_malloc (/lib64/libglib-2.0.so.0+0x52445)
+    #2 0x7fb945ee2066 in g_slice_alloc (/lib64/libglib-2.0.so.0+0x6a066)
+    #3 0x7fb945ee3139 in g_slist_prepend (/lib64/libglib-2.0.so.0+0x6b139)
+    #4 0x5585db591581 in object_class_get_list_tramp /mnt/sdb/qemu-new/qemu/qom/object.c:1084
+    #5 0x5585db590f66 in object_class_foreach_tramp /mnt/sdb/qemu-new/qemu/qom/object.c:1028
+    #6 0x7fb945eb35f7 in g_hash_table_foreach (/lib64/libglib-2.0.so.0+0x3b5f7)
+    #7 0x5585db59110c in object_class_foreach /mnt/sdb/qemu-new/qemu/qom/object.c:1038
+    #8 0x5585db5916b6 in object_class_get_list /mnt/sdb/qemu-new/qemu/qom/object.c:1092
+    #9 0x5585db335ca0 in dump_vmstate_json_to_file /mnt/sdb/qemu-new/qemu/migration/savevm.c:638
+    #10 0x5585daa5bcbf in main /mnt/sdb/qemu-new/qemu/vl.c:4420
+    #11 0x7fb941204812 in __libc_start_main ../csu/libc-start.c:308
+    #12 0x5585da29420d in _start (/mnt/sdb/qemu-new/qemu/build/x86_64-softmmu/qemu-system-x86_64+0x27f020d)
+
+Indirect leak of 7472 byte(s) in 467 object(s) allocated from:
+    #0 0x7fb946abd768 in __interceptor_malloc (/lib64/libasan.so.5+0xef768)
+    #1 0x7fb945eca445 in g_malloc (/lib64/libglib-2.0.so.0+0x52445)
+    #2 0x7fb945ee2066 in g_slice_alloc (/lib64/libglib-2.0.so.0+0x6a066)
+    #3 0x7fb945ee3139 in g_slist_prepend (/lib64/libglib-2.0.so.0+0x6b139)
+    #4 0x5585db591581 in object_class_get_list_tramp /mnt/sdb/qemu-new/qemu/qom/object.c:1084
+    #5 0x5585db590f66 in object_class_foreach_tramp /mnt/sdb/qemu-new/qemu/qom/object.c:1028
+    #6 0x7fb945eb35f7 in g_hash_table_foreach (/lib64/libglib-2.0.so.0+0x3b5f7)
+    #7 0x5585db59110c in object_class_foreach /mnt/sdb/qemu-new/qemu/qom/object.c:1038
+    #8 0x5585db5916b6 in object_class_get_list /mnt/sdb/qemu-new/qemu/qom/object.c:1092
+    #9 0x5585db335ca0 in dump_vmstate_json_to_file /mnt/sdb/qemu-new/qemu/migration/savevm.c:638
+    #10 0x5585daa5bcbf in main /mnt/sdb/qemu-new/qemu/vl.c:4420
+    #11 0x7fb941204812 in __libc_start_main ../csu/libc-start.c:308
+    #12 0x5585da29420d in _start (/mnt/sdb/qemu-new/qemu/build/x86_64-softmmu/qemu-system-x86_64+0x27f020d)
+
+Reported-by: Euler Robot <euler.robot@huawei.com>
+Signed-off-by: Pan Nengyuan <pannengyuan@huawei.com>
+Reviewed-by: Juan Quintela <quintela@redhat.com>
+Reviewed-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+Signed-off-by: Juan Quintela <quintela@redhat.com>
+Signed-off-by: AlexChen <alex.chen@huawei.com>
+---
+ migration/savevm.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/migration/savevm.c b/migration/savevm.c
+index 7d89c57..8163de7 100644
+--- a/migration/savevm.c
++++ b/migration/savevm.c
+@@ -614,6 +614,7 @@ void dump_vmstate_json_to_file(FILE *out_file)
+     }
+     fprintf(out_file, "\n}\n");
+     fclose(out_file);
++    g_slist_free(list);
+ }
+ 
+ static uint32_t calculate_new_instance_id(const char *idstr)
+-- 
+1.8.3.1
+

@@ -1,0 +1,64 @@
+From 1d7c227bbb24665cea03f96a984ad6be223ac40c Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Marc-Andr=C3=A9=20Lureau?= <marcandre.lureau@redhat.com>
+Date: Wed, 25 Mar 2020 19:47:21 +0100
+Subject: [PATCH 2/5] migration: fix cleanup_bh leak on resume
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Since commit 8c6b0356b53977bcfdea5299db07884915425b0c ("util/async:
+make bh_aio_poll() O(1)"), migration-test reveals a leak:
+
+QTEST_QEMU_BINARY=x86_64-softmmu/qemu-system-x86_64
+tests/qtest/migration-test  -p /x86_64/migration/postcopy/recovery
+tests/qtest/libqtest.c:140: kill_qemu() tried to terminate QEMU
+process but encountered exit status 1 (expected 0)
+
+=================================================================
+==2082571==ERROR: LeakSanitizer: detected memory leaks
+
+Direct leak of 40 byte(s) in 1 object(s) allocated from:
+    #0 0x7f25971dfc58 in __interceptor_malloc (/lib64/libasan.so.5+0x10dc58)
+    #1 0x7f2596d08358 in g_malloc (/lib64/libglib-2.0.so.0+0x57358)
+    #2 0x560970d006f8 in qemu_bh_new /home/elmarco/src/qemu/util/main-loop.c:532
+    #3 0x5609704afa02 in migrate_fd_connect
+/home/elmarco/src/qemu/migration/migration.c:3407
+    #4 0x5609704b6b6f in migration_channel_connect
+/home/elmarco/src/qemu/migration/channel.c:92
+    #5 0x5609704b2bfb in socket_outgoing_migration
+/home/elmarco/src/qemu/migration/socket.c:108
+    #6 0x560970b9bd6c in qio_task_complete /home/elmarco/src/qemu/io/task.c:196
+    #7 0x560970b9aa97 in qio_task_thread_result
+/home/elmarco/src/qemu/io/task.c:111
+    #8 0x7f2596cfee3a  (/lib64/libglib-2.0.so.0+0x4de3a)
+
+Signed-off-by: Marc-André Lureau <marcandre.lureau@redhat.com>
+Message-Id: <20200325184723.2029630-2-marcandre.lureau@redhat.com>
+Reviewed-by: Juan Quintela <quintela@redhat.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+Signed-off-by: Zhenyu Ye <yezhenyu2@huawei.com>
+---
+ migration/migration.c | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/migration/migration.c b/migration/migration.c
+index 8f2fc2b4..7949f2a4 100644
+--- a/migration/migration.c
++++ b/migration/migration.c
+@@ -3313,7 +3313,12 @@ void migrate_fd_connect(MigrationState *s, Error *error_in)
+     bool resume = s->state == MIGRATION_STATUS_POSTCOPY_PAUSED;
+ 
+     s->expected_downtime = s->parameters.downtime_limit;
+-    s->cleanup_bh = qemu_bh_new(migrate_fd_cleanup_bh, s);
++    if (resume) {
++        assert(s->cleanup_bh);
++    } else {
++        assert(!s->cleanup_bh);
++        s->cleanup_bh = qemu_bh_new(migrate_fd_cleanup_bh, s);
++    }
+     if (error_in) {
+         migrate_fd_error(s, error_in);
+         migrate_fd_cleanup(s);
+-- 
+2.22.0.windows.1
+

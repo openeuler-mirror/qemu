@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 71
+Release: 72
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY-SA-4.0
@@ -415,6 +415,67 @@ Patch0402: seqlock-fix-seqlock_write_unlock_impl-function.patch
 Patch0403: target-i386-kvm-initialize-microcode-revision-from-K.patch
 Patch0404: target-i386-check-for-availability-of-MSR_IA32_UCODE.patch
 Patch0405: hw-arm-virt-Init-PMU-for-hotplugged-vCPU.patch
+Patch0406: Fixed-integer-overflow-in-e1000e.patch
+Patch0407: migration-fix-cleanup_bh-leak-on-resume.patch
+Patch0408: qmp-fix-leak-on-callbacks-that-return-both-value-and.patch
+Patch0409: qga-commands-posix-fix-use-after-free-of-local_err.patch
+Patch0410: file-posix-Fix-leaked-fd-in-raw_open_common-error-pa.patch
+Patch0411: object-return-self-in-object_ref.patch
+Patch0412: lm32-do-not-leak-memory-on-object_new-object_unref.patch
+Patch0413: cris-do-not-leak-struct-cris_disasm_data.patch
+Patch0414: hppa-fix-leak-from-g_strdup_printf.patch
+Patch0415: mcf5208-fix-leak-from-qemu_allocate_irqs.patch
+Patch0416: microblaze-fix-leak-of-fdevice-tree-blob.patch
+Patch0417: ide-fix-leak-from-qemu_allocate_irqs.patch
+Patch0418: make-check-unit-use-after-free-in-test-opts-visitor.patch
+Patch0419: xhci-fix-valid.max_access_size-to-access-address-reg.patch
+Patch0420: qga-fix-assert-regression-on-guest-shutdown.patch
+Patch0421: char-fix-use-after-free-with-dup-chardev-reconnect.patch
+Patch0422: migration-Count-new_dirty-instead-of-real_dirty.patch
+Patch0423: qga-Plug-unlikely-memory-leak-in-guest-set-memory-bl.patch
+Patch0424: chardev-tcp-Fix-error-message-double-free-error.patch
+Patch0425: colo-compare-Fix-memory-leak-in-packet_enqueue.patch
+Patch0426: hw-block-nvme-fix-pin-based-interrupt-behavior.patch
+Patch0427: hw-block-nvme-fix-pci-doorbell-size-calculation.patch
+Patch0428: virtio-pci-fix-queue_enable-write.patch
+Patch0429: hw-pci-pci_bridge-Correct-pci_bridge_io-memory-regio.patch
+Patch0430: linux-user-mmap.c-fix-integer-underflow-in-target_mr.patch
+Patch0431: migration-rdma-cleanup-rdma-context-before-g_free-to.patch
+Patch0432: pc-bios-s390-ccw-net-fix-a-possible-memory-leak-in-g.patch
+Patch0433: block-qcow2-do-free-crypto_opts-in-qcow2_close.patch
+Patch0434: qemu-img-free-memory-before-re-assign.patch
+Patch0435: block-qcow2-threads-fix-qcow2_decompress.patch
+Patch0436: block-Avoid-memleak-on-qcow2-image-info-failure.patch
+Patch0437: block-bdrv_set_backing_bs-fix-use-after-free.patch
+Patch0438: hmp-vnc-Fix-info-vnc-list-leak.patch
+Patch0439: migration-colo-fix-use-after-free-of-local_err.patch
+Patch0440: migration-ram-fix-use-after-free-of-local_err.patch
+Patch0441: block-mirror-fix-use-after-free-of-local_err.patch
+Patch0442: block-fix-bdrv_root_attach_child-forget-to-unref-chi.patch
+Patch0443: virtio-serial-bus-Plug-memory-leak-on-realize-error-.patch
+Patch0444: virtio-blk-delete-vqs-on-the-error-path-in-realize.patch
+Patch0445: fix-vhost_user_blk_watch-crash.patch
+Patch0446: vhost-user-blk-delay-vhost_user_blk_disconnect.patch
+Patch0447: usbredir-fix-buffer-overflow-on-vmload.patch
+Patch0448: display-bochs-display-fix-memory-leak.patch
+Patch0449: audio-fix-integer-overflow.patch
+Patch0450: migration-multifd-clean-pages-after-filling-packet.patch
+Patch0451: migration-multifd-not-use-multifd-during-postcopy.patch
+Patch0452: migration-Define-VMSTATE_INSTANCE_ID_ANY.patch
+Patch0453: migration-Change-SaveStateEntry.instance_id-into-uin.patch
+Patch0454: apic-Use-32bit-APIC-ID-for-migration-instance-ID.patch
+Patch0455: virtio-add-ability-to-delete-vq-through-a-pointer.patch
+Patch0456: virtio-pmem-do-delete-rq_vq-in-virtio_pmem_unrealize.patch
+Patch0457: virtio-crypto-do-delete-ctrl_vq-in-virtio_crypto_dev.patch
+Patch0458: vhost-user-blk-delete-virtioqueues-in-unrealize-to-f.patch
+Patch0459: vhost-user-blk-convert-to-new-virtio_delete_queue.patch
+Patch0460: block-nbd-extract-the-common-cleanup-code.patch
+Patch0461: virtio-gracefully-handle-invalid-region-caches.patch
+Patch0462: migration-savevm-release-gslist-after-dump_vmstate_j.patch
+Patch0463: virtio-input-fix-memory-leak-on-unrealize.patch
+Patch0464: target-arm-only-set-ID_PFR1_EL1.GIC-for-AArch32-gues.patch
+Patch0465: target-arm-clear-EL2-and-EL3-only-when-kvm-is-not-en.patch
+Patch0466: target-arm-Update-the-ID-registers-of-Kunpeng-920.patch
 
 BuildRequires: flex
 BuildRequires: gcc
@@ -809,6 +870,69 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Wed Jul 28 2021 imxcc <xingchaochao@huawei.com>
+- object: return self in object_ref()
+- file-posix: Fix leaked fd in raw_open_common() error path
+- qga/commands-posix: fix use after free of local_err
+- qmp: fix leak on callbacks that return both value and error
+- migration: fix cleanup_bh leak on resume
+- Fixed integer overflow in e1000e
+- lm32-do-not-leak-memory-on-object_new-object_unref.patch
+- cris-do-not-leak-struct-cris_disasm_data.patch
+- hppa-fix-leak-from-g_strdup_printf.patch
+- mcf5208-fix-leak-from-qemu_allocate_irqs.patch
+- microblaze-fix-leak-of-fdevice-tree-blob.patch
+- ide-fix-leak-from-qemu_allocate_irqs.patch
+- make-check-unit-use-after-free-in-test-opts-visitor.patch
+- virtio-pci: fix queue_enable write
+- hw/block/nvme: fix pci doorbell size calculation
+- hw/block/nvme: fix pin-based interrupt behavior
+- colo-compare: Fix memory leak in packet_enqueue()
+- chardev/tcp: Fix error message double free error
+- qga: Plug unlikely memory leak in guest-set-memory-blocks
+- migration: Count new_dirty instead of real_dirty
+- char: fix use-after-free with dup chardev & reconnect
+- qga: fix assert regression on guest-shutdown
+- xhci: fix valid.max_access_size to access address registers
+- block/qcow2: do free crypto_opts in qcow2_close()
+- qemu-img: free memory before re-assign
+- block/qcow2-threads: fix qcow2_decompress
+- block: Avoid memleak on qcow2 image info failure
+- block: bdrv_set_backing_bs: fix use-after-free
+- hmp/vnc: Fix info vnc list leak
+- migration/colo: fix use after free of local_err
+- migration/ram: fix use after free of local_err
+- block/mirror: fix use after free of local_err
+- block: fix bdrv_root_attach_child forget to unref child_bs
+- virtio-serial-bus: Plug memory leak on realize() error paths
+- virtio-blk: delete vqs on the error path in realize()
+- fix vhost_user_blk_watch crash
+- vhost-user-blk: delay vhost_user_blk_disconnect
+- hw-pci-pci_bridge-Correct-pci_bridge_io-memory-regio.patch
+- linux-user-mmap.c-fix-integer-underflow-in-target_mr.patch
+- migration-rdma-cleanup-rdma-context-before-g_free-to.patch
+- pc-bios-s390-ccw-net-fix-a-possible-memory-leak-in-g.patch
+- usbredir-fix-buffer-overflow-on-vmload.patch
+- apic: Use 32bit APIC ID for migration instance-ID
+- audio: fix integer overflow
+- display/bochs-display: fix memory leak
+- migration: Change SaveStateEntry.instance_id into uint32_t
+- migration: Define VMSTATE_INSTANCE_ID_ANY
+- migration/multifd: clean pages after filling packet
+- migration/multifd: not use multifd during postcopy
+- virtio: add ability to delete vq through a pointer
+- virtio-pmem: do delete rq_vq in virtio_pmem_unrealize
+- virtio-crypto: do delete ctrl_vq in virtio_crypto_device_unrealize
+- vhost-user-blk: delete virtioqueues in unrealize to fix memleaks
+- vhost-user-blk: convert to new virtio_delete_queue
+- block/nbd: extract the common cleanup code
+- virtio: gracefully handle invalid region caches
+- migration/savevm: release gslist after dump_vmstate_json
+- virtio-input: fix memory leak on unrealize
+- target/arm: only set ID_PFR1_EL1.GIC for AArch32 guest
+- target/arm: clear EL2 and EL3 only when kvm is not enabled
+- target/arm: Update the ID registers of Kunpeng-920
+
 * Fri Jul 23 2021 imxcc <xingchaochao@huawei.com>
 - hw/arm/virt: Init PMU for hotplugged vCPU
 

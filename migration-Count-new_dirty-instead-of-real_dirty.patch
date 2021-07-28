@@ -1,0 +1,74 @@
+From 63320ae36834e4ff2f0d139f205c464caa3887b4 Mon Sep 17 00:00:00 2001
+From: Keqian Zhu <zhukeqian1@huawei.com>
+Date: Mon, 22 Jun 2020 11:20:37 +0800
+Subject: [PATCH 04/11] migration: Count new_dirty instead of real_dirty
+
+real_dirty_pages becomes equal to total ram size after dirty log sync
+in ram_init_bitmaps, the reason is that the bitmap of ramblock is
+initialized to be all set, so old path counts them as "real dirty" at
+beginning.
+
+This causes wrong dirty rate and false positive throttling.
+
+Signed-off-by: Keqian Zhu <zhukeqian1@huawei.com>
+Message-Id: <20200622032037.31112-1-zhukeqian1@huawei.com>
+Reviewed-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+Signed-off-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+Signed-off-by: BiaoXiang Ye <yebiaoxiang@huawei.com>
+---
+ include/exec/ram_addr.h | 5 +----
+ migration/ram.c         | 8 +++++---
+ 2 files changed, 6 insertions(+), 7 deletions(-)
+
+diff --git a/include/exec/ram_addr.h b/include/exec/ram_addr.h
+index b7b2e60f..52344066 100644
+--- a/include/exec/ram_addr.h
++++ b/include/exec/ram_addr.h
+@@ -485,8 +485,7 @@ static inline void cpu_physical_memory_clear_dirty_range(ram_addr_t start,
+ static inline
+ uint64_t cpu_physical_memory_sync_dirty_bitmap(RAMBlock *rb,
+                                                ram_addr_t start,
+-                                               ram_addr_t length,
+-                                               uint64_t *real_dirty_pages)
++                                               ram_addr_t length)
+ {
+     ram_addr_t addr;
+     unsigned long word = BIT_WORD((start + rb->offset) >> TARGET_PAGE_BITS);
+@@ -512,7 +511,6 @@ uint64_t cpu_physical_memory_sync_dirty_bitmap(RAMBlock *rb,
+             if (src[idx][offset]) {
+                 unsigned long bits = atomic_xchg(&src[idx][offset], 0);
+                 unsigned long new_dirty;
+-                *real_dirty_pages += ctpopl(bits);
+                 new_dirty = ~dest[k];
+                 dest[k] |= bits;
+                 new_dirty &= bits;
+@@ -545,7 +543,6 @@ uint64_t cpu_physical_memory_sync_dirty_bitmap(RAMBlock *rb,
+                         start + addr + offset,
+                         TARGET_PAGE_SIZE,
+                         DIRTY_MEMORY_MIGRATION)) {
+-                *real_dirty_pages += 1;
+                 long k = (start + addr) >> TARGET_PAGE_BITS;
+                 if (!test_and_set_bit(k, dest)) {
+                     num_dirty++;
+diff --git a/migration/ram.c b/migration/ram.c
+index 840e3548..83cabec6 100644
+--- a/migration/ram.c
++++ b/migration/ram.c
+@@ -1765,9 +1765,11 @@ static inline bool migration_bitmap_clear_dirty(RAMState *rs,
+ static void migration_bitmap_sync_range(RAMState *rs, RAMBlock *rb,
+                                         ram_addr_t length)
+ {
+-    rs->migration_dirty_pages +=
+-        cpu_physical_memory_sync_dirty_bitmap(rb, 0, length,
+-                                              &rs->num_dirty_pages_period);
++    uint64_t new_dirty_pages =
++        cpu_physical_memory_sync_dirty_bitmap(rb, 0, rb->used_length);
++
++    rs->migration_dirty_pages += new_dirty_pages;
++    rs->num_dirty_pages_period += new_dirty_pages;
+ }
+ 
+ /**
+-- 
+2.27.0.dirty
+

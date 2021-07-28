@@ -1,0 +1,45 @@
+From ec8a25fec9898f46a6a94aa4f328fe02948b3d59 Mon Sep 17 00:00:00 2001
+From: Pan Nengyuan <pannengyuan@huawei.com>
+Date: Sat, 28 Mar 2020 08:57:04 +0800
+Subject: [PATCH 12/14] virtio-blk: delete vqs on the error path in realize()
+
+virtio_vqs forgot to free on the error path in realize(). Fix that.
+
+The asan stack:
+Direct leak of 14336 byte(s) in 1 object(s) allocated from:
+    #0 0x7f58b93fd970 in __interceptor_calloc (/lib64/libasan.so.5+0xef970)
+    #1 0x7f58b858249d in g_malloc0 (/lib64/libglib-2.0.so.0+0x5249d)
+    #2 0x5562cc627f49 in virtio_add_queue /mnt/sdb/qemu/hw/virtio/virtio.c:2413
+    #3 0x5562cc4b524a in virtio_blk_device_realize /mnt/sdb/qemu/hw/block/virtio-blk.c:1202
+    #4 0x5562cc613050 in virtio_device_realize /mnt/sdb/qemu/hw/virtio/virtio.c:3615
+    #5 0x5562ccb7a568 in device_set_realized /mnt/sdb/qemu/hw/core/qdev.c:891
+    #6 0x5562cd39cd45 in property_set_bool /mnt/sdb/qemu/qom/object.c:2238
+
+Reported-by: Euler Robot <euler.robot@huawei.com>
+Signed-off-by: Pan Nengyuan <pannengyuan@huawei.com>
+Reviewed-by: Stefano Garzarella <sgarzare@redhat.com>
+Message-Id: <20200328005705.29898-2-pannengyuan@huawei.com>
+Reviewed-by: Michael S. Tsirkin <mst@redhat.com>
+Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+Signed-off-by: Peng Liang <liangpeng10@huawei.com>
+---
+ hw/block/virtio-blk.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/hw/block/virtio-blk.c b/hw/block/virtio-blk.c
+index cbb3729158fe..703ed4c93bff 100644
+--- a/hw/block/virtio-blk.c
++++ b/hw/block/virtio-blk.c
+@@ -1173,6 +1173,9 @@ static void virtio_blk_device_realize(DeviceState *dev, Error **errp)
+     virtio_blk_data_plane_create(vdev, conf, &s->dataplane, &err);
+     if (err != NULL) {
+         error_propagate(errp, err);
++        for (i = 0; i < conf->num_queues; i++) {
++            virtio_del_queue(vdev, i);
++        }
+         virtio_cleanup(vdev);
+         return;
+     }
+-- 
+2.26.2
+

@@ -1,0 +1,33 @@
+From d22af5cb41c16829dbf3ed3c611ef56ceeb840ff Mon Sep 17 00:00:00 2001
+From: Pan Nengyuan <pannengyuan@huawei.com>
+Date: Thu, 27 Feb 2020 09:29:50 +0800
+Subject: [PATCH 02/14] qemu-img: free memory before re-assign
+
+collect_image_check() is called twice in img_check(), the filename/format will be alloced without free the original memory.
+It is not a big deal since the process will exit anyway, but seems like a clean code and it will remove the warning spotted by asan.
+
+Reported-by: Euler Robot <euler.robot@huawei.com>
+Signed-off-by: Pan Nengyuan <pannengyuan@huawei.com>
+Message-Id: <20200227012950.12256-3-pannengyuan@huawei.com>
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+Signed-off-by: Peng Liang <liangpeng10@huawei.com>
+---
+ qemu-img.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/qemu-img.c b/qemu-img.c
+index 79983772de39..2e9cc5db7c4c 100644
+--- a/qemu-img.c
++++ b/qemu-img.c
+@@ -808,6 +808,8 @@ static int img_check(int argc, char **argv)
+                     check->corruptions_fixed);
+         }
+ 
++        qapi_free_ImageCheck(check);
++        check = g_new0(ImageCheck, 1);
+         ret = collect_image_check(bs, check, filename, fmt, 0);
+ 
+         check->leaks_fixed          = leaks_fixed;
+-- 
+2.26.2
+

@@ -1,0 +1,54 @@
+From 88ef4e1862987227f8b87228cff94be3af66d054 Mon Sep 17 00:00:00 2001
+From: Pan Nengyuan <pannengyuan@huawei.com>
+Date: Thu, 27 Feb 2020 09:29:49 +0800
+Subject: [PATCH 01/14] block/qcow2: do free crypto_opts in qcow2_close()
+
+'crypto_opts' forgot to free in qcow2_close(), this patch fix the bellow leak stack:
+
+Direct leak of 24 byte(s) in 1 object(s) allocated from:
+    #0 0x7f0edd81f970 in __interceptor_calloc (/lib64/libasan.so.5+0xef970)
+    #1 0x7f0edc6d149d in g_malloc0 (/lib64/libglib-2.0.so.0+0x5249d)
+    #2 0x55d7eaede63d in qobject_input_start_struct /mnt/sdb/qemu-new/qemu_test/qemu/qapi/qobject-input-visitor.c:295
+    #3 0x55d7eaed78b8 in visit_start_struct /mnt/sdb/qemu-new/qemu_test/qemu/qapi/qapi-visit-core.c:49
+    #4 0x55d7eaf5140b in visit_type_QCryptoBlockOpenOptions qapi/qapi-visit-crypto.c:290
+    #5 0x55d7eae43af3 in block_crypto_open_opts_init /mnt/sdb/qemu-new/qemu_test/qemu/block/crypto.c:163
+    #6 0x55d7eacd2924 in qcow2_update_options_prepare /mnt/sdb/qemu-new/qemu_test/qemu/block/qcow2.c:1148
+    #7 0x55d7eacd33f7 in qcow2_update_options /mnt/sdb/qemu-new/qemu_test/qemu/block/qcow2.c:1232
+    #8 0x55d7eacd9680 in qcow2_do_open /mnt/sdb/qemu-new/qemu_test/qemu/block/qcow2.c:1512
+    #9 0x55d7eacdc55e in qcow2_open_entry /mnt/sdb/qemu-new/qemu_test/qemu/block/qcow2.c:1792
+    #10 0x55d7eacdc8fe in qcow2_open /mnt/sdb/qemu-new/qemu_test/qemu/block/qcow2.c:1819
+    #11 0x55d7eac3742d in bdrv_open_driver /mnt/sdb/qemu-new/qemu_test/qemu/block.c:1317
+    #12 0x55d7eac3e990 in bdrv_open_common /mnt/sdb/qemu-new/qemu_test/qemu/block.c:1575
+    #13 0x55d7eac4442c in bdrv_open_inherit /mnt/sdb/qemu-new/qemu_test/qemu/block.c:3126
+    #14 0x55d7eac45c3f in bdrv_open /mnt/sdb/qemu-new/qemu_test/qemu/block.c:3219
+    #15 0x55d7ead8e8a4 in blk_new_open /mnt/sdb/qemu-new/qemu_test/qemu/block/block-backend.c:397
+    #16 0x55d7eacde74c in qcow2_co_create /mnt/sdb/qemu-new/qemu_test/qemu/block/qcow2.c:3534
+    #17 0x55d7eacdfa6d in qcow2_co_create_opts /mnt/sdb/qemu-new/qemu_test/qemu/block/qcow2.c:3668
+    #18 0x55d7eac1c678 in bdrv_create_co_entry /mnt/sdb/qemu-new/qemu_test/qemu/block.c:485
+    #19 0x55d7eb0024d2 in coroutine_trampoline /mnt/sdb/qemu-new/qemu_test/qemu/util/coroutine-ucontext.c:115
+
+Reported-by: Euler Robot <euler.robot@huawei.com>
+Signed-off-by: Pan Nengyuan <pannengyuan@huawei.com>
+Reviewed-by: Max Reitz <mreitz@redhat.com>
+Message-Id: <20200227012950.12256-2-pannengyuan@huawei.com>
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+Signed-off-by: Peng Liang <liangpeng10@huawei.com>
+---
+ block/qcow2.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/block/qcow2.c b/block/qcow2.c
+index 1909df6e1d24..27c54b9905aa 100644
+--- a/block/qcow2.c
++++ b/block/qcow2.c
+@@ -2408,6 +2408,7 @@ static void qcow2_close(BlockDriverState *bs)
+ 
+     qcrypto_block_free(s->crypto);
+     s->crypto = NULL;
++    qapi_free_QCryptoBlockOpenOptions(s->crypto_opts);
+ 
+     g_free(s->unknown_header_fields);
+     cleanup_unknown_header_ext(bs);
+-- 
+2.26.2
+

@@ -1,0 +1,57 @@
+From b54ca94f19a9b22537712638ae05d2095258eb80 Mon Sep 17 00:00:00 2001
+From: Peng Liang <liangpeng10@huawei.com>
+Date: Sat, 19 Sep 2020 09:04:45 +0800
+Subject: [PATCH] target/arm: Update the ID registers of Kunpeng-920
+
+The values of some ID registers in Kunpeng-920 are not exactly correct.
+Let's update them.  The values are read from Kunpeng-920 by calling
+read_sysreg_s.
+
+Signed-off-by: Peng Liang <liangpeng10@huawei.com>
+---
+ target/arm/cpu64.c | 27 +++++++++++++++++++++++++--
+ 1 file changed, 25 insertions(+), 2 deletions(-)
+
+diff --git a/target/arm/cpu64.c b/target/arm/cpu64.c
+index 726d123d8e..a1649f8844 100644
+--- a/target/arm/cpu64.c
++++ b/target/arm/cpu64.c
+@@ -275,10 +275,33 @@ static void aarch64_kunpeng_920_initfn(Object *obj)
+ 
+     cpu->midr = 0x480fd010;
+     cpu->ctr = 0x84448004;
+-    cpu->isar.regs[ID_AA64PFR0] = 0x11001111;
++    cpu->isar.regs[ID_ISAR0] = 0;
++    cpu->isar.regs[ID_ISAR1] = 0;
++    cpu->isar.regs[ID_ISAR2] = 0;
++    cpu->isar.regs[ID_ISAR3] = 0;
++    cpu->isar.regs[ID_ISAR4] = 0;
++    cpu->isar.regs[ID_ISAR5] = 0;
++    cpu->isar.regs[ID_MMFR0] = 0;
++    cpu->isar.regs[ID_MMFR1] = 0;
++    cpu->isar.regs[ID_MMFR2] = 0;
++    cpu->isar.regs[ID_MMFR3] = 0;
++    cpu->isar.regs[ID_MMFR4] = 0;
++    cpu->isar.regs[MVFR0] = 0;
++    cpu->isar.regs[MVFR1] = 0;
++    cpu->isar.regs[MVFR2] = 0;
++    cpu->isar.regs[ID_DFR0] = 0;
++    cpu->isar.regs[MVFR2] = 0;
++    cpu->isar.regs[MVFR2] = 0;
++    cpu->isar.regs[MVFR2] = 0;
++    cpu->id_pfr0 = 0;
++    cpu->id_pfr1 = 0;
++    cpu->isar.regs[ID_AA64PFR0] = 0x0000010011111111;
+     cpu->isar.regs[ID_AA64DFR0] = 0x110305408;
+-    cpu->isar.regs[ID_AA64ISAR0] = 0x10211120;
++    cpu->isar.regs[ID_AA64ISAR0] = 0x0001100010211120;
++    cpu->isar.regs[ID_AA64ISAR1] = 0x00011001;
+     cpu->isar.regs[ID_AA64MMFR0] = 0x101125;
++    cpu->isar.regs[ID_AA64MMFR1] = 0x10211122;
++    cpu->isar.regs[ID_AA64MMFR2] = 0x00001011;
+ }
+ 
+ static void cpu_max_get_sve_vq(Object *obj, Visitor *v, const char *name,
+-- 
+2.23.0
+

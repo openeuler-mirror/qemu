@@ -1,0 +1,126 @@
+From 902a8192600ff81681a162509e23bf95619d1f04 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Marc-Andr=C3=A9=20Lureau?= <marcandre.lureau@redhat.com>
+Date: Mon, 20 Apr 2020 13:20:12 +0200
+Subject: [PATCH] char: fix use-after-free with dup chardev & reconnect
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+With a reconnect socket, qemu_char_open() will start a background
+thread. It should keep a reference on the chardev.
+
+Fixes invalid read:
+READ of size 8 at 0x6040000ac858 thread T7
+    #0 0x5555598d37b8 in unix_connect_saddr /home/elmarco/src/qq/util/qemu-sockets.c:954
+    #1 0x5555598d4751 in socket_connect /home/elmarco/src/qq/util/qemu-sockets.c:1109
+    #2 0x555559707c34 in qio_channel_socket_connect_sync /home/elmarco/src/qq/io/channel-socket.c:145
+    #3 0x5555596adebb in tcp_chr_connect_client_task /home/elmarco/src/qq/chardev/char-socket.c:1104
+    #4 0x555559723d55 in qio_task_thread_worker /home/elmarco/src/qq/io/task.c:123
+    #5 0x5555598a6731 in qemu_thread_start /home/elmarco/src/qq/util/qemu-thread-posix.c:519
+    #6 0x7ffff40d4431 in start_thread (/lib64/libpthread.so.0+0x9431)
+    #7 0x7ffff40029d2 in __clone (/lib64/libc.so.6+0x1019d2)
+
+Signed-off-by: Marc-André Lureau <marcandre.lureau@redhat.com>
+Reviewed-by: Daniel P. Berrangé <berrange@redhat.com>
+Message-Id: <20200420112012.567284-1-marcandre.lureau@redhat.com>
+Signed-off-by: Zhenyu Ye <yezhenyu2@huawei.com>
+---
+ chardev/char-socket.c |  3 ++-
+ tests/test-char.c     | 53 ++++++++++++++++++++++++++++++++++++++++++-
+ 2 files changed, 54 insertions(+), 2 deletions(-)
+
+diff --git a/chardev/char-socket.c b/chardev/char-socket.c
+index 7ca5d97a..701b62f9 100644
+--- a/chardev/char-socket.c
++++ b/chardev/char-socket.c
+@@ -1118,7 +1118,8 @@ static void tcp_chr_connect_client_async(Chardev *chr)
+      */
+     s->connect_task = qio_task_new(OBJECT(sioc),
+                                    qemu_chr_socket_connected,
+-                                   chr, NULL);
++                                   object_ref(OBJECT(chr)),
++                                   (GDestroyNotify)object_unref);
+     qio_task_run_in_thread(s->connect_task,
+                            tcp_chr_connect_client_task,
+                            s->addr,
+diff --git a/tests/test-char.c b/tests/test-char.c
+index f9440cdc..0e4069fb 100644
+--- a/tests/test-char.c
++++ b/tests/test-char.c
+@@ -871,6 +871,53 @@ typedef struct {
+ } CharSocketClientTestConfig;
+ 
+ 
++static void char_socket_client_dupid_test(gconstpointer opaque)
++{
++    const CharSocketClientTestConfig *config = opaque;
++    QIOChannelSocket *ioc;
++    char *optstr;
++    Chardev *chr1, *chr2;
++    SocketAddress *addr;
++    QemuOpts *opts;
++    Error *local_err = NULL;
++
++    /*
++     * Setup a listener socket and determine get its address
++     * so we know the TCP port for the client later
++     */
++    ioc = qio_channel_socket_new();
++    g_assert_nonnull(ioc);
++    qio_channel_socket_listen_sync(ioc, config->addr, &error_abort);
++    addr = qio_channel_socket_get_local_address(ioc, &error_abort);
++    g_assert_nonnull(addr);
++
++    /*
++     * Populate the chardev address based on what the server
++     * is actually listening on
++     */
++    optstr = char_socket_addr_to_opt_str(addr,
++                                         config->fd_pass,
++                                         config->reconnect,
++                                         false);
++
++    opts = qemu_opts_parse_noisily(qemu_find_opts("chardev"),
++                                   optstr, true);
++    g_assert_nonnull(opts);
++    chr1 = qemu_chr_new_from_opts(opts, NULL, &error_abort);
++    g_assert_nonnull(chr1);
++
++    chr2 = qemu_chr_new_from_opts(opts, NULL, &local_err);
++    g_assert_null(chr2);
++    error_free_or_abort(&local_err);
++
++    object_unref(OBJECT(ioc));
++    qemu_opts_del(opts);
++    object_unparent(OBJECT(chr1));
++    qapi_free_SocketAddress(addr);
++    g_free(optstr);
++}
++
++
+ static void char_socket_client_test(gconstpointer opaque)
+ {
+     const CharSocketClientTestConfig *config = opaque;
+@@ -1425,6 +1472,8 @@ int main(int argc, char **argv)
+         { addr, NULL, false, true };                                    \
+     CharSocketClientTestConfig client6 ## name =                        \
+         { addr, NULL, true, true };                                     \
++    CharSocketClientTestConfig client7 ## name =                        \
++        { addr, ",reconnect=1", false, false };                         \
+     g_test_add_data_func("/char/socket/client/mainloop/" # name,        \
+                          &client1 ##name, char_socket_client_test);     \
+     g_test_add_data_func("/char/socket/client/wait-conn/" # name,       \
+@@ -1436,7 +1485,9 @@ int main(int argc, char **argv)
+     g_test_add_data_func("/char/socket/client/mainloop-fdpass/" # name, \
+                          &client5 ##name, char_socket_client_test);     \
+     g_test_add_data_func("/char/socket/client/wait-conn-fdpass/" # name, \
+-                         &client6 ##name, char_socket_client_test)
++                         &client6 ##name, char_socket_client_test);     \
++    g_test_add_data_func("/char/socket/client/dupid-reconnect/" # name, \
++                         &client7 ##name, char_socket_client_dupid_test)
+ 
+     SOCKET_SERVER_TEST(tcp, &tcpaddr);
+     SOCKET_CLIENT_TEST(tcp, &tcpaddr);
+-- 
+2.22.0.windows.1
+

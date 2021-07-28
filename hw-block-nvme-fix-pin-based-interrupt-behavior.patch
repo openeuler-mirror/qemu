@@ -1,0 +1,87 @@
+From 74ef18c90684f0ae18aef071b9e11a5e8796177b Mon Sep 17 00:00:00 2001
+From: alexchen <alex.chen@huawei.com>
+Date: Tue, 8 Sep 2020 11:17:20 +0000
+Subject: [PATCH] hw/block/nvme: fix pin-based interrupt behavior
+
+First, since the device only supports MSI-X or pin-based interrupt, if
+MSI-X is not enabled, it should not accept interrupt vectors different
+from 0 when creating completion queues.
+
+Secondly, the irq_status NvmeCtrl member is meant to be compared to the
+INTMS register, so it should only be 32 bits wide. And it is really only
+useful when used with multi-message MSI.
+
+Third, since we do not force a 1-to-1 correspondence between cqid and
+interrupt vector, the irq_status register should not have bits set
+according to cqid, but according to the associated interrupt vector.
+
+Fix these issues, but keep irq_status available so we can easily support
+multi-message MSI down the line.
+
+Fixes: 5e9aa92eb1a5 ("hw/block: Fix pin-based interrupt behaviour of NVMe")
+Cc: "Michael S. Tsirkin" <mst@redhat.com>
+Cc: Marcel Apfelbaum <marcel.apfelbaum@gmail.com>
+Signed-off-by: Klaus Jensen <k.jensen@samsung.com>
+Reviewed-by: Keith Busch <kbusch@kernel.org>
+Message-Id: <20200609190333.59390-8-its@irrelevant.dk>
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Signed-off-by: BiaoXiang Ye <yebiaoxiang@huawei.com>
+Signed-off-by: Zhenyu Ye <yezhenyu2@huawei.com>
+---
+ hw/block/nvme.c | 12 ++++++++----
+ hw/block/nvme.h |  2 +-
+ 2 files changed, 9 insertions(+), 5 deletions(-)
+
+diff --git a/hw/block/nvme.c b/hw/block/nvme.c
+index 36d6a8bb..e35c2e10 100644
+--- a/hw/block/nvme.c
++++ b/hw/block/nvme.c
+@@ -115,8 +115,8 @@ static void nvme_irq_assert(NvmeCtrl *n, NvmeCQueue *cq)
+             msix_notify(&(n->parent_obj), cq->vector);
+         } else {
+             trace_nvme_irq_pin();
+-            assert(cq->cqid < 64);
+-            n->irq_status |= 1 << cq->cqid;
++            assert(cq->vector < 32);
++            n->irq_status |= 1 << cq->vector;
+             nvme_irq_check(n);
+         }
+     } else {
+@@ -130,8 +130,8 @@ static void nvme_irq_deassert(NvmeCtrl *n, NvmeCQueue *cq)
+         if (msix_enabled(&(n->parent_obj))) {
+             return;
+         } else {
+-            assert(cq->cqid < 64);
+-            n->irq_status &= ~(1 << cq->cqid);
++            assert(cq->vector < 32);
++            n->irq_status &= ~(1 << cq->vector);
+             nvme_irq_check(n);
+         }
+     }
+@@ -630,6 +630,10 @@ static uint16_t nvme_create_cq(NvmeCtrl *n, NvmeCmd *cmd)
+         trace_nvme_err_invalid_create_cq_addr(prp1);
+         return NVME_INVALID_FIELD | NVME_DNR;
+     }
++    if (unlikely(!msix_enabled(&n->parent_obj) && vector)) {
++        trace_nvme_err_invalid_create_cq_vector(vector);
++        return NVME_INVALID_IRQ_VECTOR | NVME_DNR;
++    }
+     if (unlikely(vector > n->num_queues)) {
+         trace_nvme_err_invalid_create_cq_vector(vector);
+         return NVME_INVALID_IRQ_VECTOR | NVME_DNR;
+diff --git a/hw/block/nvme.h b/hw/block/nvme.h
+index 557194ee..f4c1ff91 100644
+--- a/hw/block/nvme.h
++++ b/hw/block/nvme.h
+@@ -78,7 +78,7 @@ typedef struct NvmeCtrl {
+     uint32_t    cmbsz;
+     uint32_t    cmbloc;
+     uint8_t     *cmbuf;
+-    uint64_t    irq_status;
++    uint32_t    irq_status;
+     uint64_t    host_timestamp;                 /* Timestamp sent by the host */
+     uint64_t    timestamp_set_qemu_clock_ms;    /* QEMU clock time */
+ 
+-- 
+2.23.0
+

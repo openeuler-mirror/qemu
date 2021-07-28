@@ -1,0 +1,102 @@
+From e3dfb5d2848975e9e947cb894afac87ce386a2bc Mon Sep 17 00:00:00 2001
+From: lizhengui <lizhengui@huawei.com>
+Date: Wed, 9 Sep 2020 15:18:52 +0800
+Subject: [PATCH] make check-unit: use after free in test-opts-visitor
+
+In the struct OptsVisitor, the 'repeated_opts' member points to a list
+in the 'unprocessed_opts' hash table after the list has been destroyed.
+A subsequent call to visit_type_int() references the deleted list.
+It results in use-after-free issue reproduced by running the test case
+under the Valgrind: valgrind tests/test-opts-visitor.
+A new mode ListMode::LM_TRAVERSED is declared to mark the list
+traversal completed.
+
+Suggested-by: Markus Armbruster <armbru@redhat.com>
+Signed-off-by: Andrey Shinkevich <andrey.shinkevich@virtuozzo.com>
+Message-Id: <1565024586-387112-1-git-send-email-andrey.shinkevich@virtuozzo.com>
+---
+ qapi/opts-visitor.c | 26 ++++++++++++++++++++++----
+ 1 file changed, 22 insertions(+), 4 deletions(-)
+
+diff --git a/qapi/opts-visitor.c b/qapi/opts-visitor.c
+index 324b1974..42d87df6 100644
+--- a/qapi/opts-visitor.c
++++ b/qapi/opts-visitor.c
+@@ -24,7 +24,8 @@ enum ListMode
+ {
+     LM_NONE,             /* not traversing a list of repeated options */
+ 
+-    LM_IN_PROGRESS,      /* opts_next_list() ready to be called.
++    LM_IN_PROGRESS,      /*
++                          * opts_next_list() ready to be called.
+                           *
+                           * Generating the next list link will consume the most
+                           * recently parsed QemuOpt instance of the repeated
+@@ -36,7 +37,8 @@ enum ListMode
+                           * LM_UNSIGNED_INTERVAL.
+                           */
+ 
+-    LM_SIGNED_INTERVAL,  /* opts_next_list() has been called.
++    LM_SIGNED_INTERVAL,  /*
++                          * opts_next_list() has been called.
+                           *
+                           * Generating the next list link will consume the most
+                           * recently stored element from the signed interval,
+@@ -48,7 +50,14 @@ enum ListMode
+                           * next element of the signed interval.
+                           */
+ 
+-    LM_UNSIGNED_INTERVAL /* Same as above, only for an unsigned interval. */
++    LM_UNSIGNED_INTERVAL, /* Same as above, only for an unsigned interval. */
++
++    LM_TRAVERSED          /*
++	                   * opts_next_list() has been called.
++	                   *
++	                   * No more QemuOpt instance in the list.
++	                   * The traversal has been completed.
++	                   */
+ };
+ 
+ typedef enum ListMode ListMode;
+@@ -238,6 +247,8 @@ opts_next_list(Visitor *v, GenericList *tail, size_t size)
+     OptsVisitor *ov = to_ov(v);
+ 
+     switch (ov->list_mode) {
++    case LM_TRAVERSED:
++        return NULL;
+     case LM_SIGNED_INTERVAL:
+     case LM_UNSIGNED_INTERVAL:
+         if (ov->list_mode == LM_SIGNED_INTERVAL) {
+@@ -258,6 +269,8 @@ opts_next_list(Visitor *v, GenericList *tail, size_t size)
+         opt = g_queue_pop_head(ov->repeated_opts);
+         if (g_queue_is_empty(ov->repeated_opts)) {
+             g_hash_table_remove(ov->unprocessed_opts, opt->name);
++            ov->repeated_opts = NULL;
++            ov->list_mode = LM_TRAVERSED;
+             return NULL;
+         }
+         break;
+@@ -289,7 +302,8 @@ opts_end_list(Visitor *v, void **obj)
+ 
+     assert(ov->list_mode == LM_IN_PROGRESS ||
+            ov->list_mode == LM_SIGNED_INTERVAL ||
+-           ov->list_mode == LM_UNSIGNED_INTERVAL);
++           ov->list_mode == LM_UNSIGNED_INTERVAL ||
++           ov->list_mode == LM_TRAVERSED);
+     ov->repeated_opts = NULL;
+     ov->list_mode = LM_NONE;
+ }
+@@ -306,6 +320,10 @@ lookup_scalar(const OptsVisitor *ov, const char *name, Error **errp)
+         list = lookup_distinct(ov, name, errp);
+         return list ? g_queue_peek_tail(list) : NULL;
+     }
++    if (ov->list_mode == LM_TRAVERSED) {
++        error_setg(errp, "Fewer list elements than expected");
++        return NULL;
++    }
+     assert(ov->list_mode == LM_IN_PROGRESS);
+     return g_queue_peek_head(ov->repeated_opts);
+ }
+-- 
+2.19.1
+

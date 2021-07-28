@@ -1,0 +1,45 @@
+From e29f08036ff11bf220463b4327b315505e760a44 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Marc-Andr=C3=A9=20Lureau?= <marcandre.lureau@redhat.com>
+Date: Thu, 21 Nov 2019 13:56:49 +0400
+Subject: [PATCH 9/9] virtio-input: fix memory leak on unrealize
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Spotted by ASAN + minor stylistic change.
+
+Signed-off-by: Marc-André Lureau <marcandre.lureau@redhat.com>
+Reviewed-by: Michael S. Tsirkin <mst@redhat.com>
+Message-Id: <20191121095649.25453-1-marcandre.lureau@redhat.com>
+Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+Signed-off-by: Marc-André Lureau <marcandre.lureau@redhat.com>
+Reviewed-by: Michael S. Tsirkin <mst@redhat.com>
+Signed-off-by: AlexChen <alex.chen@huawei.com>
+---
+ hw/input/virtio-input.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/hw/input/virtio-input.c b/hw/input/virtio-input.c
+index 9946394..401c1de 100644
+--- a/hw/input/virtio-input.c
++++ b/hw/input/virtio-input.c
+@@ -275,6 +275,7 @@ static void virtio_input_finalize(Object *obj)
+ 
+     g_free(vinput->queue);
+ }
++
+ static void virtio_input_device_unrealize(DeviceState *dev, Error **errp)
+ {
+     VirtIOInputClass *vic = VIRTIO_INPUT_GET_CLASS(dev);
+@@ -288,6 +289,8 @@ static void virtio_input_device_unrealize(DeviceState *dev, Error **errp)
+             return;
+         }
+     }
++    virtio_del_queue(vdev, 0);
++    virtio_del_queue(vdev, 1);
+     virtio_cleanup(vdev);
+ }
+ 
+-- 
+1.8.3.1
+

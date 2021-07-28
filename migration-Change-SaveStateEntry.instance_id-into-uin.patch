@@ -1,0 +1,158 @@
+From 2eadc5c611ca8cc916f74c0f393f1fd942903ef7 Mon Sep 17 00:00:00 2001
+From: Peter Xu <peterx@redhat.com>
+Date: Wed, 16 Oct 2019 10:29:31 +0800
+Subject: [PATCH 6/8] migration: Change SaveStateEntry.instance_id into
+ uint32_t
+
+It was always used as 32bit, so define it as used to be clear.
+Instead of using -1 as the auto-gen magic value, we switch to
+UINT32_MAX.  We also make sure that we don't auto-gen this value to
+avoid overflowed instance IDs without being noticed.
+
+Suggested-by: Juan Quintela <quintela@redhat.com>
+Signed-off-by: Peter Xu <peterx@redhat.com>
+Reviewed-by: Juan Quintela <quintela@redhat.com>
+Signed-off-by: Juan Quintela <quintela@redhat.com>
+---
+ hw/intc/apic_common.c        |  2 +-
+ include/migration/register.h |  2 +-
+ include/migration/vmstate.h  |  2 +-
+ migration/savevm.c           | 18 ++++++++++--------
+ stubs/vmstate.c              |  2 +-
+ 5 files changed, 14 insertions(+), 12 deletions(-)
+
+diff --git a/hw/intc/apic_common.c b/hw/intc/apic_common.c
+index faea1af..07adba0 100644
+--- a/hw/intc/apic_common.c
++++ b/hw/intc/apic_common.c
+@@ -313,7 +313,7 @@ static void apic_common_realize(DeviceState *dev, Error **errp)
+     APICCommonState *s = APIC_COMMON(dev);
+     APICCommonClass *info;
+     static DeviceState *vapic;
+-    int instance_id = s->id;
++    uint32_t instance_id = s->id;
+ 
+     info = APIC_COMMON_GET_CLASS(s);
+     info->realize(dev, errp);
+diff --git a/include/migration/register.h b/include/migration/register.h
+index 3d0b983..8b2bc5b 100644
+--- a/include/migration/register.h
++++ b/include/migration/register.h
+@@ -70,7 +70,7 @@ typedef struct SaveVMHandlers {
+ 
+ int register_savevm_live(DeviceState *dev,
+                          const char *idstr,
+-                         int instance_id,
++                         uint32_t instance_id,
+                          int version_id,
+                          const SaveVMHandlers *ops,
+                          void *opaque);
+diff --git a/include/migration/vmstate.h b/include/migration/vmstate.h
+index 92f531a..8abd2e3 100644
+--- a/include/migration/vmstate.h
++++ b/include/migration/vmstate.h
+@@ -1117,7 +1117,7 @@ bool vmstate_save_needed(const VMStateDescription *vmsd, void *opaque);
+ #define  VMSTATE_INSTANCE_ID_ANY  -1
+ 
+ /* Returns: 0 on success, -1 on failure */
+-int vmstate_register_with_alias_id(DeviceState *dev, int instance_id,
++int vmstate_register_with_alias_id(DeviceState *dev, uint32_t instance_id,
+                                    const VMStateDescription *vmsd,
+                                    void *base, int alias_id,
+                                    int required_for_version,
+diff --git a/migration/savevm.c b/migration/savevm.c
+index 62552ab..7d89c57 100644
+--- a/migration/savevm.c
++++ b/migration/savevm.c
+@@ -229,7 +229,7 @@ typedef struct CompatEntry {
+ typedef struct SaveStateEntry {
+     QTAILQ_ENTRY(SaveStateEntry) entry;
+     char idstr[256];
+-    int instance_id;
++    uint32_t instance_id;
+     int alias_id;
+     int version_id;
+     /* version id read from the stream */
+@@ -616,10 +616,10 @@ void dump_vmstate_json_to_file(FILE *out_file)
+     fclose(out_file);
+ }
+ 
+-static int calculate_new_instance_id(const char *idstr)
++static uint32_t calculate_new_instance_id(const char *idstr)
+ {
+     SaveStateEntry *se;
+-    int instance_id = 0;
++    uint32_t instance_id = 0;
+ 
+     QTAILQ_FOREACH(se, &savevm_state.handlers, entry) {
+         if (strcmp(idstr, se->idstr) == 0
+@@ -627,6 +627,8 @@ static int calculate_new_instance_id(const char *idstr)
+             instance_id = se->instance_id + 1;
+         }
+     }
++    /* Make sure we never loop over without being noticed */
++    assert(instance_id != VMSTATE_INSTANCE_ID_ANY);
+     return instance_id;
+ }
+ 
+@@ -682,7 +684,7 @@ static void savevm_state_handler_insert(SaveStateEntry *nse)
+    distinguishing id for all instances of your device class. */
+ int register_savevm_live(DeviceState *dev,
+                          const char *idstr,
+-                         int instance_id,
++                         uint32_t instance_id,
+                          int version_id,
+                          const SaveVMHandlers *ops,
+                          void *opaque)
+@@ -756,7 +758,7 @@ void unregister_savevm(DeviceState *dev, const char *idstr, void *opaque)
+     }
+ }
+ 
+-int vmstate_register_with_alias_id(DeviceState *dev, int instance_id,
++int vmstate_register_with_alias_id(DeviceState *dev, uint32_t instance_id,
+                                    const VMStateDescription *vmsd,
+                                    void *opaque, int alias_id,
+                                    int required_for_version,
+@@ -1507,7 +1509,7 @@ int qemu_save_device_state(QEMUFile *f)
+     return qemu_file_get_error(f);
+ }
+ 
+-static SaveStateEntry *find_se(const char *idstr, int instance_id)
++static SaveStateEntry *find_se(const char *idstr, uint32_t instance_id)
+ {
+     SaveStateEntry *se;
+ 
+@@ -2187,7 +2189,7 @@ qemu_loadvm_section_start_full(QEMUFile *f, MigrationIncomingState *mis)
+     /* Find savevm section */
+     se = find_se(idstr, instance_id);
+     if (se == NULL) {
+-        error_report("Unknown savevm section or instance '%s' %d. "
++        error_report("Unknown savevm section or instance '%s' %"PRIu32". "
+                      "Make sure that your current VM setup matches your "
+                      "saved VM setup, including any hotplugged devices",
+                      idstr, instance_id);
+@@ -2211,7 +2213,7 @@ qemu_loadvm_section_start_full(QEMUFile *f, MigrationIncomingState *mis)
+ 
+     ret = vmstate_load(f, se);
+     if (ret < 0) {
+-        error_report("error while loading state for instance 0x%x of"
++        error_report("error while loading state for instance 0x%"PRIx32" of"
+                      " device '%s'", instance_id, idstr);
+         return ret;
+     }
+diff --git a/stubs/vmstate.c b/stubs/vmstate.c
+index e1e89b8..4ed5cc6 100644
+--- a/stubs/vmstate.c
++++ b/stubs/vmstate.c
+@@ -4,7 +4,7 @@
+ const VMStateDescription vmstate_dummy = {};
+ 
+ int vmstate_register_with_alias_id(DeviceState *dev,
+-                                   int instance_id,
++                                   uint32_t instance_id,
+                                    const VMStateDescription *vmsd,
+                                    void *base, int alias_id,
+                                    int required_for_version,
+-- 
+1.8.3.1
+

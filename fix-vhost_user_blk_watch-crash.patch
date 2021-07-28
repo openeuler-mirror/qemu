@@ -1,0 +1,81 @@
+From 0b77995819a596f96c621697643e83624126e668 Mon Sep 17 00:00:00 2001
+From: Li Feng <fengli@smartx.com>
+Date: Mon, 23 Mar 2020 13:29:24 +0800
+Subject: [PATCH 13/14] fix vhost_user_blk_watch crash
+
+the G_IO_HUP is watched in tcp_chr_connect, and the callback
+vhost_user_blk_watch is not needed, because tcp_chr_hup is registered as
+callback. And it will close the tcp link.
+
+Signed-off-by: Li Feng <fengli@smartx.com>
+Message-Id: <20200323052924.29286-1-fengli@smartx.com>
+Reviewed-by: Michael S. Tsirkin <mst@redhat.com>
+Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+Signed-off-by: Peng Liang <liangpeng10@huawei.com>
+---
+ hw/block/vhost-user-blk.c          | 19 -------------------
+ include/hw/virtio/vhost-user-blk.h |  1 -
+ 2 files changed, 20 deletions(-)
+
+diff --git a/hw/block/vhost-user-blk.c b/hw/block/vhost-user-blk.c
+index 85bc4017e7e9..dc66f8a5febd 100644
+--- a/hw/block/vhost-user-blk.c
++++ b/hw/block/vhost-user-blk.c
+@@ -346,18 +346,6 @@ static void vhost_user_blk_disconnect(DeviceState *dev)
+     vhost_dev_cleanup(&s->dev);
+ }
+ 
+-static gboolean vhost_user_blk_watch(GIOChannel *chan, GIOCondition cond,
+-                                     void *opaque)
+-{
+-    DeviceState *dev = opaque;
+-    VirtIODevice *vdev = VIRTIO_DEVICE(dev);
+-    VHostUserBlk *s = VHOST_USER_BLK(vdev);
+-
+-    qemu_chr_fe_disconnect(&s->chardev);
+-
+-    return true;
+-}
+-
+ static void vhost_user_blk_event(void *opaque, int event)
+ {
+     DeviceState *dev = opaque;
+@@ -370,15 +358,9 @@ static void vhost_user_blk_event(void *opaque, int event)
+             qemu_chr_fe_disconnect(&s->chardev);
+             return;
+         }
+-        s->watch = qemu_chr_fe_add_watch(&s->chardev, G_IO_HUP,
+-                                         vhost_user_blk_watch, dev);
+         break;
+     case CHR_EVENT_CLOSED:
+         vhost_user_blk_disconnect(dev);
+-        if (s->watch) {
+-            g_source_remove(s->watch);
+-            s->watch = 0;
+-        }
+         break;
+     }
+ }
+@@ -419,7 +401,6 @@ static void vhost_user_blk_device_realize(DeviceState *dev, Error **errp)
+ 
+     s->inflight = g_new0(struct vhost_inflight, 1);
+     s->vqs = g_new(struct vhost_virtqueue, s->num_queues);
+-    s->watch = 0;
+     s->connected = false;
+ 
+     qemu_chr_fe_set_handlers(&s->chardev,  NULL, NULL, vhost_user_blk_event,
+diff --git a/include/hw/virtio/vhost-user-blk.h b/include/hw/virtio/vhost-user-blk.h
+index 8dbf11c6f071..ad9b742a644c 100644
+--- a/include/hw/virtio/vhost-user-blk.h
++++ b/include/hw/virtio/vhost-user-blk.h
+@@ -38,7 +38,6 @@ typedef struct VHostUserBlk {
+     struct vhost_inflight *inflight;
+     VhostUserState vhost_user;
+     struct vhost_virtqueue *vqs;
+-    guint watch;
+     bool connected;
+ } VHostUserBlk;
+ 
+-- 
+2.26.2
+

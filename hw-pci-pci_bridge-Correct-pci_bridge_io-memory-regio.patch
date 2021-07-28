@@ -1,0 +1,67 @@
+From 595a0d0a0f21cd73863ea3b78ecccb6e0ea8b7a8 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Philippe=20Mathieu-Daud=C3=A9?= <f4bug@amsat.org>
+Date: Mon, 1 Jun 2020 16:29:25 +0200
+Subject: [PATCH 2/5] hw/pci/pci_bridge: Correct pci_bridge_io memory region
+ size
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+memory_region_set_size() handle the 16 Exabytes limit by
+special-casing the UINT64_MAX value. This is not a problem
+for the 32-bit maximum, 4 GiB.
+By using the UINT32_MAX value, the pci_bridge_io MemoryRegion
+ends up missing 1 byte:
+
+  (qemu) info mtree
+  memory-region: pci_bridge_io
+    0000000000000000-00000000fffffffe (prio 0, i/o): pci_bridge_io
+      0000000000000060-0000000000000060 (prio 0, i/o): i8042-data
+      0000000000000064-0000000000000064 (prio 0, i/o): i8042-cmd
+      00000000000001ce-00000000000001d1 (prio 0, i/o): vbe
+      0000000000000378-000000000000037f (prio 0, i/o): parallel
+      00000000000003b4-00000000000003b5 (prio 0, i/o): vga
+      ...
+
+Fix by using the correct value. We now have:
+
+  memory-region: pci_bridge_io
+    0000000000000000-00000000ffffffff (prio 0, i/o): pci_bridge_io
+      0000000000000060-0000000000000060 (prio 0, i/o): i8042-data
+      0000000000000064-0000000000000064 (prio 0, i/o): i8042-cmd
+      ...
+
+Reviewed-by: Peter Maydell <peter.maydell@linaro.org>
+Signed-off-by: Philippe Mathieu-Daudé <f4bug@amsat.org>
+Message-Id: <20200601142930.29408-4-f4bug@amsat.org>
+Reviewed-by: Michael S. Tsirkin <mst@redhat.com>
+Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+Reviewed-by: Richard Henderson <richard.henderson@linaro.org>
+---
+ hw/pci/pci_bridge.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/hw/pci/pci_bridge.c b/hw/pci/pci_bridge.c
+index 715b9a4f..d67c691d 100644
+--- a/hw/pci/pci_bridge.c
++++ b/hw/pci/pci_bridge.c
+@@ -30,6 +30,7 @@
+  */
+ 
+ #include "qemu/osdep.h"
++#include "qemu/units.h"
+ #include "hw/pci/pci_bridge.h"
+ #include "hw/pci/pci_bus.h"
+ #include "qemu/module.h"
+@@ -381,7 +382,7 @@ void pci_bridge_initfn(PCIDevice *dev, const char *typename)
+     memory_region_init(&br->address_space_mem, OBJECT(br), "pci_bridge_pci", UINT64_MAX);
+     sec_bus->address_space_io = &br->address_space_io;
+     memory_region_init(&br->address_space_io, OBJECT(br), "pci_bridge_io",
+-                       UINT32_MAX);
++                       4 * GiB);
+     br->windows = pci_bridge_region_init(br);
+     QLIST_INIT(&sec_bus->child);
+     QLIST_INSERT_HEAD(&parent->child, sec_bus, sibling);
+-- 
+2.23.0
+

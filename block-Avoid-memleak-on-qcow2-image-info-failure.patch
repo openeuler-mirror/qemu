@@ -1,0 +1,35 @@
+From 6a39af8880c18fb3bcbfb715aef909c64286524e Mon Sep 17 00:00:00 2001
+From: Eric Blake <eblake@redhat.com>
+Date: Fri, 20 Mar 2020 13:36:20 -0500
+Subject: [PATCH 04/14] block: Avoid memleak on qcow2 image info failure
+
+If we fail to get bitmap info, we must not leak the encryption info.
+
+Fixes: b8968c875f403
+Fixes: Coverity CID 1421894
+Signed-off-by: Eric Blake <eblake@redhat.com>
+Message-Id: <20200320183620.1112123-1-eblake@redhat.com>
+Reviewed-by: Vladimir Sementsov-Ogievskiy <vsementsov@virtuozzo.com>
+Reviewed-by: Andrey Shinkevich <andrey.shinkevich@virtuozzo.com>
+Tested-by: Andrey Shinkevich <andrey.shinkevich@virtuozzo.com>
+Signed-off-by: Max Reitz <mreitz@redhat.com>
+Signed-off-by: Peng Liang <liangpeng10@huawei.com>
+---
+ block/qcow2.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/block/qcow2.c b/block/qcow2.c
+index 27c54b9905aa..0f4b0940d457 100644
+--- a/block/qcow2.c
++++ b/block/qcow2.c
+@@ -4588,6 +4588,7 @@ static ImageInfoSpecific *qcow2_get_specific_info(BlockDriverState *bs,
+         if (local_err) {
+             error_propagate(errp, local_err);
+             qapi_free_ImageInfoSpecific(spec_info);
++            qapi_free_QCryptoBlockInfo(encrypt_info);
+             return NULL;
+         }
+         *spec_info->u.qcow2.data = (ImageInfoSpecificQCow2){
+-- 
+2.26.2
+

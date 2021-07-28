@@ -1,0 +1,54 @@
+From b7ef7e6fb5a2b08268f4b19c07c07abd4fbb2064 Mon Sep 17 00:00:00 2001
+From: lizhengui <lizhengui@huawei.com>
+Date: Wed, 9 Sep 2020 14:48:49 +0800
+Subject: [PATCH] hppa: fix leak from g_strdup_printf
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+memory_region_init_* takes care of copying the name into memory it owns.
+Free it in the caller.
+
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+Reviewed-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+---
+ hw/hppa/dino.c    | 1 +
+ hw/hppa/machine.c | 4 +++-
+ 2 files changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/hw/hppa/dino.c b/hw/hppa/dino.c
+index e94614ab..ef923b49 100644
+--- a/hw/hppa/dino.c
++++ b/hw/hppa/dino.c
+@@ -485,6 +485,7 @@ PCIBus *dino_init(MemoryRegion *addr_space,
+         memory_region_init_alias(&s->pci_mem_alias[i], OBJECT(s),
+                                  name, &s->pci_mem, addr,
+                                  DINO_MEM_CHUNK_SIZE);
++        g_free(name);
+     }
+ 
+     /* Set up PCI view of memory: Bus master address space.  */
+diff --git a/hw/hppa/machine.c b/hw/hppa/machine.c
+index 662838d8..9e25660e 100644
+--- a/hw/hppa/machine.c
++++ b/hw/hppa/machine.c
+@@ -78,13 +78,15 @@ static void machine_hppa_init(MachineState *machine)
+ 
+     /* Create CPUs.  */
+     for (i = 0; i < smp_cpus; i++) {
++        char *name = g_strdup_printf("cpu%ld-io-eir", i);
+         cpu[i] = HPPA_CPU(cpu_create(machine->cpu_type));
+ 
+         cpu_region = g_new(MemoryRegion, 1);
+         memory_region_init_io(cpu_region, OBJECT(cpu[i]), &hppa_io_eir_ops,
+-                              cpu[i], g_strdup_printf("cpu%ld-io-eir", i), 4);
++                              cpu[i], name, 4);
+         memory_region_add_subregion(addr_space, CPU_HPA + i * 0x1000,
+                                     cpu_region);
++        g_free(name);
+     }
+ 
+     /* Limit main memory. */
+-- 
+2.19.1
+

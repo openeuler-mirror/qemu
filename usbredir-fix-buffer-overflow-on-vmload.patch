@@ -1,0 +1,54 @@
+From 66fce891aecec3969d1ba979cf0a9a6df70afecd Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Marc-Andr=C3=A9=20Lureau?= <marcandre.lureau@redhat.com>
+Date: Wed, 7 Aug 2019 12:40:48 +0400
+Subject: [PATCH] usbredir: fix buffer-overflow on vmload
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+If interface_count is NO_INTERFACE_INFO, let's not access the arrays
+out-of-bounds.
+
+==994==ERROR: AddressSanitizer: heap-buffer-overflow on address 0x625000243930 at pc 0x5642068086a8 bp 0x7f0b6f9ffa50 sp 0x7f0b6f9ffa40
+READ of size 1 at 0x625000243930 thread T0
+    #0 0x5642068086a7 in usbredir_check_bulk_receiving /home/elmarco/src/qemu/hw/usb/redirect.c:1503
+    #1 0x56420681301c in usbredir_post_load /home/elmarco/src/qemu/hw/usb/redirect.c:2154
+    #2 0x5642068a56c2 in vmstate_load_state /home/elmarco/src/qemu/migration/vmstate.c:168
+    #3 0x56420688e2ac in vmstate_load /home/elmarco/src/qemu/migration/savevm.c:829
+    #4 0x5642068980cb in qemu_loadvm_section_start_full /home/elmarco/src/qemu/migration/savevm.c:2211
+    #5 0x564206899645 in qemu_loadvm_state_main /home/elmarco/src/qemu/migration/savevm.c:2395
+    #6 0x5642068998cf in qemu_loadvm_state /home/elmarco/src/qemu/migration/savevm.c:2467
+    #7 0x56420685f3e9 in process_incoming_migration_co /home/elmarco/src/qemu/migration/migration.c:449
+    #8 0x564207106c47 in coroutine_trampoline /home/elmarco/src/qemu/util/coroutine-ucontext.c:115
+    #9 0x7f0c0604e37f  (/lib64/libc.so.6+0x4d37f)
+
+Signed-off-by: Marc-André Lureau <marcandre.lureau@redhat.com>
+Reviewed-by: Liam Merwick <liam.merwick@oracle.com>
+Reviewed-by: Li Qiang <liq3ea@gmail.com>
+Reviewed-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+Message-id: 20190807084048.4258-1-marcandre.lureau@redhat.com
+Signed-off-by: Gerd Hoffmann <kraxel@redhat.com>
+Signed-off-by: Zhenyu Ye <yezhenyu2@huawei.com>
+---
+ hw/usb/redirect.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/hw/usb/redirect.c b/hw/usb/redirect.c
+index 998fc6e4..9764a579 100644
+--- a/hw/usb/redirect.c
++++ b/hw/usb/redirect.c
+@@ -1495,6 +1495,11 @@ static void usbredir_check_bulk_receiving(USBRedirDevice *dev)
+     for (i = EP2I(USB_DIR_IN); i < MAX_ENDPOINTS; i++) {
+         dev->endpoint[i].bulk_receiving_enabled = 0;
+     }
++
++    if (dev->interface_info.interface_count == NO_INTERFACE_INFO) {
++        return;
++    }
++
+     for (i = 0; i < dev->interface_info.interface_count; i++) {
+         quirks = usb_get_quirks(dev->device_info.vendor_id,
+                                 dev->device_info.product_id,
+-- 
+2.22.0.windows.1
+
