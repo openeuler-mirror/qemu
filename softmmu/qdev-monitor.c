@@ -636,7 +636,6 @@ DeviceState *qdev_device_add_from_qdict(const QDict *opts,
     if (path != NULL) {
         bus = qbus_find(path, errp);
         if (!bus) {
-            error_setg(errp, "can not find bus for %s", driver);
             return NULL;
         }
         if (!object_dynamic_cast(OBJECT(bus), dc->bus_type)) {
