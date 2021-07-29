@@ -1,0 +1,35 @@
+From 0ae8b3e05294fee99870efa9b58e22e16f31caf9 Mon Sep 17 00:00:00 2001
+From: Kirti Wankhede <kwankhede@nvidia.com>
+Date: Mon, 26 Oct 2020 15:06:20 +0530
+Subject: [PATCH] memory: Set DIRTY_MEMORY_MIGRATION when IOMMU is enabled
+
+mr->ram_block is NULL when mr->is_iommu is true, then fr.dirty_log_mask
+wasn't set correctly due to which memory listener's log_sync doesn't
+get called.
+This patch returns log_mask with DIRTY_MEMORY_MIGRATION set when
+IOMMU is enabled.
+
+Signed-off-by: Kirti Wankhede <kwankhede@nvidia.com>
+Reviewed-by: Yan Zhao <yan.y.zhao@intel.com>
+Acked-by: Paolo Bonzini <pbonzini@redhat.com>
+Signed-off-by: Alex Williamson <alex.williamson@redhat.com>
+---
+ memory.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/memory.c b/memory.c
+index 5d8c9a9234..44713efc66 100644
+--- a/memory.c
++++ b/memory.c
+@@ -1825,7 +1825,7 @@ bool memory_region_is_ram_device(MemoryRegion *mr)
+ uint8_t memory_region_get_dirty_log_mask(MemoryRegion *mr)
+ {
+     uint8_t mask = mr->dirty_log_mask;
+-    if (global_dirty_log && mr->ram_block) {
++    if (global_dirty_log && (mr->ram_block || memory_region_is_iommu(mr))) {
+         mask |= (1 << DIRTY_MEMORY_MIGRATION);
+     }
+     return mask;
+-- 
+2.27.0
+

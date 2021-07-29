@@ -1,0 +1,214 @@
+From f97eaa27e2fb6b985f090af9acaa780bb6a2ee5b Mon Sep 17 00:00:00 2001
+From: Kirti Wankhede <kwankhede@nvidia.com>
+Date: Mon, 26 Oct 2020 15:06:27 +0530
+Subject: [PATCH] qapi: Add VFIO devices migration stats in Migration stats
+
+Added amount of bytes transferred to the VM at destination by all VFIO
+devices
+
+Signed-off-by: Kirti Wankhede <kwankhede@nvidia.com>
+Reviewed-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+Signed-off-by: Alex Williamson <alex.williamson@redhat.com>
+---
+ hw/vfio/common.c              | 19 +++++++++++++++++++
+ hw/vfio/migration.c           |  9 +++++++++
+ include/hw/vfio/vfio-common.h |  3 +++
+ migration/migration.c         | 17 +++++++++++++++++
+ monitor/hmp-cmds.c            |  6 ++++++
+ qapi/migration.json           | 17 +++++++++++++++++
+ 6 files changed, 71 insertions(+)
+
+diff --git a/hw/vfio/common.c b/hw/vfio/common.c
+index 4ce1c10734..a86a4c4506 100644
+--- a/hw/vfio/common.c
++++ b/hw/vfio/common.c
+@@ -291,6 +291,25 @@ const MemoryRegionOps vfio_region_ops = {
+  * Device state interfaces
+  */
+ 
++bool vfio_mig_active(void)
++{
++    VFIOGroup *group;
++    VFIODevice *vbasedev;
++
++    if (QLIST_EMPTY(&vfio_group_list)) {
++        return false;
++    }
++
++    QLIST_FOREACH(group, &vfio_group_list, next) {
++        QLIST_FOREACH(vbasedev, &group->device_list, next) {
++            if (vbasedev->migration_blocker) {
++                return false;
++            }
++        }
++    }
++    return true;
++}
++
+ static bool vfio_devices_all_stopped_and_saving(VFIOContainer *container)
+ {
+     VFIOGroup *group;
+diff --git a/hw/vfio/migration.c b/hw/vfio/migration.c
+index 0bdf6a1820..b77c66557e 100644
+--- a/hw/vfio/migration.c
++++ b/hw/vfio/migration.c
+@@ -45,6 +45,8 @@
+ #define VFIO_MIG_FLAG_DEV_SETUP_STATE   (0xffffffffef100003ULL)
+ #define VFIO_MIG_FLAG_DEV_DATA_STATE    (0xffffffffef100004ULL)
+ 
++static int64_t bytes_transferred;
++
+ static inline int vfio_mig_access(VFIODevice *vbasedev, void *val, int count,
+                                   off_t off, bool iswrite)
+ {
+@@ -255,6 +257,7 @@ static int vfio_save_buffer(QEMUFile *f, VFIODevice *vbasedev, uint64_t *size)
+         *size = data_size;
+     }
+ 
++    bytes_transferred += data_size;
+     return ret;
+ }
+ 
+@@ -785,6 +788,7 @@ static void vfio_migration_state_notifier(Notifier *notifier, void *data)
+     case MIGRATION_STATUS_CANCELLING:
+     case MIGRATION_STATUS_CANCELLED:
+     case MIGRATION_STATUS_FAILED:
++        bytes_transferred = 0;
+         ret = vfio_migration_set_state(vbasedev,
+                       ~(VFIO_DEVICE_STATE_SAVING | VFIO_DEVICE_STATE_RESUMING),
+                       VFIO_DEVICE_STATE_RUNNING);
+@@ -866,6 +870,11 @@ err:
+ 
+ /* ---------------------------------------------------------------------- */
+ 
++int64_t vfio_mig_bytes_transferred(void)
++{
++    return bytes_transferred;
++}
++
+ int vfio_migration_probe(VFIODevice *vbasedev, Error **errp)
+ {
+     VFIOContainer *container = vbasedev->group->container;
+diff --git a/include/hw/vfio/vfio-common.h b/include/hw/vfio/vfio-common.h
+index 8fd0212264..048731e81f 100644
+--- a/include/hw/vfio/vfio-common.h
++++ b/include/hw/vfio/vfio-common.h
+@@ -203,6 +203,9 @@ extern const MemoryRegionOps vfio_region_ops;
+ typedef QLIST_HEAD(VFIOGroupList, VFIOGroup) VFIOGroupList;
+ extern VFIOGroupList vfio_group_list;
+ 
++bool vfio_mig_active(void);
++int64_t vfio_mig_bytes_transferred(void);
++
+ #ifdef CONFIG_LINUX
+ int vfio_get_region_info(VFIODevice *vbasedev, int index,
+                          struct vfio_region_info **info);
+diff --git a/migration/migration.c b/migration/migration.c
+index b0b9430822..9faf5f63a6 100644
+--- a/migration/migration.c
++++ b/migration/migration.c
+@@ -49,6 +49,10 @@
+ #include "monitor/monitor.h"
+ #include "net/announce.h"
+ 
++#ifdef CONFIG_VFIO
++#include "hw/vfio/vfio-common.h"
++#endif
++
+ #define MAX_THROTTLE  (32 << 20)      /* Migration transfer speed throttling */
+ 
+ /* Amount of time to allocate to each "chunk" of bandwidth-throttled
+@@ -908,6 +912,17 @@ static void populate_disk_info(MigrationInfo *info)
+     }
+ }
+ 
++static void populate_vfio_info(MigrationInfo *info)
++{
++#ifdef CONFIG_VFIO
++    if (vfio_mig_active()) {
++        info->has_vfio = true;
++        info->vfio = g_malloc0(sizeof(*info->vfio));
++        info->vfio->transferred = vfio_mig_bytes_transferred();
++    }
++#endif
++}
++
+ static void fill_source_migration_info(MigrationInfo *info)
+ {
+     MigrationState *s = migrate_get_current();
+@@ -941,6 +956,7 @@ static void fill_source_migration_info(MigrationInfo *info)
+ 
+         populate_ram_info(info, s);
+         populate_disk_info(info);
++        populate_vfio_info(info);
+         break;
+     case MIGRATION_STATUS_COLO:
+         info->has_status = true;
+@@ -956,6 +972,7 @@ static void fill_source_migration_info(MigrationInfo *info)
+         info->setup_time = s->setup_time;
+ 
+         populate_ram_info(info, s);
++        populate_vfio_info(info);
+         break;
+     case MIGRATION_STATUS_FAILED:
+         info->has_status = true;
+diff --git a/monitor/hmp-cmds.c b/monitor/hmp-cmds.c
+index e5a7a88ba2..cecaae0a47 100644
+--- a/monitor/hmp-cmds.c
++++ b/monitor/hmp-cmds.c
+@@ -370,6 +370,12 @@ void hmp_info_migrate(Monitor *mon, const QDict *qdict)
+         }
+         monitor_printf(mon, "]\n");
+     }
++
++    if (info->has_vfio) {
++        monitor_printf(mon, "vfio device transferred: %" PRIu64 " kbytes\n",
++                       info->vfio->transferred >> 10);
++    }
++
+     qapi_free_MigrationInfo(info);
+     qapi_free_MigrationCapabilityStatusList(caps);
+ }
+diff --git a/qapi/migration.json b/qapi/migration.json
+index 587ef65872..1f0eb19ac6 100644
+--- a/qapi/migration.json
++++ b/qapi/migration.json
+@@ -141,6 +141,18 @@
+             'active', 'postcopy-active', 'postcopy-paused',
+             'postcopy-recover', 'completed', 'failed', 'colo',
+             'pre-switchover', 'device' ] }
++##
++# @VfioStats:
++#
++# Detailed VFIO devices migration statistics
++#
++# @transferred: amount of bytes transferred to the target VM by VFIO devices
++#
++# Since: 5.2
++#
++##
++{ 'struct': 'VfioStats',
++  'data': {'transferred': 'int' } }
+ 
+ ##
+ # @MigrationInfo:
+@@ -202,11 +214,16 @@
+ #
+ # @socket-address: Only used for tcp, to know what the real port is (Since 4.0)
+ #
++# @vfio: @VfioStats containing detailed VFIO devices migration statistics,
++#        only returned if VFIO device is present, migration is supported by all
++#        VFIO devices and status is 'active' or 'completed' (since 5.2)
++#
+ # Since: 0.14.0
+ ##
+ { 'struct': 'MigrationInfo',
+   'data': {'*status': 'MigrationStatus', '*ram': 'MigrationStats',
+            '*disk': 'MigrationStats',
++           '*vfio': 'VfioStats',
+            '*xbzrle-cache': 'XBZRLECacheStats',
+            '*total-time': 'int',
+            '*expected-downtime': 'int',
+-- 
+2.27.0
+

@@ -1,0 +1,201 @@
+From 0f7cde69416f85ec3d3f57769ae38db3d72fda8c Mon Sep 17 00:00:00 2001
+From: "Dr. David Alan Gilbert" <dgilbert@redhat.com>
+Date: Thu, 22 Aug 2019 12:54:33 +0100
+Subject: [PATCH] migration: register_savevm_live doesn't need dev
+
+Commit 78dd48df3 removed the last caller of register_savevm_live for an
+instantiable device (rather than a single system wide device);
+so trim out the parameter.
+
+Signed-off-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+Message-Id: <20190822115433.12070-1-dgilbert@redhat.com>
+Reviewed-by: Stefan Hajnoczi <stefanha@redhat.com>
+Reviewed-by: Cornelia Huck <cohuck@redhat.com>
+Signed-off-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+---
+ docs/devel/migration.rst       |  3 +--
+ hw/ppc/spapr.c                 |  2 +-
+ hw/s390x/s390-skeys.c          |  2 +-
+ hw/s390x/s390-stattrib.c       |  2 +-
+ hw/s390x/tod.c                 |  2 +-
+ include/migration/register.h   |  3 +--
+ migration/block-dirty-bitmap.c |  2 +-
+ migration/block.c              |  2 +-
+ migration/ram.c                |  2 +-
+ migration/savevm.c             | 23 +----------------------
+ net/slirp.c                    |  2 +-
+ 11 files changed, 11 insertions(+), 34 deletions(-)
+
+diff --git a/docs/devel/migration.rst b/docs/devel/migration.rst
+index 220059679a..cc6f839fce 100644
+--- a/docs/devel/migration.rst
++++ b/docs/devel/migration.rst
+@@ -183,8 +183,7 @@ another to load the state back.
+ 
+ .. code:: c
+ 
+-  int register_savevm_live(DeviceState *dev,
+-                           const char *idstr,
++  int register_savevm_live(const char *idstr,
+                            int instance_id,
+                            int version_id,
+                            SaveVMHandlers *ops,
+diff --git a/hw/ppc/spapr.c b/hw/ppc/spapr.c
+index b0f37c34a4..289967c3de 100644
+--- a/hw/ppc/spapr.c
++++ b/hw/ppc/spapr.c
+@@ -3069,7 +3069,7 @@ static void spapr_machine_init(MachineState *machine)
+      * interface, this is a legacy from the sPAPREnvironment structure
+      * which predated MachineState but had a similar function */
+     vmstate_register(NULL, 0, &vmstate_spapr, spapr);
+-    register_savevm_live(NULL, "spapr/htab", VMSTATE_INSTANCE_ID_ANY, 1,
++    register_savevm_live("spapr/htab", VMSTATE_INSTANCE_ID_ANY, 1,
+                          &savevm_htab_handlers, spapr);
+ 
+     qbus_set_hotplug_handler(sysbus_get_default(), OBJECT(machine),
+diff --git a/hw/s390x/s390-skeys.c b/hw/s390x/s390-skeys.c
+index e5bd92c0c7..fb7d57865d 100644
+--- a/hw/s390x/s390-skeys.c
++++ b/hw/s390x/s390-skeys.c
+@@ -388,7 +388,7 @@ static inline void s390_skeys_set_migration_enabled(Object *obj, bool value,
+     ss->migration_enabled = value;
+ 
+     if (ss->migration_enabled) {
+-        register_savevm_live(NULL, TYPE_S390_SKEYS, 0, 1,
++        register_savevm_live(TYPE_S390_SKEYS, 0, 1,
+                              &savevm_s390_storage_keys, ss);
+     } else {
+         unregister_savevm(DEVICE(ss), TYPE_S390_SKEYS, ss);
+diff --git a/hw/s390x/s390-stattrib.c b/hw/s390x/s390-stattrib.c
+index 766f2015a4..5ee15d5e82 100644
+--- a/hw/s390x/s390-stattrib.c
++++ b/hw/s390x/s390-stattrib.c
+@@ -382,7 +382,7 @@ static void s390_stattrib_instance_init(Object *obj)
+ {
+     S390StAttribState *sas = S390_STATTRIB(obj);
+ 
+-    register_savevm_live(NULL, TYPE_S390_STATTRIB, 0, 0,
++    register_savevm_live(TYPE_S390_STATTRIB, 0, 0,
+                          &savevm_s390_stattrib_handlers, sas);
+ 
+     object_property_add_bool(obj, "migration-enabled",
+diff --git a/hw/s390x/tod.c b/hw/s390x/tod.c
+index a9fca8eb0b..d6b22bb966 100644
+--- a/hw/s390x/tod.c
++++ b/hw/s390x/tod.c
+@@ -100,7 +100,7 @@ static void s390_tod_realize(DeviceState *dev, Error **errp)
+     S390TODState *td = S390_TOD(dev);
+ 
+     /* Legacy migration interface */
+-    register_savevm_live(NULL, "todclock", 0, 1, &savevm_tod, td);
++    register_savevm_live("todclock", 0, 1, &savevm_tod, td);
+ }
+ 
+ static void s390_tod_class_init(ObjectClass *oc, void *data)
+diff --git a/include/migration/register.h b/include/migration/register.h
+index 8b2bc5b129..f3ba10b6ef 100644
+--- a/include/migration/register.h
++++ b/include/migration/register.h
+@@ -68,8 +68,7 @@ typedef struct SaveVMHandlers {
+     int (*resume_prepare)(MigrationState *s, void *opaque);
+ } SaveVMHandlers;
+ 
+-int register_savevm_live(DeviceState *dev,
+-                         const char *idstr,
++int register_savevm_live(const char *idstr,
+                          uint32_t instance_id,
+                          int version_id,
+                          const SaveVMHandlers *ops,
+diff --git a/migration/block-dirty-bitmap.c b/migration/block-dirty-bitmap.c
+index 4a896a09eb..11e8feb595 100644
+--- a/migration/block-dirty-bitmap.c
++++ b/migration/block-dirty-bitmap.c
+@@ -733,7 +733,7 @@ void dirty_bitmap_mig_init(void)
+ {
+     QSIMPLEQ_INIT(&dirty_bitmap_mig_state.dbms_list);
+ 
+-    register_savevm_live(NULL, "dirty-bitmap", 0, 1,
++    register_savevm_live("dirty-bitmap", 0, 1,
+                          &savevm_dirty_bitmap_handlers,
+                          &dirty_bitmap_mig_state);
+ }
+diff --git a/migration/block.c b/migration/block.c
+index 91f98ef44a..ec15d1d6b3 100644
+--- a/migration/block.c
++++ b/migration/block.c
+@@ -1030,6 +1030,6 @@ void blk_mig_init(void)
+     QSIMPLEQ_INIT(&block_mig_state.blk_list);
+     qemu_mutex_init(&block_mig_state.lock);
+ 
+-    register_savevm_live(NULL, "block", 0, 1, &savevm_block_handlers,
++    register_savevm_live("block", 0, 1, &savevm_block_handlers,
+                          &block_mig_state);
+ }
+diff --git a/migration/ram.c b/migration/ram.c
+index d6657a8093..2077ba5be4 100644
+--- a/migration/ram.c
++++ b/migration/ram.c
+@@ -5125,5 +5125,5 @@ static SaveVMHandlers savevm_ram_handlers = {
+ void ram_mig_init(void)
+ {
+     qemu_mutex_init(&XBZRLE.lock);
+-    register_savevm_live(NULL, "ram", 0, 4, &savevm_ram_handlers, &ram_state);
++    register_savevm_live("ram", 0, 4, &savevm_ram_handlers, &ram_state);
+ }
+diff --git a/migration/savevm.c b/migration/savevm.c
+index f0974380e5..cdb79222a4 100644
+--- a/migration/savevm.c
++++ b/migration/savevm.c
+@@ -683,8 +683,7 @@ static void savevm_state_handler_insert(SaveStateEntry *nse)
+    of the system, so instance_id should be removed/replaced.
+    Meanwhile pass -1 as instance_id if you do not already have a clearly
+    distinguishing id for all instances of your device class. */
+-int register_savevm_live(DeviceState *dev,
+-                         const char *idstr,
++int register_savevm_live(const char *idstr,
+                          uint32_t instance_id,
+                          int version_id,
+                          const SaveVMHandlers *ops,
+@@ -703,26 +702,6 @@ int register_savevm_live(DeviceState *dev,
+         se->is_ram = 1;
+     }
+ 
+-    if (dev) {
+-        char *id = qdev_get_dev_path(dev);
+-        if (id) {
+-            if (snprintf(se->idstr, sizeof(se->idstr), "%s/", id) >=
+-                sizeof(se->idstr)) {
+-                error_report("Path too long for VMState (%s)", id);
+-                g_free(id);
+-                g_free(se);
+-
+-                return -1;
+-            }
+-            g_free(id);
+-
+-            se->compat = g_new0(CompatEntry, 1);
+-            pstrcpy(se->compat->idstr, sizeof(se->compat->idstr), idstr);
+-            se->compat->instance_id = instance_id == -1 ?
+-                         calculate_compat_instance_id(idstr) : instance_id;
+-            instance_id = -1;
+-        }
+-    }
+     pstrcat(se->idstr, sizeof(se->idstr), idstr);
+ 
+     if (instance_id == VMSTATE_INSTANCE_ID_ANY) {
+diff --git a/net/slirp.c b/net/slirp.c
+index b34cb29276..f42f496641 100644
+--- a/net/slirp.c
++++ b/net/slirp.c
+@@ -576,7 +576,7 @@ static int net_slirp_init(NetClientState *peer, const char *model,
+      * specific version?
+      */
+     g_assert(slirp_state_version() == 4);
+-    register_savevm_live(NULL, "slirp", 0, slirp_state_version(),
++    register_savevm_live("slirp", 0, slirp_state_version(),
+                          &savevm_slirp_state, s->slirp);
+ 
+     s->poll_notifier.notify = net_slirp_poll_notify;
+-- 
+2.27.0
+

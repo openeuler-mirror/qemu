@@ -1,0 +1,209 @@
+From b7128f8aa03482634c07691cef69e7ed2d35200e Mon Sep 17 00:00:00 2001
+From: Kirti Wankhede <kwankhede@nvidia.com>
+Date: Mon, 26 Oct 2020 15:06:14 +0530
+Subject: [PATCH] vfio: Add migration region initialization and finalize
+ function
+
+Whether the VFIO device supports migration or not is decided based of
+migration region query. If migration region query is successful and migration
+region initialization is successful then migration is supported else
+migration is blocked.
+
+Signed-off-by: Kirti Wankhede <kwankhede@nvidia.com>
+Reviewed-by: Neo Jia <cjia@nvidia.com>
+Acked-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+Reviewed-by: Cornelia Huck <cohuck@redhat.com>
+Signed-off-by: Alex Williamson <alex.williamson@redhat.com>
+Signed-off-by: Shenming Lu <lushenming@huawei.com>
+---
+ hw/vfio/Makefile.objs         |   2 +-
+ hw/vfio/migration.c           | 122 ++++++++++++++++++++++++++++++++++
+ hw/vfio/trace-events          |   3 +
+ include/hw/vfio/vfio-common.h |   9 +++
+ 4 files changed, 135 insertions(+), 1 deletion(-)
+ create mode 100644 hw/vfio/migration.c
+
+diff --git a/hw/vfio/Makefile.objs b/hw/vfio/Makefile.objs
+index abad8b818c..36033d1437 100644
+--- a/hw/vfio/Makefile.objs
++++ b/hw/vfio/Makefile.objs
+@@ -1,4 +1,4 @@
+-obj-y += common.o spapr.o
++obj-y += common.o spapr.o migration.o
+ obj-$(CONFIG_VFIO_PCI) += pci.o pci-quirks.o display.o
+ obj-$(CONFIG_VFIO_CCW) += ccw.o
+ obj-$(CONFIG_VFIO_PLATFORM) += platform.o
+diff --git a/hw/vfio/migration.c b/hw/vfio/migration.c
+new file mode 100644
+index 0000000000..fd7faf423c
+--- /dev/null
++++ b/hw/vfio/migration.c
+@@ -0,0 +1,122 @@
++/*
++ * Migration support for VFIO devices
++ *
++ * Copyright NVIDIA, Inc. 2020
++ *
++ * This work is licensed under the terms of the GNU GPL, version 2. See
++ * the COPYING file in the top-level directory.
++ */
++
++#include "qemu/osdep.h"
++#include <linux/vfio.h>
++
++#include "hw/vfio/vfio-common.h"
++#include "cpu.h"
++#include "migration/migration.h"
++#include "migration/qemu-file.h"
++#include "migration/register.h"
++#include "migration/blocker.h"
++#include "migration/misc.h"
++#include "qapi/error.h"
++#include "exec/ramlist.h"
++#include "exec/ram_addr.h"
++#include "pci.h"
++#include "trace.h"
++
++static void vfio_migration_exit(VFIODevice *vbasedev)
++{
++    VFIOMigration *migration = vbasedev->migration;
++
++    vfio_region_exit(&migration->region);
++    vfio_region_finalize(&migration->region);
++    g_free(vbasedev->migration);
++    vbasedev->migration = NULL;
++}
++
++static int vfio_migration_init(VFIODevice *vbasedev,
++                               struct vfio_region_info *info)
++{
++    int ret;
++    Object *obj;
++
++    if (!vbasedev->ops->vfio_get_object) {
++        return -EINVAL;
++    }
++
++    obj = vbasedev->ops->vfio_get_object(vbasedev);
++    if (!obj) {
++        return -EINVAL;
++    }
++
++    vbasedev->migration = g_new0(VFIOMigration, 1);
++
++    ret = vfio_region_setup(obj, vbasedev, &vbasedev->migration->region,
++                            info->index, "migration");
++    if (ret) {
++        error_report("%s: Failed to setup VFIO migration region %d: %s",
++                     vbasedev->name, info->index, strerror(-ret));
++        goto err;
++    }
++
++    if (!vbasedev->migration->region.size) {
++        error_report("%s: Invalid zero-sized VFIO migration region %d",
++                     vbasedev->name, info->index);
++        ret = -EINVAL;
++        goto err;
++    }
++    return 0;
++
++err:
++    vfio_migration_exit(vbasedev);
++    return ret;
++}
++
++/* ---------------------------------------------------------------------- */
++
++int vfio_migration_probe(VFIODevice *vbasedev, Error **errp)
++{
++    struct vfio_region_info *info = NULL;
++    Error *local_err = NULL;
++    int ret;
++
++    ret = vfio_get_dev_region_info(vbasedev, VFIO_REGION_TYPE_MIGRATION,
++                                   VFIO_REGION_SUBTYPE_MIGRATION, &info);
++    if (ret) {
++        goto add_blocker;
++    }
++
++    ret = vfio_migration_init(vbasedev, info);
++    if (ret) {
++        goto add_blocker;
++    }
++
++    g_free(info);
++    trace_vfio_migration_probe(vbasedev->name, info->index);
++    return 0;
++
++add_blocker:
++    error_setg(&vbasedev->migration_blocker,
++               "VFIO device doesn't support migration");
++    g_free(info);
++
++    ret = migrate_add_blocker(vbasedev->migration_blocker, &local_err);
++    if (local_err) {
++        error_propagate(errp, local_err);
++        error_free(vbasedev->migration_blocker);
++        vbasedev->migration_blocker = NULL;
++    }
++    return ret;
++}
++
++void vfio_migration_finalize(VFIODevice *vbasedev)
++{
++    if (vbasedev->migration) {
++        vfio_migration_exit(vbasedev);
++    }
++
++    if (vbasedev->migration_blocker) {
++        migrate_del_blocker(vbasedev->migration_blocker);
++        error_free(vbasedev->migration_blocker);
++        vbasedev->migration_blocker = NULL;
++    }
++}
+diff --git a/hw/vfio/trace-events b/hw/vfio/trace-events
+index 8cdc27946c..fd034ac536 100644
+--- a/hw/vfio/trace-events
++++ b/hw/vfio/trace-events
+@@ -143,3 +143,6 @@ vfio_display_edid_link_up(void) ""
+ vfio_display_edid_link_down(void) ""
+ vfio_display_edid_update(uint32_t prefx, uint32_t prefy) "%ux%u"
+ vfio_display_edid_write_error(void) ""
++
++# migration.c
++vfio_migration_probe(const char *name, uint32_t index) " (%s) Region %d"
+diff --git a/include/hw/vfio/vfio-common.h b/include/hw/vfio/vfio-common.h
+index 6ea4898c4d..e0482c2bac 100644
+--- a/include/hw/vfio/vfio-common.h
++++ b/include/hw/vfio/vfio-common.h
+@@ -57,6 +57,10 @@ typedef struct VFIORegion {
+     uint8_t nr; /* cache the region number for debug */
+ } VFIORegion;
+ 
++typedef struct VFIOMigration {
++    VFIORegion region;
++} VFIOMigration;
++
+ typedef struct VFIOAddressSpace {
+     AddressSpace *as;
+     QLIST_HEAD(, VFIOContainer) containers;
+@@ -113,6 +117,8 @@ typedef struct VFIODevice {
+     unsigned int num_irqs;
+     unsigned int num_regions;
+     unsigned int flags;
++    VFIOMigration *migration;
++    Error *migration_blocker;
+ } VFIODevice;
+ 
+ struct VFIODeviceOps {
+@@ -204,4 +210,7 @@ int vfio_spapr_create_window(VFIOContainer *container,
+ int vfio_spapr_remove_window(VFIOContainer *container,
+                              hwaddr offset_within_address_space);
+ 
++int vfio_migration_probe(VFIODevice *vbasedev, Error **errp);
++void vfio_migration_finalize(VFIODevice *vbasedev);
++
+ #endif /* HW_VFIO_VFIO_COMMON_H */
+-- 
+2.27.0
+

@@ -1,0 +1,55 @@
+From c1de789d89132b66243fbfe253f10764ce514a08 Mon Sep 17 00:00:00 2001
+From: Kirti Wankhede <kwankhede@nvidia.com>
+Date: Mon, 26 Oct 2020 15:06:12 +0530
+Subject: [PATCH] vfio: Add vfio_get_object callback to VFIODeviceOps
+
+Hook vfio_get_object callback for PCI devices.
+
+Signed-off-by: Kirti Wankhede <kwankhede@nvidia.com>
+Reviewed-by: Neo Jia <cjia@nvidia.com>
+Suggested-by: Cornelia Huck <cohuck@redhat.com>
+Reviewed-by: Cornelia Huck <cohuck@redhat.com>
+Signed-off-by: Alex Williamson <alex.williamson@redhat.com>
+---
+ hw/vfio/pci.c                 | 8 ++++++++
+ include/hw/vfio/vfio-common.h | 1 +
+ 2 files changed, 9 insertions(+)
+
+diff --git a/hw/vfio/pci.c b/hw/vfio/pci.c
+index d7a4e1875c..de0d286fc9 100644
+--- a/hw/vfio/pci.c
++++ b/hw/vfio/pci.c
+@@ -2388,10 +2388,18 @@ static void vfio_pci_compute_needs_reset(VFIODevice *vbasedev)
+     }
+ }
+ 
++static Object *vfio_pci_get_object(VFIODevice *vbasedev)
++{
++    VFIOPCIDevice *vdev = container_of(vbasedev, VFIOPCIDevice, vbasedev);
++
++    return OBJECT(vdev);
++}
++
+ static VFIODeviceOps vfio_pci_ops = {
+     .vfio_compute_needs_reset = vfio_pci_compute_needs_reset,
+     .vfio_hot_reset_multi = vfio_pci_hot_reset_multi,
+     .vfio_eoi = vfio_intx_eoi,
++    .vfio_get_object = vfio_pci_get_object,
+ };
+ 
+ int vfio_populate_vga(VFIOPCIDevice *vdev, Error **errp)
+diff --git a/include/hw/vfio/vfio-common.h b/include/hw/vfio/vfio-common.h
+index 93493891ba..771b6d59a3 100644
+--- a/include/hw/vfio/vfio-common.h
++++ b/include/hw/vfio/vfio-common.h
+@@ -119,6 +119,7 @@ struct VFIODeviceOps {
+     void (*vfio_compute_needs_reset)(VFIODevice *vdev);
+     int (*vfio_hot_reset_multi)(VFIODevice *vdev);
+     void (*vfio_eoi)(VFIODevice *vdev);
++    Object *(*vfio_get_object)(VFIODevice *vdev);
+ };
+ 
+ typedef struct VFIOGroup {
+-- 
+2.27.0
+
