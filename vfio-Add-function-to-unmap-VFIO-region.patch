@@ -1,0 +1,103 @@
+From 68cc2be61588d14de2313342ee87eb0bb2b990e0 Mon Sep 17 00:00:00 2001
+From: Kirti Wankhede <kwankhede@nvidia.com>
+Date: Mon, 26 Oct 2020 15:06:11 +0530
+Subject: [PATCH] vfio: Add function to unmap VFIO region
+
+This function will be used for migration region.
+Migration region is mmaped when migration starts and will be unmapped when
+migration is complete.
+
+Signed-off-by: Kirti Wankhede <kwankhede@nvidia.com>
+Reviewed-by: Neo Jia <cjia@nvidia.com>
+Reviewed-by: Cornelia Huck <cohuck@redhat.com>
+Signed-off-by: Alex Williamson <alex.williamson@redhat.com>
+---
+ hw/vfio/common.c              | 32 ++++++++++++++++++++++++++++----
+ hw/vfio/trace-events          |  1 +
+ include/hw/vfio/vfio-common.h |  1 +
+ 3 files changed, 30 insertions(+), 4 deletions(-)
+
+diff --git a/hw/vfio/common.c b/hw/vfio/common.c
+index a859298fda..4c32b1bb99 100644
+--- a/hw/vfio/common.c
++++ b/hw/vfio/common.c
+@@ -906,6 +906,18 @@ int vfio_region_setup(Object *obj, VFIODevice *vbasedev, VFIORegion *region,
+     return 0;
+ }
+ 
++static void vfio_subregion_unmap(VFIORegion *region, int index)
++{
++    trace_vfio_region_unmap(memory_region_name(&region->mmaps[index].mem),
++                            region->mmaps[index].offset,
++                            region->mmaps[index].offset +
++                            region->mmaps[index].size - 1);
++    memory_region_del_subregion(region->mem, &region->mmaps[index].mem);
++    munmap(region->mmaps[index].mmap, region->mmaps[index].size);
++    object_unparent(OBJECT(&region->mmaps[index].mem));
++    region->mmaps[index].mmap = NULL;
++}
++
+ int vfio_region_mmap(VFIORegion *region)
+ {
+     int i, prot = 0;
+@@ -936,10 +948,7 @@ int vfio_region_mmap(VFIORegion *region)
+             region->mmaps[i].mmap = NULL;
+ 
+             for (i--; i >= 0; i--) {
+-                memory_region_del_subregion(region->mem, &region->mmaps[i].mem);
+-                munmap(region->mmaps[i].mmap, region->mmaps[i].size);
+-                object_unparent(OBJECT(&region->mmaps[i].mem));
+-                region->mmaps[i].mmap = NULL;
++                vfio_subregion_unmap(region, i);
+             }
+ 
+             return ret;
+@@ -964,6 +973,21 @@ int vfio_region_mmap(VFIORegion *region)
+     return 0;
+ }
+ 
++void vfio_region_unmap(VFIORegion *region)
++{
++    int i;
++
++    if (!region->mem) {
++        return;
++    }
++
++    for (i = 0; i < region->nr_mmaps; i++) {
++        if (region->mmaps[i].mmap) {
++            vfio_subregion_unmap(region, i);
++        }
++    }
++}
++
+ void vfio_region_exit(VFIORegion *region)
+ {
+     int i;
+diff --git a/hw/vfio/trace-events b/hw/vfio/trace-events
+index b1ef55a33f..8cdc27946c 100644
+--- a/hw/vfio/trace-events
++++ b/hw/vfio/trace-events
+@@ -111,6 +111,7 @@ vfio_region_mmap(const char *name, unsigned long offset, unsigned long end) "Reg
+ vfio_region_exit(const char *name, int index) "Device %s, region %d"
+ vfio_region_finalize(const char *name, int index) "Device %s, region %d"
+ vfio_region_mmaps_set_enabled(const char *name, bool enabled) "Region %s mmaps enabled: %d"
++vfio_region_unmap(const char *name, unsigned long offset, unsigned long end) "Region %s unmap [0x%lx - 0x%lx]"
+ vfio_region_sparse_mmap_header(const char *name, int index, int nr_areas) "Device %s region %d: %d sparse mmap entries"
+ vfio_region_sparse_mmap_entry(int i, unsigned long start, unsigned long end) "sparse entry %d [0x%lx - 0x%lx]"
+ vfio_get_dev_region(const char *name, int index, uint32_t type, uint32_t subtype) "%s index %d, %08x/%0x8"
+diff --git a/include/hw/vfio/vfio-common.h b/include/hw/vfio/vfio-common.h
+index 9107bd41c0..93493891ba 100644
+--- a/include/hw/vfio/vfio-common.h
++++ b/include/hw/vfio/vfio-common.h
+@@ -171,6 +171,7 @@ int vfio_region_setup(Object *obj, VFIODevice *vbasedev, VFIORegion *region,
+                       int index, const char *name);
+ int vfio_region_mmap(VFIORegion *region);
+ void vfio_region_mmaps_set_enabled(VFIORegion *region, bool enabled);
++void vfio_region_unmap(VFIORegion *region);
+ void vfio_region_exit(VFIORegion *region);
+ void vfio_region_finalize(VFIORegion *region);
+ void vfio_reset_handler(void *opaque);
+-- 
+2.27.0
+

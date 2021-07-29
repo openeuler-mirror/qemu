@@ -1,0 +1,136 @@
+From b8b9f58ee5d3cff0a1e7cca770fe632043efb728 Mon Sep 17 00:00:00 2001
+From: Marcel Apfelbaum <marcel.apfelbaum@gmail.com>
+Date: Fri, 5 Jul 2019 04:07:11 +0300
+Subject: [PATCH] hw/net: fix vmxnet3 live migration
+
+At some point vmxnet3 live migration stopped working and git-bisect
+didn't help finding a working version.
+The issue is the PCI configuration space is not being migrated
+successfully and MSIX remains masked at destination.
+
+Remove the migration differentiation between PCI and PCIe since
+the logic resides now inside VMSTATE_PCI_DEVICE.
+Remove also the VMXNET3_COMPAT_FLAG_DISABLE_PCIE based differentiation
+since at 'realize' time is decided if the device is PCI or PCIe,
+then the above macro is enough.
+
+Use the opportunity to move to the standard VMSTATE_MSIX
+instead of the deprecated SaveVMHandlers.
+
+Signed-off-by: Marcel Apfelbaum <marcel.apfelbaum@gmail.com>
+Message-Id: <20190705010711.23277-1-marcel.apfelbaum@gmail.com>
+Tested-by: Sukrit Bhatnagar <skrtbhtngr@gmail.com>
+Reviewed-by: Dmitry Fleytman <dmitry.fleytman@gmail.com>
+Signed-off-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+---
+ hw/net/vmxnet3.c | 52 ++----------------------------------------------
+ 1 file changed, 2 insertions(+), 50 deletions(-)
+
+diff --git a/hw/net/vmxnet3.c b/hw/net/vmxnet3.c
+index ecc4f5bcf0..bf8e6ca4c9 100644
+--- a/hw/net/vmxnet3.c
++++ b/hw/net/vmxnet3.c
+@@ -2153,21 +2153,6 @@ vmxnet3_cleanup_msi(VMXNET3State *s)
+     msi_uninit(d);
+ }
+ 
+-static void
+-vmxnet3_msix_save(QEMUFile *f, void *opaque)
+-{
+-    PCIDevice *d = PCI_DEVICE(opaque);
+-    msix_save(d, f);
+-}
+-
+-static int
+-vmxnet3_msix_load(QEMUFile *f, void *opaque, int version_id)
+-{
+-    PCIDevice *d = PCI_DEVICE(opaque);
+-    msix_load(d, f);
+-    return 0;
+-}
+-
+ static const MemoryRegionOps b0_ops = {
+     .read = vmxnet3_io_bar0_read,
+     .write = vmxnet3_io_bar0_write,
+@@ -2188,11 +2173,6 @@ static const MemoryRegionOps b1_ops = {
+     },
+ };
+ 
+-static SaveVMHandlers savevm_vmxnet3_msix = {
+-    .save_state = vmxnet3_msix_save,
+-    .load_state = vmxnet3_msix_load,
+-};
+-
+ static uint64_t vmxnet3_device_serial_num(VMXNET3State *s)
+ {
+     uint64_t dsn_payload;
+@@ -2215,7 +2195,6 @@ static uint64_t vmxnet3_device_serial_num(VMXNET3State *s)
+ 
+ static void vmxnet3_pci_realize(PCIDevice *pci_dev, Error **errp)
+ {
+-    DeviceState *dev = DEVICE(pci_dev);
+     VMXNET3State *s = VMXNET3(pci_dev);
+     int ret;
+ 
+@@ -2261,8 +2240,6 @@ static void vmxnet3_pci_realize(PCIDevice *pci_dev, Error **errp)
+         pcie_dev_ser_num_init(pci_dev, VMXNET3_DSN_OFFSET,
+                               vmxnet3_device_serial_num(s));
+     }
+-
+-    register_savevm_live(dev, "vmxnet3-msix", -1, 1, &savevm_vmxnet3_msix, s);
+ }
+ 
+ static void vmxnet3_instance_init(Object *obj)
+@@ -2452,29 +2429,6 @@ static const VMStateDescription vmstate_vmxnet3_int_state = {
+     }
+ };
+ 
+-static bool vmxnet3_vmstate_need_pcie_device(void *opaque)
+-{
+-    VMXNET3State *s = VMXNET3(opaque);
+-
+-    return !(s->compat_flags & VMXNET3_COMPAT_FLAG_DISABLE_PCIE);
+-}
+-
+-static bool vmxnet3_vmstate_test_pci_device(void *opaque, int version_id)
+-{
+-    return !vmxnet3_vmstate_need_pcie_device(opaque);
+-}
+-
+-static const VMStateDescription vmstate_vmxnet3_pcie_device = {
+-    .name = "vmxnet3/pcie",
+-    .version_id = 1,
+-    .minimum_version_id = 1,
+-    .needed = vmxnet3_vmstate_need_pcie_device,
+-    .fields = (VMStateField[]) {
+-        VMSTATE_PCI_DEVICE(parent_obj, VMXNET3State),
+-        VMSTATE_END_OF_LIST()
+-    }
+-};
+-
+ static const VMStateDescription vmstate_vmxnet3 = {
+     .name = "vmxnet3",
+     .version_id = 1,
+@@ -2482,9 +2436,8 @@ static const VMStateDescription vmstate_vmxnet3 = {
+     .pre_save = vmxnet3_pre_save,
+     .post_load = vmxnet3_post_load,
+     .fields = (VMStateField[]) {
+-            VMSTATE_STRUCT_TEST(parent_obj, VMXNET3State,
+-                                vmxnet3_vmstate_test_pci_device, 0,
+-                                vmstate_pci_device, PCIDevice),
++            VMSTATE_PCI_DEVICE(parent_obj, VMXNET3State),
++            VMSTATE_MSIX(parent_obj, VMXNET3State),
+             VMSTATE_BOOL(rx_packets_compound, VMXNET3State),
+             VMSTATE_BOOL(rx_vlan_stripping, VMXNET3State),
+             VMSTATE_BOOL(lro_supported, VMXNET3State),
+@@ -2520,7 +2473,6 @@ static const VMStateDescription vmstate_vmxnet3 = {
+     },
+     .subsections = (const VMStateDescription*[]) {
+         &vmxstate_vmxnet3_mcast_list,
+-        &vmstate_vmxnet3_pcie_device,
+         NULL
+     }
+ };
+-- 
+2.27.0
+

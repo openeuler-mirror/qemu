@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 72
+Release: 73
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY-SA-4.0
@@ -476,6 +476,28 @@ Patch0463: virtio-input-fix-memory-leak-on-unrealize.patch
 Patch0464: target-arm-only-set-ID_PFR1_EL1.GIC-for-AArch32-gues.patch
 Patch0465: target-arm-clear-EL2-and-EL3-only-when-kvm-is-not-en.patch
 Patch0466: target-arm-Update-the-ID-registers-of-Kunpeng-920.patch
+Patch0467: hw-net-fix-vmxnet3-live-migration.patch
+Patch0468: include-Make-headers-more-self-contained.patch
+Patch0469: migration-register_savevm_live-doesn-t-need-dev.patch
+Patch0470: vmstate-add-qom-interface-to-get-id.patch
+Patch0471: linux-headers-Update-against-Add-migration-support-f.patch
+Patch0472: vfio-Add-function-to-unmap-VFIO-region.patch
+Patch0473: vfio-Add-vfio_get_object-callback-to-VFIODeviceOps.patch
+Patch0474: vfio-Add-save-and-load-functions-for-VFIO-PCI-device.patch
+Patch0475: vfio-Add-migration-region-initialization-and-finaliz.patch
+Patch0476: vfio-Add-VM-state-change-handler-to-know-state-of-VM.patch
+Patch0477: vfio-Add-migration-state-change-notifier.patch
+Patch0478: vfio-Register-SaveVMHandlers-for-VFIO-device.patch
+Patch0479: vfio-Add-save-state-functions-to-SaveVMHandlers.patch
+Patch0480: vfio-Add-load-state-functions-to-SaveVMHandlers.patch
+Patch0481: memory-Set-DIRTY_MEMORY_MIGRATION-when-IOMMU-is-enab.patch
+Patch0482: vfio-Get-migration-capability-flags-for-container.patch
+Patch0483: vfio-Add-function-to-start-and-stop-dirty-pages-trac.patch
+Patch0484: vfio-Add-vfio_listener_log_sync-to-mark-dirty-pages.patch
+Patch0485: vfio-Dirty-page-tracking-when-vIOMMU-is-enabled.patch
+Patch0486: vfio-Add-ioctl-to-get-dirty-pages-bitmap-during-dma-.patch
+Patch0487: vfio-Make-vfio-pci-device-migration-capable.patch
+Patch0488: qapi-Add-VFIO-devices-migration-stats-in-Migration-s.patch
 
 BuildRequires: flex
 BuildRequires: gcc
@@ -870,6 +892,30 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Thu Jul 29 2021 imxcc <xingchaochao@huawei.com>
+- hw/net: fix vmxnet3 live migration
+- include: Make headers more self-contained
+- migration: register_savevm_live doesn't need dev
+- vmstate: add qom interface to get id
+- linux headers: Update against "Add migration support for VFIO devices"
+- vfio: Add function to unmap VFIO region
+- vfio: Add vfio_get_object callback to VFIODeviceOps
+- vfio: Add save and load functions for VFIO PCI devices
+- vfio: Add migration region initialization and finalize function
+- vfio: Add VM state change handler to know state of VM
+- vfio: Add migration state change notifier
+- vfio: Register SaveVMHandlers for VFIO device
+- vfio: Add save state functions to SaveVMHandlers
+- vfio: Add load state functions to SaveVMHandlers
+- memory: Set DIRTY_MEMORY_MIGRATION when IOMMU is enabled
+- vfio: Get migration capability flags for container
+- vfio: Add function to start and stop dirty pages tracking
+- vfio: Add vfio_listener_log_sync to mark dirty pages
+- vfio: Dirty page tracking when vIOMMU is enabled
+- vfio: Add ioctl to get dirty pages bitmap during dma unmap
+- vfio: Make vfio-pci device migration capable
+- qapi: Add VFIO devices migration stats in Migration stats
+
 * Wed Jul 28 2021 imxcc <xingchaochao@huawei.com>
 - object: return self in object_ref()
 - file-posix: Fix leaked fd in raw_open_common() error path

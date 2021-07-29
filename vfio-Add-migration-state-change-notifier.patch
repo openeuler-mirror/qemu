@@ -1,0 +1,104 @@
+From b61729a5e0ab89d29f041202b50d042405076e62 Mon Sep 17 00:00:00 2001
+From: Kirti Wankhede <kwankhede@nvidia.com>
+Date: Mon, 26 Oct 2020 15:06:16 +0530
+Subject: [PATCH] vfio: Add migration state change notifier
+
+Added migration state change notifier to get notification on migration state
+change. These states are translated to VFIO device state and conveyed to
+vendor driver.
+
+Signed-off-by: Kirti Wankhede <kwankhede@nvidia.com>
+Reviewed-by: Neo Jia <cjia@nvidia.com>
+Reviewed-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+Reviewed-by: Cornelia Huck <cohuck@redhat.com>
+Signed-off-by: Alex Williamson <alex.williamson@redhat.com>
+---
+ hw/vfio/migration.c           | 28 ++++++++++++++++++++++++++++
+ hw/vfio/trace-events          |  1 +
+ include/hw/vfio/vfio-common.h |  2 ++
+ 3 files changed, 31 insertions(+)
+
+diff --git a/hw/vfio/migration.c b/hw/vfio/migration.c
+index ca82c78536..0c6c9b655f 100644
+--- a/hw/vfio/migration.c
++++ b/hw/vfio/migration.c
+@@ -175,6 +175,30 @@ static void vfio_vmstate_change(void *opaque, int running, RunState state)
+             (migration->device_state & mask) | value);
+ }
+ 
++static void vfio_migration_state_notifier(Notifier *notifier, void *data)
++{
++    MigrationState *s = data;
++    VFIOMigration *migration = container_of(notifier, VFIOMigration,
++                                            migration_state);
++    VFIODevice *vbasedev = migration->vbasedev;
++    int ret;
++
++    trace_vfio_migration_state_notifier(vbasedev->name,
++                                        MigrationStatus_str(s->state));
++
++    switch (s->state) {
++    case MIGRATION_STATUS_CANCELLING:
++    case MIGRATION_STATUS_CANCELLED:
++    case MIGRATION_STATUS_FAILED:
++        ret = vfio_migration_set_state(vbasedev,
++                      ~(VFIO_DEVICE_STATE_SAVING | VFIO_DEVICE_STATE_RESUMING),
++                      VFIO_DEVICE_STATE_RUNNING);
++        if (ret) {
++            error_report("%s: Failed to set state RUNNING", vbasedev->name);
++        }
++    }
++}
++
+ static void vfio_migration_exit(VFIODevice *vbasedev)
+ {
+     VFIOMigration *migration = vbasedev->migration;
+@@ -219,8 +243,11 @@ static int vfio_migration_init(VFIODevice *vbasedev,
+     }
+ 
+     migration = vbasedev->migration;
++    migration->vbasedev = vbasedev;
+     migration->vm_state = qemu_add_vm_change_state_handler(vfio_vmstate_change,
+                                                            vbasedev);
++    migration->migration_state.notify = vfio_migration_state_notifier;
++    add_migration_state_change_notifier(&migration->migration_state);
+     return 0;
+ 
+ err:
+@@ -270,6 +297,7 @@ void vfio_migration_finalize(VFIODevice *vbasedev)
+     if (vbasedev->migration) {
+         VFIOMigration *migration = vbasedev->migration;
+ 
++        remove_migration_state_change_notifier(&migration->migration_state);
+         qemu_del_vm_change_state_handler(migration->vm_state);
+         vfio_migration_exit(vbasedev);
+     }
+diff --git a/hw/vfio/trace-events b/hw/vfio/trace-events
+index 1626862315..bd3d47b005 100644
+--- a/hw/vfio/trace-events
++++ b/hw/vfio/trace-events
+@@ -148,3 +148,4 @@ vfio_display_edid_write_error(void) ""
+ vfio_migration_probe(const char *name, uint32_t index) " (%s) Region %d"
+ vfio_migration_set_state(const char *name, uint32_t state) " (%s) state %d"
+ vfio_vmstate_change(const char *name, int running, const char *reason, uint32_t dev_state) " (%s) running %d reason %s device state %d"
++vfio_migration_state_notifier(const char *name, const char *state) " (%s) state %s"
+diff --git a/include/hw/vfio/vfio-common.h b/include/hw/vfio/vfio-common.h
+index 533d6737ac..efff0590ae 100644
+--- a/include/hw/vfio/vfio-common.h
++++ b/include/hw/vfio/vfio-common.h
+@@ -59,10 +59,12 @@ typedef struct VFIORegion {
+ } VFIORegion;
+ 
+ typedef struct VFIOMigration {
++    struct VFIODevice *vbasedev;
+     VMChangeStateEntry *vm_state;
+     VFIORegion region;
+     uint32_t device_state;
+     int vm_running;
++    Notifier migration_state;
+ } VFIOMigration;
+ 
+ typedef struct VFIOAddressSpace {
+-- 
+2.27.0
+

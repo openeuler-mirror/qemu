@@ -1,0 +1,210 @@
+From d771fca664e40c7d7ec5dfa2c656a282bff705b7 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Marc-Andr=C3=A9=20Lureau?= <marcandre.lureau@redhat.com>
+Date: Wed, 28 Aug 2019 16:00:19 +0400
+Subject: [PATCH] vmstate: add qom interface to get id
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Add an interface to get the instance id, instead of depending on
+Device and qdev_get_dev_path().
+
+Signed-off-by: Marc-André Lureau <marcandre.lureau@redhat.com>
+Reviewed-by: Daniel P. Berrangé <berrange@redhat.com>
+Acked-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+---
+ MAINTAINERS                  |  2 ++
+ hw/core/Makefile.objs        |  1 +
+ hw/core/qdev.c               | 14 +++++++++++++
+ hw/core/vmstate-if.c         | 23 +++++++++++++++++++++
+ include/hw/vmstate-if.h      | 40 ++++++++++++++++++++++++++++++++++++
+ include/migration/register.h |  2 ++
+ include/migration/vmstate.h  |  2 ++
+ tests/Makefile.include       |  1 +
+ 8 files changed, 85 insertions(+)
+ create mode 100644 hw/core/vmstate-if.c
+ create mode 100644 include/hw/vmstate-if.h
+
+diff --git a/MAINTAINERS b/MAINTAINERS
+index d6de200453..e2d74d7ec3 100644
+--- a/MAINTAINERS
++++ b/MAINTAINERS
+@@ -2135,6 +2135,8 @@ Migration
+ M: Juan Quintela <quintela@redhat.com>
+ M: Dr. David Alan Gilbert <dgilbert@redhat.com>
+ S: Maintained
++F: hw/core/vmstate-if.c
++F: include/hw/vmstate-if.h
+ F: include/migration/
+ F: migration/
+ F: scripts/vmstate-static-checker.py
+diff --git a/hw/core/Makefile.objs b/hw/core/Makefile.objs
+index f8481d959f..54c51583d8 100644
+--- a/hw/core/Makefile.objs
++++ b/hw/core/Makefile.objs
+@@ -8,6 +8,7 @@ common-obj-y += irq.o
+ common-obj-y += hotplug.o
+ common-obj-$(CONFIG_SOFTMMU) += nmi.o
+ common-obj-$(CONFIG_SOFTMMU) += vm-change-state-handler.o
++common-obj-y += vmstate-if.o
+ 
+ common-obj-$(CONFIG_EMPTY_SLOT) += empty_slot.o
+ common-obj-$(CONFIG_XILINX_AXI) += stream.o
+diff --git a/hw/core/qdev.c b/hw/core/qdev.c
+index 4b32f2f46d..13931b1117 100644
+--- a/hw/core/qdev.c
++++ b/hw/core/qdev.c
+@@ -1048,9 +1048,18 @@ static void device_unparent(Object *obj)
+     }
+ }
+ 
++static char *
++device_vmstate_if_get_id(VMStateIf *obj)
++{
++    DeviceState *dev = DEVICE(obj);
++
++    return qdev_get_dev_path(dev);
++}
++
+ static void device_class_init(ObjectClass *class, void *data)
+ {
+     DeviceClass *dc = DEVICE_CLASS(class);
++    VMStateIfClass *vc = VMSTATE_IF_CLASS(class);
+ 
+     class->unparent = device_unparent;
+ 
+@@ -1062,6 +1071,7 @@ static void device_class_init(ObjectClass *class, void *data)
+      */
+     dc->hotpluggable = true;
+     dc->user_creatable = true;
++    vc->get_id = device_vmstate_if_get_id;
+ }
+ 
+ void device_class_set_parent_reset(DeviceClass *dc,
+@@ -1119,6 +1129,10 @@ static const TypeInfo device_type_info = {
+     .class_init = device_class_init,
+     .abstract = true,
+     .class_size = sizeof(DeviceClass),
++    .interfaces = (InterfaceInfo[]) {
++        { TYPE_VMSTATE_IF },
++        { }
++    }
+ };
+ 
+ static void qdev_register_types(void)
+diff --git a/hw/core/vmstate-if.c b/hw/core/vmstate-if.c
+new file mode 100644
+index 0000000000..bf453620fe
+--- /dev/null
++++ b/hw/core/vmstate-if.c
+@@ -0,0 +1,23 @@
++/*
++ * VMState interface
++ *
++ * Copyright (c) 2009-2019 Red Hat Inc
++ * This work is licensed under the terms of the GNU GPL, version 2 or later.
++ * See the COPYING file in the top-level directory.
++ */
++
++#include "qemu/osdep.h"
++#include "hw/vmstate-if.h"
++
++static const TypeInfo vmstate_if_info = {
++    .name = TYPE_VMSTATE_IF,
++    .parent = TYPE_INTERFACE,
++    .class_size = sizeof(VMStateIfClass),
++};
++
++static void vmstate_register_types(void)
++{
++    type_register_static(&vmstate_if_info);
++}
++
++type_init(vmstate_register_types);
+diff --git a/include/hw/vmstate-if.h b/include/hw/vmstate-if.h
+new file mode 100644
+index 0000000000..8ff7f0f292
+--- /dev/null
++++ b/include/hw/vmstate-if.h
+@@ -0,0 +1,40 @@
++/*
++ * VMState interface
++ *
++ * Copyright (c) 2009-2019 Red Hat Inc
++ * This work is licensed under the terms of the GNU GPL, version 2 or later.
++ * See the COPYING file in the top-level directory.
++ */
++
++#ifndef VMSTATE_IF_H
++#define VMSTATE_IF_H
++
++#include "qom/object.h"
++
++#define TYPE_VMSTATE_IF "vmstate-if"
++
++#define VMSTATE_IF_CLASS(klass)                                     \
++    OBJECT_CLASS_CHECK(VMStateIfClass, (klass), TYPE_VMSTATE_IF)
++#define VMSTATE_IF_GET_CLASS(obj)                           \
++    OBJECT_GET_CLASS(VMStateIfClass, (obj), TYPE_VMSTATE_IF)
++#define VMSTATE_IF(obj)                             \
++    INTERFACE_CHECK(VMStateIf, (obj), TYPE_VMSTATE_IF)
++
++typedef struct VMStateIf VMStateIf;
++
++typedef struct VMStateIfClass {
++    InterfaceClass parent_class;
++
++    char * (*get_id)(VMStateIf *obj);
++} VMStateIfClass;
++
++static inline char *vmstate_if_get_id(VMStateIf *vmif)
++{
++    if (!vmif) {
++        return NULL;
++    }
++
++    return VMSTATE_IF_GET_CLASS(vmif)->get_id(vmif);
++}
++
++#endif /* VMSTATE_IF_H */
+diff --git a/include/migration/register.h b/include/migration/register.h
+index f3ba10b6ef..158130c8c4 100644
+--- a/include/migration/register.h
++++ b/include/migration/register.h
+@@ -14,6 +14,8 @@
+ #ifndef MIGRATION_REGISTER_H
+ #define MIGRATION_REGISTER_H
+ 
++#include "hw/vmstate-if.h"
++
+ typedef struct SaveVMHandlers {
+     /* This runs inside the iothread lock.  */
+     SaveStateHandler *save_state;
+diff --git a/include/migration/vmstate.h b/include/migration/vmstate.h
+index 8abd2e3b80..8cc1e19fd9 100644
+--- a/include/migration/vmstate.h
++++ b/include/migration/vmstate.h
+@@ -27,6 +27,8 @@
+ #ifndef QEMU_VMSTATE_H
+ #define QEMU_VMSTATE_H
+ 
++#include "hw/vmstate-if.h"
++
+ typedef struct VMStateInfo VMStateInfo;
+ typedef struct VMStateDescription VMStateDescription;
+ typedef struct VMStateField VMStateField;
+diff --git a/tests/Makefile.include b/tests/Makefile.include
+index 3be60ab999..1c7772a230 100644
+--- a/tests/Makefile.include
++++ b/tests/Makefile.include
+@@ -566,6 +566,7 @@ tests/test-qdev-global-props$(EXESUF): tests/test-qdev-global-props.o \
+ 	hw/core/irq.o \
+ 	hw/core/fw-path-provider.o \
+ 	hw/core/reset.o \
++	hw/core/vmstate-if.o \
+ 	$(test-qapi-obj-y)
+ tests/test-vmstate$(EXESUF): tests/test-vmstate.o \
+ 	migration/vmstate.o migration/vmstate-types.o migration/qemu-file.o \
+-- 
+2.27.0
+
