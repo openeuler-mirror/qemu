@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 73
+Release: 74
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY-SA-4.0
@@ -498,6 +498,9 @@ Patch0485: vfio-Dirty-page-tracking-when-vIOMMU-is-enabled.patch
 Patch0486: vfio-Add-ioctl-to-get-dirty-pages-bitmap-during-dma-.patch
 Patch0487: vfio-Make-vfio-pci-device-migration-capable.patch
 Patch0488: qapi-Add-VFIO-devices-migration-stats-in-Migration-s.patch
+Patch0489: vfio-Move-the-saving-of-the-config-space-to-the-righ.patch
+Patch0490: vfio-Set-the-priority-of-the-VFIO-VM-state-change-ha.patch
+Patch0491: vfio-Avoid-disabling-and-enabling-vectors-repeatedly.patch
 
 BuildRequires: flex
 BuildRequires: gcc
@@ -892,6 +895,11 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Thu Jul 29 2021 Chen Qun <kuhn.chenqun@huawei.com>
+- vfio: Move the saving of the config space to the right place in VFIO migration
+- vfio: Set the priority of the VFIO VM state change handler explicitly
+- vfio: Avoid disabling and enabling vectors repeatedly in VFIO migration
+
 * Thu Jul 29 2021 imxcc <xingchaochao@huawei.com>
 - hw/net: fix vmxnet3 live migration
 - include: Make headers more self-contained
