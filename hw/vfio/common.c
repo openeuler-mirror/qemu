@@ -1442,6 +1442,16 @@ static void vfio_listener_region_del(MemoryListener *listener,
         }
 
         /*
+         * In nested mode, stage 2 (gpa->hpa) and the stage 1
+         * (giova->gpa) are set separately. The ram section
+         * will be unmapped in vfio_prereg_listener_region_del().
+         * Hence it doesn't need to unmap ram section here.
+         */
+        if (container->iommu_type == VFIO_TYPE1_NESTING_IOMMU) {
+            return;
+        }
+
+        /*
          * FIXME: We assume the one big unmap below is adequate to
          * remove any individual page mappings in the IOMMU which
          * might have been copied into VFIO. This works for a page table
