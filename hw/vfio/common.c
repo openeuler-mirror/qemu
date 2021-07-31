@@ -1857,6 +1857,43 @@ static int vfio_physical_log_clear(VFIOContainer *container,
     return ret;
 }
 
+static void vfio_prereg_listener_log_clear(MemoryListener *listener,
+                                           MemoryRegionSection *section)
+{
+    VFIOContainer *container =
+        container_of(listener, VFIOContainer, prereg_listener);
+
+    if (!memory_region_is_ram(section->mr)) {
+        return;
+    }
+
+    vfio_physical_log_clear(container, section);
+}
+
+static int vfio_clear_dirty_bitmap(VFIOContainer *container,
+                                   MemoryRegionSection *section)
+{
+    if (memory_region_is_iommu(section->mr)) {
+        /*
+         * In nested mode, stage 2 (gpa->hpa) and stage 1 (giova->gpa) are
+         * set up separately. It is inappropriate to pass 'giova' to kernel
+         * to get dirty pages. We only need to focus on stage 2 mapping when
+         * marking dirty pages.
+         */
+        if (container->iommu_type == VFIO_TYPE1_NESTING_IOMMU) {
+            return 0;
+        }
+
+        /*
+         * TODO: x86. With the log_clear() interface added, x86 may inplement
+         * its own method.
+         */
+    }
+
+    /* Here we assume that memory_region_is_ram(section->mr) == true */
+    return vfio_physical_log_clear(container, section);
+}
+
 static void vfio_listener_log_clear(MemoryListener *listener,
                                     MemoryRegionSection *section)
 {
@@ -1868,7 +1905,7 @@ static void vfio_listener_log_clear(MemoryListener *listener,
     }
 
     if (vfio_devices_all_dirty_tracking(container)) {
-        vfio_physical_log_clear(container, section);
+        vfio_clear_dirty_bitmap(container, section);
     }
 }
 
@@ -1886,6 +1923,7 @@ static MemoryListener vfio_memory_prereg_listener = {
     .region_add = vfio_prereg_listener_region_add,
     .region_del = vfio_prereg_listener_region_del,
     .log_sync = vfio_prereg_listener_log_sync,
+    .log_clear = vfio_prereg_listener_log_clear,
 };
 
 static void vfio_listener_release(VFIOContainer *container)
