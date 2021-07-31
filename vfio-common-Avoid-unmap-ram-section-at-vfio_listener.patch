@@ -1,0 +1,39 @@
+From 55f3bdd0866be2b1a6223bacf9e00a032daf957c Mon Sep 17 00:00:00 2001
+From: Kunkun Jiang <jiangkunkun@huawei.com>
+Date: Sat, 31 Jul 2021 10:02:18 +0800
+Subject: [PATCH] vfio/common: Avoid unmap ram section at
+ vfio_listener_region_del() in nested mode
+
+The ram section will be unmapped at vfio_prereg_listener_region_del()
+in nested mode. So let's avoid unmap ram section at
+vfio_listener_region_dev().
+
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+---
+ hw/vfio/common.c | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/hw/vfio/common.c b/hw/vfio/common.c
+index 98dc9e6f84..21a866e545 100644
+--- a/hw/vfio/common.c
++++ b/hw/vfio/common.c
+@@ -1179,6 +1179,16 @@ static void vfio_listener_region_del(MemoryListener *listener,
+             }
+         }
+ 
++        /*
++         * In nested mode, stage 2 (gpa->hpa) and the stage 1
++         * (giova->gpa) are set separately. The ram section
++         * will be unmapped in vfio_prereg_listener_region_del().
++         * Hence it doesn't need to unmap ram section here.
++         */
++        if (container->iommu_type == VFIO_TYPE1_NESTING_IOMMU) {
++            return;
++        }
++
+         /*
+          * FIXME: We assume the one big unmap below is adequate to
+          * remove any individual page mappings in the IOMMU which
+-- 
+2.27.0
+
