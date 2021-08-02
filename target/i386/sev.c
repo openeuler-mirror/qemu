@@ -191,6 +191,7 @@ static struct ConfidentialGuestMemoryEncryptionOps sev_memory_encryption_ops = {
     .save_outgoing_shared_regions_list = sev_save_outgoing_shared_regions_list,
     .load_incoming_shared_regions_list = sev_load_incoming_shared_regions_list,
     .queue_outgoing_page = csv_queue_outgoing_page,
+    .save_queued_outgoing_pages = csv_save_queued_outgoing_pages,
 };
 
 static int
@@ -2012,6 +2013,69 @@ err:
     return ret;
 }
 
+static int
+csv_command_batch(uint32_t cmd_id, uint64_t head_uaddr, int *fw_err)
+{
+    int ret;
+    struct kvm_csv_command_batch command_batch = { };
+
+    command_batch.command_id = cmd_id;
+    command_batch.csv_batch_list_uaddr = head_uaddr;
+
+    ret = sev_ioctl(sev_guest->sev_fd, KVM_CSV_COMMAND_BATCH,
+                    &command_batch, fw_err);
+    if (ret) {
+        error_report("%s: COMMAND_BATCH ret=%d fw_err=%d '%s'",
+                __func__, ret, *fw_err, fw_error_to_str(*fw_err));
+    }
+
+    return ret;
+}
+
+static int
+csv_send_update_data_batch(SevGuestState *s, QEMUFile *f, uint64_t *bytes_sent)
+{
+    int ret, fw_error = 0;
+    struct kvm_sev_send_update_data *update;
+    struct kvm_csv_batch_list_node *node;
+
+    ret = csv_command_batch(KVM_SEV_SEND_UPDATE_DATA,
+                            (uint64_t)s->csv_batch_cmd_list->head, &fw_error);
+    if (ret) {
+        error_report("%s: csv_command_batch ret=%d fw_error=%d '%s'",
+                __func__, ret, fw_error, fw_error_to_str(fw_error));
+        goto err;
+    }
+
+    for (node = s->csv_batch_cmd_list->head;
+         node != NULL;
+         node = (struct kvm_csv_batch_list_node *)node->next_cmd_addr) {
+        if (node != s->csv_batch_cmd_list->head) {
+            /* head's page header is saved before send_update_data */
+            qemu_put_be64(f, node->addr);
+            *bytes_sent += 8;
+            if (node->next_cmd_addr != 0)
+                qemu_put_be32(f, RAM_SAVE_ENCRYPTED_PAGE_BATCH);
+            else
+                qemu_put_be32(f, RAM_SAVE_ENCRYPTED_PAGE_BATCH_END);
+            *bytes_sent += 4;
+        }
+        update = (struct kvm_sev_send_update_data *)node->cmd_data_addr;
+        qemu_put_be32(f, update->hdr_len);
+        qemu_put_buffer(f, (uint8_t *)update->hdr_uaddr, update->hdr_len);
+        *bytes_sent += (4 + update->hdr_len);
+
+        qemu_put_be32(f, update->trans_len);
+        qemu_put_buffer(f, (uint8_t *)update->trans_uaddr, update->trans_len);
+        *bytes_sent += (4 + update->trans_len);
+    }
+
+err:
+    csv_batch_cmd_list_destroy(s->csv_batch_cmd_list);
+    s->csv_batch_cmd_list = NULL;
+    return ret;
+}
+
 int
 csv_queue_outgoing_page(uint8_t *ptr, uint32_t sz, uint64_t addr)
 {
@@ -2024,6 +2088,30 @@ csv_queue_outgoing_page(uint8_t *ptr, uint32_t sz, uint64_t addr)
     }
 
     return csv_send_queue_data(s, ptr, sz, addr);
+}
+
+int
+csv_save_queued_outgoing_pages(QEMUFile *f, uint64_t *bytes_sent)
+{
+    SevGuestState *s = sev_guest;
+
+    /* Only support for HYGON CSV */
+    if (!is_hygon_cpu()) {
+        error_report("Only support transfer queued pages for HYGON CSV");
+        return -EINVAL;
+    }
+
+    /*
+     * If this is a first buffer then create outgoing encryption context
+     * and write our PDH, policy and session data.
+     */
+    if (!sev_check_state(s, SEV_STATE_SEND_UPDATE) &&
+        sev_send_start(s, f, bytes_sent)) {
+        error_report("Failed to create outgoing context");
+        return 1;
+    }
+
+    return csv_send_update_data_batch(s, f, bytes_sent);
 }
 
 static const QemuUUID sev_hash_table_header_guid = {

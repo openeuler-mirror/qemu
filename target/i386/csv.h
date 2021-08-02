@@ -54,5 +54,6 @@ struct CsvBatchCmdList {
 };
 
 int csv_queue_outgoing_page(uint8_t *ptr, uint32_t sz, uint64_t addr);
+int csv_save_queued_outgoing_pages(QEMUFile *f, uint64_t *bytes_sent);
 
 #endif
