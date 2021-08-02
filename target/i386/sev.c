@@ -193,6 +193,7 @@ static struct ConfidentialGuestMemoryEncryptionOps sev_memory_encryption_ops = {
     .queue_outgoing_page = csv_queue_outgoing_page,
     .save_queued_outgoing_pages = csv_save_queued_outgoing_pages,
     .queue_incoming_page = csv_queue_incoming_page,
+    .load_queued_incoming_pages = csv_load_queued_incoming_pages,
 };
 
 static int
@@ -2146,6 +2147,24 @@ err:
     return ret;
 }
 
+static int
+csv_receive_update_data_batch(SevGuestState *s)
+{
+    int ret;
+    int fw_error;
+
+    ret = csv_command_batch(KVM_SEV_RECEIVE_UPDATE_DATA,
+                            (uint64_t)s->csv_batch_cmd_list->head, &fw_error);
+    if (ret) {
+        error_report("%s: csv_command_batch ret=%d fw_error=%d '%s'",
+                __func__, ret, fw_error, fw_error_to_str(fw_error));
+    }
+
+    csv_batch_cmd_list_destroy(s->csv_batch_cmd_list);
+    s->csv_batch_cmd_list = NULL;
+    return ret;
+}
+
 int
 csv_queue_outgoing_page(uint8_t *ptr, uint32_t sz, uint64_t addr)
 {
@@ -2204,6 +2223,19 @@ csv_save_queued_outgoing_pages(QEMUFile *f, uint64_t *bytes_sent)
     }
 
     return csv_send_update_data_batch(s, f, bytes_sent);
+}
+
+int csv_load_queued_incoming_pages(QEMUFile *f)
+{
+    SevGuestState *s = sev_guest;
+
+    /* Only support for HYGON CSV */
+    if (!is_hygon_cpu()) {
+        error_report("Only support load queued pages for HYGON CSV");
+        return -EINVAL;
+    }
+
+    return csv_receive_update_data_batch(s);
 }
 
 static const QemuUUID sev_hash_table_header_guid = {

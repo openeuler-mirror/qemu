@@ -87,6 +87,9 @@ struct ConfidentialGuestMemoryEncryptionOps {
 
     /* Queue the incoming encrypted page into a list */
     int (*queue_incoming_page)(QEMUFile *f, uint8_t *ptr);
+
+    /* Load the incoming encrypted pages queued in list into guest memory */
+    int (*load_queued_incoming_pages)(QEMUFile *f);
 };
 
 typedef struct ConfidentialGuestSupportClass {
