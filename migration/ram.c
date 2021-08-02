@@ -1297,6 +1297,14 @@ static int load_encrypted_data(QEMUFile *f, uint8_t *ptr)
         return ops->load_incoming_page(f, ptr);
     } else if (flag == RAM_SAVE_SHARED_REGIONS_LIST) {
         return ops->load_incoming_shared_regions_list(f);
+    } else if (flag == RAM_SAVE_ENCRYPTED_PAGE_BATCH) {
+        return ops->queue_incoming_page(f, ptr);
+    } else if (flag == RAM_SAVE_ENCRYPTED_PAGE_BATCH_END) {
+        if (ops->queue_incoming_page(f, ptr)) {
+            error_report("Failed to queue incoming data");
+            return -EINVAL;
+        }
+        return ops->load_queued_incoming_pages(f);
     } else {
         error_report("unknown encrypted flag %x", flag);
         return 1;
