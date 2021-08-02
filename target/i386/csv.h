@@ -44,4 +44,15 @@ static bool __attribute__((unused)) is_hygon_cpu(void)
 
 #endif
 
+typedef struct CsvBatchCmdList CsvBatchCmdList;
+typedef void (*CsvDestroyCmdNodeFn) (void *data);
+
+struct CsvBatchCmdList {
+    struct kvm_csv_batch_list_node *head;
+    struct kvm_csv_batch_list_node *tail;
+    CsvDestroyCmdNodeFn destroy_fn;
+};
+
+int csv_queue_outgoing_page(uint8_t *ptr, uint32_t sz, uint64_t addr);
+
 #endif

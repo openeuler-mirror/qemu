@@ -77,6 +77,9 @@ struct ConfidentialGuestMemoryEncryptionOps {
 
     /* Load the shared regions list */
     int (*load_incoming_shared_regions_list)(QEMUFile *f);
+
+    /* Queue the encrypted page and metadata associated with it into a list */
+    int (*queue_outgoing_page)(uint8_t *ptr, uint32_t size, uint64_t addr);
 };
 
 typedef struct ConfidentialGuestSupportClass {

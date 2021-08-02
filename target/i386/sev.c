@@ -95,6 +95,9 @@ struct SevGuestState {
     bool reset_data_valid;
 
     QTAILQ_HEAD(, shared_region) shared_regions_list;
+
+    /* link list used for HYGON CSV */
+    CsvBatchCmdList *csv_batch_cmd_list;
 };
 
 #define DEFAULT_GUEST_POLICY    0x1 /* disable debug */
@@ -187,6 +190,7 @@ static struct ConfidentialGuestMemoryEncryptionOps sev_memory_encryption_ops = {
     .is_gfn_in_unshared_region = sev_is_gfn_in_unshared_region,
     .save_outgoing_shared_regions_list = sev_save_outgoing_shared_regions_list,
     .load_incoming_shared_regions_list = sev_load_incoming_shared_regions_list,
+    .queue_outgoing_page = csv_queue_outgoing_page,
 };
 
 static int
@@ -1863,6 +1867,163 @@ bool sev_is_gfn_in_unshared_region(unsigned long gfn)
         }
     }
     return true;
+}
+
+static CsvBatchCmdList *
+csv_batch_cmd_list_create(struct kvm_csv_batch_list_node *head,
+                          CsvDestroyCmdNodeFn func)
+{
+    CsvBatchCmdList *csv_batch_cmd_list =
+                        g_malloc0(sizeof(*csv_batch_cmd_list));
+
+    if (!csv_batch_cmd_list) {
+        return NULL;
+    }
+
+    csv_batch_cmd_list->head = head;
+    csv_batch_cmd_list->tail = head;
+    csv_batch_cmd_list->destroy_fn = func;
+
+    return csv_batch_cmd_list;
+}
+
+static int
+csv_batch_cmd_list_add_after(CsvBatchCmdList *list,
+                             struct kvm_csv_batch_list_node *new_node)
+{
+    list->tail->next_cmd_addr = (__u64)new_node;
+    list->tail = new_node;
+
+    return 0;
+}
+
+static struct kvm_csv_batch_list_node *
+csv_batch_cmd_list_node_create(uint64_t cmd_data_addr, uint64_t addr)
+{
+    struct kvm_csv_batch_list_node *new_node =
+                        g_malloc0(sizeof(struct kvm_csv_batch_list_node));
+
+    if (!new_node) {
+        return NULL;
+    }
+
+    new_node->cmd_data_addr = cmd_data_addr;
+    new_node->addr = addr;
+    new_node->next_cmd_addr = 0;
+
+    return new_node;
+}
+
+static int csv_batch_cmd_list_destroy(CsvBatchCmdList *list)
+{
+    struct kvm_csv_batch_list_node *node = list->head;
+
+    while (node != NULL) {
+        if (list->destroy_fn != NULL)
+            list->destroy_fn((void *)node->cmd_data_addr);
+
+        list->head = (struct kvm_csv_batch_list_node *)node->next_cmd_addr;
+        g_free(node);
+        node = list->head;
+    }
+
+    g_free(list);
+    return 0;
+}
+
+static void send_update_data_free(void *data)
+{
+    struct kvm_sev_send_update_data *update =
+                        (struct kvm_sev_send_update_data *)data;
+    g_free((guchar *)update->hdr_uaddr);
+    g_free((guchar *)update->trans_uaddr);
+    g_free(update);
+}
+
+static int
+csv_send_queue_data(SevGuestState *s, uint8_t *ptr,
+                    uint32_t size, uint64_t addr)
+{
+    int ret = 0;
+    int fw_error;
+    guchar *trans;
+    guchar *packet_hdr;
+    struct kvm_sev_send_update_data *update;
+    struct kvm_csv_batch_list_node *new_node = NULL;
+
+    /* If this is first call then query the packet header bytes and allocate
+     * the packet buffer.
+     */
+    if (s->send_packet_hdr_len < 1) {
+        s->send_packet_hdr_len = sev_send_get_packet_len(&fw_error);
+        if (s->send_packet_hdr_len < 1) {
+            error_report("%s: SEND_UPDATE fw_error=%d '%s'",
+                    __func__, fw_error, fw_error_to_str(fw_error));
+            return 1;
+        }
+    }
+
+    packet_hdr = g_new(guchar, s->send_packet_hdr_len);
+    memset(packet_hdr, 0, s->send_packet_hdr_len);
+
+    update = g_new0(struct kvm_sev_send_update_data, 1);
+
+    /* allocate transport buffer */
+    trans = g_new(guchar, size);
+
+    update->hdr_uaddr = (unsigned long)packet_hdr;
+    update->hdr_len = s->send_packet_hdr_len;
+    update->guest_uaddr = (unsigned long)ptr;
+    update->guest_len = size;
+    update->trans_uaddr = (unsigned long)trans;
+    update->trans_len = size;
+
+    new_node = csv_batch_cmd_list_node_create((uint64_t)update, addr);
+    if (!new_node) {
+        ret = -ENOMEM;
+        goto err;
+    }
+
+    if (s->csv_batch_cmd_list == NULL) {
+        s->csv_batch_cmd_list = csv_batch_cmd_list_create(new_node,
+                                                send_update_data_free);
+        if (s->csv_batch_cmd_list == NULL) {
+            ret = -ENOMEM;
+            goto err;
+        }
+    } else {
+        /* Add new_node's command address to the last_node */
+        csv_batch_cmd_list_add_after(s->csv_batch_cmd_list, new_node);
+    }
+
+    trace_kvm_sev_send_update_data(ptr, trans, size);
+
+    return ret;
+
+err:
+    g_free(trans);
+    g_free(update);
+    g_free(packet_hdr);
+    g_free(new_node);
+    if (s->csv_batch_cmd_list) {
+        csv_batch_cmd_list_destroy(s->csv_batch_cmd_list);
+        s->csv_batch_cmd_list = NULL;
+    }
+    return ret;
+}
+
+int
+csv_queue_outgoing_page(uint8_t *ptr, uint32_t sz, uint64_t addr)
+{
+    SevGuestState *s = sev_guest;
+
+    /* Only support for HYGON CSV */
+    if (!is_hygon_cpu()) {
+        error_report("Only support enqueue pages for HYGON CSV");
+        return -EINVAL;
+    }
+
+    return csv_send_queue_data(s, ptr, sz, addr);
 }
 
 static const QemuUUID sev_hash_table_header_guid = {
