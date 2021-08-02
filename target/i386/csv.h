@@ -44,6 +44,8 @@ static bool __attribute__((unused)) is_hygon_cpu(void)
 
 #endif
 
+#define CSV_OUTGOING_PAGE_WINDOW_SIZE     (4094 * TARGET_PAGE_SIZE)
+
 typedef struct CsvBatchCmdList CsvBatchCmdList;
 typedef void (*CsvDestroyCmdNodeFn) (void *data);
 

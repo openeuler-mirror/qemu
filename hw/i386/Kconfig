@@ -12,7 +12,12 @@ config SGX
 
 config CSV
     bool
+    select HYGON_CSV_MIG_ACCEL
     depends on SEV
+
+config HYGON_CSV_MIG_ACCEL
+    bool
+    depends on CSV
 
 config PC
     bool
