@@ -84,6 +84,9 @@ struct ConfidentialGuestMemoryEncryptionOps {
     /* Write the list queued with encrypted pages and metadata associated
      * with them */
     int (*save_queued_outgoing_pages)(QEMUFile *f, uint64_t *bytes_sent);
+
+    /* Queue the incoming encrypted page into a list */
+    int (*queue_incoming_page)(QEMUFile *f, uint8_t *ptr);
 };
 
 typedef struct ConfidentialGuestSupportClass {

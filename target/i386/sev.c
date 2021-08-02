@@ -192,6 +192,7 @@ static struct ConfidentialGuestMemoryEncryptionOps sev_memory_encryption_ops = {
     .load_incoming_shared_regions_list = sev_load_incoming_shared_regions_list,
     .queue_outgoing_page = csv_queue_outgoing_page,
     .save_queued_outgoing_pages = csv_save_queued_outgoing_pages,
+    .queue_incoming_page = csv_queue_incoming_page,
 };
 
 static int
@@ -1941,6 +1942,15 @@ static void send_update_data_free(void *data)
     g_free(update);
 }
 
+static void receive_update_data_free(void *data)
+{
+    struct kvm_sev_receive_update_data *update =
+                        (struct kvm_sev_receive_update_data *)data;
+    g_free((guchar *)update->hdr_uaddr);
+    g_free((guchar *)update->trans_uaddr);
+    g_free(update);
+}
+
 static int
 csv_send_queue_data(SevGuestState *s, uint8_t *ptr,
                     uint32_t size, uint64_t addr)
@@ -2005,6 +2015,66 @@ err:
     g_free(trans);
     g_free(update);
     g_free(packet_hdr);
+    g_free(new_node);
+    if (s->csv_batch_cmd_list) {
+        csv_batch_cmd_list_destroy(s->csv_batch_cmd_list);
+        s->csv_batch_cmd_list = NULL;
+    }
+    return ret;
+}
+
+static int
+csv_receive_queue_data(SevGuestState *s, QEMUFile *f, uint8_t *ptr)
+{
+    int ret = 0;
+    gchar *hdr = NULL, *trans = NULL;
+    struct kvm_sev_receive_update_data *update;
+    struct kvm_csv_batch_list_node *new_node = NULL;
+
+    update = g_new0(struct kvm_sev_receive_update_data, 1);
+    /* get packet header */
+    update->hdr_len = qemu_get_be32(f);
+    hdr = g_new(gchar, update->hdr_len);
+    qemu_get_buffer(f, (uint8_t *)hdr, update->hdr_len);
+    update->hdr_uaddr = (unsigned long)hdr;
+
+    /* get transport buffer */
+    update->trans_len = qemu_get_be32(f);
+    trans = g_new(gchar, update->trans_len);
+    update->trans_uaddr = (unsigned long)trans;
+    qemu_get_buffer(f, (uint8_t *)update->trans_uaddr, update->trans_len);
+
+    /* set guest address,guest len is page_size */
+    update->guest_uaddr = (uint64_t)ptr;
+    update->guest_len = TARGET_PAGE_SIZE;
+
+    new_node = csv_batch_cmd_list_node_create((uint64_t)update, 0);
+    if (!new_node) {
+        ret = -ENOMEM;
+        goto err;
+    }
+
+    if (s->csv_batch_cmd_list == NULL) {
+        s->csv_batch_cmd_list = csv_batch_cmd_list_create(new_node,
+                                                receive_update_data_free);
+        if (s->csv_batch_cmd_list == NULL) {
+            ret = -ENOMEM;
+            goto err;
+        }
+    } else {
+        /* Add new_node's command address to the last_node */
+        csv_batch_cmd_list_add_after(s->csv_batch_cmd_list, new_node);
+    }
+
+    trace_kvm_sev_receive_update_data(trans, (void *)ptr, update->guest_len,
+            (void *)hdr, update->hdr_len);
+
+    return ret;
+
+err:
+    g_free(trans);
+    g_free(update);
+    g_free(hdr);
     g_free(new_node);
     if (s->csv_batch_cmd_list) {
         csv_batch_cmd_list_destroy(s->csv_batch_cmd_list);
@@ -2088,6 +2158,28 @@ csv_queue_outgoing_page(uint8_t *ptr, uint32_t sz, uint64_t addr)
     }
 
     return csv_send_queue_data(s, ptr, sz, addr);
+}
+
+int csv_queue_incoming_page(QEMUFile *f, uint8_t *ptr)
+{
+    SevGuestState *s = sev_guest;
+
+    /* Only support for HYGON CSV */
+    if (!is_hygon_cpu()) {
+        error_report("Only support enqueue received pages for HYGON CSV");
+        return -EINVAL;
+    }
+
+    /*
+     * If this is first buffer and SEV is not in recieiving state then
+     * use RECEIVE_START command to create a encryption context.
+     */
+    if (!sev_check_state(s, SEV_STATE_RECEIVE_UPDATE) &&
+        sev_receive_start(s, f)) {
+        return 1;
+    }
+
+    return csv_receive_queue_data(s, f, ptr);
 }
 
 int
