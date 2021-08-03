@@ -310,7 +310,7 @@ bool vfio_mig_active(void)
     return true;
 }
 
-static bool vfio_devices_all_stopped_and_saving(VFIOContainer *container)
+static bool vfio_devices_all_saving(VFIOContainer *container)
 {
     VFIOGroup *group;
     VFIODevice *vbasedev;
@@ -328,8 +328,11 @@ static bool vfio_devices_all_stopped_and_saving(VFIOContainer *container)
                 return false;
             }
 
-            if ((migration->device_state & VFIO_DEVICE_STATE_SAVING) &&
-                !(migration->device_state & VFIO_DEVICE_STATE_RUNNING)) {
+            if (migration->device_state & VFIO_DEVICE_STATE_SAVING) {
+                if ((vbasedev->pre_copy_dirty_page_tracking == ON_OFF_AUTO_OFF)
+                    && (migration->device_state & VFIO_DEVICE_STATE_RUNNING)) {
+                        return false;
+                }
                 continue;
             } else {
                 return false;
@@ -1078,7 +1081,7 @@ static int vfio_sync_dirty_bitmap(VFIOContainer *container,
                        int128_get64(section->size), ram_addr);
 }
 
-static void vfio_listerner_log_sync(MemoryListener *listener,
+static void vfio_listener_log_sync(MemoryListener *listener,
         MemoryRegionSection *section)
 {
     VFIOContainer *container = container_of(listener, VFIOContainer, listener);
@@ -1088,7 +1091,7 @@ static void vfio_listerner_log_sync(MemoryListener *listener,
         return;
     }
 
-    if (vfio_devices_all_stopped_and_saving(container)) {
+    if (vfio_devices_all_saving(container)) {
         vfio_sync_dirty_bitmap(container, section);
     }
 }
@@ -1096,7 +1099,7 @@ static void vfio_listerner_log_sync(MemoryListener *listener,
 static const MemoryListener vfio_memory_listener = {
     .region_add = vfio_listener_region_add,
     .region_del = vfio_listener_region_del,
-    .log_sync = vfio_listerner_log_sync,
+    .log_sync = vfio_listener_log_sync,
 };
 
 static void vfio_listener_release(VFIOContainer *container)
