@@ -501,6 +501,14 @@ Patch0488: qapi-Add-VFIO-devices-migration-stats-in-Migration-s.patch
 Patch0489: vfio-Move-the-saving-of-the-config-space-to-the-righ.patch
 Patch0490: vfio-Set-the-priority-of-the-VFIO-VM-state-change-ha.patch
 Patch0491: vfio-Avoid-disabling-and-enabling-vectors-repeatedly.patch
+Patch0492: kvm-split-too-big-memory-section-on-several-memslots.patch
+Patch0493: kvm-Reallocate-dirty_bmap-when-we-change-a-slot.patch
+Patch0494: accel-kvm-Fix-memory-waste-under-mismatch-page-size.patch
+Patch0495: memory-Skip-dirty-tracking-for-un-migratable-memory-.patch
+Patch0496: Fix-use-after-free-in-vfio_migration_probe.patch
+Patch0497: vfio-Make-migration-support-experimental.patch
+Patch0498: vfio-Change-default-dirty-pages-tracking-behavior-du.patch
+Patch0499: vfio-Fix-vfio_listener_log_sync-function-name-typo.patch
 
 BuildRequires: flex
 BuildRequires: gcc
@@ -895,6 +903,16 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Tue Aug 03 2021 Chen Qun <kuhn.chenqun@huawei.com>
+- kvm: split too big memory section on several memslots
+- kvm: Reallocate dirty_bmap when we change a slot
+- accel: kvm: Fix memory waste under mismatch page size
+- memory: Skip dirty tracking for un-migratable memory regions
+- Fix use after free in vfio_migration_probe
+- vfio: Make migration support experimental
+- vfio: Change default dirty pages tracking behavior during migration
+- vfio: Fix vfio_listener_log_sync function name typo
+
 * Thu Jul 29 2021 Chen Qun <kuhn.chenqun@huawei.com>
 - vfio: Move the saving of the config space to the right place in VFIO migration
 - vfio: Set the priority of the VFIO VM state change handler explicitly
