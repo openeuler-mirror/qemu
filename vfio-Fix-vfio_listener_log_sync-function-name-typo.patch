@@ -1,0 +1,41 @@
+From 094aca3a87e63a0e6ae01b22f382c21dd91bb03e Mon Sep 17 00:00:00 2001
+From: Zenghui Yu <yuzenghui@huawei.com>
+Date: Fri, 4 Dec 2020 09:42:40 +0800
+Subject: [PATCH] vfio: Fix vfio_listener_log_sync function name typo
+
+There is an obvious typo in the function name of the .log_sync() callback.
+Spell it correctly.
+
+Signed-off-by: Zenghui Yu <yuzenghui@huawei.com>
+Message-Id: <20201204014240.772-1-yuzenghui@huawei.com>
+Signed-off-by: Alex Williamson <alex.williamson@redhat.com>
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+---
+ hw/vfio/common.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/hw/vfio/common.c b/hw/vfio/common.c
+index d9cc3509ef..ebd701faa0 100644
+--- a/hw/vfio/common.c
++++ b/hw/vfio/common.c
+@@ -1081,7 +1081,7 @@ static int vfio_sync_dirty_bitmap(VFIOContainer *container,
+                        int128_get64(section->size), ram_addr);
+ }
+ 
+-static void vfio_listerner_log_sync(MemoryListener *listener,
++static void vfio_listener_log_sync(MemoryListener *listener,
+         MemoryRegionSection *section)
+ {
+     VFIOContainer *container = container_of(listener, VFIOContainer, listener);
+@@ -1099,7 +1099,7 @@ static void vfio_listerner_log_sync(MemoryListener *listener,
+ static const MemoryListener vfio_memory_listener = {
+     .region_add = vfio_listener_region_add,
+     .region_del = vfio_listener_region_del,
+-    .log_sync = vfio_listerner_log_sync,
++    .log_sync = vfio_listener_log_sync,
+ };
+ 
+ static void vfio_listener_release(VFIOContainer *container)
+-- 
+2.27.0
+

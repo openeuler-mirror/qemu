@@ -1,0 +1,39 @@
+From 126fc13ebe9c5e58a5b1daeb4e102e6fa5845779 Mon Sep 17 00:00:00 2001
+From: Kirti Wankhede <kwankhede@nvidia.com>
+Date: Fri, 6 Nov 2020 23:32:24 +0530
+Subject: [PATCH] Fix use after free in vfio_migration_probe
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Fixes Coverity issue:
+CID 1436126:  Memory - illegal accesses  (USE_AFTER_FREE)
+
+Fixes: a9e271ec9b36 ("vfio: Add migration region initialization and finalize function")
+Signed-off-by: Kirti Wankhede <kwankhede@nvidia.com>
+Reviewed-by: David Edmondson <dme@dme.org>
+Reviewed-by: Alex Bennée <alex.bennee@linaro.org>
+Reviewed-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+Signed-off-by: Alex Williamson <alex.williamson@redhat.com>
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+---
+ hw/vfio/migration.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/hw/vfio/migration.c b/hw/vfio/migration.c
+index 1a97784486..8546075706 100644
+--- a/hw/vfio/migration.c
++++ b/hw/vfio/migration.c
+@@ -903,8 +903,8 @@ int vfio_migration_probe(VFIODevice *vbasedev, Error **errp)
+         goto add_blocker;
+     }
+ 
+-    g_free(info);
+     trace_vfio_migration_probe(vbasedev->name, info->index);
++    g_free(info);
+     return 0;
+ 
+ add_blocker:
+-- 
+2.27.0
+

@@ -1,0 +1,42 @@
+From d0d816682b790b7d8a9caf17c32eadde7756ac9c Mon Sep 17 00:00:00 2001
+From: Zenghui Yu <yuzenghui@huawei.com>
+Date: Mon, 16 Nov 2020 21:22:10 +0800
+Subject: [PATCH] memory: Skip dirty tracking for un-migratable memory regions
+
+It makes no sense to track dirty pages for those un-migratable memory
+regions (e.g., Memory BAR region of the VFIO PCI device) and doing so
+will potentially lead to some unpleasant issues during migration [1].
+
+Skip dirty tracking for those regions by evaluating if the region is
+migratable before setting dirty_log_mask (DIRTY_MEMORY_MIGRATION).
+
+[1] https://lists.gnu.org/archive/html/qemu-devel/2020-11/msg03757.html
+
+Signed-off-by: Zenghui Yu <yuzenghui@huawei.com>
+Message-Id: <20201116132210.1730-1-yuzenghui@huawei.com>
+Reviewed-by: Cornelia Huck <cohuck@redhat.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+---
+ memory.c | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/memory.c b/memory.c
+index 44713efc66..708b3dff3d 100644
+--- a/memory.c
++++ b/memory.c
+@@ -1825,7 +1825,10 @@ bool memory_region_is_ram_device(MemoryRegion *mr)
+ uint8_t memory_region_get_dirty_log_mask(MemoryRegion *mr)
+ {
+     uint8_t mask = mr->dirty_log_mask;
+-    if (global_dirty_log && (mr->ram_block || memory_region_is_iommu(mr))) {
++    RAMBlock *rb = mr->ram_block;
++
++    if (global_dirty_log && ((rb && qemu_ram_is_migratable(rb)) ||
++                             memory_region_is_iommu(mr))) {
+         mask |= (1 << DIRTY_MEMORY_MIGRATION);
+     }
+     return mask;
+-- 
+2.27.0
+

@@ -1,0 +1,45 @@
+From b50b9a0e2e5e8262c830df5994f3abbe0a37655a Mon Sep 17 00:00:00 2001
+From: Keqian Zhu <zhukeqian1@huawei.com>
+Date: Thu, 17 Dec 2020 09:49:40 +0800
+Subject: [PATCH] accel: kvm: Fix memory waste under mismatch page size
+
+When handle dirty log, we face qemu_real_host_page_size and
+TARGET_PAGE_SIZE. The first one is the granule of KVM dirty
+bitmap, and the second one is the granule of QEMU dirty bitmap.
+
+As qemu_real_host_page_size >= TARGET_PAGE_SIZE (kvm_init()
+enforced it), misuse TARGET_PAGE_SIZE to init kvmslot dirty_bmap
+may waste memory. For example, when qemu_real_host_page_size is
+64K and TARGET_PAGE_SIZE is 4K, it wastes 93.75% (15/16) memory.
+
+Signed-off-by: Keqian Zhu <zhukeqian1@huawei.com>
+Reviewed-by: Andrew Jones <drjones@redhat.com>
+Reviewed-by: Peter Xu <peterx@redhat.com>
+Message-Id: <20201217014941.22872-2-zhukeqian1@huawei.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+---
+ accel/kvm/kvm-all.c | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/accel/kvm/kvm-all.c b/accel/kvm/kvm-all.c
+index 5a6b89cc2a..4daff563a0 100644
+--- a/accel/kvm/kvm-all.c
++++ b/accel/kvm/kvm-all.c
+@@ -551,8 +551,12 @@ static void kvm_memslot_init_dirty_bitmap(KVMSlot *mem)
+      * too, in most cases).
+      * So for now, let's align to 64 instead of HOST_LONG_BITS here, in
+      * a hope that sizeof(long) won't become >8 any time soon.
++     *
++     * Note: the granule of kvm dirty log is qemu_real_host_page_size.
++     * And mem->memory_size is aligned to it (otherwise this mem can't
++     * be registered to KVM).
+      */
+-    hwaddr bitmap_size = ALIGN(((mem->memory_size) >> TARGET_PAGE_BITS),
++    hwaddr bitmap_size = ALIGN(mem->memory_size / qemu_real_host_page_size,
+                                         /*HOST_LONG_BITS*/ 64) / 8;
+     mem->dirty_bmap = g_malloc0(bitmap_size);
+ }
+-- 
+2.27.0
+

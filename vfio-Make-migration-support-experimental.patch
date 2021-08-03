@@ -1,0 +1,72 @@
+From d0a8ba1957743c55547ec2ccd8cb09b84a3354d2 Mon Sep 17 00:00:00 2001
+From: Alex Williamson <alex.williamson@redhat.com>
+Date: Mon, 9 Nov 2020 11:56:02 -0700
+Subject: [PATCH] vfio: Make migration support experimental
+
+Support for migration of vfio devices is still in flux.  Developers
+are attempting to add support for new devices and new architectures,
+but none are yet readily available for validation.  We have concerns
+whether we're transferring device resources at the right point in the
+migration, whether we're guaranteeing that updates during pre-copy are
+migrated, and whether we can provide bit-stream compatibility should
+any of this change.  Even the question of whether devices should
+participate in dirty page tracking during pre-copy seems contentious.
+In short, migration support has not had enough soak time and it feels
+premature to mark it as supported.
+
+Create an experimental option such that we can continue to develop.
+
+[Retaining previous acks/reviews for a previously identical code
+ change with different specifics in the commit log.]
+
+Reviewed-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+Acked-by: Cornelia Huck <cohuck@redhat.com>
+Signed-off-by: Alex Williamson <alex.williamson@redhat.com>
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+---
+ hw/vfio/migration.c           | 2 +-
+ hw/vfio/pci.c                 | 2 ++
+ include/hw/vfio/vfio-common.h | 1 +
+ 3 files changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/hw/vfio/migration.c b/hw/vfio/migration.c
+index 8546075706..033cb2b0c9 100644
+--- a/hw/vfio/migration.c
++++ b/hw/vfio/migration.c
+@@ -888,7 +888,7 @@ int vfio_migration_probe(VFIODevice *vbasedev, Error **errp)
+     Error *local_err = NULL;
+     int ret = -ENOTSUP;
+ 
+-    if (!container->dirty_pages_supported) {
++    if (!vbasedev->enable_migration || !container->dirty_pages_supported) {
+         goto add_blocker;
+     }
+ 
+diff --git a/hw/vfio/pci.c b/hw/vfio/pci.c
+index da7c740bce..2795b8bd12 100644
+--- a/hw/vfio/pci.c
++++ b/hw/vfio/pci.c
+@@ -3192,6 +3192,8 @@ static Property vfio_pci_dev_properties[] = {
+                     VFIO_FEATURE_ENABLE_REQ_BIT, true),
+     DEFINE_PROP_BIT("x-igd-opregion", VFIOPCIDevice, features,
+                     VFIO_FEATURE_ENABLE_IGD_OPREGION_BIT, false),
++    DEFINE_PROP_BOOL("x-enable-migration", VFIOPCIDevice,
++                     vbasedev.enable_migration, false),
+     DEFINE_PROP_BOOL("x-no-mmap", VFIOPCIDevice, vbasedev.no_mmap, false),
+     DEFINE_PROP_BOOL("x-balloon-allowed", VFIOPCIDevice,
+                      vbasedev.balloon_allowed, false),
+diff --git a/include/hw/vfio/vfio-common.h b/include/hw/vfio/vfio-common.h
+index 048731e81f..7398631d4c 100644
+--- a/include/hw/vfio/vfio-common.h
++++ b/include/hw/vfio/vfio-common.h
+@@ -123,6 +123,7 @@ typedef struct VFIODevice {
+     bool needs_reset;
+     bool no_mmap;
+     bool balloon_allowed;
++    bool enable_migration;
+     VFIODeviceOps *ops;
+     unsigned int num_irqs;
+     unsigned int num_regions;
+-- 
+2.27.0
+
