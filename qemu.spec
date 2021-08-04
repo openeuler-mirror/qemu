@@ -509,6 +509,52 @@ Patch0496: Fix-use-after-free-in-vfio_migration_probe.patch
 Patch0497: vfio-Make-migration-support-experimental.patch
 Patch0498: vfio-Change-default-dirty-pages-tracking-behavior-du.patch
 Patch0499: vfio-Fix-vfio_listener_log_sync-function-name-typo.patch
+Patch0500: vfio-Support-host-translation-granule-size.patch
+Patch0501: vfio-migrate-Move-switch-of-dirty-tracking-into-vfio.patch
+Patch0502: vfio-Fix-unregister-SaveVMHandler-in-vfio_migration_.patch
+Patch0503: migration-ram-Reduce-unnecessary-rate-limiting.patch
+Patch0504: migration-ram-Optimize-ram_save_host_page.patch
+Patch0505: qdev-monitors-Fix-reundant-error_setg-of-qdev_add_de.patch
+Patch0506: linux-headers-update-against-5.10-and-manual-clear-v.patch
+Patch0507: vfio-Maintain-DMA-mapping-range-for-the-container.patch
+Patch0508: vfio-migration-Add-support-for-manual-clear-vfio-dir.patch
+Patch0509: hw-arm-smmuv3-Support-16K-translation-granule.patch
+Patch0510: hw-arm-smmuv3-Set-the-restoration-priority-of-the-vS.patch
+Patch0511: hw-vfio-common-trace-vfio_connect_container-operatio.patch
+Patch0512: update-linux-headers-Import-iommu.h.patch
+Patch0513: vfio.h-and-iommu.h-header-update-against-5.10.patch
+Patch0514: memory-Add-new-fields-in-IOTLBEntry.patch
+Patch0515: hw-arm-smmuv3-Improve-stage1-ASID-invalidation.patch
+Patch0516: hw-arm-smmu-common-Allow-domain-invalidation-for-NH_.patch
+Patch0517: memory-Add-IOMMU_ATTR_VFIO_NESTED-IOMMU-memory-regio.patch
+Patch0518: memory-Add-IOMMU_ATTR_MSI_TRANSLATE-IOMMU-memory-reg.patch
+Patch0519: memory-Introduce-IOMMU-Memory-Region-inject_faults-A.patch
+Patch0520: iommu-Introduce-generic-header.patch
+Patch0521: pci-introduce-PCIPASIDOps-to-PCIDevice.patch
+Patch0522: vfio-Force-nested-if-iommu-requires-it.patch
+Patch0523: vfio-Introduce-hostwin_from_range-helper.patch
+Patch0524: vfio-Introduce-helpers-to-DMA-map-unmap-a-RAM-sectio.patch
+Patch0525: vfio-Set-up-nested-stage-mappings.patch
+Patch0526: vfio-Pass-stage-1-MSI-bindings-to-the-host.patch
+Patch0527: vfio-Helper-to-get-IRQ-info-including-capabilities.patch
+Patch0528: vfio-pci-Register-handler-for-iommu-fault.patch
+Patch0529: vfio-pci-Set-up-the-DMA-FAULT-region.patch
+Patch0530: vfio-pci-Implement-the-DMA-fault-handler.patch
+Patch0531: hw-arm-smmuv3-Advertise-MSI_TRANSLATE-attribute.patch
+Patch0532: hw-arm-smmuv3-Store-the-PASID-table-GPA-in-the-trans.patch
+Patch0533: hw-arm-smmuv3-Fill-the-IOTLBEntry-arch_id-on-NH_VA-i.patch
+Patch0534: hw-arm-smmuv3-Fill-the-IOTLBEntry-leaf-field-on-NH_V.patch
+Patch0535: hw-arm-smmuv3-Pass-stage-1-configurations-to-the-hos.patch
+Patch0536: hw-arm-smmuv3-Implement-fault-injection.patch
+Patch0537: hw-arm-smmuv3-Allow-MAP-notifiers.patch
+Patch0538: pci-Add-return_page_response-pci-ops.patch
+Patch0539: vfio-pci-Implement-return_page_response-page-respons.patch
+Patch0540: vfio-common-Avoid-unmap-ram-section-at-vfio_listener.patch
+Patch0541: vfio-Introduce-helpers-to-mark-dirty-pages-of-a-RAM-.patch
+Patch0542: vfio-Add-vfio_prereg_listener_log_sync-in-nested-sta.patch
+Patch0543: vfio-Add-vfio_prereg_listener_log_clear-to-re-enable.patch
+Patch0544: vfio-Add-vfio_prereg_listener_global_log_start-stop-.patch
+Patch0545: hw-arm-smmuv3-Post-load-stage-1-configurations-to-th.patch
 
 BuildRequires: flex
 BuildRequires: gcc
@@ -903,6 +949,54 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Wed Aug 04 2021 Chen Qun <kuhn.chenqun@huawei.com>
+- vfio: Support host translation granule size
+- vfio/migrate: Move switch of dirty tracking into vfio_memory_listener
+- vfio: Fix unregister SaveVMHandler in vfio_migration_finalize
+- migration/ram: Reduce unnecessary rate limiting
+- migration/ram: Optimize ram_save_host_page()
+- qdev/monitors: Fix reundant error_setg of qdev_add_device
+- linux-headers: update against 5.10 and manual clear vfio dirty log series
+- vfio: Maintain DMA mapping range for the container
+- vfio/migration: Add support for manual clear vfio dirty log
+- hw/arm/smmuv3: Support 16K translation granule
+- hw/arm/smmuv3: Set the restoration priority of the vSMMUv3 explicitly
+- hw/vfio/common: trace vfio_connect_container operations
+- update-linux-headers: Import iommu.h
+- vfio.h and iommu.h header update against 5.10
+- memory: Add new fields in IOTLBEntry
+- hw/arm/smmuv3: Improve stage1 ASID invalidation
+- hw/arm/smmu-common: Allow domain invalidation for NH_ALL/NSNH_ALL
+- memory: Add IOMMU_ATTR_VFIO_NESTED IOMMU memory region attribute
+- memory: Add IOMMU_ATTR_MSI_TRANSLATE IOMMU memory region attribute
+- memory: Introduce IOMMU Memory Region inject_faults API
+- iommu: Introduce generic header
+- pci: introduce PCIPASIDOps to PCIDevice
+- vfio: Force nested if iommu requires it
+- vfio: Introduce hostwin_from_range helper
+- vfio: Introduce helpers to DMA map/unmap a RAM section
+- vfio: Set up nested stage mappings
+- vfio: Pass stage 1 MSI bindings to the host
+- vfio: Helper to get IRQ info including capabilities
+- vfio/pci: Register handler for iommu fault
+- vfio/pci: Set up the DMA FAULT region
+- vfio/pci: Implement the DMA fault handler
+- hw/arm/smmuv3: Advertise MSI_TRANSLATE attribute
+- hw/arm/smmuv3: Store the PASID table GPA in the translation config
+- hw/arm/smmuv3: Fill the IOTLBEntry arch_id on NH_VA invalidation
+- hw/arm/smmuv3: Fill the IOTLBEntry leaf field on NH_VA invalidation
+- hw/arm/smmuv3: Pass stage 1 configurations to the host
+- hw/arm/smmuv3: Implement fault injection
+- hw/arm/smmuv3: Allow MAP notifiers
+- pci: Add return_page_response pci ops
+- vfio/pci: Implement return_page_response page response callback
+- vfio/common: Avoid unmap ram section at vfio_listener_region_del() in nested mode
+- vfio: Introduce helpers to mark dirty pages of a RAM section
+- vfio: Add vfio_prereg_listener_log_sync in nested stage
+- vfio: Add vfio_prereg_listener_log_clear to re-enable mark dirty pages
+- vfio: Add vfio_prereg_listener_global_log_start/stop in nested stage
+- hw/arm/smmuv3: Post-load stage 1 configurations to the host
+
 * Tue Aug 03 2021 Chen Qun <kuhn.chenqun@huawei.com>
 - kvm: split too big memory section on several memslots
 - kvm: Reallocate dirty_bmap when we change a slot
