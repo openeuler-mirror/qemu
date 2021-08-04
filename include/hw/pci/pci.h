@@ -9,6 +9,7 @@
 #include "hw/isa/isa.h"
 
 #include "hw/pci/pcie.h"
+#include "hw/iommu/iommu.h"
 
 extern bool pci_available;
 
@@ -263,6 +264,13 @@ struct PCIReqIDCache {
 };
 typedef struct PCIReqIDCache PCIReqIDCache;
 
+struct PCIPASIDOps {
+    int (*set_pasid_table)(PCIBus *bus, int32_t devfn, IOMMUConfig *config);
+    int (*return_page_response)(PCIBus *bus, int32_t devfn,
+                                IOMMUPageResponse *resp);
+};
+typedef struct PCIPASIDOps PCIPASIDOps;
+
 struct PCIDevice {
     DeviceState qdev;
 
@@ -352,6 +360,7 @@ struct PCIDevice {
     MSIVectorUseNotifier msix_vector_use_notifier;
     MSIVectorReleaseNotifier msix_vector_release_notifier;
     MSIVectorPollNotifier msix_vector_poll_notifier;
+    PCIPASIDOps *pasid_ops;
 };
 
 void pci_register_bar(PCIDevice *pci_dev, int region_num,
@@ -484,6 +493,12 @@ typedef AddressSpace *(*PCIIOMMUFunc)(PCIBus *, void *, int);
 
 AddressSpace *pci_device_iommu_address_space(PCIDevice *dev);
 void pci_setup_iommu(PCIBus *bus, PCIIOMMUFunc fn, void *opaque);
+
+void pci_setup_pasid_ops(PCIDevice *dev, PCIPASIDOps *ops);
+bool pci_device_is_pasid_ops_set(PCIBus *bus, int32_t devfn);
+int pci_device_set_pasid_table(PCIBus *bus, int32_t devfn, IOMMUConfig *config);
+int pci_device_return_page_response(PCIBus *bus, int32_t devfn,
+                                    IOMMUPageResponse *resp);
 
 static inline void
 pci_set_byte(uint8_t *config, uint8_t val)
