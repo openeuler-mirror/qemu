@@ -1,0 +1,32 @@
+From b7f4f3b71a179a21a90ca32ef7d6ea000fb0e3bd Mon Sep 17 00:00:00 2001
+From: Eric Auger <eric.auger@redhat.com>
+Date: Mon, 25 Mar 2019 16:35:05 +0100
+Subject: [PATCH] memory: Add IOMMU_ATTR_MSI_TRANSLATE IOMMU memory region
+ attribute
+
+We introduce a new IOMMU Memory Region attribute, IOMMU_ATTR_MSI_TRANSLATE
+which tells whether the virtual IOMMU translates MSIs. ARM SMMU
+will expose this attribute since, as opposed to Intel DMAR, MSIs
+are translated as any other DMA requests.
+
+Signed-off-by: Eric Auger <eric.auger@redhat.com>
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+---
+ include/exec/memory.h | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/include/exec/memory.h b/include/exec/memory.h
+index 74606e14aa..716b07e115 100644
+--- a/include/exec/memory.h
++++ b/include/exec/memory.h
+@@ -242,6 +242,7 @@ struct MemoryRegionOps {
+ enum IOMMUMemoryRegionAttr {
+     IOMMU_ATTR_SPAPR_TCE_FD,
+     IOMMU_ATTR_VFIO_NESTED,
++    IOMMU_ATTR_MSI_TRANSLATE,
+ };
+ 
+ /**
+-- 
+2.27.0
+

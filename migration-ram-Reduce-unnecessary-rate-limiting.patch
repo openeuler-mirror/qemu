@@ -1,0 +1,42 @@
+From 338d691c985ad5b3624ef36e4beaac82982c8f0a Mon Sep 17 00:00:00 2001
+From: Kunkun Jiang <jiangkunkun@huawei.com>
+Date: Tue, 16 Mar 2021 20:57:15 +0800
+Subject: [PATCH] migration/ram: Reduce unnecessary rate limiting
+
+When the host page is a huge page and something is sent in the
+current iteration, migration_rate_limit() should be executed.
+If not, it can be omitted.
+
+Signed-off-by: Keqian Zhu <zhukeqian1@huawei.com>
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+Reviewed-by: David Edmondson <david.edmondson@oracle.com>
+Reviewed-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+Message-Id: <20210316125716.1243-2-jiangkunkun@huawei.com>
+Signed-off-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+---
+ migration/ram.c | 9 +++++++--
+ 1 file changed, 7 insertions(+), 2 deletions(-)
+
+diff --git a/migration/ram.c b/migration/ram.c
+index 2077ba5be4..22063e00b4 100644
+--- a/migration/ram.c
++++ b/migration/ram.c
+@@ -3076,8 +3076,13 @@ static int ram_save_host_page(RAMState *rs, PageSearchStatus *pss,
+         }
+ 
+         pss->page++;
+-        /* Allow rate limiting to happen in the middle of huge pages */
+-        migration_rate_limit();
++        /*
++         * Allow rate limiting to happen in the middle of huge pages if
++         * something is sent in the current iteration.
++         */
++        if (pagesize_bits > 1 && tmppages > 0) {
++            migration_rate_limit();
++        }
+     } while ((pss->page & (pagesize_bits - 1)) &&
+              offset_in_ramblock(pss->block, pss->page << TARGET_PAGE_BITS));
+ 
+-- 
+2.27.0
+

@@ -1,0 +1,74 @@
+From 4c5350044ac2f61ab8088278b59eb6388ca49ff1 Mon Sep 17 00:00:00 2001
+From: Kunkun Jiang <jiangkunkun@huawei.com>
+Date: Tue, 11 May 2021 10:08:14 +0800
+Subject: [PATCH] vfio: Add vfio_prereg_listener_log_sync in nested stage
+
+In nested mode, we set up the stage 2 (gpa->hpa)and stage 1
+(giova->gpa) separately by vfio_prereg_listener_region_add()
+and vfio_listener_region_add(). So when marking dirty pages
+we just need to pay attention to stage 2 mappings.
+
+Legacy vfio_listener_log_sync cannot be used in nested stage.
+This patch adds vfio_prereg_listener_log_sync to mark dirty
+pages in nested mode.
+
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+---
+ hw/vfio/common.c | 27 +++++++++++++++++++++++++++
+ 1 file changed, 27 insertions(+)
+
+diff --git a/hw/vfio/common.c b/hw/vfio/common.c
+index 5176fd3a3d..6b00bd4c2f 100644
+--- a/hw/vfio/common.c
++++ b/hw/vfio/common.c
+@@ -1317,6 +1317,22 @@ static int vfio_dma_sync_ram_section_dirty_bitmap(VFIOContainer *container,
+                     int128_get64(section->size), ram_addr);
+ }
+ 
++static void vfio_prereg_listener_log_sync(MemoryListener *listener,
++                                          MemoryRegionSection *section)
++{
++    VFIOContainer *container =
++        container_of(listener, VFIOContainer, prereg_listener);
++
++    if (!memory_region_is_ram(section->mr) ||
++        !container->dirty_pages_supported) {
++        return;
++    }
++
++    if (vfio_devices_all_dirty_tracking(container)) {
++        vfio_dma_sync_ram_section_dirty_bitmap(container, section);
++    }
++}
++
+ typedef struct {
+     IOMMUNotifier n;
+     VFIOGuestIOMMU *giommu;
+@@ -1361,6 +1377,16 @@ static int vfio_sync_dirty_bitmap(VFIOContainer *container,
+     if (memory_region_is_iommu(section->mr)) {
+         VFIOGuestIOMMU *giommu;
+ 
++        /*
++         * In nested mode, stage 2 (gpa->hpa) and stage 1 (giova->gpa) are
++         * set up separately. It is inappropriate to pass 'giova' to kernel
++         * to get dirty pages. We only need to focus on stage 2 mapping when
++         * marking dirty pages.
++         */
++        if (container->iommu_type == VFIO_TYPE1_NESTING_IOMMU) {
++            return 0;
++        }
++
+         QLIST_FOREACH(giommu, &container->giommu_list, giommu_next) {
+             if (MEMORY_REGION(giommu->iommu) == section->mr &&
+                 giommu->n.start == section->offset_within_region) {
+@@ -1551,6 +1577,7 @@ static const MemoryListener vfio_memory_listener = {
+ static MemoryListener vfio_memory_prereg_listener = {
+     .region_add = vfio_prereg_listener_region_add,
+     .region_del = vfio_prereg_listener_region_del,
++    .log_sync = vfio_prereg_listener_log_sync,
+ };
+ 
+ static void vfio_listener_release(VFIOContainer *container)
+-- 
+2.27.0
+

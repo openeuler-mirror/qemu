@@ -1,0 +1,53 @@
+From b107e6ec2a5a34e0ba95345a89dcf5f505ad9da4 Mon Sep 17 00:00:00 2001
+From: Eric Auger <eric.auger@redhat.com>
+Date: Mon, 22 Feb 2021 10:13:55 -0500
+Subject: [PATCH] hw/vfio/common: trace vfio_connect_container operations
+
+We currently trace vfio_disconnect_container() but we do not trace
+the container <-> group creation, which can be useful to understand
+the VFIO topology.
+
+Signed-off-by: Eric Auger <eric.auger@redhat.com>
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+---
+ hw/vfio/common.c     | 3 +++
+ hw/vfio/trace-events | 2 ++
+ 2 files changed, 5 insertions(+)
+
+diff --git a/hw/vfio/common.c b/hw/vfio/common.c
+index 206fb83e28..fefa2ccfdf 100644
+--- a/hw/vfio/common.c
++++ b/hw/vfio/common.c
+@@ -1848,6 +1848,8 @@ static int vfio_connect_container(VFIOGroup *group, AddressSpace *as,
+     QLIST_FOREACH(container, &space->containers, next) {
+         if (!ioctl(group->fd, VFIO_GROUP_SET_CONTAINER, &container->fd)) {
+             group->container = container;
++            trace_vfio_connect_existing_container(group->groupid,
++                                                  container->fd);
+             QLIST_INSERT_HEAD(&container->group_list, group, container_next);
+             vfio_kvm_device_add_group(group);
+             return 0;
+@@ -1881,6 +1883,7 @@ static int vfio_connect_container(VFIOGroup *group, AddressSpace *as,
+     if (ret) {
+         goto free_container_exit;
+     }
++    trace_vfio_connect_new_container(group->groupid, container->fd);
+ 
+     switch (container->iommu_type) {
+     case VFIO_TYPE1v2_IOMMU:
+diff --git a/hw/vfio/trace-events b/hw/vfio/trace-events
+index 575ebde6e0..561dc6e758 100644
+--- a/hw/vfio/trace-events
++++ b/hw/vfio/trace-events
+@@ -102,6 +102,8 @@ vfio_listener_region_add_no_dma_map(const char *name, uint64_t iova, uint64_t si
+ vfio_listener_region_del_skip(uint64_t start, uint64_t end) "SKIPPING region_del 0x%"PRIx64" - 0x%"PRIx64
+ vfio_listener_region_del(uint64_t start, uint64_t end) "region_del 0x%"PRIx64" - 0x%"PRIx64
+ vfio_disconnect_container(int fd) "close container->fd=%d"
++vfio_connect_existing_container(int groupid, int container_fd) "group=%d existing container fd=%d"
++vfio_connect_new_container(int groupid, int container_fd) "group=%d new container fd=%d"
+ vfio_put_group(int fd) "close group->fd=%d"
+ vfio_get_device(const char * name, unsigned int flags, unsigned int num_regions, unsigned int num_irqs) "Device %s flags: %u, regions: %u, irqs: %u"
+ vfio_put_base_device(int fd) "close vdev->fd=%d"
+-- 
+2.27.0
+

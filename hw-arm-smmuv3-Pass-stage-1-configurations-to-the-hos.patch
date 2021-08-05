@@ -1,0 +1,147 @@
+From d0a1ce3c46246b6ef5510ac1d5c18308417ed525 Mon Sep 17 00:00:00 2001
+From: Eric Auger <eric.auger@redhat.com>
+Date: Thu, 9 Aug 2018 21:04:19 +0200
+Subject: [PATCH] hw/arm/smmuv3: Pass stage 1 configurations to the host
+
+In case PASID PciOps are set for the device we call
+the set_pasid_table() callback on each STE update.
+
+This allows to pass the guest stage 1 configuration
+to the host and apply it at physical level.
+
+Signed-off-by: Eric Auger <eric.auger@redhat.com>
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+---
+ hw/arm/smmuv3.c     | 77 +++++++++++++++++++++++++++++++++++----------
+ hw/arm/trace-events |  2 +-
+ 2 files changed, 61 insertions(+), 18 deletions(-)
+
+diff --git a/hw/arm/smmuv3.c b/hw/arm/smmuv3.c
+index c1caa6bc3a..3d2151857d 100644
+--- a/hw/arm/smmuv3.c
++++ b/hw/arm/smmuv3.c
+@@ -16,6 +16,10 @@
+  * with this program; if not, see <http://www.gnu.org/licenses/>.
+  */
+ 
++#ifdef __linux__
++#include "linux/iommu.h"
++#endif
++
+ #include "qemu/osdep.h"
+ #include "hw/boards.h"
+ #include "sysemu/sysemu.h"
+@@ -872,6 +876,60 @@ static void smmuv3_inv_notifiers_iova(SMMUState *s, int asid, dma_addr_t iova,
+     }
+ }
+ 
++static void smmuv3_notify_config_change(SMMUState *bs, uint32_t sid)
++{
++#ifdef __linux__
++    IOMMUMemoryRegion *mr = smmu_iommu_mr(bs, sid);
++    SMMUEventInfo event = {.type = SMMU_EVT_NONE, .sid = sid};
++    IOMMUConfig iommu_config = {};
++    SMMUTransCfg *cfg;
++    SMMUDevice *sdev;
++
++    if (!mr) {
++        return;
++    }
++
++    sdev = container_of(mr, SMMUDevice, iommu);
++
++    /* flush QEMU config cache */
++    smmuv3_flush_config(sdev);
++
++    if (!pci_device_is_pasid_ops_set(sdev->bus, sdev->devfn)) {
++        return;
++    }
++
++    cfg = smmuv3_get_config(sdev, &event);
++
++    if (!cfg) {
++        return;
++    }
++
++    iommu_config.pasid_cfg.argsz = sizeof(struct iommu_pasid_table_config);
++    iommu_config.pasid_cfg.version = PASID_TABLE_CFG_VERSION_1;
++    iommu_config.pasid_cfg.format = IOMMU_PASID_FORMAT_SMMUV3;
++    iommu_config.pasid_cfg.base_ptr = cfg->s1ctxptr;
++    iommu_config.pasid_cfg.pasid_bits = 0;
++    iommu_config.pasid_cfg.vendor_data.smmuv3.version = PASID_TABLE_SMMUV3_CFG_VERSION_1;
++
++    if (cfg->disabled || cfg->bypassed) {
++        iommu_config.pasid_cfg.config = IOMMU_PASID_CONFIG_BYPASS;
++    } else if (cfg->aborted) {
++        iommu_config.pasid_cfg.config = IOMMU_PASID_CONFIG_ABORT;
++    } else {
++        iommu_config.pasid_cfg.config = IOMMU_PASID_CONFIG_TRANSLATE;
++    }
++
++    trace_smmuv3_notify_config_change(mr->parent_obj.name,
++                                      iommu_config.pasid_cfg.config,
++                                      iommu_config.pasid_cfg.base_ptr);
++
++    if (pci_device_set_pasid_table(sdev->bus, sdev->devfn, &iommu_config)) {
++        error_report("Failed to pass PASID table to host for iommu mr %s (%m)",
++                     mr->parent_obj.name);
++    }
++#endif
++}
++
+ static void smmuv3_s1_asid_inval(SMMUState *s, uint16_t asid)
+ {
+     SMMUDevice *sdev;
+@@ -938,22 +996,14 @@ static int smmuv3_cmdq_consume(SMMUv3State *s)
+         case SMMU_CMD_CFGI_STE:
+         {
+             uint32_t sid = CMD_SID(&cmd);
+-            IOMMUMemoryRegion *mr = smmu_iommu_mr(bs, sid);
+-            SMMUDevice *sdev;
+ 
+             if (CMD_SSEC(&cmd)) {
+                 cmd_error = SMMU_CERROR_ILL;
+                 break;
+             }
+ 
+-            if (!mr) {
+-                break;
+-            }
+-
+             trace_smmuv3_cmdq_cfgi_ste(sid);
+-            sdev = container_of(mr, SMMUDevice, iommu);
+-            smmuv3_flush_config(sdev);
+-
++            smmuv3_notify_config_change(bs, sid);
+             break;
+         }
+         case SMMU_CMD_CFGI_STE_RANGE: /* same as SMMU_CMD_CFGI_ALL */
+@@ -970,14 +1020,7 @@ static int smmuv3_cmdq_consume(SMMUv3State *s)
+             trace_smmuv3_cmdq_cfgi_ste_range(start, end);
+ 
+             for (i = start; i <= end; i++) {
+-                IOMMUMemoryRegion *mr = smmu_iommu_mr(bs, i);
+-                SMMUDevice *sdev;
+-
+-                if (!mr) {
+-                    continue;
+-                }
+-                sdev = container_of(mr, SMMUDevice, iommu);
+-                smmuv3_flush_config(sdev);
++                 smmuv3_notify_config_change(bs, i);
+             }
+             break;
+         }
+diff --git a/hw/arm/trace-events b/hw/arm/trace-events
+index 4512d20115..cbbe2ccafd 100644
+--- a/hw/arm/trace-events
++++ b/hw/arm/trace-events
+@@ -53,4 +53,4 @@ smmuv3_config_cache_inv(uint32_t sid) "Config cache INV for sid %d"
+ smmuv3_notify_flag_add(const char *iommu) "ADD SMMUNotifier node for iommu mr=%s"
+ smmuv3_notify_flag_del(const char *iommu) "DEL SMMUNotifier node for iommu mr=%s"
+ smmuv3_inv_notifiers_iova(const char *name, uint16_t asid, uint64_t iova) "iommu mr=%s asid=%d iova=0x%"PRIx64
+-
++smmuv3_notify_config_change(const char *name, uint8_t config, uint64_t s1ctxptr) "iommu mr=%s config=%d s1ctxptr=0x%"PRIx64
+-- 
+2.27.0
+

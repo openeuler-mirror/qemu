@@ -1,0 +1,33 @@
+From eceb9213e23d15d5b4342b6a6a8368f4fec60c2f Mon Sep 17 00:00:00 2001
+From: Zenghui Yu <yuzenghui@huawei.com>
+Date: Mon, 19 Oct 2020 17:15:08 +0800
+Subject: [PATCH] hw/arm/smmuv3: Set the restoration priority of the vSMMUv3
+ explicitly
+
+Ensure the vSMMUv3 will be restored before all PCIe devices so that DMA
+translation can work properly during migration.
+
+Signed-off-by: Zenghui Yu <yuzenghui@huawei.com>
+Message-id: 20201019091508.197-1-yuzenghui@huawei.com
+Acked-by: Eric Auger <eric.auger@redhat.com>
+Signed-off-by: Peter Maydell <peter.maydell@linaro.org>
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+---
+ hw/arm/smmuv3.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/hw/arm/smmuv3.c b/hw/arm/smmuv3.c
+index 7911944c59..3b5723e1e1 100644
+--- a/hw/arm/smmuv3.c
++++ b/hw/arm/smmuv3.c
+@@ -1424,6 +1424,7 @@ static const VMStateDescription vmstate_smmuv3 = {
+     .name = "smmuv3",
+     .version_id = 1,
+     .minimum_version_id = 1,
++    .priority = MIG_PRI_IOMMU,
+     .fields = (VMStateField[]) {
+         VMSTATE_UINT32(features, SMMUv3State),
+         VMSTATE_UINT8(sid_size, SMMUv3State),
+-- 
+2.27.0
+

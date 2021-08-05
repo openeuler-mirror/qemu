@@ -1,0 +1,53 @@
+From e8055075dbbc932afccc1f18f4acc093fe9e4dc3 Mon Sep 17 00:00:00 2001
+From: Eric Auger <eric.auger@redhat.com>
+Date: Tue, 9 Jul 2019 12:20:12 +0200
+Subject: [PATCH] iommu: Introduce generic header
+
+This header is meant to exposes data types used by
+several IOMMU devices such as struct for SVA and
+nested stage configuration.
+
+Signed-off-by: Eric Auger <eric.auger@redhat.com>
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+---
+ include/hw/iommu/iommu.h | 28 ++++++++++++++++++++++++++++
+ 1 file changed, 28 insertions(+)
+ create mode 100644 include/hw/iommu/iommu.h
+
+diff --git a/include/hw/iommu/iommu.h b/include/hw/iommu/iommu.h
+new file mode 100644
+index 0000000000..12092bda7b
+--- /dev/null
++++ b/include/hw/iommu/iommu.h
+@@ -0,0 +1,28 @@
++/*
++ * common header for iommu devices
++ *
++ * Copyright Red Hat, Inc. 2019
++ *
++ * Authors:
++ *  Eric Auger <eric.auger@redhat.com>
++ *
++ * This work is licensed under the terms of the GNU GPL, version 2.  See
++ * the COPYING file in the top-level directory.
++ */
++
++#ifndef QEMU_HW_IOMMU_IOMMU_H
++#define QEMU_HW_IOMMU_IOMMU_H
++#ifdef __linux__
++#include <linux/iommu.h>
++#endif
++
++typedef struct IOMMUConfig {
++    union {
++#ifdef __linux__
++        struct iommu_pasid_table_config pasid_cfg;
++#endif
++          };
++} IOMMUConfig;
++
++
++#endif /* QEMU_HW_IOMMU_IOMMU_H */
+-- 
+2.27.0
+

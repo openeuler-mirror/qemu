@@ -1,0 +1,71 @@
+From 6aa770f4b83ca068d0c8f3102edda32666a8404d Mon Sep 17 00:00:00 2001
+From: Kunkun Jiang <jiangkunkun@huawei.com>
+Date: Tue, 11 May 2021 10:08:15 +0800
+Subject: [PATCH] vfio: Add vfio_prereg_listener_global_log_start/stop in
+ nested stage
+
+In nested mode, we set up the stage 2 and stage 1 separately. In my
+opinion, vfio_memory_prereg_listener is used for stage 2 and
+vfio_memory_listener is used for stage 1. So it feels weird to call
+the global_log_start/stop interface in vfio_memory_listener to switch
+dirty tracking, although this won't cause any errors. Add
+global_log_start/stop interface in vfio_memory_prereg_listener
+can separate stage 2 from stage 1.
+
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+---
+ hw/vfio/common.c | 24 ++++++++++++++++++++++++
+ 1 file changed, 24 insertions(+)
+
+diff --git a/hw/vfio/common.c b/hw/vfio/common.c
+index b5f9ba816e..fb7ca63748 100644
+--- a/hw/vfio/common.c
++++ b/hw/vfio/common.c
+@@ -1239,6 +1239,17 @@ static void vfio_listener_log_global_start(MemoryListener *listener)
+ {
+     VFIOContainer *container = container_of(listener, VFIOContainer, listener);
+ 
++    /* For nested mode, vfio_prereg_listener is used to start dirty tracking */
++    if (container->iommu_type != VFIO_TYPE1_NESTING_IOMMU) {
++        vfio_set_dirty_page_tracking(container, true);
++    }
++}
++
++static void vfio_prereg_listener_log_global_start(MemoryListener *listener)
++{
++    VFIOContainer *container =
++        container_of(listener, VFIOContainer, prereg_listener);
++
+     vfio_set_dirty_page_tracking(container, true);
+ }
+ 
+@@ -1246,6 +1257,17 @@ static void vfio_listener_log_global_stop(MemoryListener *listener)
+ {
+     VFIOContainer *container = container_of(listener, VFIOContainer, listener);
+ 
++    /* For nested mode, vfio_prereg_listener is used to stop dirty tracking */
++    if (container->iommu_type != VFIO_TYPE1_NESTING_IOMMU) {
++        vfio_set_dirty_page_tracking(container, false);
++    }
++}
++
++static void vfio_prereg_listener_log_global_stop(MemoryListener *listener)
++{
++    VFIOContainer *container =
++        container_of(listener, VFIOContainer, prereg_listener);
++
+     vfio_set_dirty_page_tracking(container, false);
+ }
+ 
+@@ -1614,6 +1636,8 @@ static const MemoryListener vfio_memory_listener = {
+ static MemoryListener vfio_memory_prereg_listener = {
+     .region_add = vfio_prereg_listener_region_add,
+     .region_del = vfio_prereg_listener_region_del,
++    .log_global_start = vfio_prereg_listener_log_global_start,
++    .log_global_stop = vfio_prereg_listener_log_global_stop,
+     .log_sync = vfio_prereg_listener_log_sync,
+     .log_clear = vfio_prereg_listener_log_clear,
+ };
+-- 
+2.27.0
+

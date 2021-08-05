@@ -1,0 +1,37 @@
+From 965729b4875f637dacdbf82960347beb65512d12 Mon Sep 17 00:00:00 2001
+From: Eric Auger <eric.auger@redhat.com>
+Date: Wed, 18 Mar 2020 11:17:36 +0100
+Subject: [PATCH] hw/arm/smmuv3: Allow MAP notifiers
+
+We now have all bricks to support nested paging. This
+uses MAP notifiers to map the MSIs. So let's allow MAP
+notifiers to be registered.
+
+Signed-off-by: Eric Auger <eric.auger@redhat.com>
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+---
+ hw/arm/smmuv3.c | 8 --------
+ 1 file changed, 8 deletions(-)
+
+diff --git a/hw/arm/smmuv3.c b/hw/arm/smmuv3.c
+index 931d6eae57..c26fba118c 100644
+--- a/hw/arm/smmuv3.c
++++ b/hw/arm/smmuv3.c
+@@ -1563,14 +1563,6 @@ static void smmuv3_notify_flag_changed(IOMMUMemoryRegion *iommu,
+     SMMUv3State *s3 = sdev->smmu;
+     SMMUState *s = &(s3->smmu_state);
+ 
+-    if (new & IOMMU_NOTIFIER_MAP) {
+-        int bus_num = pci_bus_num(sdev->bus);
+-        PCIDevice *pcidev = pci_find_device(sdev->bus, bus_num, sdev->devfn);
+-
+-        warn_report("SMMUv3 does not support notification on MAP: "
+-                     "device %s will not function properly", pcidev->name);
+-    }
+-
+     if (old == IOMMU_NOTIFIER_NONE) {
+         trace_smmuv3_notify_flag_add(iommu->parent_obj.name);
+         QLIST_INSERT_HEAD(&s->devices_with_notifiers, sdev, next);
+-- 
+2.27.0
+

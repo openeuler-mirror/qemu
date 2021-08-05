@@ -1,0 +1,64 @@
+From ff9c1f7e3e17cc2afe1b2dfa545065e91941db8b Mon Sep 17 00:00:00 2001
+From: Kunkun Jiang <jiangkunkun@huawei.com>
+Date: Tue, 11 May 2021 10:08:13 +0800
+Subject: [PATCH] vfio: Introduce helpers to mark dirty pages of a RAM section
+
+Extract part of the code from vfio_sync_dirty_bitmap to form a
+new helper, which allows to mark dirty pages of a RAM section.
+This helper will be called for nested stage.
+
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+---
+ hw/vfio/common.c | 22 ++++++++++++++--------
+ 1 file changed, 14 insertions(+), 8 deletions(-)
+
+diff --git a/hw/vfio/common.c b/hw/vfio/common.c
+index 21a866e545..5176fd3a3d 100644
+--- a/hw/vfio/common.c
++++ b/hw/vfio/common.c
+@@ -1304,6 +1304,19 @@ err_out:
+     return ret;
+ }
+ 
++static int vfio_dma_sync_ram_section_dirty_bitmap(VFIOContainer *container,
++                                                  MemoryRegionSection *section)
++{
++    ram_addr_t ram_addr;
++
++    ram_addr = memory_region_get_ram_addr(section->mr) +
++               section->offset_within_region;
++
++    return vfio_get_dirty_bitmap(container,
++                    REAL_HOST_PAGE_ALIGN(section->offset_within_address_space),
++                    int128_get64(section->size), ram_addr);
++}
++
+ typedef struct {
+     IOMMUNotifier n;
+     VFIOGuestIOMMU *giommu;
+@@ -1345,8 +1358,6 @@ static void vfio_iommu_map_dirty_notify(IOMMUNotifier *n, IOMMUTLBEntry *iotlb)
+ static int vfio_sync_dirty_bitmap(VFIOContainer *container,
+                                   MemoryRegionSection *section)
+ {
+-    ram_addr_t ram_addr;
+-
+     if (memory_region_is_iommu(section->mr)) {
+         VFIOGuestIOMMU *giommu;
+ 
+@@ -1375,12 +1386,7 @@ static int vfio_sync_dirty_bitmap(VFIOContainer *container,
+         return 0;
+     }
+ 
+-    ram_addr = memory_region_get_ram_addr(section->mr) +
+-               section->offset_within_region;
+-
+-    return vfio_get_dirty_bitmap(container,
+-                   REAL_HOST_PAGE_ALIGN(section->offset_within_address_space),
+-                   int128_get64(section->size), ram_addr);
++    return vfio_dma_sync_ram_section_dirty_bitmap(container, section);
+ }
+ 
+ static void vfio_listener_log_sync(MemoryListener *listener,
+-- 
+2.27.0
+

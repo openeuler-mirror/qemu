@@ -1,0 +1,45 @@
+From 6fc85d8a6022d94ffec4cc118472cde583706bfb Mon Sep 17 00:00:00 2001
+From: Eric Auger <eric.auger@redhat.com>
+Date: Thu, 9 Aug 2018 20:56:44 +0200
+Subject: [PATCH] hw/arm/smmuv3: Store the PASID table GPA in the translation
+ config
+
+For VFIO integration we will need to pass the Context Descriptor (CD)
+table GPA to the host. The CD table is also referred to as the PASID
+table. Its GPA corresponds to the s1ctrptr field of the Stream Table
+Entry. So let's decode and store it in the configuration structure.
+
+Signed-off-by: Eric Auger <eric.auger@redhat.com>
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+---
+ hw/arm/smmuv3.c              | 1 +
+ include/hw/arm/smmu-common.h | 1 +
+ 2 files changed, 2 insertions(+)
+
+diff --git a/hw/arm/smmuv3.c b/hw/arm/smmuv3.c
+index 83d59b6d28..f8e721f949 100644
+--- a/hw/arm/smmuv3.c
++++ b/hw/arm/smmuv3.c
+@@ -352,6 +352,7 @@ static int decode_ste(SMMUv3State *s, SMMUTransCfg *cfg,
+                       "SMMUv3 S1 stalling fault model not allowed yet\n");
+         goto bad_ste;
+     }
++    cfg->s1ctxptr = STE_CTXPTR(ste);
+     return 0;
+ 
+ bad_ste:
+diff --git a/include/hw/arm/smmu-common.h b/include/hw/arm/smmu-common.h
+index 1f37844e5c..353668f4ea 100644
+--- a/include/hw/arm/smmu-common.h
++++ b/include/hw/arm/smmu-common.h
+@@ -68,6 +68,7 @@ typedef struct SMMUTransCfg {
+     uint8_t tbi;               /* Top Byte Ignore */
+     uint16_t asid;
+     SMMUTransTableInfo tt[2];
++    dma_addr_t s1ctxptr;
+     uint32_t iotlb_hits;       /* counts IOTLB hits for this asid */
+     uint32_t iotlb_misses;     /* counts IOTLB misses for this asid */
+ } SMMUTransCfg;
+-- 
+2.27.0
+

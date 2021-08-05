@@ -1,0 +1,30 @@
+From 4f1396f9e173a24f78204b8849c209100499d639 Mon Sep 17 00:00:00 2001
+From: Kunkun Jiang <jiangkunkun@huawei.com>
+Date: Thu, 29 Jul 2021 15:24:48 +0800
+Subject: [PATCH] qdev/monitors: Fix reundant error_setg of qdev_add_device
+
+There is an extra log "error_setg" in qdev_add_device(). When
+hot-plug a device, if the corresponding bus doesn't exist, it
+will trigger an asseration "assert(*errp == NULL)".
+
+Fixes: 515a7970490 (log: Add some logs on VM runtime path)
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+---
+ qdev-monitor.c | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/qdev-monitor.c b/qdev-monitor.c
+index c6c1d3f06a..ab2bdef105 100644
+--- a/qdev-monitor.c
++++ b/qdev-monitor.c
+@@ -587,7 +587,6 @@ DeviceState *qdev_device_add(QemuOpts *opts, Error **errp)
+     if (path != NULL) {
+         bus = qbus_find(path, errp);
+         if (!bus) {
+-            error_setg(errp, "can not find bus for %s", driver);
+             return NULL;
+         }
+         if (!object_dynamic_cast(OBJECT(bus), dc->bus_type)) {
+-- 
+2.27.0
+

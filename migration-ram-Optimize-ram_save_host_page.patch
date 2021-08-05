@@ -1,0 +1,95 @@
+From ae1a8506aa45266f2bf77a8d428f5ccd970a9b13 Mon Sep 17 00:00:00 2001
+From: Kunkun Jiang <jiangkunkun@huawei.com>
+Date: Tue, 16 Mar 2021 20:57:16 +0800
+Subject: [PATCH] migration/ram: Optimize ram_save_host_page()
+
+Starting from pss->page, ram_save_host_page() will check every page
+and send the dirty pages up to the end of the current host page or
+the boundary of used_length of the block. If the host page size is
+a huge page, the step "check" will take a lot of time.
+
+It will improve performance to use migration_bitmap_find_dirty().
+
+Tested on Kunpeng 920; VM parameters: 1U 4G (page size 1G)
+The time of ram_save_host_page() in the last round of ram saving:
+before optimize: 9250us		after optimize: 34us
+
+Signed-off-by: Keqian Zhu <zhukeqian1@huawei.com>
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+Reviewed-by: Peter Xu <peterx@redhat.com>
+Message-Id: <20210316125716.1243-3-jiangkunkun@huawei.com>
+Signed-off-by: Dr. David Alan Gilbert <dgilbert@redhat.com>
+---
+ migration/ram.c | 43 +++++++++++++++++++++----------------------
+ 1 file changed, 21 insertions(+), 22 deletions(-)
+
+diff --git a/migration/ram.c b/migration/ram.c
+index 22063e00b4..1bd99ff9e5 100644
+--- a/migration/ram.c
++++ b/migration/ram.c
+@@ -3052,6 +3052,8 @@ static int ram_save_host_page(RAMState *rs, PageSearchStatus *pss,
+     int tmppages, pages = 0;
+     size_t pagesize_bits =
+         qemu_ram_pagesize(pss->block) >> TARGET_PAGE_BITS;
++    unsigned long hostpage_boundary =
++        QEMU_ALIGN_UP(pss->page + 1, pagesize_bits);
+ 
+     if (ramblock_is_ignored(pss->block)) {
+         error_report("block %s should not be migrated !", pss->block->idstr);
+@@ -3060,34 +3062,31 @@ static int ram_save_host_page(RAMState *rs, PageSearchStatus *pss,
+ 
+     do {
+         /* Check the pages is dirty and if it is send it */
+-        if (!migration_bitmap_clear_dirty(rs, pss->block, pss->page)) {
+-            pss->page++;
+-            continue;
+-        }
+-
+-        tmppages = ram_save_target_page(rs, pss, last_stage);
+-        if (tmppages < 0) {
+-            return tmppages;
+-        }
++        if (migration_bitmap_clear_dirty(rs, pss->block, pss->page)) {
++            tmppages = ram_save_target_page(rs, pss, last_stage);
++            if (tmppages < 0) {
++                return tmppages;
++            }
+ 
+-        pages += tmppages;
+-        if (pss->block->unsentmap) {
+-            clear_bit(pss->page, pss->block->unsentmap);
+-        }
++            pages += tmppages;
++            if (pss->block->unsentmap) {
++                clear_bit(pss->page, pss->block->unsentmap);
++            }
+ 
+-        pss->page++;
+-        /*
+-         * Allow rate limiting to happen in the middle of huge pages if
+-         * something is sent in the current iteration.
+-         */
+-        if (pagesize_bits > 1 && tmppages > 0) {
+-            migration_rate_limit();
++            /*
++             * Allow rate limiting to happen in the middle of huge pages if
++             * something is sent in the current iteration.
++             */
++            if (pagesize_bits > 1 && tmppages > 0) {
++                migration_rate_limit();
++            }
+         }
++        pss->page = migration_bitmap_find_dirty(rs, pss->block, pss->page);
+     } while ((pss->page & (pagesize_bits - 1)) &&
+              offset_in_ramblock(pss->block, pss->page << TARGET_PAGE_BITS));
+ 
+-    /* The offset we leave with is the last one we looked at */
+-    pss->page--;
++    /* The offset we leave with is the min boundary of host page and block */
++    pss->page = MIN(pss->page, hostpage_boundary) - 1;
+     return pages;
+ }
+ 
+-- 
+2.27.0
+

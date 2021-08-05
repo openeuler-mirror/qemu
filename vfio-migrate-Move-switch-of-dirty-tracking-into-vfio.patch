@@ -1,0 +1,196 @@
+From 74b651428e6ed65177354d80bd888e842a4a5077 Mon Sep 17 00:00:00 2001
+From: Keqian Zhu <zhukeqian1@huawei.com>
+Date: Tue, 9 Mar 2021 11:19:13 +0800
+Subject: [PATCH] vfio/migrate: Move switch of dirty tracking into
+ vfio_memory_listener
+
+For now the switch of vfio dirty page tracking is integrated into
+@vfio_save_handler. The reason is that some PCI vendor driver may
+start to track dirty base on _SAVING state of device, so if dirty
+tracking is started before setting device state, vfio will report
+full-dirty to QEMU.
+
+However, the dirty bmap of all ramblocks are fully set when setup
+ram saving, so it's not matter whether the device is in _SAVING
+state when start vfio dirty tracking.
+
+Moreover, this logic causes some problems [1]. The object of dirty
+tracking is guest memory, but the object of @vfio_save_handler is
+device state, which produces unnecessary coupling and conflicts:
+
+1. Coupling: Their saving granule is different (perVM vs perDevice).
+   vfio will enable dirty_page_tracking for each devices, actually
+   once is enough.
+
+2. Conflicts: The ram_save_setup() traverses all memory_listeners
+   to execute their log_start() and log_sync() hooks to get the
+   first round dirty bitmap, which is used by the bulk stage of
+   ram saving. However, as vfio dirty tracking is not yet started,
+   it can't get dirty bitmap from vfio. Then we give up the chance
+   to handle vfio dirty page at bulk stage.
+
+Move the switch of vfio dirty_page_tracking into vfio_memory_listener
+can solve above problems. Besides, Do not require devices in SAVING
+state for vfio_sync_dirty_bitmap().
+
+[1] https://www.spinics.net/lists/kvm/msg229967.html
+
+Reported-by: Zenghui Yu <yuzenghui@huawei.com>
+Signed-off-by: Keqian Zhu <zhukeqian1@huawei.com>
+Suggested-by: Paolo Bonzini <pbonzini@redhat.com>
+Message-Id: <20210309031913.11508-1-zhukeqian1@huawei.com>
+Signed-off-by: Alex Williamson <alex.williamson@redhat.com>
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+---
+ hw/vfio/common.c    | 49 ++++++++++++++++++++++++++++++++++++---------
+ hw/vfio/migration.c | 35 --------------------------------
+ 2 files changed, 40 insertions(+), 44 deletions(-)
+
+diff --git a/hw/vfio/common.c b/hw/vfio/common.c
+index a7817c90cc..245e32df5b 100644
+--- a/hw/vfio/common.c
++++ b/hw/vfio/common.c
+@@ -310,7 +310,7 @@ bool vfio_mig_active(void)
+     return true;
+ }
+ 
+-static bool vfio_devices_all_saving(VFIOContainer *container)
++static bool vfio_devices_all_dirty_tracking(VFIOContainer *container)
+ {
+     VFIOGroup *group;
+     VFIODevice *vbasedev;
+@@ -328,13 +328,8 @@ static bool vfio_devices_all_saving(VFIOContainer *container)
+                 return false;
+             }
+ 
+-            if (migration->device_state & VFIO_DEVICE_STATE_SAVING) {
+-                if ((vbasedev->pre_copy_dirty_page_tracking == ON_OFF_AUTO_OFF)
+-                    && (migration->device_state & VFIO_DEVICE_STATE_RUNNING)) {
+-                        return false;
+-                }
+-                continue;
+-            } else {
++            if ((vbasedev->pre_copy_dirty_page_tracking == ON_OFF_AUTO_OFF)
++                && (migration->device_state & VFIO_DEVICE_STATE_RUNNING)) {
+                 return false;
+             }
+         }
+@@ -952,6 +947,40 @@ static void vfio_listener_region_del(MemoryListener *listener,
+     }
+ }
+ 
++static void vfio_set_dirty_page_tracking(VFIOContainer *container, bool start)
++{
++    int ret;
++    struct vfio_iommu_type1_dirty_bitmap dirty = {
++        .argsz = sizeof(dirty),
++    };
++
++    if (start) {
++        dirty.flags = VFIO_IOMMU_DIRTY_PAGES_FLAG_START;
++    } else {
++        dirty.flags = VFIO_IOMMU_DIRTY_PAGES_FLAG_STOP;
++    }
++
++    ret = ioctl(container->fd, VFIO_IOMMU_DIRTY_PAGES, &dirty);
++    if (ret) {
++        error_report("Failed to set dirty tracking flag 0x%x errno: %d",
++                     dirty.flags, errno);
++    }
++}
++
++static void vfio_listener_log_global_start(MemoryListener *listener)
++{
++    VFIOContainer *container = container_of(listener, VFIOContainer, listener);
++
++    vfio_set_dirty_page_tracking(container, true);
++}
++
++static void vfio_listener_log_global_stop(MemoryListener *listener)
++{
++    VFIOContainer *container = container_of(listener, VFIOContainer, listener);
++
++    vfio_set_dirty_page_tracking(container, false);
++}
++
+ static int vfio_get_dirty_bitmap(VFIOContainer *container, uint64_t iova,
+                                  uint64_t size, ram_addr_t ram_addr)
+ {
+@@ -1093,7 +1122,7 @@ static void vfio_listener_log_sync(MemoryListener *listener,
+         return;
+     }
+ 
+-    if (vfio_devices_all_saving(container)) {
++    if (vfio_devices_all_dirty_tracking(container)) {
+         vfio_sync_dirty_bitmap(container, section);
+     }
+ }
+@@ -1101,6 +1130,8 @@ static void vfio_listener_log_sync(MemoryListener *listener,
+ static const MemoryListener vfio_memory_listener = {
+     .region_add = vfio_listener_region_add,
+     .region_del = vfio_listener_region_del,
++    .log_global_start = vfio_listener_log_global_start,
++    .log_global_stop = vfio_listener_log_global_stop,
+     .log_sync = vfio_listener_log_sync,
+ };
+ 
+diff --git a/hw/vfio/migration.c b/hw/vfio/migration.c
+index 033cb2b0c9..f1f006d584 100644
+--- a/hw/vfio/migration.c
++++ b/hw/vfio/migration.c
+@@ -395,40 +395,10 @@ static int vfio_load_device_config_state(QEMUFile *f, void *opaque)
+     return qemu_file_get_error(f);
+ }
+ 
+-static int vfio_set_dirty_page_tracking(VFIODevice *vbasedev, bool start)
+-{
+-    int ret;
+-    VFIOMigration *migration = vbasedev->migration;
+-    VFIOContainer *container = vbasedev->group->container;
+-    struct vfio_iommu_type1_dirty_bitmap dirty = {
+-        .argsz = sizeof(dirty),
+-    };
+-
+-    if (start) {
+-        if (migration->device_state & VFIO_DEVICE_STATE_SAVING) {
+-            dirty.flags = VFIO_IOMMU_DIRTY_PAGES_FLAG_START;
+-        } else {
+-            return -EINVAL;
+-        }
+-    } else {
+-            dirty.flags = VFIO_IOMMU_DIRTY_PAGES_FLAG_STOP;
+-    }
+-
+-    ret = ioctl(container->fd, VFIO_IOMMU_DIRTY_PAGES, &dirty);
+-    if (ret) {
+-        error_report("Failed to set dirty tracking flag 0x%x errno: %d",
+-                     dirty.flags, errno);
+-        return -errno;
+-    }
+-    return ret;
+-}
+-
+ static void vfio_migration_cleanup(VFIODevice *vbasedev)
+ {
+     VFIOMigration *migration = vbasedev->migration;
+ 
+-    vfio_set_dirty_page_tracking(vbasedev, false);
+-
+     if (migration->region.mmaps) {
+         vfio_region_unmap(&migration->region);
+     }
+@@ -469,11 +439,6 @@ static int vfio_save_setup(QEMUFile *f, void *opaque)
+         return ret;
+     }
+ 
+-    ret = vfio_set_dirty_page_tracking(vbasedev, true);
+-    if (ret) {
+-        return ret;
+-    }
+-
+     qemu_put_be64(f, VFIO_MIG_FLAG_END_OF_STATE);
+ 
+     ret = qemu_file_get_error(f);
+-- 
+2.27.0
+

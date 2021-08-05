@@ -1,0 +1,36 @@
+From 8dc6e7ccc5712aee457ffb1f6cf1bf3f80e778d5 Mon Sep 17 00:00:00 2001
+From: Kunkun Jiang <jiangkunkun@huawei.com>
+Date: Thu, 27 May 2021 20:31:01 +0800
+Subject: [PATCH] vfio: Fix unregister SaveVMHandler in vfio_migration_finalize
+
+In the vfio_migration_init(), the SaveVMHandler is registered for
+VFIO device. But it lacks the operation of 'unregister'. It will
+lead to 'Segmentation fault (core dumped)' in
+qemu_savevm_state_setup(), if performing live migration after a
+VFIO device is hot deleted.
+
+Fixes: cd5b58f2ba (vfio: Register SaveVMHandlers for VFIO device)
+Reported-by: Qixin Gan <ganqixin@huawei.com>
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+Message-Id: <20210527123101.289-1-jiangkunkun@huawei.com>
+Reviewed by: Kirti Wankhede <kwankhede@nvidia.com>
+Signed-off-by: Alex Williamson <alex.williamson@redhat.com>
+---
+ hw/vfio/migration.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/hw/vfio/migration.c b/hw/vfio/migration.c
+index f1f006d584..d9e0e12824 100644
+--- a/hw/vfio/migration.c
++++ b/hw/vfio/migration.c
+@@ -893,6 +893,7 @@ void vfio_migration_finalize(VFIODevice *vbasedev)
+ 
+         remove_migration_state_change_notifier(&migration->migration_state);
+         qemu_del_vm_change_state_handler(migration->vm_state);
++        unregister_savevm(vbasedev->dev, "vfio", vbasedev);
+         vfio_migration_exit(vbasedev);
+     }
+ 
+-- 
+2.27.0
+

@@ -1,0 +1,32 @@
+From bc602a4d1355774a0a44e8fbf6dd842049dd63f3 Mon Sep 17 00:00:00 2001
+From: Eric Auger <eric.auger@redhat.com>
+Date: Tue, 28 Aug 2018 09:21:53 -0400
+Subject: [PATCH] hw/arm/smmuv3: Advertise MSI_TRANSLATE attribute
+
+The SMMUv3 has the peculiarity to translate MSI
+transactionss. let's advertise the corresponding
+attribute.
+
+Signed-off-by: Eric Auger <eric.auger@redhat.com>
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+---
+ hw/arm/smmuv3.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/hw/arm/smmuv3.c b/hw/arm/smmuv3.c
+index 55eed5189e..83d59b6d28 100644
+--- a/hw/arm/smmuv3.c
++++ b/hw/arm/smmuv3.c
+@@ -1538,6 +1538,9 @@ static int smmuv3_get_attr(IOMMUMemoryRegion *iommu,
+     if (attr == IOMMU_ATTR_VFIO_NESTED) {
+         *(bool *) data = true;
+         return 0;
++    } else if (attr == IOMMU_ATTR_MSI_TRANSLATE) {
++        *(bool *) data = true;
++        return 0;
+     }
+     return -EINVAL;
+ }
+-- 
+2.27.0
+

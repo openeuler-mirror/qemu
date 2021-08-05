@@ -1,0 +1,178 @@
+From 43fd039dcfee221eb3f86a2cf7deb287cc04e5ad Mon Sep 17 00:00:00 2001
+From: Eric Auger <eric.auger@redhat.com>
+Date: Thu, 20 Jun 2019 16:39:57 +0200
+Subject: [PATCH] vfio: Helper to get IRQ info including capabilities
+
+As done for vfio regions, add helpers to retrieve irq info
+including their optional capabilities.
+
+Signed-off-by: Eric Auger <eric.auger@redhat.com>
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+---
+ hw/vfio/common.c              | 97 +++++++++++++++++++++++++++++++++++
+ hw/vfio/trace-events          |  1 +
+ include/hw/vfio/vfio-common.h |  7 +++
+ 3 files changed, 105 insertions(+)
+
+diff --git a/hw/vfio/common.c b/hw/vfio/common.c
+index db9af3b0e5..98dc9e6f84 100644
+--- a/hw/vfio/common.c
++++ b/hw/vfio/common.c
+@@ -1565,6 +1565,25 @@ vfio_get_region_info_cap(struct vfio_region_info *info, uint16_t id)
+     return NULL;
+ }
+ 
++struct vfio_info_cap_header *
++vfio_get_irq_info_cap(struct vfio_irq_info *info, uint16_t id)
++{
++    struct vfio_info_cap_header *hdr;
++    void *ptr = info;
++
++    if (!(info->flags & VFIO_IRQ_INFO_FLAG_CAPS)) {
++        return NULL;
++    }
++
++    for (hdr = ptr + info->cap_offset; hdr != ptr; hdr = ptr + hdr->next) {
++        if (hdr->id == id) {
++            return hdr;
++        }
++    }
++
++    return NULL;
++}
++
+ static int vfio_setup_region_sparse_mmaps(VFIORegion *region,
+                                           struct vfio_region_info *info)
+ {
+@@ -2499,6 +2518,33 @@ retry:
+     return 0;
+ }
+ 
++int vfio_get_irq_info(VFIODevice *vbasedev, int index,
++                      struct vfio_irq_info **info)
++{
++    size_t argsz = sizeof(struct vfio_irq_info);
++
++    *info = g_malloc0(argsz);
++
++    (*info)->index = index;
++retry:
++    (*info)->argsz = argsz;
++
++    if (ioctl(vbasedev->fd, VFIO_DEVICE_GET_IRQ_INFO, *info)) {
++        g_free(*info);
++        *info = NULL;
++        return -errno;
++    }
++
++    if ((*info)->argsz > argsz) {
++        argsz = (*info)->argsz;
++        *info = g_realloc(*info, argsz);
++
++        goto retry;
++    }
++
++    return 0;
++}
++
+ int vfio_get_dev_region_info(VFIODevice *vbasedev, uint32_t type,
+                              uint32_t subtype, struct vfio_region_info **info)
+ {
+@@ -2534,6 +2580,42 @@ int vfio_get_dev_region_info(VFIODevice *vbasedev, uint32_t type,
+     return -ENODEV;
+ }
+ 
++int vfio_get_dev_irq_info(VFIODevice *vbasedev, uint32_t type,
++                          uint32_t subtype, struct vfio_irq_info **info)
++{
++    int i;
++
++    for (i = 0; i < vbasedev->num_irqs; i++) {
++        struct vfio_info_cap_header *hdr;
++        struct vfio_irq_info_cap_type *cap_type;
++
++        if (vfio_get_irq_info(vbasedev, i, info)) {
++            continue;
++        }
++
++        hdr = vfio_get_irq_info_cap(*info, VFIO_IRQ_INFO_CAP_TYPE);
++        if (!hdr) {
++            g_free(*info);
++            continue;
++        }
++
++        cap_type = container_of(hdr, struct vfio_irq_info_cap_type, header);
++
++        trace_vfio_get_dev_irq(vbasedev->name, i,
++                               cap_type->type, cap_type->subtype);
++
++        if (cap_type->type == type && cap_type->subtype == subtype) {
++            return 0;
++        }
++
++        g_free(*info);
++    }
++
++    *info = NULL;
++    return -ENODEV;
++}
++
++
+ bool vfio_has_region_cap(VFIODevice *vbasedev, int region, uint16_t cap_type)
+ {
+     struct vfio_region_info *info = NULL;
+@@ -2549,6 +2631,21 @@ bool vfio_has_region_cap(VFIODevice *vbasedev, int region, uint16_t cap_type)
+     return ret;
+ }
+ 
++bool vfio_has_irq_cap(VFIODevice *vbasedev, int region, uint16_t cap_type)
++{
++    struct vfio_region_info *info = NULL;
++    bool ret = false;
++
++    if (!vfio_get_region_info(vbasedev, region, &info)) {
++        if (vfio_get_region_info_cap(info, cap_type)) {
++            ret = true;
++        }
++        g_free(info);
++    }
++
++    return ret;
++}
++
+ /*
+  * Interfaces for IBM EEH (Enhanced Error Handling)
+  */
+diff --git a/hw/vfio/trace-events b/hw/vfio/trace-events
+index 247b72c1eb..54e10046f5 100644
+--- a/hw/vfio/trace-events
++++ b/hw/vfio/trace-events
+@@ -117,6 +117,7 @@ vfio_region_unmap(const char *name, unsigned long offset, unsigned long end) "Re
+ vfio_region_sparse_mmap_header(const char *name, int index, int nr_areas) "Device %s region %d: %d sparse mmap entries"
+ vfio_region_sparse_mmap_entry(int i, unsigned long start, unsigned long end) "sparse entry %d [0x%lx - 0x%lx]"
+ vfio_get_dev_region(const char *name, int index, uint32_t type, uint32_t subtype) "%s index %d, %08x/%0x8"
++vfio_get_dev_irq(const char *name, int index, uint32_t type, uint32_t subtype) "%s index %d, %08x/%0x8"
+ vfio_dma_unmap_overflow_workaround(void) ""
+ vfio_iommu_addr_inv_iotlb(int asid, uint64_t addr, uint64_t size, uint64_t nb_granules, bool leaf) "nested IOTLB invalidate asid=%d, addr=0x%"PRIx64" granule_size=0x%"PRIx64" nb_granules=0x%"PRIx64" leaf=%d"
+ vfio_iommu_asid_inv_iotlb(int asid) "nested IOTLB invalidate asid=%d"
+diff --git a/include/hw/vfio/vfio-common.h b/include/hw/vfio/vfio-common.h
+index b175158138..a82962ab16 100644
+--- a/include/hw/vfio/vfio-common.h
++++ b/include/hw/vfio/vfio-common.h
+@@ -238,6 +238,13 @@ int vfio_get_dev_region_info(VFIODevice *vbasedev, uint32_t type,
+ bool vfio_has_region_cap(VFIODevice *vbasedev, int region, uint16_t cap_type);
+ struct vfio_info_cap_header *
+ vfio_get_region_info_cap(struct vfio_region_info *info, uint16_t id);
++int vfio_get_irq_info(VFIODevice *vbasedev, int index,
++                      struct vfio_irq_info **info);
++int vfio_get_dev_irq_info(VFIODevice *vbasedev, uint32_t type,
++                          uint32_t subtype, struct vfio_irq_info **info);
++bool vfio_has_irq_cap(VFIODevice *vbasedev, int irq, uint16_t cap_type);
++struct vfio_info_cap_header *
++vfio_get_irq_info_cap(struct vfio_irq_info *info, uint16_t id);
+ #endif
+ extern const MemoryListener vfio_prereg_listener;
+ 
+-- 
+2.27.0
+

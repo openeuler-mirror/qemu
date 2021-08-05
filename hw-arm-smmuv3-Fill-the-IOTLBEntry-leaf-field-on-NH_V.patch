@@ -1,0 +1,81 @@
+From 6393ad5c1ba6a04b038d80ecc1e663ad91ed0d21 Mon Sep 17 00:00:00 2001
+From: Eric Auger <eric.auger@redhat.com>
+Date: Thu, 14 Mar 2019 09:55:13 -0400
+Subject: [PATCH] hw/arm/smmuv3: Fill the IOTLBEntry leaf field on NH_VA
+ invalidation
+
+Let's propagate the leaf attribute throughout the invalidation path.
+This hint is used to reduce the scope of the invalidations to the
+last level of translation. Not enforcing it induces large performance
+penalties in nested mode.
+
+Signed-off-by: Eric Auger <eric.auger@redhat.com>
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+---
+ hw/arm/smmuv3.c | 13 ++++++++-----
+ 1 file changed, 8 insertions(+), 5 deletions(-)
+
+diff --git a/hw/arm/smmuv3.c b/hw/arm/smmuv3.c
+index c6b950af35..c1caa6bc3a 100644
+--- a/hw/arm/smmuv3.c
++++ b/hw/arm/smmuv3.c
+@@ -795,7 +795,7 @@ epilogue:
+ static void smmuv3_notify_iova(IOMMUMemoryRegion *mr,
+                                IOMMUNotifier *n,
+                                int asid,
+-                               dma_addr_t iova)
++                               dma_addr_t iova, bool leaf)
+ {
+     SMMUDevice *sdev = container_of(mr, SMMUDevice, iommu);
+     SMMUEventInfo event = {};
+@@ -826,6 +826,7 @@ static void smmuv3_notify_iova(IOMMUMemoryRegion *mr,
+     entry.perm = IOMMU_NONE;
+     entry.flags = IOMMU_INV_FLAGS_ARCHID;
+     entry.arch_id = asid;
++    entry.leaf = leaf;
+ 
+     memory_region_notify_one(n, &entry);
+ }
+@@ -854,7 +855,8 @@ static void smmuv3_notify_asid(IOMMUMemoryRegion *mr,
+ }
+ 
+ /* invalidate an asid/iova tuple in all mr's */
+-static void smmuv3_inv_notifiers_iova(SMMUState *s, int asid, dma_addr_t iova)
++static void smmuv3_inv_notifiers_iova(SMMUState *s, int asid, dma_addr_t iova,
++                                      bool leaf)
+ {
+     SMMUDevice *sdev;
+ 
+@@ -865,7 +867,7 @@ static void smmuv3_inv_notifiers_iova(SMMUState *s, int asid, dma_addr_t iova)
+         trace_smmuv3_inv_notifiers_iova(mr->parent_obj.name, asid, iova);
+ 
+         IOMMU_NOTIFIER_FOREACH(n, mr) {
+-            smmuv3_notify_iova(mr, n, asid, iova);
++            smmuv3_notify_iova(mr, n, asid, iova, leaf);
+         }
+     }
+ }
+@@ -1018,9 +1020,10 @@ static int smmuv3_cmdq_consume(SMMUv3State *s)
+         {
+             dma_addr_t addr = CMD_ADDR(&cmd);
+             uint16_t vmid = CMD_VMID(&cmd);
++            bool leaf = CMD_LEAF(&cmd);
+ 
+             trace_smmuv3_cmdq_tlbi_nh_vaa(vmid, addr);
+-            smmuv3_inv_notifiers_iova(bs, -1, addr);
++            smmuv3_inv_notifiers_iova(bs, -1, addr, leaf);
+             smmu_iotlb_inv_all(bs);
+             break;
+         }
+@@ -1032,7 +1035,7 @@ static int smmuv3_cmdq_consume(SMMUv3State *s)
+             bool leaf = CMD_LEAF(&cmd);
+ 
+             trace_smmuv3_cmdq_tlbi_nh_va(vmid, asid, addr, leaf);
+-            smmuv3_inv_notifiers_iova(bs, asid, addr);
++            smmuv3_inv_notifiers_iova(bs, asid, addr, leaf);
+             smmu_iotlb_inv_iova(bs, asid, addr);
+             break;
+         }
+-- 
+2.27.0
+

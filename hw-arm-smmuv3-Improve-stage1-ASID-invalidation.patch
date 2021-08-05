@@ -1,0 +1,105 @@
+From c0027c2e744c8ed99e937d3cbc88f400ab63a316 Mon Sep 17 00:00:00 2001
+From: Eric Auger <eric.auger@redhat.com>
+Date: Sun, 14 Feb 2021 12:30:57 -0500
+Subject: [PATCH] hw/arm/smmuv3: Improve stage1 ASID invalidation
+
+At the moment ASID invalidation command (CMD_TLBI_NH_ASID) is
+propagated as a domain invalidation (the whole notifier range
+is invalidated independently on any ASID information).
+
+The new granularity field now allows to be more precise and
+restrict the invalidation to a peculiar ASID. Set the corresponding
+fields and flag.
+
+We still keep the iova and addr_mask settings for consumers that
+do not support the new fields, like VHOST.
+
+Signed-off-by: Eric Auger <eric.auger@redhat.com>
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+---
+ hw/arm/smmuv3.c     | 42 ++++++++++++++++++++++++++++++++++++++++--
+ hw/arm/trace-events |  1 +
+ 2 files changed, 41 insertions(+), 2 deletions(-)
+
+diff --git a/hw/arm/smmuv3.c b/hw/arm/smmuv3.c
+index 3b5723e1e1..0ef1ca376c 100644
+--- a/hw/arm/smmuv3.c
++++ b/hw/arm/smmuv3.c
+@@ -827,6 +827,29 @@ static void smmuv3_notify_iova(IOMMUMemoryRegion *mr,
+     memory_region_notify_one(n, &entry);
+ }
+ 
++/**
++ * smmuv3_notify_asid - call the notifier @n for a given asid
++ *
++ * @mr: IOMMU mr region handle
++ * @n: notifier to be called
++ * @asid: address space ID or negative value if we don't care
++ */
++static void smmuv3_notify_asid(IOMMUMemoryRegion *mr,
++                               IOMMUNotifier *n, int asid)
++{
++    IOMMUTLBEntry entry;
++
++    entry.target_as = &address_space_memory;
++    entry.perm = IOMMU_NONE;
++    entry.granularity = IOMMU_INV_GRAN_PASID;
++    entry.flags = IOMMU_INV_FLAGS_ARCHID;
++    entry.arch_id = asid;
++    entry.iova = n->start;
++    entry.addr_mask = n->end - n->start;
++
++    memory_region_notify_one(n, &entry);
++}
++
+ /* invalidate an asid/iova tuple in all mr's */
+ static void smmuv3_inv_notifiers_iova(SMMUState *s, int asid, dma_addr_t iova)
+ {
+@@ -844,6 +867,22 @@ static void smmuv3_inv_notifiers_iova(SMMUState *s, int asid, dma_addr_t iova)
+     }
+ }
+ 
++static void smmuv3_s1_asid_inval(SMMUState *s, uint16_t asid)
++{
++    SMMUDevice *sdev;
++
++    trace_smmuv3_s1_asid_inval(asid);
++    QLIST_FOREACH(sdev, &s->devices_with_notifiers, next) {
++        IOMMUMemoryRegion *mr = &sdev->iommu;
++        IOMMUNotifier *n;
++
++        IOMMU_NOTIFIER_FOREACH(n, mr) {
++            smmuv3_notify_asid(mr, n, asid);
++        }
++    }
++    smmu_iotlb_inv_asid(s, asid);
++}
++
+ static int smmuv3_cmdq_consume(SMMUv3State *s)
+ {
+     SMMUState *bs = ARM_SMMU(s);
+@@ -963,8 +1002,7 @@ static int smmuv3_cmdq_consume(SMMUv3State *s)
+             uint16_t asid = CMD_ASID(&cmd);
+ 
+             trace_smmuv3_cmdq_tlbi_nh_asid(asid);
+-            smmu_inv_notifiers_all(&s->smmu_state);
+-            smmu_iotlb_inv_asid(bs, asid);
++            smmuv3_s1_asid_inval(bs, asid);
+             break;
+         }
+         case SMMU_CMD_TLBI_NH_ALL:
+diff --git a/hw/arm/trace-events b/hw/arm/trace-events
+index 0acedcedc6..4512d20115 100644
+--- a/hw/arm/trace-events
++++ b/hw/arm/trace-events
+@@ -44,6 +44,7 @@ smmuv3_config_cache_hit(uint32_t sid, uint32_t hits, uint32_t misses, uint32_t p
+ smmuv3_config_cache_miss(uint32_t sid, uint32_t hits, uint32_t misses, uint32_t perc) "Config cache MISS for sid %d (hits=%d, misses=%d, hit rate=%d)"
+ smmuv3_cmdq_tlbi_nh_va(int vmid, int asid, uint64_t addr, bool leaf) "vmid =%d asid =%d addr=0x%"PRIx64" leaf=%d"
+ smmuv3_cmdq_tlbi_nh_vaa(int vmid, uint64_t addr) "vmid =%d addr=0x%"PRIx64
++smmuv3_s1_asid_inval(int asid) "asid=%d"
+ smmuv3_cmdq_tlbi_nh(void) ""
+ smmuv3_cmdq_tlbi_nh_asid(uint16_t asid) "asid=%d"
+ smmu_iotlb_cache_hit(uint16_t asid, uint64_t addr, uint32_t hit, uint32_t miss, uint32_t p) "IOTLB cache HIT asid=%d addr=0x%"PRIx64" hit=%d miss=%d hit rate=%d"
+-- 
+2.27.0
+
