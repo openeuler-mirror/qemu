@@ -330,6 +330,7 @@ Patch0317: target-i386-Add-new-bit-definitions-of-MSR_IA32_ARCH.patch
 Patch0318: target-i386-Add-missed-security-features-to-Cooperla.patch
 Patch0319: target-i386-add-PSCHANGE_NO-bit-for-the-ARCH_CAPABIL.patch
 Patch0320: target-i386-Export-TAA_NO-bit-to-guests.patch
+Patch0321: usbredir-fix-free-call.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -717,6 +718,9 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Mon Aug 16 2021 Chen Qun <kuhn.chenqun@huawei.com>
+- usbredir: fix free call
+
 * Fri Jul 16 2021 Chen Qun <kuhn.chenqun@huawei.com>
 - x86: Intel AVX512_BF16 feature enabling
 - i386: Add MSR feature bit for MDS-NO
