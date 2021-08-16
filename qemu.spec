@@ -555,6 +555,7 @@ Patch0542: vfio-Add-vfio_prereg_listener_log_sync-in-nested-sta.patch
 Patch0543: vfio-Add-vfio_prereg_listener_log_clear-to-re-enable.patch
 Patch0544: vfio-Add-vfio_prereg_listener_global_log_start-stop-.patch
 Patch0545: hw-arm-smmuv3-Post-load-stage-1-configurations-to-th.patch
+Patch0546: usbredir-fix-free-call.patch
 
 BuildRequires: flex
 BuildRequires: gcc
@@ -949,6 +950,9 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Mon Aug 16 2021 Chen Qun <kuhn.chenqun@huawei.com>
+- usbredir: fix free call
+
 * Wed Aug 04 2021 Chen Qun <kuhn.chenqun@huawei.com>
 - vfio: Support host translation granule size
 - vfio/migrate: Move switch of dirty tracking into vfio_memory_listener
