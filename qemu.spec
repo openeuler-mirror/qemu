@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 54
+Release: 55
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY-SA-4.0
@@ -389,6 +389,7 @@ Requires(post): systemd-units
 Requires(preun): systemd-units
 Requires(postun): systemd-units
 Requires(postun): qemu-block-iscsi
+Requires(postun): qemu-block-curl
 
 %description
 QEMU is a FAST! processor emulator using dynamic translation to achieve good emulation speed.
@@ -439,6 +440,11 @@ This package provides block-ssh support for Qemu
 Summary: Qemu-block-iscsi
 %description block-iscsi
 This package provides block-iscsi support for Qemu
+
+%package  block-curl
+Summary: Qemu-block-curl
+%description block-curl
+This package provides block-curl support for Qemu
 
 %ifarch %{ix86} x86_64
 %package seabios
@@ -579,7 +585,6 @@ rm -rf %{buildroot}%{_datadir}/%{name}/opensbi*
 rm -rf %{buildroot}%{_datadir}/%{name}/qemu-nsis.bmp
 rm -rf %{buildroot}%{_libdir}/%{name}/audio-oss.so
 rm -rf %{buildroot}%{_libdir}/%{name}/audio-pa.so
-rm -rf %{buildroot}%{_libdir}/%{name}/block-curl.so
 rm -rf %{buildroot}%{_libdir}/%{name}/block-gluster.so
 rm -rf %{buildroot}%{_libdir}/%{name}/ui-curses.so
 rm -rf %{buildroot}%{_libdir}/%{name}/ui-gtk.so
@@ -589,6 +594,7 @@ rm -rf %{buildroot}%{_datadir}/%{name}/vhost-user/50-qemu-gpu.json
 
 strip %{buildroot}%{_libdir}/%{name}/block-rbd.so
 strip %{buildroot}%{_libdir}/%{name}/block-iscsi.so
+strip %{buildroot}%{_libdir}/%{name}/block-curl.so
 strip %{buildroot}%{_libdir}/%{name}/block-ssh.so
 
 for f in %{buildroot}%{_bindir}/* %{buildroot}%{_libdir}/* \
@@ -711,6 +717,9 @@ getent passwd qemu >/dev/null || \
 %files block-iscsi
 %{_libdir}/%{name}/block-iscsi.so
 
+%files block-curl
+%{_libdir}/%{name}/block-curl.so
+
 %ifarch %{ix86} x86_64
 %files seabios
 %{_datadir}/%{name}/bios-256k.bin
@@ -718,6 +727,10 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Thu Aug 19 2021 Jiajie Li <lijiajie11@huawei.com>
+- add qemu-block-curl package
+- add qemu-block-curl requirement for qemu.
+
 * Mon Aug 16 2021 Chen Qun <kuhn.chenqun@huawei.com>
 - usbredir: fix free call
 
