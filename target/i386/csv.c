@@ -18,3 +18,14 @@
 #include "csv.h"
 
 bool csv_kvm_cpu_reset_inhibit;
+
+Csv3GuestState csv3_guest = { 0 };
+
+bool
+csv3_enabled(void)
+{
+    if (!is_hygon_cpu())
+        return false;
+
+    return sev_es_enabled() && (csv3_guest.policy & GUEST_POLICY_CSV3_BIT);
+}
