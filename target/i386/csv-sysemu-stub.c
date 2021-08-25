@@ -14,3 +14,8 @@
 #include "qemu/osdep.h"
 #include "sev.h"
 #include "csv.h"
+
+int csv3_init(uint32_t policy, int fd, void *state, struct sev_ops *ops)
+{
+    return 0;
+}

@@ -15,6 +15,7 @@
 #define I386_CSV_H
 
 #include "qapi/qapi-commands-misc-target.h"
+#include "sev.h"
 
 #define GUEST_POLICY_CSV3_BIT    (1 << 6)
 #define GUEST_POLICY_REUSE_ASID  (1 << 7)
@@ -77,10 +78,13 @@ struct Csv3GuestState {
     uint32_t policy;
     int sev_fd;
     void *state;
+    int (*sev_ioctl)(int fd, int cmd, void *data, int *error);
+    const char *(*fw_error_to_str)(int code);
 };
 
 typedef struct Csv3GuestState Csv3GuestState;
 
 extern struct Csv3GuestState csv3_guest;
+extern int csv3_init(uint32_t policy, int fd, void *state, struct sev_ops *ops);
 
 #endif

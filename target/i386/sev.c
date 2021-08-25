@@ -1225,6 +1225,18 @@ int sev_kvm_init(ConfidentialGuestSupport *cgs, Error **errp)
         goto err;
     }
 
+    /* Support CSV3 */
+    if (!ret && cmd == KVM_SEV_ES_INIT) {
+        ret = csv3_init(sev_guest->policy, sev->sev_fd, (void *)&sev->state, &sev_ops);
+        if (ret) {
+            error_setg(errp, "%s: failed to init csv3 context", __func__);
+            goto err;
+        }
+        /* The CSV3 guest is not resettable */
+        if (csv3_enabled())
+            csv_kvm_cpu_reset_inhibit = true;
+    }
+
     /*
      * The LAUNCH context is used for new guest, if its an incoming guest
      * then RECEIVE context will be created after the connection is established.
@@ -2634,6 +2646,11 @@ bool sev_add_kernel_loader_hashes(SevKernelLoaderContext *ctx, Error **errp)
 
     return ret;
 }
+
+struct sev_ops sev_ops = {
+    .sev_ioctl = sev_ioctl,
+    .fw_error_to_str = fw_error_to_str,
+};
 
 static void
 sev_register_types(void)

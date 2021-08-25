@@ -80,4 +80,11 @@ int sev_kvm_init(ConfidentialGuestSupport *cgs, Error **errp);
 
 extern bool sev_kvm_has_msr_ghcb;
 
+struct sev_ops {
+    int (*sev_ioctl)(int fd, int cmd, void *data, int *error);
+    const char *(*fw_error_to_str)(int code);
+};
+
+extern struct sev_ops sev_ops;
+
 #endif
