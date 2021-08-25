@@ -24,3 +24,8 @@ int csv3_load_data(uint64_t gpa, uint8_t *ptr, uint64_t len, Error **errp)
 {
     g_assert_not_reached();
 }
+
+int csv3_launch_encrypt_vmcb(void)
+{
+    g_assert_not_reached();
+}

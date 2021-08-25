@@ -143,3 +143,24 @@ csv3_load_data(uint64_t gpa, uint8_t *ptr, uint64_t len, Error **errp)
 
     return ret;
 }
+
+int
+csv3_launch_encrypt_vmcb(void)
+{
+    int ret, fw_error;
+
+    if (!csv3_enabled()) {
+        error_report("%s: CSV3 is not enabled", __func__);
+        return -1;
+    }
+
+    ret = csv3_ioctl(KVM_CSV3_LAUNCH_ENCRYPT_VMCB, NULL, &fw_error);
+    if (ret) {
+        error_report("%s: CSV3 LAUNCH_ENCRYPT_VMCB ret=%d fw_error=%d '%s'",
+                     __func__, ret, fw_error, fw_error_to_str(fw_error));
+        goto err;
+    }
+
+err:
+    return ret;
+}

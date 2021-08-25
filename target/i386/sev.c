@@ -880,8 +880,12 @@ sev_launch_get_measure(Notifier *notifier, void *unused)
     }
 
     if (sev_es_enabled()) {
-        /* measure all the VM save areas before getting launch_measure */
-        ret = sev_launch_update_vmsa(sev);
+        if (csv3_enabled()) {
+            ret = csv3_launch_encrypt_vmcb();
+        } else {
+            /* measure all the VM save areas before getting launch_measure */
+            ret = sev_launch_update_vmsa(sev);
+        }
         if (ret) {
             exit(1);
         }
