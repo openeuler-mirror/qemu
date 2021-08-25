@@ -1262,7 +1262,10 @@ int sev_kvm_init(ConfidentialGuestSupport *cgs, Error **errp)
         }
     }
 
-    ram_block_notifier_add(&sev_ram_notifier);
+    /* CSV3 guest do not need notifier to reg/unreg memory */
+    if (!csv3_enabled()) {
+        ram_block_notifier_add(&sev_ram_notifier);
+    }
     qemu_add_machine_init_done_notifier(&sev_machine_done_notify);
     qemu_add_vm_change_state_handler(sev_vm_state_change, sev);
     migration_add_notifier(&sev_migration_state, sev_migration_state_notifier);
