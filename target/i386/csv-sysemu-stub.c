@@ -19,3 +19,8 @@ int csv3_init(uint32_t policy, int fd, void *state, struct sev_ops *ops)
 {
     return 0;
 }
+
+int csv3_load_data(uint64_t gpa, uint8_t *ptr, uint64_t len, Error **errp)
+{
+    g_assert_not_reached();
+}

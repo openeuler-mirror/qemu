@@ -87,4 +87,6 @@ typedef struct Csv3GuestState Csv3GuestState;
 extern struct Csv3GuestState csv3_guest;
 extern int csv3_init(uint32_t policy, int fd, void *state, struct sev_ops *ops);
 
+int csv3_load_data(uint64_t gpa, uint8_t *ptr, uint64_t len, Error **errp);
+
 #endif

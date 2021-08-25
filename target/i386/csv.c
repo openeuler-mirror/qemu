@@ -13,6 +13,7 @@
 
 #include "qemu/osdep.h"
 #include "qemu/error-report.h"
+#include "qapi/error.h"
 
 #include <linux/kvm.h>
 
@@ -20,6 +21,7 @@
 #include <numaif.h>
 #endif
 
+#include "trace.h"
 #include "cpu.h"
 #include "sev.h"
 #include "csv.h"
@@ -73,4 +75,71 @@ csv3_enabled(void)
         return false;
 
     return sev_es_enabled() && (csv3_guest.policy & GUEST_POLICY_CSV3_BIT);
+}
+
+static bool
+csv3_check_state(SevState state)
+{
+    return *((SevState *)csv3_guest.state) == state;
+}
+
+static int
+csv3_ioctl(int cmd, void *data, int *error)
+{
+    if (csv3_guest.sev_ioctl)
+        return csv3_guest.sev_ioctl(csv3_guest.sev_fd, cmd, data, error);
+    else
+        return -1;
+}
+
+static const char *
+fw_error_to_str(int code)
+{
+    if (csv3_guest.fw_error_to_str)
+        return csv3_guest.fw_error_to_str(code);
+    else
+        return NULL;
+}
+
+static int
+csv3_launch_encrypt_data(uint64_t gpa, uint8_t *addr, uint64_t len)
+{
+    int ret, fw_error;
+    struct kvm_csv3_launch_encrypt_data update;
+
+    if (!addr || !len) {
+        return 1;
+    }
+
+    update.gpa = (__u64)gpa;
+    update.uaddr = (__u64)(unsigned long)addr;
+    update.len = len;
+    trace_kvm_csv3_launch_encrypt_data(gpa, addr, len);
+    ret = csv3_ioctl(KVM_CSV3_LAUNCH_ENCRYPT_DATA, &update, &fw_error);
+    if (ret) {
+        error_report("%s: CSV3 LAUNCH_ENCRYPT_DATA ret=%d fw_error=%d '%s'",
+                __func__, ret, fw_error, fw_error_to_str(fw_error));
+    }
+
+    return ret;
+}
+
+int
+csv3_load_data(uint64_t gpa, uint8_t *ptr, uint64_t len, Error **errp)
+{
+    int ret = 0;
+
+    if (!csv3_enabled()) {
+        error_setg(errp, "%s: CSV3 is not enabled", __func__);
+        return -1;
+    }
+
+    /* if CSV3 is in update state then load the data to secure memory */
+    if (csv3_check_state(SEV_STATE_LAUNCH_UPDATE)) {
+        ret = csv3_launch_encrypt_data(gpa, ptr, len);
+        if (ret)
+            error_setg(errp, "%s: CSV3 fail to encrypt data", __func__);
+    }
+
+    return ret;
 }

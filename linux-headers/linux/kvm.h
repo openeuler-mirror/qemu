@@ -2113,6 +2113,13 @@ enum csv3_cmd_id {
 	KVM_CSV3_NR_MIN = 0xc0,
 
 	KVM_CSV3_INIT = KVM_CSV3_NR_MIN,
+	KVM_CSV3_LAUNCH_ENCRYPT_DATA,
+};
+
+struct kvm_csv3_launch_encrypt_data {
+	__u64 gpa;
+	__u64 uaddr;
+	__u32 len;
 };
 
 struct kvm_csv3_init_data {
