@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 55
+Release: 56
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY-SA-4.0
@@ -331,6 +331,7 @@ Patch0318: target-i386-Add-missed-security-features-to-Cooperla.patch
 Patch0319: target-i386-add-PSCHANGE_NO-bit-for-the-ARCH_CAPABIL.patch
 Patch0320: target-i386-Export-TAA_NO-bit-to-guests.patch
 Patch0321: usbredir-fix-free-call.patch
+Patch0322: hw-arm-virt-Init-PMU-for-hotplugged-vCPU.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -727,6 +728,9 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Tue Aug 31 2021 imxcc <xingchaochao@huawei.com>
+- hw/arm/virt:Init PMU for hotplugged vCPU
+
 * Thu Aug 19 2021 Jiajie Li <lijiajie11@huawei.com>
 - add qemu-block-curl package
 - add qemu-block-curl requirement for qemu.

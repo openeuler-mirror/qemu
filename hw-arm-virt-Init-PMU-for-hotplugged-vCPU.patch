@@ -1,0 +1,73 @@
+From acc5162f1d1591ee4830f9b67934fc6d8a9ebbc1 Mon Sep 17 00:00:00 2001
+From: Keqian Zhu <zhukeqian1@huawei.com>
+Date: Tue, 8 Sep 2020 22:09:44 +0800
+Subject: [PATCH] hw/arm/virt: Init PMU for hotplugged vCPU
+
+Factor out PMU init code from fdt_add_pmu_nodes and
+do PMU init for hotplugged vCPU.
+
+Signed-off-by: Keqian Zhu <zhukeqian1@huawei.com>
+---
+ hw/arm/virt.c | 29 +++++++++++++++++++++--------
+ 1 file changed, 21 insertions(+), 8 deletions(-)
+
+diff --git a/hw/arm/virt.c b/hw/arm/virt.c
+index 7afc6c5e..7506d0ff 100644
+--- a/hw/arm/virt.c
++++ b/hw/arm/virt.c
+@@ -605,6 +605,23 @@ static void fdt_add_gic_node(VirtMachineState *vms)
+     g_free(nodename);
+ }
+ 
++static bool virt_cpu_init_pmu(const VirtMachineState *vms, CPUState *cpu)
++{
++    ARMCPU *armcpu = ARM_CPU(cpu);
++
++    if (!arm_feature(&armcpu->env, ARM_FEATURE_PMU)) {
++        return false;
++    }
++    if (kvm_enabled()) {
++        if (kvm_irqchip_in_kernel()) {
++            kvm_arm_pmu_set_irq(cpu, PPI(VIRTUAL_PMU_IRQ));
++        }
++        kvm_arm_pmu_init(cpu);
++    }
++
++    return true;
++}
++
+ static void fdt_add_pmu_nodes(const VirtMachineState *vms)
+ {
+     CPUState *cpu;
+@@ -612,16 +629,9 @@ static void fdt_add_pmu_nodes(const VirtMachineState *vms)
+     uint32_t irqflags = GIC_FDT_IRQ_FLAGS_LEVEL_HI;
+ 
+     CPU_FOREACH(cpu) {
+-        armcpu = ARM_CPU(cpu);
+-        if (!arm_feature(&armcpu->env, ARM_FEATURE_PMU)) {
++        if (!virt_cpu_init_pmu(vms, cpu)) {
+             return;
+         }
+-        if (kvm_enabled()) {
+-            if (kvm_irqchip_in_kernel()) {
+-                kvm_arm_pmu_set_irq(cpu, PPI(VIRTUAL_PMU_IRQ));
+-            }
+-            kvm_arm_pmu_init(cpu);
+-        }
+     }
+ 
+     if (vms->gic_version == 2) {
+@@ -2248,6 +2258,9 @@ static void virt_cpu_plug(HotplugHandler *hotplug_dev,
+         agcc->cpu_hotplug_realize(gicv3, ncpu);
+         connect_gic_cpu_irqs(vms, ncpu);
+ 
++        /* Init PMU part */
++        virt_cpu_init_pmu(vms, cs);
++
+         /* Register CPU reset and trigger it manually */
+         cpu_synchronize_state(cs);
+         cpu_hotplug_register_reset(ncpu);
+-- 
+2.23.0
+
+
