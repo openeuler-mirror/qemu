@@ -1059,10 +1059,10 @@ static int vfio_dma_map_ram_section(VFIOContainer *container,
 
     assert(memory_region_is_ram(section->mr));
 
-    iova = TARGET_PAGE_ALIGN(section->offset_within_address_space);
+    iova = REAL_HOST_PAGE_ALIGN(section->offset_within_address_space);
     llend = int128_make64(section->offset_within_address_space);
     llend = int128_add(llend, section->size);
-    llend = int128_and(llend, int128_exts64(TARGET_PAGE_MASK));
+    llend = int128_and(llend, int128_exts64(qemu_real_host_page_mask));
     end = int128_get64(int128_sub(llend, int128_one()));
 
     vaddr = memory_region_get_ram_ptr(section->mr) +
