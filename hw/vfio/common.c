@@ -1411,6 +1411,8 @@ static void vfio_listener_region_del(MemoryListener *listener,
                                      MemoryRegionSection *section)
 {
     VFIOContainer *container = container_of(listener, VFIOContainer, listener);
+    hwaddr iova;
+    Int128 llend;
 
     if (vfio_listener_skipped_section(section)) {
         trace_vfio_listener_region_del_skip(
@@ -1458,6 +1460,14 @@ static void vfio_listener_region_del(MemoryListener *listener,
          * based IOMMU where a big unmap flattens a large range of IO-PTEs.
          * That may not be true for all IOMMU types.
          */
+    }
+
+    iova = REAL_HOST_PAGE_ALIGN(section->offset_within_address_space);
+    llend = int128_make64(section->offset_within_address_space);
+    llend = int128_add(llend, section->size);
+    llend = int128_and(llend, int128_exts64(qemu_real_host_page_mask));
+    if (int128_ge(int128_make64(iova), llend)) {
+        return;
     }
 
     vfio_dma_unmap_ram_section(container, section);
