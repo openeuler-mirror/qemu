@@ -1,0 +1,53 @@
+From 0a6ee00461c784ef547b8f071ad147fcb89875b6 Mon Sep 17 00:00:00 2001
+From: Kunkun Jiang <jiangkunkun@huawei.com>
+Date: Tue, 14 Sep 2021 14:21:46 +0800
+Subject: [PATCH] vfio/common: Add address alignment check in
+ vfio_listener_region_del
+
+Both vfio_listener_region_add and vfio_listener_region_del have
+reference counting operations on ram section->mr. If the 'iova'
+and 'llend' of the ram section do not pass the alignment
+check, the ram section should not be mapped or unmapped. It means
+that the reference counting should not be changed.
+
+However, the address alignment check is missing in
+vfio_listener_region_del. This makes memory_region_unref will
+be unconditional called and causes unintended problems in some
+scenarios.
+
+Signed-off-by: Kunkun Jiang <jiangkunkun@huawei.com>
+---
+ hw/vfio/common.c | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/hw/vfio/common.c b/hw/vfio/common.c
+index de166dd5f9..6d6a4c6dee 100644
+--- a/hw/vfio/common.c
++++ b/hw/vfio/common.c
+@@ -1149,6 +1149,8 @@ static void vfio_listener_region_del(MemoryListener *listener,
+                                      MemoryRegionSection *section)
+ {
+     VFIOContainer *container = container_of(listener, VFIOContainer, listener);
++    hwaddr iova;
++    Int128 llend;
+ 
+     if (vfio_listener_skipped_section(section)) {
+         trace_vfio_listener_region_del_skip(
+@@ -1198,6 +1200,14 @@ static void vfio_listener_region_del(MemoryListener *listener,
+          */
+     }
+ 
++    iova = REAL_HOST_PAGE_ALIGN(section->offset_within_address_space);
++    llend = int128_make64(section->offset_within_address_space);
++    llend = int128_add(llend, section->size);
++    llend = int128_and(llend, int128_exts64(qemu_real_host_page_mask));
++    if (int128_ge(int128_make64(iova), llend)) {
++        return;
++    }
++
+     vfio_dma_unmap_ram_section(container, section);
+ 
+     memory_region_unref(section->mr);
+-- 
+2.27.0
+
