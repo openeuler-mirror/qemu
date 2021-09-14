@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 79
+Release: 80
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY-SA-4.0
@@ -557,6 +557,7 @@ Patch0544: vfio-Add-vfio_prereg_listener_global_log_start-stop-.patch
 Patch0545: hw-arm-smmuv3-Post-load-stage-1-configurations-to-th.patch
 Patch0546: usbredir-fix-free-call.patch
 Patch0547: vfio-common-Fix-incorrect-address-alignment-in-vfio_.patch
+Patch0548: vfio-common-Add-address-alignment-check-in-vfio_list.patch
 
 BuildRequires: flex
 BuildRequires: gcc
@@ -960,6 +961,9 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Tue Sep 14 2021 Chen Qun <kuhn.chenqun@huawei.com>
+- vfio/common: Add address alignment check in vfio_listener_region_del
+
 * Wed Sep 08 2021 Chen Qun <kuhn.chenqun@huawei.com>
 - vfio/common: Fix incorrect address alignment in vfio_dma_map_ram_section
 
