@@ -332,6 +332,7 @@ Patch0319: target-i386-add-PSCHANGE_NO-bit-for-the-ARCH_CAPABIL.patch
 Patch0320: target-i386-Export-TAA_NO-bit-to-guests.patch
 Patch0321: usbredir-fix-free-call.patch
 Patch0322: hw-arm-virt-Init-PMU-for-hotplugged-vCPU.patch
+Patch0323: uas-add-stream-number-sanity-checks.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -728,6 +729,9 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Wed Sep 15 2021 Chen Qun <kuhn.chenqun@huawei.com>
+- uas: add stream number sanity checks.
+
 * Tue Aug 31 2021 imxcc <xingchaochao@huawei.com>
 - hw/arm/virt:Init PMU for hotplugged vCPU
 
