@@ -558,6 +558,7 @@ Patch0545: hw-arm-smmuv3-Post-load-stage-1-configurations-to-th.patch
 Patch0546: usbredir-fix-free-call.patch
 Patch0547: vfio-common-Fix-incorrect-address-alignment-in-vfio_.patch
 Patch0548: vfio-common-Add-address-alignment-check-in-vfio_list.patch
+Patch0549: uas-add-stream-number-sanity-checks.patch
 
 BuildRequires: flex
 BuildRequires: gcc
@@ -961,6 +962,9 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Thu Sep 16 2021 Chen Qun <kuhn.chenqun@huawei.com>
+- uas: add stream number sanity checks.
+
 * Tue Sep 14 2021 Chen Qun <kuhn.chenqun@huawei.com>
 - vfio/common: Add address alignment check in vfio_listener_region_del
 
