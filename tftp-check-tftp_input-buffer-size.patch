@@ -1,0 +1,37 @@
+From 968656cf302ba7f8a3dfaf1013f7d8e80663e63e Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Marc-Andr=C3=A9=20Lureau?= <marcandre.lureau@redhat.com>
+Date: Fri, 4 Jun 2021 16:34:30 +0400
+Subject: [PATCH 5/6] tftp: check tftp_input buffer size
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Fixes: CVE-2021-3595
+Fixes: https://gitlab.freedesktop.org/slirp/libslirp/-/issues/46
+
+Signed-off-by: Marc-André Lureau <marcandre.lureau@redhat.com>
+Signed-off-by: imxcc <xingchaochao@huawei.com>
+---
+ slirp/src/tftp.c | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/slirp/src/tftp.c b/slirp/src/tftp.c
+index 2b4176cc..035a0cab 100644
+--- a/slirp/src/tftp.c
++++ b/slirp/src/tftp.c
+@@ -449,7 +449,11 @@ static void tftp_handle_error(Slirp *slirp, struct sockaddr_storage *srcsas,
+ 
+ void tftp_input(struct sockaddr_storage *srcsas, struct mbuf *m)
+ {
+-    struct tftp_t *tp = (struct tftp_t *)m->m_data;
++    struct tftp_t *tp = mtod_check(m, offsetof(struct tftp_t, x.tp_buf));
++
++    if (tp == NULL) {
++        return;
++    }
+ 
+     switch (ntohs(tp->tp_op)) {
+     case TFTP_RRQ:
+-- 
+2.27.0
+

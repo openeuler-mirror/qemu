@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 59
+Release: 60
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY-SA-4.0
@@ -334,6 +334,12 @@ Patch0321: usbredir-fix-free-call.patch
 Patch0322: hw-arm-virt-Init-PMU-for-hotplugged-vCPU.patch
 Patch0323: uas-add-stream-number-sanity-checks.patch
 Patch0324: virtio-net-fix-use-after-unmap-free-for-sg.patch
+Patch0325: Add-mtod_check.patch
+Patch0326: bootp-limit-vendor-specific-area-to-input-packet-mem.patch
+Patch0327: bootp-check-bootp_input-buffer-size.patch
+Patch0328: upd6-check-udp6_input-buffer-size.patch
+Patch0329: tftp-check-tftp_input-buffer-size.patch
+Patch0330: tftp-introduce-a-header-structure.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -730,6 +736,9 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Tue Oct 19 2021 imxcc <xingchaochao@huawei.com>
+- fix cve-2021-3592 cve-2021-3593 cve-2021-3595
+
 * Sun Sep 26 2021 Chen Qun <kuhn.chenqun@huawei.com>
 - virtio-net: fix use after unmap/free for sg
 
