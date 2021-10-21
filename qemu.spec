@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 58
+Release: 60
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY-SA-4.0
@@ -334,6 +334,12 @@ Patch0321: usbredir-fix-free-call.patch
 Patch0322: hw-arm-virt-Init-PMU-for-hotplugged-vCPU.patch
 Patch0323: uas-add-stream-number-sanity-checks.patch
 Patch0324: virtio-net-fix-use-after-unmap-free-for-sg.patch
+Patch0325: Add-mtod_check.patch
+Patch0326: bootp-limit-vendor-specific-area-to-input-packet-mem.patch
+Patch0327: bootp-check-bootp_input-buffer-size.patch
+Patch0328: upd6-check-udp6_input-buffer-size.patch
+Patch0329: tftp-check-tftp_input-buffer-size.patch
+Patch0330: tftp-introduce-a-header-structure.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -730,6 +736,9 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Tue Oct 19 2021 imxcc <xingchaochao@huawei.com>
+- fix cve-2021-3592 cve-2021-3593 cve-2021-3595
+
 * Sun Sep 26 2021 Chen Qun <kuhn.chenqun@huawei.com>
 - virtio-net: fix use after unmap/free for sg
 
@@ -814,7 +823,7 @@ getent passwd qemu >/dev/null || \
 * Tue May 11 2021 Chen Qun <kuhn.chenqun@huawei.com>
 - arm/cpu: Fixed function undefined error at compile time under arm
 
-* Tue May 2021 Ming Yang <yangming73@huawei.com>
+* Tue May 11 2021 Ming Yang <yangming73@huawei.com>
 - add qemu-block-iscsi installing requirement
 
 * Sun Apr 25 2021 Chuan Zheng <zhengchuan@huawei.com>
@@ -840,12 +849,12 @@ getent passwd qemu >/dev/null || \
 - block-backend: Stop retrying when draining
 - block: Add sanity check when setting retry parameters
 
+* Sat Apr 17 2021 Chuan Zheng <zhengchuan@huawei.com>
+- dirtyrate: add migration dirtyrate feature
+
 * Fri Apr 16 2021 Huawei Technologies Co., Ltd <yangming73@huawei.com>
 - add qemu-block-rbd package
 - add qemu-block-ssh package
-
-* Sat Apr 17 2021 Chuan Zheng <zhengchuan@huawei.com>
-- dirtyrate: add migration dirtyrate feature
 
 * Thu Mar 18 2021 Chen Qun <kuhn.chenqun@huawei.com>
 - net: vmxnet3: validate configuration values during activate (CVE-2021-20203)
@@ -863,15 +872,6 @@ getent passwd qemu >/dev/null || \
 
 * Fri Jan 15 2021 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
 - memory: clamp cached translation in case it points to an MMIO region
-
-* Wed Dec 9 2020 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
-- target/arm: Fix write redundant values to kvm
-
-* Wed Nov 11 2020 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
-- hw: usb: hcd-ohci: check for processed TD before retire
-- hw: ehci: check return value of 'usb_packet_map'
-- hw: usb: hcd-ohci: check len and frame_number variables
-- hw/net/e1000e: advance desc_offset in case of null descriptor
 
 * Fri Dec 11 2020 Huawei Technologies Co., Ltd <alex.chen@huawei.com>
 - slirp: check pkt_len before reading protocol header for fixing CVE-2020-29129 and CVE-2020-29130
@@ -940,14 +940,14 @@ getent passwd qemu >/dev/null || \
 * Fri Sep 11 2020 Huawei Technologies Co., Ltd <lijiajie11@huawei.com>
 - slirp/src/ip6_input.c: fix out-of-bounds read information vulnerablity
 
-* Thu Aug 6 2020 Huawei Technologies Co., Ltd <fangying1@huawei.com>
-- tests: Disalbe filemonitor testcase
-
 * Thu Aug 27 2020 Huawei Technologies Co., Ltd <lijiajie11@huawei.com>
 - hw/usb/core.c: fix buffer overflow in do_token_setup function
 
 * Wed Aug 12 2020 Huawei Technologies Co., Ltd <jinzeyu@huawei.com>
 - backport upstream patch to support SHPCHotplug in arm
+
+* Thu Aug 6 2020 Huawei Technologies Co., Ltd <fangying1@huawei.com>
+- tests: Disalbe filemonitor testcase
 
 * Fri Jul 24 2020 Huawei Technologies Co., Ltd <zhang.zhanghailiang@huawei.com>
 - es1370: check total frame count against current frame
