@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 60
+Release: 61
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY-SA-4.0
