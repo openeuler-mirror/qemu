@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 60
+Release: 61
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY-SA-4.0
@@ -340,6 +340,8 @@ Patch0327: bootp-check-bootp_input-buffer-size.patch
 Patch0328: upd6-check-udp6_input-buffer-size.patch
 Patch0329: tftp-check-tftp_input-buffer-size.patch
 Patch0330: tftp-introduce-a-header-structure.patch
+Patch0331: fix-cve-2020-35504.patch
+Patch0332: fix-cve-2020-35505.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -736,6 +738,10 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Wed Oct 27 2021 Chen Qun <kuhn.chenqun@huawei.com>
+- fix cve-2020-35504
+- fix cve-2020-35505
+
 * Tue Oct 19 2021 imxcc <xingchaochao@huawei.com>
 - fix cve-2021-3592 cve-2021-3593 cve-2021-3595
 
