@@ -327,6 +327,32 @@ static void cpu_max_set_sve_vq(Object *obj, Visitor *v, const char *name,
     error_propagate(errp, err);
 }
 
+static void aarch64_max_ft2000plus_initfn(Object *obj)
+{
+    ARMCPU *cpu = ARM_CPU(obj);
+
+    if (kvm_enabled()) {
+        kvm_arm_set_cpu_features_from_host(cpu);
+        kvm_arm_add_vcpu_properties(obj);
+    } else {
+        aarch64_a72_initfn(obj);
+        cpu->midr = 0x70186622;
+    }
+}
+
+static void aarch64_max_tengyun_s2500_initfn(Object *obj)
+{
+    ARMCPU *cpu = ARM_CPU(obj);
+
+    if (kvm_enabled()) {
+        kvm_arm_set_cpu_features_from_host(cpu);
+        kvm_arm_add_vcpu_properties(obj);
+    } else {
+        aarch64_a72_initfn(obj);
+        cpu->midr = 0x70186632;
+    }
+}
+
 /* -cpu max: if KVM is enabled, like -cpu host (best possible with this host);
  * otherwise, a CPU with as many features enabled as our emulation supports.
  * The version of '-cpu max' for qemu-system-arm is defined in cpu.c;
@@ -442,6 +468,8 @@ static const ARMCPUInfo aarch64_cpus[] = {
     { .name = "cortex-a53",         .initfn = aarch64_a53_initfn },
     { .name = "cortex-a72",         .initfn = aarch64_a72_initfn },
     { .name = "Kunpeng-920",        .initfn = aarch64_kunpeng_920_initfn },
+    { .name = "FT-2000+",           .initfn = aarch64_max_ft2000plus_initfn },
+    { .name = "Tengyun-S2500",      .initfn = aarch64_max_tengyun_s2500_initfn },
     { .name = "max",                .initfn = aarch64_max_initfn },
     { .name = NULL }
 };
