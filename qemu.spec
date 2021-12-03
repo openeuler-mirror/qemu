@@ -562,6 +562,7 @@ Patch0549: uas-add-stream-number-sanity-checks.patch
 Patch0550: virtio-net-fix-use-after-unmap-free-for-sg.patch
 Patch0551: fix-cve-2020-35504.patch
 Patch0552: fix-cve-2020-35505.patch
+Patch0553: virtio-balloon-apply-upstream-patch.patch
 
 BuildRequires: flex
 BuildRequires: gcc
@@ -965,6 +966,9 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Fri Dec 03 2021 Chen Qun <kuhn.chenqun@huawei.com>
+- virtio-balloon: apply upstream patch.
+
 * Fri Dec 03 2021 Chen Qun <kuhn.chenqun@huawei.com>
 - fix cve-2020-35504
 - fix cve-2020-35505
