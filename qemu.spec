@@ -560,6 +560,8 @@ Patch0547: vfio-common-Fix-incorrect-address-alignment-in-vfio_.patch
 Patch0548: vfio-common-Add-address-alignment-check-in-vfio_list.patch
 Patch0549: uas-add-stream-number-sanity-checks.patch
 Patch0550: virtio-net-fix-use-after-unmap-free-for-sg.patch
+Patch0551: fix-cve-2020-35504.patch
+Patch0552: fix-cve-2020-35505.patch
 
 BuildRequires: flex
 BuildRequires: gcc
@@ -963,6 +965,10 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Fri Dec 03 2021 Chen Qun <kuhn.chenqun@huawei.com>
+- fix cve-2020-35504
+- fix cve-2020-35505
+
 * Sun Sep 26 2021 Chen Qun <kuhn.chenqun@huawei.com>
 - virtio-net: fix use after unmap/free for sg
 
