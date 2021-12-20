@@ -1,0 +1,31 @@
+From 0d86ceed3cef76334c39d879dd8b532ca258eb65 Mon Sep 17 00:00:00 2001
+From: Ming Yang <yangming73@huawei.com>
+Date: Tue, 16 Nov 2021 17:21:09 +0800
+Subject: [PATCH] virtio-balloon: apply upstream patch.
+
+Signed-off-by: Ming Yang <yangming73@huawei.com>
+---
+ hw/virtio/virtio-balloon.c | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/hw/virtio/virtio-balloon.c b/hw/virtio/virtio-balloon.c
+index 25de154307..17fa767483 100644
+--- a/hw/virtio/virtio-balloon.c
++++ b/hw/virtio/virtio-balloon.c
+@@ -830,6 +830,13 @@ static void virtio_balloon_device_unrealize(DeviceState *dev, Error **errp)
+     }
+     balloon_stats_destroy_timer(s);
+     qemu_remove_balloon_handler(s);
++    
++    virtio_del_queue(vdev, 0);
++    virtio_del_queue(vdev, 1);
++    virtio_del_queue(vdev, 2);
++    if (s->free_page_vq) {
++        virtio_del_queue(vdev, 3);
++    }
+     virtio_cleanup(vdev);
+ }
+ 
+-- 
+2.27.0
+
