@@ -1,0 +1,73 @@
+From 3a3ed44feeb4f17530cd87c77e13dc4dd5aa1ebc Mon Sep 17 00:00:00 2001
+From: Jiadong Zeng <zengjiadong@phytium.com.cn>
+Date: Thu, 11 Nov 2021 14:25:38 +0800
+Subject: [PATCH] add Phytium's CPU models: FT-2000+ and Tengyun-S2500.
+
+Signed-off-by: Jiadong Zeng <zengjiadong@phytium.com.cn>
+---
+ hw/arm/virt.c      |  2 ++
+ target/arm/cpu64.c | 28 ++++++++++++++++++++++++++++
+ 2 files changed, 30 insertions(+)
+
+diff --git a/hw/arm/virt.c b/hw/arm/virt.c
+index 133d36a400..f816d64575 100644
+--- a/hw/arm/virt.c
++++ b/hw/arm/virt.c
+@@ -194,6 +194,8 @@ static const char *valid_cpus[] = {
+     ARM_CPU_TYPE_NAME("cortex-a57"),
+     ARM_CPU_TYPE_NAME("cortex-a72"),
+     ARM_CPU_TYPE_NAME("Kunpeng-920"),
++    ARM_CPU_TYPE_NAME("FT-2000+"),
++    ARM_CPU_TYPE_NAME("Tengyun-S2500"),
+     ARM_CPU_TYPE_NAME("host"),
+     ARM_CPU_TYPE_NAME("max"),
+ };
+diff --git a/target/arm/cpu64.c b/target/arm/cpu64.c
+index a1649f8844..4cf5b89db0 100644
+--- a/target/arm/cpu64.c
++++ b/target/arm/cpu64.c
+@@ -327,6 +327,32 @@ static void cpu_max_set_sve_vq(Object *obj, Visitor *v, const char *name,
+     error_propagate(errp, err);
+ }
+ 
++static void aarch64_max_ft2000plus_initfn(Object *obj)
++{
++    ARMCPU *cpu = ARM_CPU(obj);
++
++    if (kvm_enabled()) {
++        kvm_arm_set_cpu_features_from_host(cpu);
++        kvm_arm_add_vcpu_properties(obj);
++    } else {
++        aarch64_a72_initfn(obj);
++        cpu->midr = 0x70186622;
++    }
++}
++
++static void aarch64_max_tengyun_s2500_initfn(Object *obj)
++{
++    ARMCPU *cpu = ARM_CPU(obj);
++
++    if (kvm_enabled()) {
++        kvm_arm_set_cpu_features_from_host(cpu);
++        kvm_arm_add_vcpu_properties(obj);
++    } else {
++        aarch64_a72_initfn(obj);
++        cpu->midr = 0x70186632;
++    }
++}
++
+ /* -cpu max: if KVM is enabled, like -cpu host (best possible with this host);
+  * otherwise, a CPU with as many features enabled as our emulation supports.
+  * The version of '-cpu max' for qemu-system-arm is defined in cpu.c;
+@@ -442,6 +468,8 @@ static const ARMCPUInfo aarch64_cpus[] = {
+     { .name = "cortex-a53",         .initfn = aarch64_a53_initfn },
+     { .name = "cortex-a72",         .initfn = aarch64_a72_initfn },
+     { .name = "Kunpeng-920",        .initfn = aarch64_kunpeng_920_initfn },
++    { .name = "FT-2000+",           .initfn = aarch64_max_ft2000plus_initfn },
++    { .name = "Tengyun-S2500",      .initfn = aarch64_max_tengyun_s2500_initfn },
+     { .name = "max",                .initfn = aarch64_max_initfn },
+     { .name = NULL }
+ };
+-- 
+2.27.0
+
