@@ -1694,9 +1694,9 @@ int sev_load_incoming_page(QEMUFile *f, uint8_t *ptr)
 int sev_remove_shared_regions_list(unsigned long start, unsigned long end)
 {
     SevGuestState *s = sev_guest;
-    struct shared_region *pos;
+    struct shared_region *pos, *next_pos;
 
-    QTAILQ_FOREACH(pos, &s->shared_regions_list, list) {
+    QTAILQ_FOREACH_SAFE(pos, &s->shared_regions_list, list, next_pos) {
         unsigned long l, r;
         unsigned long curr_gfn_end = pos->gfn_end;
 
@@ -1710,6 +1710,7 @@ int sev_remove_shared_regions_list(unsigned long start, unsigned long end)
         if (l <= r) {
             if (pos->gfn_start == l && pos->gfn_end == r) {
                 QTAILQ_REMOVE(&s->shared_regions_list, pos, list);
+                g_free(pos);
             } else if (l == pos->gfn_start) {
                 pos->gfn_start = r;
             } else if (r == pos->gfn_end) {

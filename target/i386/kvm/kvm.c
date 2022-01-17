@@ -2270,6 +2270,11 @@ void kvm_arch_reset_vcpu(X86CPU *cpu)
         env->mp_state = KVM_MP_STATE_RUNNABLE;
     }
 
+    if (cpu_is_bsp(cpu) &&
+        sev_enabled() && has_map_gpa_range) {
+        sev_remove_shared_regions_list(0, -1);
+    }
+
     /* enabled by default */
     env->poll_control_msr = 1;
 
