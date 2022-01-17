@@ -67,6 +67,7 @@
 
 /* Defines RAM_SAVE_ENCRYPTED_PAGE and RAM_SAVE_SHARED_REGION_LIST */
 #include "target/i386/sev.h"
+#include "sysemu/kvm.h"
 
 #include "hw/boards.h" /* for machine_dump_guest_core() */
 
@@ -2145,6 +2146,8 @@ static bool encrypted_test_list(RAMState *rs, RAMBlock *block,
     struct ConfidentialGuestMemoryEncryptionOps *ops =
         cgs_class->memory_encryption_ops;
     unsigned long gfn;
+    hwaddr paddr = 0;
+    int ret;
 
     /* ROM devices contains the unencrypted data */
     if (memory_region_is_rom(block->mr)) {
@@ -2167,7 +2170,14 @@ static bool encrypted_test_list(RAMState *rs, RAMBlock *block,
      * Translate page in ram_addr_t address space to GPA address
      * space using memory region.
      */
-    gfn = page + (block->mr->addr >> TARGET_PAGE_BITS);
+    if (kvm_enabled()) {
+        ret = kvm_physical_memory_addr_from_host(kvm_state,
+                           block->host + (page << TARGET_PAGE_BITS), &paddr);
+        if (ret == 0) {
+            return false;
+        }
+    }
+    gfn = paddr >> TARGET_PAGE_BITS;
 
     return ops->is_gfn_in_unshared_region(gfn);
 }
