@@ -202,6 +202,8 @@ static const char *valid_cpus[] = {
     ARM_CPU_TYPE_NAME("cortex-a57"),
     ARM_CPU_TYPE_NAME("cortex-a72"),
     ARM_CPU_TYPE_NAME("Kunpeng-920"),
+    ARM_CPU_TYPE_NAME("FT-2000+"),
+    ARM_CPU_TYPE_NAME("Tengyun-S2500"),
     ARM_CPU_TYPE_NAME("a64fx"),
     ARM_CPU_TYPE_NAME("host"),
     ARM_CPU_TYPE_NAME("max"),
