@@ -1210,8 +1210,11 @@ int vfio_pci_igd_opregion_init(VFIOPCIDevice *vdev,
 }
 
 #define PCI_VENDOR_ID_HUAWEI      0x19e5
+#define PCI_DEVICE_ID_ASCEND910   0xd801
 #define PCI_DEVICE_ID_ASCEND710   0xd500
 #define PCI_DEVICE_ID_ASCEND310   0xd100
+#define ASCEND910_XLOADER_SIZE    4
+#define ASCEND910_XLOADER_OFFSET  0x80400
 #define ASCEND710_XLOADER_SIZE    4
 #define ASCEND710_XLOADER_OFFSET  0x20430
 #define ASCEND310_XLOADER_SIZE    4
@@ -1252,6 +1255,39 @@ static const MemoryRegionOps vfio_ascend_intercept_regs_quirk = {
     .write = vfio_ascend_quirk_write,
     .endianness = DEVICE_LITTLE_ENDIAN,
 };
+
+static void vfio_probe_ascend910_bar0_quirk(VFIOPCIDevice *vdev, int nr)
+{
+    VFIOQuirk *quirk;
+    VFIOAscendBarQuirk *bar0_quirk;
+
+    if (vdev->vendor_id != PCI_VENDOR_ID_HUAWEI || nr != 0 ||
+        vdev->device_id != PCI_DEVICE_ID_ASCEND910) {
+        return;
+    }
+
+    quirk = g_malloc0(sizeof(*quirk));
+    quirk->nr_mem = 1;
+    quirk->mem = g_new0(MemoryRegion, quirk->nr_mem);
+    bar0_quirk = quirk->data = g_new0(typeof(*bar0_quirk), quirk->nr_mem);
+    bar0_quirk[0].vdev = vdev;
+    bar0_quirk[0].offset = ASCEND910_XLOADER_OFFSET;
+    bar0_quirk[0].bar = nr;
+
+    /*
+     * intercept w/r to the xloader-updating register,
+     * so the vm can't enable xloader-updating
+     */
+    memory_region_init_io(&quirk->mem[0], OBJECT(vdev),
+                          &vfio_ascend_intercept_regs_quirk,
+                          &bar0_quirk[0],
+                          "vfio-ascend910-bar0-intercept-regs-quirk",
+                          ASCEND910_XLOADER_SIZE);
+    memory_region_add_subregion_overlap(vdev->bars[nr].region.mem,
+                                        bar0_quirk[0].offset,
+                                        &quirk->mem[0], 1);
+    QLIST_INSERT_HEAD(&vdev->bars[nr].quirks, quirk, next);
+}
 
 static void vfio_probe_ascend710_bar0_quirk(VFIOPCIDevice *vdev, int nr)
 {
@@ -1371,6 +1407,7 @@ void vfio_bar_quirk_setup(VFIOPCIDevice *vdev, int nr)
 #ifdef CONFIG_VFIO_IGD
     vfio_probe_igd_bar4_quirk(vdev, nr);
 #endif
+    vfio_probe_ascend910_bar0_quirk(vdev, nr);
     vfio_probe_ascend710_bar0_quirk(vdev, nr);
     vfio_probe_ascend310_bar4_quirk(vdev, nr);
 }
