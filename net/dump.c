@@ -87,7 +87,7 @@ static ssize_t dump_receive_iov(DumpState *s, const struct iovec *iov, int cnt,
     dumpiov[0].iov_len = sizeof(hdr);
     cnt = iov_copy(&dumpiov[1], cnt, iov, cnt, offset, caplen);
 
-    if (writev(s->fd, dumpiov, cnt + 1) != sizeof(hdr) + caplen) {
+    if (writev(s->fd, &dumpiov[0], cnt + 1) != sizeof(hdr) + caplen) {
         error_report("network dump write error - stopping dump");
         close(s->fd);
         s->fd = -1;
