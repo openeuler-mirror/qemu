@@ -12,6 +12,7 @@
 #include "host-cpu.h"
 #include "qapi/error.h"
 #include "sysemu/sysemu.h"
+#include "hw/boards.h"
 
 /* Note: Only safe for use on x86(-64) hosts */
 static uint32_t host_cpu_phys_bits(void)
@@ -56,14 +57,14 @@ static uint32_t host_cpu_adjust_phys_bits(X86CPU *cpu)
     uint32_t phys_bits = cpu->phys_bits;
     static bool warned;
 
-    /*
-     * Print a warning if the user set it to a value that's not the
-     * host value.
-     */
-    if (phys_bits != host_phys_bits && phys_bits != 0 &&
+    /* adjust x86 cpu phys_bits according to ram_size. */
+    x86_cpu_adjuest_by_ram_size(current_machine->ram_size, cpu);
+
+    /* Print a warning if the host value less than the user set. */
+    if (phys_bits > host_phys_bits && phys_bits != 0 &&
         !warned) {
         warn_report("Host physical bits (%u)"
-                    " does not match phys-bits property (%u)",
+                    " less than phys-bits property (%u)",
                     host_phys_bits, phys_bits);
         warned = true;
     }

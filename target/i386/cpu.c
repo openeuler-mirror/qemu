@@ -6678,6 +6678,23 @@ static void x86_cpu_set_pc(CPUState *cs, vaddr value)
     cpu->env.eip = value;
 }
 
+/* At present, we check the vm is *LARGE* or not, i.e. whether
+ * the memory size is more than 4T or not.
+ */
+const uint64_t large_vm_mem_size = 0x40000000000UL;
+void x86_cpu_adjuest_by_ram_size(ram_addr_t ram_size, X86CPU *cpu)
+{
+    /* If there is not a large vm, we set the phys_bits to 42 bits,
+     * otherwise, we increase the phys_bits to 46 bits.
+     */
+    if (ram_size < large_vm_mem_size) {
+        cpu->phys_bits = DEFAULT_VM_CPU_PHYS_BITS;
+    } else {
+        cpu->phys_bits = LARGE_VM_CPU_PHYS_BITS;
+        cpu->fill_mtrr_mask = true;
+    }
+}
+
 int x86_cpu_pending_interrupt(CPUState *cs, int interrupt_request)
 {
     X86CPU *cpu = X86_CPU(cs);
@@ -6862,7 +6879,7 @@ static Property x86_cpu_properties[] = {
     DEFINE_PROP_UINT32("phys-bits", X86CPU, phys_bits, 0),
     DEFINE_PROP_BOOL("host-phys-bits", X86CPU, host_phys_bits, false),
     DEFINE_PROP_UINT8("host-phys-bits-limit", X86CPU, host_phys_bits_limit, 0),
-    DEFINE_PROP_BOOL("fill-mtrr-mask", X86CPU, fill_mtrr_mask, true),
+    DEFINE_PROP_BOOL("fill-mtrr-mask", X86CPU, fill_mtrr_mask, false),
     DEFINE_PROP_UINT32("level-func7", X86CPU, env.cpuid_level_func7,
                        UINT32_MAX),
     DEFINE_PROP_UINT32("level", X86CPU, env.cpuid_level, UINT32_MAX),
