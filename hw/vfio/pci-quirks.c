@@ -1209,6 +1209,80 @@ int vfio_pci_igd_opregion_init(VFIOPCIDevice *vdev,
     return 0;
 }
 
+#define PCI_VENDOR_ID_HUAWEI      0x19e5
+#define PCI_DEVICE_ID_ASCEND310   0xd100
+#define ASCEND310_XLOADER_SIZE    4
+#define ASCEND310_XLOADER_OFFSET  0x400
+
+typedef struct VFIOAscendBarQuirk {
+    struct VFIOPCIDevice *vdev;
+    pcibus_t offset;
+    uint8_t bar;
+    MemoryRegion *mem;
+} VFIOAscendBarQuirk;
+
+static uint64_t vfio_ascend_quirk_read(void *opaque,
+                                       hwaddr addr, unsigned size)
+{
+    VFIOAscendBarQuirk *quirk = opaque;
+    VFIOPCIDevice *vdev = quirk->vdev;
+
+    qemu_log("read RO region! addr=0x%" HWADDR_PRIx ", size=%d\n",
+            addr + quirk->offset, size);
+
+    return vfio_region_read(&vdev->bars[quirk->bar].region,
+                            addr + quirk->offset, size);
+}
+
+static void vfio_ascend_quirk_write(void *opaque, hwaddr addr,
+                                    uint64_t data, unsigned size)
+{
+    VFIOAscendBarQuirk *quirk = opaque;
+
+    qemu_log("modifying RO region is not allowed! addr=0x%"
+            HWADDR_PRIx ", data=0x%" PRIx64 ", size=%d\n",
+            addr + quirk->offset, data, size);
+}
+
+static const MemoryRegionOps vfio_ascend_intercept_regs_quirk = {
+    .read = vfio_ascend_quirk_read,
+    .write = vfio_ascend_quirk_write,
+    .endianness = DEVICE_LITTLE_ENDIAN,
+};
+
+static void vfio_probe_ascend310_bar4_quirk(VFIOPCIDevice *vdev, int nr)
+{
+    VFIOQuirk *quirk;
+    VFIOAscendBarQuirk *bar4_quirk;
+
+    if (vdev->vendor_id != PCI_VENDOR_ID_HUAWEI || nr != 4 ||
+        vdev->device_id != PCI_DEVICE_ID_ASCEND310) {
+        return;
+    }
+
+    quirk = g_malloc0(sizeof(*quirk));
+    quirk->nr_mem = 1;
+    quirk->mem = g_new0(MemoryRegion, quirk->nr_mem);
+    bar4_quirk = quirk->data = g_new0(typeof(*bar4_quirk), quirk->nr_mem);
+    bar4_quirk[0].vdev = vdev;
+    bar4_quirk[0].offset = ASCEND310_XLOADER_OFFSET;
+    bar4_quirk[0].bar = nr;
+
+    /*
+     * intercept w/r to the xloader-updating register,
+     * so the vm can't enable xloader-updating
+     */
+    memory_region_init_io(&quirk->mem[0], OBJECT(vdev),
+                          &vfio_ascend_intercept_regs_quirk,
+                          &bar4_quirk[0],
+                          "vfio-ascend310-bar4-intercept-regs-quirk",
+                          ASCEND310_XLOADER_SIZE);
+    memory_region_add_subregion_overlap(vdev->bars[nr].region.mem,
+                                        bar4_quirk[0].offset,
+                                        &quirk->mem[0], 1);
+    QLIST_INSERT_HEAD(&vdev->bars[nr].quirks, quirk, next);
+}
+
 /*
  * Common quirk probe entry points.
  */
@@ -1261,6 +1335,7 @@ void vfio_bar_quirk_setup(VFIOPCIDevice *vdev, int nr)
 #ifdef CONFIG_VFIO_IGD
     vfio_probe_igd_bar4_quirk(vdev, nr);
 #endif
+    vfio_probe_ascend310_bar4_quirk(vdev, nr);
 }
 
 void vfio_bar_quirk_exit(VFIOPCIDevice *vdev, int nr)
