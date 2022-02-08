@@ -526,6 +526,7 @@ void pcie_cap_slot_unplug_request_cb(HotplugHandler *hotplug_dev,
     uint8_t *exp_cap = hotplug_pdev->config + hotplug_pdev->exp.exp_cap;
     uint32_t sltcap = pci_get_word(exp_cap + PCI_EXP_SLTCAP);
     uint16_t sltctl = pci_get_word(exp_cap + PCI_EXP_SLTCTL);
+    PCIESlot *s = PCIE_SLOT(hotplug_pdev);
 
     /* Check if hot-unplug is disabled on the slot */
     if ((sltcap & PCI_EXP_SLTCAP_HPC) == 0) {
@@ -572,7 +573,17 @@ void pcie_cap_slot_unplug_request_cb(HotplugHandler *hotplug_dev,
         return;
     }
 
-    pcie_cap_slot_push_attention_button(hotplug_pdev);
+    if ((pci_dev->cap_present & QEMU_PCIE_LNKSTA_DLLLA) && s->fast_plug) {
+        pci_word_test_and_clear_mask(pci_dev->config + pci_dev->exp.exp_cap + PCI_EXP_LNKSTA,
+                                    PCI_EXP_LNKSTA_DLLLA);
+    }
+
+    if (s->fast_unplug) {
+        pcie_cap_slot_event(hotplug_pdev,
+                            PCI_EXP_HP_EV_PDC | PCI_EXP_HP_EV_ABP);
+    } else {
+        pcie_cap_slot_push_attention_button(hotplug_pdev);
+    }
 }
 
 /* pci express slot for pci express root/downstream port

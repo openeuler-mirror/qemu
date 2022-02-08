@@ -140,6 +140,8 @@ static Property gen_rp_props[] = {
                                 speed, PCIE_LINK_SPEED_16),
     DEFINE_PROP_PCIE_LINK_WIDTH("x-width", PCIESlot,
                                 width, PCIE_LINK_WIDTH_32),
+    DEFINE_PROP_UINT8("fast-plug", PCIESlot, fast_plug, 0),
+    DEFINE_PROP_UINT8("fast-unplug", PCIESlot, fast_unplug, 0),
     DEFINE_PROP_END_OF_LIST()
 };
 

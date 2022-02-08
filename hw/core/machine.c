@@ -121,6 +121,8 @@ const size_t hw_compat_4_0_len = G_N_ELEMENTS(hw_compat_4_0);
 GlobalProperty hw_compat_3_1[] = {
     { "pcie-root-port", "x-speed", "2_5" },
     { "pcie-root-port", "x-width", "1" },
+    { "pcie-root-port", "fast-plug", "0" },
+    { "pcie-root-port", "fast-unplug", "0" },
     { "memory-backend-file", "x-use-canonical-path-for-ramblock-id", "true" },
     { "memory-backend-memfd", "x-use-canonical-path-for-ramblock-id", "true" },
     { "tpm-crb", "ppi", "false" },
