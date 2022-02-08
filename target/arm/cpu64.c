@@ -202,6 +202,7 @@ static void aarch64_a72_initfn(Object *obj)
     ARMCPU *cpu = ARM_CPU(obj);
 
     cpu->dtb_compatible = "arm,cortex-a72";
+    cpu->kvm_target = QEMU_KVM_ARM_TARGET_GENERIC_V8;
     set_feature(&cpu->env, ARM_FEATURE_V8);
     set_feature(&cpu->env, ARM_FEATURE_NEON);
     set_feature(&cpu->env, ARM_FEATURE_GENERIC_TIMER);
