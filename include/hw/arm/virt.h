@@ -70,6 +70,7 @@ enum {
     VIRT_GIC_REDIST,
     VIRT_SMMU,
     VIRT_UART,
+    VIRT_CPUFREQ,
     VIRT_MMIO,
     VIRT_RTC,
     VIRT_FW_CFG,
