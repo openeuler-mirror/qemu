@@ -25,6 +25,7 @@
 #include "qapi/qmp/qbool.h"
 #include "qemu/coroutine.h"
 #include "qemu/main-loop.h"
+#include "qemu/log.h"
 
 Visitor *qobject_input_visitor_new_qmp(QObject *obj)
 {
@@ -147,6 +148,7 @@ QDict *qmp_dispatch(const QmpCommandList *cmds, QObject *request,
     QObject *id;
     QObject *ret = NULL;
     QDict *rsp = NULL;
+    GString *json;
 
     dict = qobject_to(QDict, request);
     if (!dict) {
@@ -202,6 +204,19 @@ QDict *qmp_dispatch(const QmpCommandList *cmds, QObject *request,
     } else {
         args = qdict_get_qdict(dict, "arguments");
         qobject_ref(args);
+    }
+
+    json = qobject_to_json(QOBJECT(args));
+    if (json) {
+        if ((strcmp(command, "query-block-jobs") != 0)
+            && (strcmp(command, "query-migrate") != 0)
+            && (strcmp(command, "query-blockstats") != 0)
+            && (strcmp(command, "query-balloon") != 0)
+            && (strcmp(command, "set_password") != 0)) {
+                qemu_log("qmp_cmd_name: %s, arguments: %s\n",
+                         command, json->str);
+        }
+        g_string_free(json, true);
     }
 
     assert(!(oob && qemu_in_coroutine()));
