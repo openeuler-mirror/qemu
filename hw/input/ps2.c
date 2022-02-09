@@ -167,7 +167,7 @@ void ps2_queue_noirq(PS2State *s, int b)
     }
 
     q->data[q->wptr] = b;
-    if (++q->wptr == PS2_BUFFER_SIZE) {
+    if (++q->wptr >= PS2_BUFFER_SIZE) {
         q->wptr = 0;
     }
     q->count++;
@@ -557,7 +557,7 @@ uint32_t ps2_read_data(PS2State *s)
         val = q->data[index];
     } else {
         val = q->data[q->rptr];
-        if (++q->rptr == PS2_BUFFER_SIZE) {
+        if (++q->rptr >= PS2_BUFFER_SIZE) {
             q->rptr = 0;
         }
         q->count--;
