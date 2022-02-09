@@ -638,7 +638,7 @@ static int virtio_scsi_handle_cmd_req_prepare(VirtIOSCSI *s, VirtIOSCSIReq *req)
                               req->req.cmd.tag, req->req.cmd.cdb[0]);
 
     d = virtio_scsi_device_get(s, req->req.cmd.lun);
-    if (!d) {
+    if (!d || !d->qdev.realized) {
         req->resp.cmd.response = VIRTIO_SCSI_S_BAD_TARGET;
         virtio_scsi_complete_cmd_req(req);
         return -ENOENT;
