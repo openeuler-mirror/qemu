@@ -67,6 +67,9 @@
 
 #define NOT_DONE 0x7fffffff /* used while emulated sync operation in progress */
 
+#define DEFAULT_BIOS_BOOT_LOADER_DIR "/usr/share/edk2"
+#define DEFAULT_NVRAM_TEMPLATE_DIR "/var/lib/libvirt/qemu/nvram"
+
 static QTAILQ_HEAD(, BlockDriverState) graph_bdrv_states =
     QTAILQ_HEAD_INITIALIZER(graph_bdrv_states);
 
@@ -6432,7 +6435,13 @@ int coroutine_fn bdrv_co_invalidate_cache(BlockDriverState *bs, Error **errp)
             return ret;
         }
 
-        if (bs->drv->bdrv_co_invalidate_cache) {
+    /*
+     * It's not necessary for bios bootloader and nvram template to drop cache
+     * when migration, skip this step for them to avoid dowtime increase.
+     */
+        if (bs->drv->bdrv_co_invalidate_cache &&
+            !strstr(bs->filename, DEFAULT_BIOS_BOOT_LOADER_DIR) &&
+            !strstr(bs->filename, DEFAULT_NVRAM_TEMPLATE_DIR)) {
             bs->drv->bdrv_co_invalidate_cache(bs, &local_err);
             if (local_err) {
                 bs->open_flags |= BDRV_O_INACTIVE;
