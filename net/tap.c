@@ -684,7 +684,7 @@ static void net_init_tap_one(const NetdevTapOptions *tap, NetClientState *peer,
     tap_set_sndbuf(s->fd, tap, &err);
     if (err) {
         error_propagate(errp, err);
-        return;
+        goto fail;
     }
 
     if (tap->has_fd || tap->has_fds) {
@@ -726,13 +726,13 @@ static void net_init_tap_one(const NetdevTapOptions *tap, NetClientState *peer,
                 } else {
                     warn_report_err(err);
                 }
-                return;
+                goto fail;
             }
             ret = qemu_try_set_nonblock(vhostfd);
             if (ret < 0) {
                 error_setg_errno(errp, -ret, "%s: Can't use file descriptor %d",
                                  name, fd);
-                return;
+                goto fail;
             }
         } else {
             vhostfd = open("/dev/vhost-net", O_RDWR);
@@ -744,7 +744,7 @@ static void net_init_tap_one(const NetdevTapOptions *tap, NetClientState *peer,
                     warn_report("tap: open vhost char device failed: %s",
                                 strerror(errno));
                 }
-                return;
+                goto fail;
             }
             qemu_set_nonblock(vhostfd);
         }
@@ -758,11 +758,17 @@ static void net_init_tap_one(const NetdevTapOptions *tap, NetClientState *peer,
             } else {
                 warn_report(VHOST_NET_INIT_FAILED);
             }
-            return;
+            goto fail;
         }
     } else if (vhostfdname) {
         error_setg(errp, "vhostfd(s)= is not valid without vhost");
+        goto fail;
     }
+
+    return;
+
+fail:
+    qemu_del_net_client(&s->nc);
 }
 
 static int get_fds(char *str, char *fds[], int max)
