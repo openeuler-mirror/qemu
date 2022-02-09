@@ -202,6 +202,7 @@ static void aarch64_a72_initfn(Object *obj)
     ARMCPU *cpu = ARM_CPU(obj);
 
     cpu->dtb_compatible = "arm,cortex-a72";
+    cpu->kvm_target = QEMU_KVM_ARM_TARGET_GENERIC_V8;
     set_feature(&cpu->env, ARM_FEATURE_V8);
     set_feature(&cpu->env, ARM_FEATURE_NEON);
     set_feature(&cpu->env, ARM_FEATURE_GENERIC_TIMER);
@@ -246,6 +247,26 @@ static void aarch64_a72_initfn(Object *obj)
     cpu->gic_vpribits = 5;
     cpu->gic_vprebits = 5;
     define_arm_cp_regs(cpu, cortex_a72_a57_a53_cp_reginfo);
+}
+
+static void aarch64_kunpeng_920_initfn(Object *obj)
+{
+    ARMCPU *cpu = ARM_CPU(obj);
+
+    /*
+     * Hisilicon Kunpeng-920 CPU is similar to cortex-a72,
+     * so first initialize cpu data as cortex-a72,
+     * and then update the special register.
+     */
+    aarch64_a72_initfn(obj);
+
+    cpu->midr = 0x480fd010;
+    cpu->ctr = 0x84448004;
+    cpu->isar.id_aa64pfr0 = 0x11001111;
+    cpu->isar.id_aa64dfr0 = 0x110305408;
+    cpu->isar.id_aa64isar0 = 0x10211120;
+    cpu->isar.id_aa64mmfr0 = 0x101125;
+    cpu->kvm_target = KVM_ARM_TARGET_GENERIC_V8;
 }
 
 void arm_cpu_sve_finalize(ARMCPU *cpu, Error **errp)
@@ -655,6 +676,32 @@ static Property arm_cpu_pauth_property =
 static Property arm_cpu_pauth_impdef_property =
     DEFINE_PROP_BOOL("pauth-impdef", ARMCPU, prop_pauth_impdef, false);
 
+static void aarch64_max_ft2000plus_initfn(Object *obj)
+{
+    ARMCPU *cpu = ARM_CPU(obj);
+
+    if (kvm_enabled()) {
+        kvm_arm_set_cpu_features_from_host(cpu);
+        kvm_arm_add_vcpu_properties(obj);
+    } else {
+        aarch64_a72_initfn(obj);
+        cpu->midr = 0x70186622;
+    }
+}
+
+static void aarch64_max_tengyun_s2500_initfn(Object *obj)
+{
+    ARMCPU *cpu = ARM_CPU(obj);
+
+    if (kvm_enabled()) {
+        kvm_arm_set_cpu_features_from_host(cpu);
+        kvm_arm_add_vcpu_properties(obj);
+    } else {
+        aarch64_a72_initfn(obj);
+        cpu->midr = 0x70186632;
+    }
+}
+
 /* -cpu max: if KVM is enabled, like -cpu host (best possible with this host);
  * otherwise, a CPU with as many features enabled as our emulation supports.
  * The version of '-cpu max' for qemu-system-arm is defined in cpu.c;
@@ -892,6 +939,9 @@ static const ARMCPUInfo aarch64_cpus[] = {
     { .name = "cortex-a57",         .initfn = aarch64_a57_initfn },
     { .name = "cortex-a53",         .initfn = aarch64_a53_initfn },
     { .name = "cortex-a72",         .initfn = aarch64_a72_initfn },
+    { .name = "Kunpeng-920",        .initfn = aarch64_kunpeng_920_initfn},
+    { .name = "FT-2000+",           .initfn = aarch64_max_ft2000plus_initfn },
+    { .name = "Tengyun-S2500",      .initfn = aarch64_max_tengyun_s2500_initfn },
     { .name = "a64fx",              .initfn = aarch64_a64fx_initfn },
     { .name = "max",                .initfn = aarch64_max_initfn },
 };
@@ -933,10 +983,47 @@ static gchar *aarch64_gdb_arch_name(CPUState *cs)
     return g_strdup("aarch64");
 }
 
+/* Parse "+feature,-feature,feature=foo" CPU feature string
+ */
+static void arm_cpu_parse_featurestr(const char *typename, char *features,
+                                     Error **errp )
+{
+    char *featurestr;
+    char *val;
+    static bool cpu_globals_initialized;
+
+    if (cpu_globals_initialized) {
+        return;
+    }
+    cpu_globals_initialized = true;
+
+    featurestr = features ? strtok(features, ",") : NULL;
+    while (featurestr) {
+        val = strchr(featurestr, '=');
+        if (val) {
+            GlobalProperty *prop = g_new0(typeof(*prop), 1);
+            *val = 0;
+            val++;
+            prop->driver = typename;
+            prop->property = g_strdup(featurestr);
+            prop->value = g_strdup(val);
+            qdev_prop_register_global(prop);
+        } else if (featurestr[0] == '+' || featurestr[0] == '-') {
+            warn_report("Ignore %s feature\n", featurestr);
+        } else {
+            error_setg(errp, "Expected key=value format, found %s.",
+                       featurestr);
+            return;
+        }
+        featurestr = strtok(NULL, ",");
+    }
+}
+
 static void aarch64_cpu_class_init(ObjectClass *oc, void *data)
 {
     CPUClass *cc = CPU_CLASS(oc);
 
+    cc->parse_features = arm_cpu_parse_featurestr;
     cc->gdb_read_register = aarch64_cpu_gdb_read_register;
     cc->gdb_write_register = aarch64_cpu_gdb_write_register;
     cc->gdb_num_core_regs = 34;
