@@ -179,6 +179,10 @@ static int scsi_handle_inquiry_reply(SCSIGenericReq *r, SCSIDevice *s, int len)
         (r->req.cmd.buf[1] & 0x01)) {
         page = r->req.cmd.buf[2];
         if (page == 0xb0) {
+            if (s->blocksize == 0) {
+                qemu_log("device blocksize is 0!\n");
+                abort();
+            }
             uint64_t max_transfer = blk_get_max_hw_transfer(s->conf.blk);
             uint32_t max_iov = blk_get_max_hw_iov(s->conf.blk);
 
@@ -314,11 +318,23 @@ static void scsi_read_complete(void * opaque, int ret)
     /* Snoop READ CAPACITY output to set the blocksize.  */
     if (r->req.cmd.buf[0] == READ_CAPACITY_10 &&
         (ldl_be_p(&r->buf[0]) != 0xffffffffU || s->max_lba == 0)) {
-        s->blocksize = ldl_be_p(&r->buf[4]);
+        int new_blocksize = ldl_be_p(&r->buf[4]);
+        if (s->blocksize != new_blocksize) {
+            qemu_log("device id=%s type=%d: blocksize %d change to %d\n",
+                     s->qdev.id ? s->qdev.id : "null", s->type,
+                     s->blocksize, new_blocksize);
+        }
+        s->blocksize = new_blocksize;
         s->max_lba = ldl_be_p(&r->buf[0]) & 0xffffffffULL;
     } else if (r->req.cmd.buf[0] == SERVICE_ACTION_IN_16 &&
                (r->req.cmd.buf[1] & 31) == SAI_READ_CAPACITY_16) {
-        s->blocksize = ldl_be_p(&r->buf[8]);
+        int new_blocksize = ldl_be_p(&r->buf[8]);
+        if (s->blocksize != new_blocksize) {
+            qemu_log("device id=%s type=%d: blocksize %d change to %d\n",
+                     s->qdev.id ? s->qdev.id : "null", s->type,
+                     s->blocksize, new_blocksize);
+        }
+        s->blocksize = new_blocksize;
         s->max_lba = ldq_be_p(&r->buf[0]);
     }
     blk_set_guest_block_size(s->conf.blk, s->blocksize);
