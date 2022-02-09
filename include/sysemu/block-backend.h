@@ -25,6 +25,9 @@
  */
 #include "block/block.h"
 
+/* block backend default retry interval */
+#define BLOCK_BACKEND_DEFAULT_RETRY_INTERVAL   1000
+
 /* Callbacks for block device models */
 typedef struct BlockDevOps {
     /*
@@ -70,6 +73,10 @@ typedef struct BlockDevOps {
      * Is the device still busy?
      */
     bool (*drained_poll)(void *opaque);
+    /*
+     * Runs when retrying failed requests.
+     */
+    void (*retry_request_cb)(void *opaque);
 } BlockDevOps;
 
 /* This struct is embedded in (the private) BlockBackend struct and contains
@@ -194,6 +201,9 @@ void blk_inc_in_flight(BlockBackend *blk);
 void blk_dec_in_flight(BlockBackend *blk);
 void blk_drain(BlockBackend *blk);
 void blk_drain_all(void);
+void blk_set_on_error_retry_interval(BlockBackend *blk, int64_t interval);
+void blk_set_on_error_retry_timeout(BlockBackend *blk, int64_t timeout);
+void blk_error_retry_reset_timeout(BlockBackend *blk);
 void blk_set_on_error(BlockBackend *blk, BlockdevOnError on_read_error,
                       BlockdevOnError on_write_error);
 BlockdevOnError blk_get_on_error(BlockBackend *blk, bool is_read);

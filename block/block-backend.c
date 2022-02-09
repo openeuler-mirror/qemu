@@ -95,6 +95,15 @@ struct BlockBackend {
      * Accessed with atomic ops.
      */
     unsigned int in_flight;
+
+    /* Timer for retry on errors. */
+    QEMUTimer *retry_timer;
+    /* Interval in ms to trigger next retry. */
+    int64_t retry_interval;
+    /* Start time of the first error. Used to check timeout. */
+    int64_t retry_start_time;
+    /* Retry timeout. 0 represents infinite retry. */
+    int64_t retry_timeout;
 };
 
 typedef struct BlockBackendAIOCB {
@@ -353,6 +362,11 @@ BlockBackend *blk_new(AioContext *ctx, uint64_t perm, uint64_t shared_perm)
     blk->on_read_error = BLOCKDEV_ON_ERROR_REPORT;
     blk->on_write_error = BLOCKDEV_ON_ERROR_ENOSPC;
 
+    blk->retry_timer = NULL;
+    blk->retry_interval = BLOCK_BACKEND_DEFAULT_RETRY_INTERVAL;
+    blk->retry_start_time = 0;
+    blk->retry_timeout = 0;
+
     block_acct_init(&blk->stats);
 
     qemu_co_queue_init(&blk->queued_requests);
@@ -471,6 +485,10 @@ static void blk_delete(BlockBackend *blk)
     QTAILQ_REMOVE(&block_backends, blk, link);
     drive_info_del(blk->legacy_dinfo);
     block_acct_cleanup(&blk->stats);
+    if (blk->retry_timer) {
+        timer_del(blk->retry_timer);
+        timer_free(blk->retry_timer);
+    }
     g_free(blk);
 }
 
@@ -996,6 +1014,14 @@ void blk_set_dev_ops(BlockBackend *blk, const BlockDevOps *ops,
 {
     blk->dev_ops = ops;
     blk->dev_opaque = opaque;
+
+    if ((blk->on_read_error == BLOCKDEV_ON_ERROR_RETRY ||
+         blk->on_write_error == BLOCKDEV_ON_ERROR_RETRY) &&
+        ops->retry_request_cb) {
+        blk->retry_timer = aio_timer_new(blk->ctx, QEMU_CLOCK_REALTIME,
+                                         SCALE_MS, ops->retry_request_cb,
+                                         opaque);
+    }
 
     /* Are we currently quiesced? Should we enforce this right now? */
     if (blk->quiesce_counter && ops->drained_begin) {
@@ -1737,6 +1763,39 @@ void blk_drain_all(void)
     bdrv_drain_all_end();
 }
 
+void blk_set_on_error_retry_interval(BlockBackend *blk, int64_t interval)
+{
+    blk->retry_interval = interval;
+}
+
+void blk_set_on_error_retry_timeout(BlockBackend *blk, int64_t timeout)
+{
+    blk->retry_timeout = timeout;
+}
+
+static bool blk_error_retry_timeout(BlockBackend *blk)
+{
+    /* No timeout set, infinite retries. */
+    if (!blk->retry_timeout) {
+        return false;
+    }
+
+    /* The first time an error occurs. */
+    if (!blk->retry_start_time) {
+        blk->retry_start_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
+        return false;
+    }
+
+    return qemu_clock_get_ms(QEMU_CLOCK_REALTIME) > (blk->retry_start_time +
+                                                     blk->retry_timeout);
+}
+
+void blk_error_retry_reset_timeout(BlockBackend *blk)
+{
+    if (blk->retry_timer && blk->retry_start_time)
+        blk->retry_start_time = 0;
+}
+
 void blk_set_on_error(BlockBackend *blk, BlockdevOnError on_read_error,
                       BlockdevOnError on_write_error)
 {
@@ -1764,6 +1823,9 @@ BlockErrorAction blk_get_error_action(BlockBackend *blk, bool is_read,
         return BLOCK_ERROR_ACTION_REPORT;
     case BLOCKDEV_ON_ERROR_IGNORE:
         return BLOCK_ERROR_ACTION_IGNORE;
+    case BLOCKDEV_ON_ERROR_RETRY:
+        return (blk->retry_timer && !blk_error_retry_timeout(blk)) ?
+               BLOCK_ERROR_ACTION_RETRY : BLOCK_ERROR_ACTION_REPORT;
     case BLOCKDEV_ON_ERROR_AUTO:
     default:
         abort();
@@ -1811,6 +1873,10 @@ void blk_error_action(BlockBackend *blk, BlockErrorAction action,
         qemu_system_vmstop_request_prepare();
         send_qmp_error_event(blk, action, is_read, error);
         qemu_system_vmstop_request(RUN_STATE_IO_ERROR);
+    } else if (action == BLOCK_ERROR_ACTION_RETRY) {
+        timer_mod(blk->retry_timer, qemu_clock_get_ms(QEMU_CLOCK_REALTIME) +
+                                    blk->retry_interval);
+        send_qmp_error_event(blk, action, is_read, error);
     } else {
         send_qmp_error_event(blk, action, is_read, error);
     }
