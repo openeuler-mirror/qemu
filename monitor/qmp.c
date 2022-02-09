@@ -125,18 +125,19 @@ void qmp_send_response(MonitorQMP *mon, const QDict *rsp)
  * Null @rsp can only happen for commands with QCO_NO_SUCCESS_RESP.
  * Nothing is emitted then.
  */
-static void monitor_qmp_respond(MonitorQMP *mon, QDict *rsp)
+static void monitor_qmp_respond(MonitorQMP *mon, QDict *rsp, uint64_t req_client_id)
 {
-    if (rsp) {
-        qmp_send_response(mon, rsp);
+    if (!rsp || (mon->qmp_client_id != req_client_id)) {
+        return;
     }
+    qmp_send_response(mon, rsp);
 }
 
 /*
  * Runs outside of coroutine context for OOB commands, but in
  * coroutine context for everything else.
  */
-static void monitor_qmp_dispatch(MonitorQMP *mon, QObject *req)
+static void monitor_qmp_dispatch(MonitorQMP *mon, QObject *req, uint64_t req_client_id)
 {
     QDict *rsp;
     QDict *error;
@@ -156,7 +157,7 @@ static void monitor_qmp_dispatch(MonitorQMP *mon, QObject *req)
         }
     }
 
-    monitor_qmp_respond(mon, rsp);
+    monitor_qmp_respond(mon, rsp, req_client_id);
     qobject_unref(rsp);
 }
 
@@ -315,13 +316,13 @@ void coroutine_fn monitor_qmp_dispatcher_co(void *data)
                 trace_monitor_qmp_cmd_in_band(id_json->str);
                 g_string_free(id_json, true);
             }
-            monitor_qmp_dispatch(mon, req_obj->req);
+            monitor_qmp_dispatch(mon, req_obj->req, mon->qmp_client_id);
         } else {
             assert(req_obj->err);
             trace_monitor_qmp_err_in_band(error_get_pretty(req_obj->err));
             rsp = qmp_error_response(req_obj->err);
             req_obj->err = NULL;
-            monitor_qmp_respond(mon, rsp);
+            monitor_qmp_respond(mon, rsp, mon->qmp_client_id);
             qobject_unref(rsp);
         }
 
@@ -366,7 +367,7 @@ static void handle_qmp_command(void *opaque, QObject *req, Error *err)
             trace_monitor_qmp_cmd_out_of_band(id_json->str);
             g_string_free(id_json, true);
         }
-        monitor_qmp_dispatch(mon, req);
+        monitor_qmp_dispatch(mon, req, mon->qmp_client_id);
         qobject_unref(req);
         return;
     }
@@ -452,6 +453,7 @@ static void monitor_qmp_event(void *opaque, QEMUChrEvent event)
         mon_refcount++;
         break;
     case CHR_EVENT_CLOSED:
+        mon->qmp_client_id++;
         /*
          * Note: this is only useful when the output of the chardev
          * backend is still open.  For example, when the backend is
@@ -505,6 +507,7 @@ void monitor_init_qmp(Chardev *chr, bool pretty, Error **errp)
     }
     qemu_chr_fe_set_echo(&mon->common.chr, true);
 
+    mon->qmp_client_id = 1;
     /* Note: we run QMP monitor in I/O thread when @chr supports that */
     monitor_data_init(&mon->common, true, false,
                       qemu_chr_has_feature(chr, QEMU_CHAR_FEATURE_GCONTEXT));

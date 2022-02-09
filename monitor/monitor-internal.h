@@ -144,6 +144,7 @@ typedef struct {
     const QmpCommandList *commands;
     bool capab_offered[QMP_CAPABILITY__MAX]; /* capabilities offered */
     bool capab[QMP_CAPABILITY__MAX];         /* offered and accepted */
+    uint64_t qmp_client_id; /*qmp client id, update if peer disconnect */
     /*
      * Protects qmp request/response queue.
      * Take monitor_lock first when you need both.
