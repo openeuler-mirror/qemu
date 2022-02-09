@@ -2970,7 +2970,7 @@ int kvm_cpu_exec(CPUState *cpu)
 
     if (ret < 0) {
         cpu_dump_state(cpu, stderr, CPU_DUMP_CODE);
-        vm_stop(RUN_STATE_INTERNAL_ERROR);
+        qemu_system_guest_panicked(cpu_get_crash_info(cpu));
     }
 
     qatomic_set(&cpu->exit_request, 0);
