@@ -88,6 +88,8 @@ static QemuMutex sigbus_mutex;
 static QemuMutex page_mutex;
 static QemuCond page_cond;
 
+static int started_num_threads;
+
 int qemu_get_thread_id(void)
 {
 #if defined(__linux__)
@@ -344,6 +346,10 @@ static void *do_touch_pages(void *arg)
     }
     qemu_mutex_unlock(&page_mutex);
 
+    while (started_num_threads != memset_args->context.num_threads) {
+        smp_mb();
+    }
+
     /* unblock SIGBUS */
     sigemptyset(&set);
     sigaddset(&set, SIGBUS);
@@ -448,7 +454,7 @@ static int touch_all_pages(char *area, size_t hpagesize, size_t numpages,
     context.threads = g_new0(MemsetThread, context.num_threads);
     numpages_per_thread = numpages / context.num_threads;
     leftover = numpages % context.num_threads;
-    for (i = 0; i < context.num_threads; i++) {
+    for (i = 0, started_num_threads = 0; i < context.num_threads; i++) {
         context.threads[i].addr = addr;
         context.threads[i].numpages = numpages_per_thread + (i < leftover);
         context.threads[i].hpagesize = hpagesize;
@@ -464,6 +470,7 @@ static int touch_all_pages(char *area, size_t hpagesize, size_t numpages,
                                QEMU_THREAD_JOINABLE);
         }
         addr += context.threads[i].numpages * hpagesize;
+        started_num_threads++;
     }
 
     if (!use_madv_populate_write) {
