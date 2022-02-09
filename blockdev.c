@@ -556,7 +556,7 @@ static BlockBackend *blockdev_init(const char *file, QDict *bs_opts,
         qdict_put_str(bs_opts, "driver", buf);
     }
 
-    on_write_error = BLOCKDEV_ON_ERROR_ENOSPC;
+    on_write_error = BLOCKDEV_ON_ERROR_REPORT;
     if ((buf = qemu_opt_get(opts, "werror")) != NULL) {
         on_write_error = parse_block_error_action(buf, 0, &error);
         if (error) {
