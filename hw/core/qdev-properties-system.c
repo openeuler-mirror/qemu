@@ -1119,3 +1119,14 @@ const PropertyInfo qdev_prop_uuid = {
     .set   = set_uuid,
     .set_default_value = set_default_uuid_auto,
 };
+
+/* --- CompressMethod --- */
+const PropertyInfo qdev_prop_compress_method = {
+    .name = "CompressMethod",
+    .description = "multi-thread compression method, "
+                   "zlib/zstd",
+    .enum_table = &CompressMethod_lookup,
+    .get = qdev_propinfo_get_enum,
+    .set = qdev_propinfo_set_enum,
+    .set_default_value = qdev_propinfo_set_default_value_enum,
+};
