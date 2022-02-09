@@ -84,6 +84,7 @@ typedef struct MemsetThread MemsetThread;
 
 static MemsetThread *memset_thread;
 static int memset_num_threads;
+static int started_num_threads;
 static bool memset_thread_failed;
 
 static QemuMutex page_mutex;
@@ -464,6 +465,10 @@ static void *do_touch_pages(void *arg)
     }
     qemu_mutex_unlock(&page_mutex);
 
+    while (started_num_threads != memset_num_threads) {
+        smp_mb();
+    }
+
     /* unblock SIGBUS */
     sigemptyset(&set);
     sigaddset(&set, SIGBUS);
@@ -529,7 +534,7 @@ static bool touch_all_pages(char *area, size_t hpagesize, size_t numpages,
     memset_thread = g_new0(MemsetThread, memset_num_threads);
     numpages_per_thread = numpages / memset_num_threads;
     leftover = numpages % memset_num_threads;
-    for (i = 0; i < memset_num_threads; i++) {
+    for (i = 0, started_num_threads = 0; i < memset_num_threads; i++) {
         memset_thread[i].addr = addr;
         memset_thread[i].numpages = numpages_per_thread + (i < leftover);
         memset_thread[i].hpagesize = hpagesize;
@@ -537,6 +542,7 @@ static bool touch_all_pages(char *area, size_t hpagesize, size_t numpages,
                            do_touch_pages, &memset_thread[i],
                            QEMU_THREAD_JOINABLE);
         addr += memset_thread[i].numpages * hpagesize;
+        started_num_threads++;
     }
 
     qemu_mutex_lock(&page_mutex);
