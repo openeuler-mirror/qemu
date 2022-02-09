@@ -224,9 +224,16 @@ bool blkconf_geometry(BlockConf *conf, int *ptrans,
                       Error **errp)
 {
     if (!conf->cyls && !conf->heads && !conf->secs) {
+        AioContext *ctx = blk_get_aio_context(conf->blk);
+
+        /* Callers may not expect this function to dispatch aio handlers, so
+         * disable external aio such as guest device emulation.
+         */
+        aio_disable_external(ctx);
         hd_geometry_guess(conf->blk,
                           &conf->cyls, &conf->heads, &conf->secs,
                           ptrans);
+        aio_enable_external(ctx);
     } else if (ptrans && *ptrans == BIOS_ATA_TRANSLATION_AUTO) {
         *ptrans = hd_bios_chs_auto_trans(conf->cyls, conf->heads, conf->secs);
     }
