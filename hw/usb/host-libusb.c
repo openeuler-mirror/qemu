@@ -945,6 +945,30 @@ static void usb_host_ep_update(USBHostDevice *s)
     libusb_free_config_descriptor(conf);
 }
 
+static unsigned int usb_get_controller_type(int speed)
+{
+    unsigned int type = MAX_USB_CONTROLLER_TYPES;
+
+    switch (speed) {
+    case USB_SPEED_SUPER:
+        type = QEMU_USB_CONTROLLER_XHCI;
+        break;
+    case USB_SPEED_HIGH:
+        type = QEMU_USB_CONTROLLER_EHCI;
+        break;
+    case USB_SPEED_FULL:
+        type = QEMU_USB_CONTROLLER_UHCI;
+        break;
+    case USB_SPEED_LOW:
+        type = QEMU_USB_CONTROLLER_OHCI;
+        break;
+    default:
+        break;
+    }
+
+    return type;
+}
+
 static int usb_host_open(USBHostDevice *s, libusb_device *dev, int hostfd)
 {
     USBDevice *udev = USB_DEVICE(s);
@@ -1054,6 +1078,12 @@ static int usb_host_open(USBHostDevice *s, libusb_device *dev, int hostfd)
     }
 
     trace_usb_host_open_success(bus_num, addr);
+
+    /* change ehci frame time freq when USB passthrough */
+    qemu_log("usb host speed is %d\n", udev->speed);
+    qemu_timer_set_mode(QEMU_TIMER_USB_NORMAL_MODE,
+                        usb_get_controller_type(udev->speed));
+
     return 0;
 
 fail:
@@ -1129,6 +1159,8 @@ static int usb_host_close(USBHostDevice *s)
     }
 
     usb_host_auto_check(NULL);
+    qemu_timer_set_mode(QEMU_TIMER_USB_LAZY_MODE,
+                        usb_get_controller_type(udev->speed));
     return 0;
 }
 

@@ -1365,6 +1365,8 @@ void vnc_disconnect_finish(VncState *vs)
     g_free(vs->zrle);
     g_free(vs->tight);
     g_free(vs);
+
+    qemu_timer_set_mode(QEMU_TIMER_USB_LAZY_MODE, QEMU_USB_CONTROLLER_UHCI);
 }
 
 size_t vnc_client_io_error(VncState *vs, ssize_t ret, Error *err)
@@ -3341,6 +3343,8 @@ static void vnc_connect(VncDisplay *vd, QIOChannelSocket *sioc,
             }
         }
     }
+
+    qemu_timer_set_mode(QEMU_TIMER_USB_NORMAL_MODE, QEMU_USB_CONTROLLER_UHCI);
 }
 
 void vnc_start_protocol(VncState *vs)
