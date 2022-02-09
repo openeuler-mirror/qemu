@@ -44,6 +44,8 @@
 #include "hcd-uhci.h"
 
 #define FRAME_TIMER_FREQ 1000
+#define FRAME_TIMER_FREQ_LAZY 10
+#define USB_DEVICE_NEED_NORMAL_FREQ "QEMU USB Tablet"
 
 #define FRAME_MAX_LOOPS  256
 
@@ -110,6 +112,22 @@ typedef struct UHCI_QH {
 static void uhci_async_cancel(UHCIAsync *async);
 static void uhci_queue_fill(UHCIQueue *q, UHCI_TD *td);
 static void uhci_resume(void *opaque);
+
+static int64_t uhci_frame_timer_freq = FRAME_TIMER_FREQ_LAZY;
+
+static void uhci_set_frame_freq(int freq)
+{
+    if (freq <= 0) {
+        return;
+    }
+
+    uhci_frame_timer_freq = freq;
+}
+
+static qemu_usb_controller qemu_uhci = {
+    .name = "uhci",
+    .qemu_set_freq = uhci_set_frame_freq,
+};
 
 static inline int32_t uhci_queue_token(UHCI_TD *td)
 {
@@ -353,7 +371,7 @@ static int uhci_post_load(void *opaque, int version_id)
 
     if (version_id < 2) {
         s->expire_time = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) +
-            (NANOSECONDS_PER_SECOND / FRAME_TIMER_FREQ);
+            (NANOSECONDS_PER_SECOND / uhci_frame_timer_freq);
     }
     return 0;
 }
@@ -394,8 +412,29 @@ static void uhci_port_write(void *opaque, hwaddr addr,
         if ((val & UHCI_CMD_RS) && !(s->cmd & UHCI_CMD_RS)) {
             /* start frame processing */
             trace_usb_uhci_schedule_start();
-            s->expire_time = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) +
-                (NANOSECONDS_PER_SECOND / FRAME_TIMER_FREQ);
+
+            /*
+             * If the frequency of frame_timer is too slow, Guest OS (Win2012) would become
+             * blue-screen after hotplugging some vcpus.
+             * If this USB device support the remote-wakeup, the UHCI controller
+             * will enter global suspend mode when there is no input for several seconds.
+             * In this case, Qemu will delete the frame_timer. Since the frame_timer has been deleted,
+             * there is no influence to the performance of Vms. So, we can change the frequency to 1000.
+             * After that the frequency will be safe when we trigger the frame_timer again.
+             * Excepting this, there are two ways to change the frequency:
+             * 1)VNC connect/disconnect;2)attach/detach USB device.
+             */
+            if ((uhci_frame_timer_freq != FRAME_TIMER_FREQ)
+                && (s->ports[0].port.dev)
+                && (!memcmp(s->ports[0].port.dev->product_desc,
+                USB_DEVICE_NEED_NORMAL_FREQ, strlen(USB_DEVICE_NEED_NORMAL_FREQ)))
+                && (s->ports[0].port.dev->remote_wakeup & USB_DEVICE_REMOTE_WAKEUP_IS_SUPPORTED)) {
+                qemu_log("turn up the frequency of UHCI controller to %d\n", FRAME_TIMER_FREQ);
+                uhci_frame_timer_freq = FRAME_TIMER_FREQ;
+            }
+
+            s->frame_time = NANOSECONDS_PER_SECOND / FRAME_TIMER_FREQ;
+            s->expire_time = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + s->frame_time;
             timer_mod(s->frame_timer, s->expire_time);
             s->status &= ~UHCI_STS_HCHALTED;
         } else if (!(val & UHCI_CMD_RS)) {
@@ -1083,7 +1122,6 @@ static void uhci_frame_timer(void *opaque)
     UHCIState *s = opaque;
     uint64_t t_now, t_last_run;
     int i, frames;
-    const uint64_t frame_t = NANOSECONDS_PER_SECOND / FRAME_TIMER_FREQ;
 
     s->completions_only = false;
     qemu_bh_cancel(s->bh);
@@ -1099,14 +1137,14 @@ static void uhci_frame_timer(void *opaque)
     }
 
     /* We still store expire_time in our state, for migration */
-    t_last_run = s->expire_time - frame_t;
+    t_last_run = s->expire_time - s->frame_time;
     t_now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
 
     /* Process up to MAX_FRAMES_PER_TICK frames */
-    frames = (t_now - t_last_run) / frame_t;
+    frames = (t_now - t_last_run) / s->frame_time;
     if (frames > s->maxframes) {
         int skipped = frames - s->maxframes;
-        s->expire_time += skipped * frame_t;
+        s->expire_time += skipped * s->frame_time;
         s->frnum = (s->frnum + skipped) & 0x7ff;
         frames -= skipped;
     }
@@ -1123,7 +1161,7 @@ static void uhci_frame_timer(void *opaque)
         /* The spec says frnum is the frame currently being processed, and
          * the guest must look at frnum - 1 on interrupt, so inc frnum now */
         s->frnum = (s->frnum + 1) & 0x7ff;
-        s->expire_time += frame_t;
+        s->expire_time += s->frame_time;
     }
 
     /* Complete the previous frame(s) */
@@ -1134,7 +1172,12 @@ static void uhci_frame_timer(void *opaque)
     }
     s->pending_int_mask = 0;
 
-    timer_mod(s->frame_timer, t_now + frame_t);
+    /* expire_time is calculated from last frame_time, we should calculate it
+     * according to new frame_time which equals to
+     * NANOSECONDS_PER_SECOND / uhci_frame_timer_freq */
+    s->expire_time -= s->frame_time - NANOSECONDS_PER_SECOND / uhci_frame_timer_freq;
+    s->frame_time = NANOSECONDS_PER_SECOND / uhci_frame_timer_freq;
+    timer_mod(s->frame_timer, t_now + s->frame_time);
 }
 
 static const MemoryRegionOps uhci_ioport_ops = {
@@ -1196,8 +1239,10 @@ void usb_uhci_common_realize(PCIDevice *dev, Error **errp)
     s->bh = qemu_bh_new(uhci_bh, s);
     s->frame_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, uhci_frame_timer, s);
     s->num_ports_vmstate = NB_PORTS;
+    s->frame_time = NANOSECONDS_PER_SECOND / uhci_frame_timer_freq;
     QTAILQ_INIT(&s->queues);
 
+    qemu_register_usb_controller(&qemu_uhci, QEMU_USB_CONTROLLER_UHCI);
     memory_region_init_io(&s->io_bar, OBJECT(s), &uhci_ioport_ops, s,
                           "uhci", 0x20);
 

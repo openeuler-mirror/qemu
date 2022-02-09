@@ -23,6 +23,7 @@
  */
 
 #include "qemu/osdep.h"
+#include "qemu/log.h"
 #include "qemu/main-loop.h"
 #include "qemu/timer.h"
 #include "qemu/lockable.h"
@@ -74,6 +75,74 @@ struct QEMUTimerList {
     /* lightweight method to mark the end of timerlist's running */
     QemuEvent timers_done_ev;
 };
+
+typedef struct qemu_controller_timer_state {
+    qemu_usb_controller_ptr controller;
+    int refs;
+} controller_timer_state;
+
+typedef controller_timer_state* controller_timer_state_ptr;
+
+static controller_timer_state uhci_timer_state = {
+    .controller = NULL,
+    .refs = 0,
+};
+
+static controller_timer_state_ptr \
+       qemu_usb_controller_tab[MAX_USB_CONTROLLER_TYPES] = {NULL,
+                                                            &uhci_timer_state,
+                                                            NULL, NULL};
+
+int qemu_register_usb_controller(qemu_usb_controller_ptr controller,
+                                 unsigned int type)
+{
+    if (type != QEMU_USB_CONTROLLER_UHCI) {
+        return 0;
+    }
+
+    /* for companion EHCI controller will create three UHCI controllers,
+     * we init it only once.
+     */
+    if (!qemu_usb_controller_tab[type]->controller) {
+        qemu_log("the usb controller (%d) registed frame handler\n", type);
+        qemu_usb_controller_tab[type]->controller = controller;
+    }
+
+    return 0;
+}
+
+int qemu_timer_set_mode(enum qemu_timer_mode mode, unsigned int type)
+{
+    if (type != QEMU_USB_CONTROLLER_UHCI) {
+        qemu_log("the usb controller (%d) no need change frame frep\n", type);
+        return 0;
+    }
+
+    if (!qemu_usb_controller_tab[type]->controller) {
+        qemu_log("the usb controller (%d) not registed yet\n", type);
+        return 0;
+    }
+
+    if (mode == QEMU_TIMER_USB_NORMAL_MODE) {
+        if (qemu_usb_controller_tab[type]->refs++ > 0) {
+            return 0;
+        }
+        qemu_usb_controller_tab[type]->controller->
+            qemu_set_freq(QEMU_USB_NORMAL_FREQ);
+        qemu_log("Set the controller (%d) of freq %d HZ,\n",
+                 type, QEMU_USB_NORMAL_FREQ);
+    } else {
+        if (--qemu_usb_controller_tab[type]->refs > 0) {
+            return 0;
+        }
+        qemu_usb_controller_tab[type]->controller->
+            qemu_set_freq(QEMU_USB_LAZY_FREQ);
+        qemu_log("Set the controller(type:%d) of freq %d HZ,\n",
+                 type, QEMU_USB_LAZY_FREQ);
+    }
+
+    return 0;
+}
 
 /**
  * qemu_clock_ptr:

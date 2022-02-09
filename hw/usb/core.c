@@ -87,7 +87,7 @@ void usb_device_reset(USBDevice *dev)
         return;
     }
     usb_device_handle_reset(dev);
-    dev->remote_wakeup = 0;
+    dev->remote_wakeup &= ~USB_DEVICE_REMOTE_WAKEUP;
     dev->addr = 0;
     dev->state = USB_STATE_DEFAULT;
 }
@@ -105,7 +105,8 @@ void usb_wakeup(USBEndpoint *ep, unsigned int stream)
          */
         return;
     }
-    if (dev->remote_wakeup && dev->port && dev->port->ops->wakeup) {
+    if ((dev->remote_wakeup & USB_DEVICE_REMOTE_WAKEUP)
+        && dev->port && dev->port->ops->wakeup) {
         dev->port->ops->wakeup(dev->port);
     }
     if (bus->ops->wakeup_endpoint) {

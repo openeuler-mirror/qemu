@@ -50,6 +50,7 @@ typedef struct UHCIState {
     uint16_t status;
     uint16_t intr; /* interrupt enable register */
     uint16_t frnum; /* frame number */
+    uint64_t frame_time; /* frame time in ns */
     uint32_t fl_base_addr; /* frame list base address */
     uint8_t sof_timing;
     uint8_t status2; /* bit 0 and 1 are used to generate UHCI_STS_USBINT */
