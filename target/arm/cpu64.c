@@ -983,47 +983,10 @@ static gchar *aarch64_gdb_arch_name(CPUState *cs)
     return g_strdup("aarch64");
 }
 
-/* Parse "+feature,-feature,feature=foo" CPU feature string
- */
-static void arm_cpu_parse_featurestr(const char *typename, char *features,
-                                     Error **errp )
-{
-    char *featurestr;
-    char *val;
-    static bool cpu_globals_initialized;
-
-    if (cpu_globals_initialized) {
-        return;
-    }
-    cpu_globals_initialized = true;
-
-    featurestr = features ? strtok(features, ",") : NULL;
-    while (featurestr) {
-        val = strchr(featurestr, '=');
-        if (val) {
-            GlobalProperty *prop = g_new0(typeof(*prop), 1);
-            *val = 0;
-            val++;
-            prop->driver = typename;
-            prop->property = g_strdup(featurestr);
-            prop->value = g_strdup(val);
-            qdev_prop_register_global(prop);
-        } else if (featurestr[0] == '+' || featurestr[0] == '-') {
-            warn_report("Ignore %s feature\n", featurestr);
-        } else {
-            error_setg(errp, "Expected key=value format, found %s.",
-                       featurestr);
-            return;
-        }
-        featurestr = strtok(NULL, ",");
-    }
-}
-
 static void aarch64_cpu_class_init(ObjectClass *oc, void *data)
 {
     CPUClass *cc = CPU_CLASS(oc);
 
-    cc->parse_features = arm_cpu_parse_featurestr;
     cc->gdb_read_register = aarch64_cpu_gdb_read_register;
     cc->gdb_write_register = aarch64_cpu_gdb_write_register;
     cc->gdb_num_core_regs = 34;
