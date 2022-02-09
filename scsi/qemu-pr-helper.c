@@ -288,8 +288,11 @@ static void multipath_pr_init(void)
 
 static int is_mpath(int fd)
 {
-    struct dm_ioctl dm = { .flags = DM_NOFLUSH_FLAG };
+    struct dm_ioctl dm;
     struct dm_target_spec *tgt;
+
+    memset(&dm, 0, sizeof(struct dm_ioctl));
+    dm.flags = DM_NOFLUSH_FLAG;
 
     tgt = dm_dev_ioctl(fd, DM_TABLE_STATUS, &dm);
     if (!tgt) {
