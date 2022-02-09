@@ -492,6 +492,7 @@ static BlockBackend *blockdev_init(const char *file, QDict *bs_opts,
     QDict *interval_dict = NULL;
     QList *interval_list = NULL;
     const char *id;
+    const char *cache;
     BlockdevDetectZeroesOptions detect_zeroes =
         BLOCKDEV_DETECT_ZEROES_OPTIONS_OFF;
     const char *throttling_group = NULL;
@@ -582,6 +583,21 @@ static BlockBackend *blockdev_init(const char *file, QDict *bs_opts,
     }
 
     read_only = qemu_opt_get_bool(opts, BDRV_OPT_READ_ONLY, false);
+
+    if (!file || !*file) {
+        cache = qdict_get_try_str(bs_opts, BDRV_OPT_CACHE_NO_FLUSH);
+        if (cache && !strcmp(cache, "on")) {
+            bdrv_flags |= BDRV_O_NO_FLUSH;
+        }
+
+        cache = qdict_get_try_str(bs_opts, BDRV_OPT_CACHE_DIRECT);
+        if (cache && !strcmp(cache, "on")) {
+            bdrv_flags |= BDRV_O_NOCACHE;
+        }
+
+        qdict_del(bs_opts, BDRV_OPT_CACHE_NO_FLUSH);
+        qdict_del(bs_opts, BDRV_OPT_CACHE_DIRECT);
+    }
 
     /* init */
     if ((!file || !*file) && !qdict_size(bs_opts)) {
