@@ -6692,6 +6692,22 @@ bool bdrv_op_is_blocked(BlockDriverState *bs, BlockOpType op, Error **errp)
                                 bdrv_get_device_or_node_name(bs));
         return true;
     }
+
+    /*
+     * When migration puts a BDRV_O_INACTIVE flag on driver's open_flags,
+     * we fake a blocker that doesn't exist. From now on, block jobs
+     * will not be permitted.
+     */
+    if ((op == BLOCK_OP_TYPE_RESIZE || op == BLOCK_OP_TYPE_COMMIT_SOURCE ||
+         op == BLOCK_OP_TYPE_MIRROR_SOURCE || op == BLOCK_OP_TYPE_MIRROR_TARGET) &&
+         (bs->open_flags & BDRV_O_INACTIVE)) {
+        if (errp) {
+            error_setg(errp, "block device is in use by migration with"
+                       " a driver BDRV_O_INACTIVE flag setted");
+        }
+        return true;
+    }
+
     return false;
 }
 
