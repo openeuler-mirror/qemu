@@ -2863,8 +2863,19 @@ static const VMStateDescription vmstate_virtio = {
 static void check_vring_avail_num(VirtIODevice *vdev, int index)
 {
     uint16_t nheads;
+    VRingMemoryRegionCaches *caches;
 
     rcu_read_lock();
+    caches = qatomic_rcu_read(&vdev->vq[index].vring.caches);
+    if (caches == NULL) {
+        /*
+         * caches may be NULL if virtio_reset is called at the same time,
+         * such as when the virtual machine starts.
+         */
+        rcu_read_unlock();
+        return;
+    }
+
     /* Check it isn't doing strange things with descriptor numbers. */
     nheads = vring_avail_idx(&vdev->vq[index]) - vdev->vq[index].last_avail_idx;
     if (nheads > vdev->vq[index].vring.num) {
