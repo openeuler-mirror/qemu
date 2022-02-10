@@ -4437,6 +4437,8 @@
 # @nocow: Turn off copy-on-write (valid only on btrfs; default: off)
 # @extent-size-hint: Extent size hint to add to the image file; 0 for not
 #                    adding an extent size hint (default: 1 MB, since 5.1)
+# @cache: Cache mode used to write the output disk image
+# @buffersize: Buffer size for creating image
 #
 # Since: 2.12
 ##
@@ -4445,7 +4447,9 @@
             'size':                 'size',
             '*preallocation':       'PreallocMode',
             '*nocow':               'bool',
-            '*extent-size-hint':    'size'} }
+            '*extent-size-hint':    'size',
+            '*cache':               'str',
+            '*buffersize':          'size'} }
 
 ##
 # @BlockdevCreateOptionsGluster:

@@ -504,6 +504,7 @@ static int img_create(int argc, char **argv)
     const char *base_fmt = NULL;
     const char *filename;
     const char *base_filename = NULL;
+    const char *cache = BDRV_DEFAULT_CACHE;
     char *options = NULL;
     Error *local_err = NULL;
     bool quiet = false;
@@ -515,7 +516,7 @@ static int img_create(int argc, char **argv)
             {"object", required_argument, 0, OPTION_OBJECT},
             {0, 0, 0, 0}
         };
-        c = getopt_long(argc, argv, ":F:b:f:ho:qu",
+        c = getopt_long(argc, argv, ":F:b:f:t:ho:qu",
                         long_options, NULL);
         if (c == -1) {
             break;
@@ -538,6 +539,9 @@ static int img_create(int argc, char **argv)
             break;
         case 'f':
             fmt = optarg;
+            break;
+        case 't':
+            cache = optarg;
             break;
         case 'o':
             if (accumulate_options(&options, optarg) < 0) {
@@ -580,6 +584,14 @@ static int img_create(int argc, char **argv)
     }
     if (optind != argc) {
         error_exit("Unexpected argument: %s", argv[optind]);
+    }
+
+    if (!options) {
+        options = g_strdup_printf(BLOCK_OPT_CACHE"=%s", cache);
+    } else {
+        char *old_options = options;
+        options = g_strdup_printf("%s,"BLOCK_OPT_CACHE"=%s", options, cache);
+        g_free(old_options);
     }
 
     bdrv_img_create(filename, fmt, base_filename, base_fmt,
