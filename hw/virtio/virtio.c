@@ -2860,6 +2860,22 @@ static const VMStateDescription vmstate_virtio = {
     }
 };
 
+static void check_vring_avail_num(VirtIODevice *vdev, int index)
+{
+    uint16_t nheads;
+
+    /* Check it isn't doing strange things with descriptor numbers. */
+    nheads = vring_avail_idx(&vdev->vq[index]) - vdev->vq[index].last_avail_idx;
+    if (nheads > vdev->vq[index].vring.num) {
+        qemu_log("VQ %d size 0x%x Guest index 0x%x "
+                 "inconsistent with Host index 0x%x: "
+                 "delta 0x%x\n",
+                 index, vdev->vq[index].vring.num,
+                 vring_avail_idx(&vdev->vq[index]),
+                 vdev->vq[index].last_avail_idx, nheads);
+    }
+}
+
 int virtio_save(VirtIODevice *vdev, QEMUFile *f)
 {
     BusState *qbus = qdev_get_parent_bus(DEVICE(vdev));
@@ -2889,6 +2905,8 @@ int virtio_save(VirtIODevice *vdev, QEMUFile *f)
     for (i = 0; i < VIRTIO_QUEUE_MAX; i++) {
         if (vdev->vq[i].vring.num == 0)
             break;
+
+        check_vring_avail_num(vdev, i);
 
         qemu_put_be32(f, vdev->vq[i].vring.num);
         if (k->has_variable_vring_alignment) {
