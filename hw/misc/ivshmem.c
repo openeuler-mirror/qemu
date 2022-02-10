@@ -400,6 +400,7 @@ static void close_peer_eventfds(IVShmemState *s, int posn)
     }
 
     g_free(s->peers[posn].eventfds);
+    s->peers[posn].eventfds = NULL;
     s->peers[posn].nb_eventfds = 0;
 }
 
@@ -529,6 +530,10 @@ static void process_msg_connect(IVShmemState *s, uint16_t posn, int fd,
                    s->vectors);
         close(fd);
         return;
+    }
+    if (peer->eventfds == NULL) {
+        peer->eventfds = g_new0(EventNotifier, s->vectors);
+        peer->nb_eventfds = 0;
     }
     vector = peer->nb_eventfds++;
 
