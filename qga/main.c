@@ -1399,7 +1399,7 @@ static GAState *initialize_agent(GAConfig *config, int socket_activation)
     if (g_mkdir_with_parents(config->state_dir, S_IRWXU) == -1) {
         g_critical("unable to create (an ancestor of) the state directory"
                    " '%s': %s", config->state_dir, strerror(errno));
-        return NULL;
+        goto failed;
     }
 #endif
 
@@ -1424,7 +1424,7 @@ static GAState *initialize_agent(GAConfig *config, int socket_activation)
             if (!log_file) {
                 g_critical("unable to open specified log file: %s",
                            strerror(errno));
-                return NULL;
+                goto failed;
             }
             s->log_file = log_file;
         }
@@ -1435,7 +1435,7 @@ static GAState *initialize_agent(GAConfig *config, int socket_activation)
                                s->pstate_filepath,
                                ga_is_frozen(s))) {
         g_critical("failed to load persistent state");
-        return NULL;
+        goto failed;
     }
 
     if (config->allowedrpcs) {
@@ -1465,7 +1465,7 @@ static GAState *initialize_agent(GAConfig *config, int socket_activation)
 #ifndef _WIN32
     if (!register_signal_handlers()) {
         g_critical("failed to register signal handlers");
-        return NULL;
+        goto failed;
     }
 #endif
 
@@ -1478,12 +1478,20 @@ static GAState *initialize_agent(GAConfig *config, int socket_activation)
     s->wakeup_event = CreateEvent(NULL, TRUE, FALSE, TEXT("WakeUp"));
     if (s->wakeup_event == NULL) {
         g_critical("CreateEvent failed");
-        return NULL;
+        goto failed;
     }
 #endif
 
     ga_state = s;
     return s;
+failed:
+    g_free(s->pstate_filepath);
+    g_free(s->state_filepath_isfrozen);
+    if (s->log_file) {
+        fclose(s->log_file);
+    }
+    g_free(s);
+    return NULL;
 }
 
 static void cleanup_agent(GAState *s)

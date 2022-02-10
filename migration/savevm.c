@@ -1553,6 +1553,7 @@ int qemu_savevm_state_complete_precopy_non_iterable(QEMUFile *f,
         ret = vmstate_save(f, se, vmdesc);
         if (ret) {
             qemu_file_set_error(f, ret);
+            json_writer_free(vmdesc);
             return ret;
         }
 
@@ -1572,6 +1573,7 @@ int qemu_savevm_state_complete_precopy_non_iterable(QEMUFile *f,
             migrate_set_error(ms, local_err);
             error_report_err(local_err);
             qemu_file_set_error(f, ret);
+            json_writer_free(vmdesc);
             return ret;
         }
     }
