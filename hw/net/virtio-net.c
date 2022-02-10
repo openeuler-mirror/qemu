@@ -3692,6 +3692,46 @@ static Property virtio_net_properties[] = {
     DEFINE_PROP_END_OF_LIST(),
 };
 
+static void virtio_net_print_features(uint64_t features)
+{
+    Property *props = virtio_net_properties;
+    int feature_cnt = 0;
+
+    if (!features) {
+        return;
+    }
+    printf("virtio_net_feature: ");
+
+    for (; features && props->name; props++) {
+        /* The bitnr of property may be default(0) besides 'csum' property. */
+        if (props->bitnr == 0 && strcmp(props->name, "csum")) {
+            continue;
+        }
+
+        /* Features only support 64bit. */
+        if (props->bitnr > 63) {
+            continue;
+        }
+
+        if (virtio_has_feature(features, props->bitnr)) {
+            virtio_clear_feature(&features, props->bitnr);
+            if (feature_cnt != 0) {
+                printf(", ");
+            }
+            printf("%s", props->name);
+            feature_cnt++;
+        }
+    }
+
+    if (features) {
+        if (feature_cnt != 0) {
+            printf(", ");
+        }
+        printf("unkown bits 0x%." PRIx64, features);
+    }
+    printf("\n");
+}
+
 static void virtio_net_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
@@ -3706,6 +3746,7 @@ static void virtio_net_class_init(ObjectClass *klass, void *data)
     vdc->set_config = virtio_net_set_config;
     vdc->get_features = virtio_net_get_features;
     vdc->set_features = virtio_net_set_features;
+    vdc->print_features = virtio_net_print_features;
     vdc->bad_features = virtio_net_bad_features;
     vdc->reset = virtio_net_reset;
     vdc->set_status = virtio_net_set_status;

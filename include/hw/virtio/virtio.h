@@ -127,6 +127,7 @@ struct VirtioDeviceClass {
     int (*validate_features)(VirtIODevice *vdev);
     void (*get_config)(VirtIODevice *vdev, uint8_t *config);
     void (*set_config)(VirtIODevice *vdev, const uint8_t *config);
+    void (*print_features)(uint64_t features);
     void (*reset)(VirtIODevice *vdev);
     void (*set_status)(VirtIODevice *vdev, uint8_t val);
     /* For transitional devices, this is a bitmap of features

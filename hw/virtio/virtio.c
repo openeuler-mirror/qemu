@@ -2967,6 +2967,13 @@ static int virtio_set_features_nocheck(VirtIODevice *vdev, uint64_t val)
 {
     VirtioDeviceClass *k = VIRTIO_DEVICE_GET_CLASS(vdev);
     bool bad = (val & ~(vdev->host_features)) != 0;
+    uint64_t feat = val & ~(vdev->host_features);
+
+    if (bad && k->print_features) {
+	qemu_log("error: Please check host config, "\
+		 "because host does not support required feature bits 0x%" PRIx64 "\n", feat);
+        k->print_features(feat);
+    }
 
     val &= vdev->host_features;
     if (k->set_features) {
