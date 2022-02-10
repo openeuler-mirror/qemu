@@ -2417,6 +2417,7 @@ void virtio_delete_queue(VirtQueue *vq)
 {
     vq->vring.num = 0;
     vq->vring.num_default = 0;
+    vq->vring.align = 0;
     vq->handle_output = NULL;
     vq->handle_aio_output = NULL;
     g_free(vq->used_elems);
