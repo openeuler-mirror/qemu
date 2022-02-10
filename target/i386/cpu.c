@@ -5724,9 +5724,31 @@ void cpu_x86_cpuid(CPUX86State *env, uint32_t index, uint32_t count,
         }
         break;
     case 0x8000001D:
+        /* Populate AMD Processor Cache Information */
         *eax = 0;
         if (cpu->cache_info_passthrough) {
             host_cpuid(index, count, eax, ebx, ecx, edx);
+
+            /*
+             * Clear BITs[25:14] and then update them based on the guest
+             * vCPU topology, like what we do in encode_cache_cpuid8000001d
+             * when cache_info_passthrough is not enabled.
+             */
+            *eax &= ~0x03FFC000;
+            switch (count) {
+            case 0: /* L1 dcache info */
+            case 1: /* L1 icache info */
+            case 2: /* L2 cache info */
+                *eax |= ((topo_info.threads_per_core - 1) << 14);
+                break;
+            case 3: /* L3 cache info */
+                *eax |= ((topo_info.cores_per_die *
+                          topo_info.threads_per_core - 1) << 14);
+                break;
+            default: /* end of info */
+                *eax = *ebx = *ecx = *edx = 0;
+                break;
+            }
             break;
         }
         switch (count) {
