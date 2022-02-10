@@ -9,6 +9,8 @@ extern const PropertyInfo qdev_prop_reserved_region;
 extern const PropertyInfo qdev_prop_multifd_compression;
 extern const PropertyInfo qdev_prop_losttickpolicy;
 extern const PropertyInfo qdev_prop_blockdev_on_error;
+extern const PropertyInfo qdev_prop_blockdev_retry_interval;
+extern const PropertyInfo qdev_prop_blockdev_retry_timeout;
 extern const PropertyInfo qdev_prop_bios_chs_trans;
 extern const PropertyInfo qdev_prop_fdc_drive_type;
 extern const PropertyInfo qdev_prop_drive;
@@ -47,6 +49,12 @@ extern const PropertyInfo qdev_prop_pcie_link_width;
 #define DEFINE_PROP_BLOCKDEV_ON_ERROR(_n, _s, _f, _d) \
     DEFINE_PROP_SIGNED(_n, _s, _f, _d, qdev_prop_blockdev_on_error, \
                         BlockdevOnError)
+#define DEFINE_PROP_BLOCKDEV_RETRY_INTERVAL(_n, _s, _f, _d) \
+    DEFINE_PROP_SIGNED(_n, _s, _f, _d, qdev_prop_blockdev_retry_interval, \
+                        int64_t)
+#define DEFINE_PROP_BLOCKDEV_RETRY_TIMEOUT(_n, _s, _f, _d) \
+    DEFINE_PROP_SIGNED(_n, _s, _f, _d, qdev_prop_blockdev_retry_timeout, \
+                        int64_t)
 #define DEFINE_PROP_BIOS_CHS_TRANS(_n, _s, _f, _d) \
     DEFINE_PROP_SIGNED(_n, _s, _f, _d, qdev_prop_bios_chs_trans, int)
 #define DEFINE_PROP_BLOCKSIZE(_n, _s, _f) \
