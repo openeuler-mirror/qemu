@@ -1554,6 +1554,28 @@ Aml *aml_sleep(uint64_t msec)
     return var;
 }
 
+/* ACPI 5.0b: 6.4.3.7 Generic Register Descriptor */
+Aml *aml_generic_register(AmlRegionSpace rs, uint8_t reg_width,
+                          uint8_t reg_offset, AmlAccessType type, uint64_t addr)
+{
+    int i;
+    Aml *var = aml_alloc();
+    build_append_byte(var->buf, 0x82); /* Generic Register Descriptor */
+    build_append_byte(var->buf, 0x0C); /* Length, bits[7:0] value = 0x0C */
+    build_append_byte(var->buf, 0);    /* Length, bits[15:8] value = 0 */
+    build_append_byte(var->buf, rs);   /* Address Space ID */
+    build_append_byte(var->buf, reg_width);   /* Register Bit Width */
+    build_append_byte(var->buf, reg_offset);  /* Register Bit Offset */
+    build_append_byte(var->buf, type);        /* Access Size */
+
+    /* Register address */
+    for (i = 0; i < 8; i++) {
+        build_append_byte(var->buf, extract64(addr, i * 8, 8));
+    }
+
+    return var;
+}
+
 static uint8_t Hex2Byte(const char *src)
 {
     int hi, lo;
@@ -1994,6 +2016,58 @@ static void build_processor_hierarchy_node(GArray *tbl, uint32_t flags,
     }
 }
 
+#ifdef __aarch64__
+/*
+ * ACPI spec, Revision 6.3
+ * 5.2.29.2 Cache Type Structure (Type 1)
+ */
+static void build_cache_hierarchy_node(GArray *tbl, uint32_t next_level,
+                                       uint32_t cache_type)
+{
+    build_append_byte(tbl, 1);
+    build_append_byte(tbl, 24);
+    build_append_int_noprefix(tbl, 0, 2);
+    build_append_int_noprefix(tbl, 127, 4);
+    build_append_int_noprefix(tbl, next_level, 4);
+
+    switch (cache_type) {
+    case ARM_L1D_CACHE: /* L1 dcache info */
+        build_append_int_noprefix(tbl, ARM_L1DCACHE_SIZE, 4);
+        build_append_int_noprefix(tbl, ARM_L1DCACHE_SETS, 4);
+        build_append_byte(tbl, ARM_L1DCACHE_ASSOCIATIVITY);
+        build_append_byte(tbl, ARM_L1DCACHE_ATTRIBUTES);
+        build_append_int_noprefix(tbl, ARM_L1DCACHE_LINE_SIZE, 2);
+        break;
+    case ARM_L1I_CACHE: /* L1 icache info */
+        build_append_int_noprefix(tbl, ARM_L1ICACHE_SIZE, 4);
+        build_append_int_noprefix(tbl, ARM_L1ICACHE_SETS, 4);
+        build_append_byte(tbl, ARM_L1ICACHE_ASSOCIATIVITY);
+        build_append_byte(tbl, ARM_L1ICACHE_ATTRIBUTES);
+        build_append_int_noprefix(tbl, ARM_L1ICACHE_LINE_SIZE, 2);
+        break;
+    case ARM_L2_CACHE: /* L2 cache info */
+        build_append_int_noprefix(tbl, ARM_L2CACHE_SIZE, 4);
+        build_append_int_noprefix(tbl, ARM_L2CACHE_SETS, 4);
+        build_append_byte(tbl, ARM_L2CACHE_ASSOCIATIVITY);
+        build_append_byte(tbl, ARM_L2CACHE_ATTRIBUTES);
+        build_append_int_noprefix(tbl, ARM_L2CACHE_LINE_SIZE, 2);
+        break;
+    case ARM_L3_CACHE: /* L3 cache info */
+        build_append_int_noprefix(tbl, ARM_L3CACHE_SIZE, 4);
+        build_append_int_noprefix(tbl, ARM_L3CACHE_SETS, 4);
+        build_append_byte(tbl, ARM_L3CACHE_ASSOCIATIVITY);
+        build_append_byte(tbl, ARM_L3CACHE_ATTRIBUTES);
+        build_append_int_noprefix(tbl, ARM_L3CACHE_LINE_SIZE, 2);
+        break;
+    default:
+        build_append_int_noprefix(tbl, 0, 4);
+        build_append_int_noprefix(tbl, 0, 4);
+        build_append_byte(tbl, 0);
+        build_append_byte(tbl, 0);
+        build_append_int_noprefix(tbl, 0, 2);
+    }
+}
+
 /*
  * ACPI spec, Revision 6.3
  * 5.2.29 Processor Properties Topology Table (PPTT)
@@ -2001,7 +2075,11 @@ static void build_processor_hierarchy_node(GArray *tbl, uint32_t flags,
 void build_pptt(GArray *table_data, BIOSLinker *linker, MachineState *ms,
                 const char *oem_id, const char *oem_table_id)
 {
-    int pptt_start = table_data->len;
+    MachineClass *mc = MACHINE_GET_CLASS(ms);
+    GQueue *list = g_queue_new();
+    guint pptt_start = table_data->len;
+    guint parent_offset;
+    guint length, i;
     int uid = 0;
     int socket;
     AcpiTable table = { .sig = "PPTT", .rev = 2,
@@ -2010,9 +2088,113 @@ void build_pptt(GArray *table_data, BIOSLinker *linker, MachineState *ms,
     acpi_table_begin(&table, table_data);
 
     for (socket = 0; socket < ms->smp.sockets; socket++) {
-        uint32_t socket_offset = table_data->len - pptt_start;
+        uint32_t l3_cache_offset = table_data->len - pptt_start;
+        build_cache_hierarchy_node(table_data, 0, ARM_L3_CACHE);
+
+        g_queue_push_tail(list,
+            GUINT_TO_POINTER(table_data->len - pptt_start));
+        build_processor_hierarchy_node(
+            table_data,
+            /*
+             * Physical package - represents the boundary
+             * of a physical package
+             */
+            (1 << 0),
+            0, socket, &l3_cache_offset, 1);
+    }
+
+    if (mc->smp_props.clusters_supported) {
+        length = g_queue_get_length(list);
+        for (i = 0; i < length; i++) {
+            int cluster;
+
+            parent_offset = GPOINTER_TO_UINT(g_queue_pop_head(list));
+            for (cluster = 0; cluster < ms->smp.clusters; cluster++) {
+                g_queue_push_tail(list,
+                    GUINT_TO_POINTER(table_data->len - pptt_start));
+                build_processor_hierarchy_node(
+                    table_data,
+                    (0 << 0), /* not a physical package */
+                    parent_offset, cluster, NULL, 0);
+            }
+        }
+    }
+
+    length = g_queue_get_length(list);
+    for (i = 0; i < length; i++) {
         int core;
 
+        parent_offset = GPOINTER_TO_UINT(g_queue_pop_head(list));
+        for (core = 0; core < ms->smp.cores; core++) {
+            uint32_t priv_rsrc[3] = {};
+            priv_rsrc[0] = table_data->len - pptt_start; /* L2 cache offset */
+            build_cache_hierarchy_node(table_data, 0, ARM_L2_CACHE);
+
+            priv_rsrc[1] = table_data->len - pptt_start; /* L1 dcache offset */
+            build_cache_hierarchy_node(table_data, priv_rsrc[0], ARM_L1D_CACHE);
+
+            priv_rsrc[2] = table_data->len - pptt_start; /* L1 icache offset */
+            build_cache_hierarchy_node(table_data, priv_rsrc[0], ARM_L1I_CACHE);
+
+            if (ms->smp.threads > 1) {
+                g_queue_push_tail(list,
+                    GUINT_TO_POINTER(table_data->len - pptt_start));
+                build_processor_hierarchy_node(
+                    table_data,
+                    (0 << 0), /* not a physical package */
+                    parent_offset, core, priv_rsrc, 3);
+            } else {
+                build_processor_hierarchy_node(
+                    table_data,
+                    (1 << 1) | /* ACPI Processor ID valid */
+                    (1 << 3),  /* Node is a Leaf */
+                    parent_offset, uid++, priv_rsrc, 3);
+            }
+        }
+    }
+
+    length = g_queue_get_length(list);
+    for (i = 0; i < length; i++) {
+        int thread;
+
+        parent_offset = GPOINTER_TO_UINT(g_queue_pop_head(list));
+        for (thread = 0; thread < ms->smp.threads; thread++) {
+            build_processor_hierarchy_node(
+                table_data,
+                (1 << 1) | /* ACPI Processor ID valid */
+                (1 << 2) | /* Processor is a Thread */
+                (1 << 3),  /* Node is a Leaf */
+                parent_offset, uid++, NULL, 0);
+        }
+    }
+
+    g_queue_free(list);
+    acpi_table_end(linker, &table);
+}
+
+#else
+/*
+ * ACPI spec, Revision 6.3
+ * 5.2.29 Processor Properties Topology Table (PPTT)
+ */
+void build_pptt(GArray *table_data, BIOSLinker *linker, MachineState *ms,
+                const char *oem_id, const char *oem_table_id)
+{
+    MachineClass *mc = MACHINE_GET_CLASS(ms);
+    GQueue *list = g_queue_new();
+    guint pptt_start = table_data->len;
+    guint parent_offset;
+    guint length, i;
+    int uid = 0;
+    int socket;
+    AcpiTable table = { .sig = "PPTT", .rev = 2,
+                        .oem_id = oem_id, .oem_table_id = oem_table_id };
+
+    acpi_table_begin(&table, table_data);
+
+    for (socket = 0; socket < ms->smp.sockets; socket++) {
+        g_queue_push_tail(list,
+            GUINT_TO_POINTER(table_data->len - pptt_start));
         build_processor_hierarchy_node(
             table_data,
             /*
@@ -2021,37 +2203,67 @@ void build_pptt(GArray *table_data, BIOSLinker *linker, MachineState *ms,
              */
             (1 << 0),
             0, socket, NULL, 0);
+    }
 
-        for (core = 0; core < ms->smp.cores; core++) {
-            uint32_t core_offset = table_data->len - pptt_start;
-            int thread;
+    if (mc->smp_props.clusters_supported) {
+        length = g_queue_get_length(list);
+        for (i = 0; i < length; i++) {
+            int cluster;
 
-            if (ms->smp.threads > 1) {
+            parent_offset = GPOINTER_TO_UINT(g_queue_pop_head(list));
+            for (cluster = 0; cluster < ms->smp.clusters; cluster++) {
+                g_queue_push_tail(list,
+                    GUINT_TO_POINTER(table_data->len - pptt_start));
                 build_processor_hierarchy_node(
                     table_data,
                     (0 << 0), /* not a physical package */
-                    socket_offset, core, NULL, 0);
+                    parent_offset, cluster, NULL, 0);
+            }
+        }
+    }
 
-                for (thread = 0; thread < ms->smp.threads; thread++) {
-                    build_processor_hierarchy_node(
-                        table_data,
-                        (1 << 1) | /* ACPI Processor ID valid */
-                        (1 << 2) | /* Processor is a Thread */
-                        (1 << 3),  /* Node is a Leaf */
-                        core_offset, uid++, NULL, 0);
-                }
+    length = g_queue_get_length(list);
+    for (i = 0; i < length; i++) {
+        int core;
+
+        parent_offset = GPOINTER_TO_UINT(g_queue_pop_head(list));
+        for (core = 0; core < ms->smp.cores; core++) {
+            if (ms->smp.threads > 1) {
+                g_queue_push_tail(list,
+                    GUINT_TO_POINTER(table_data->len - pptt_start));
+                build_processor_hierarchy_node(
+                    table_data,
+                    (0 << 0), /* not a physical package */
+                    parent_offset, core, NULL, 0);
             } else {
                 build_processor_hierarchy_node(
                     table_data,
                     (1 << 1) | /* ACPI Processor ID valid */
                     (1 << 3),  /* Node is a Leaf */
-                    socket_offset, uid++, NULL, 0);
+                    parent_offset, uid++, NULL, 0);
             }
         }
     }
 
+    length = g_queue_get_length(list);
+    for (i = 0; i < length; i++) {
+        int thread;
+
+        parent_offset = GPOINTER_TO_UINT(g_queue_pop_head(list));
+        for (thread = 0; thread < ms->smp.threads; thread++) {
+            build_processor_hierarchy_node(
+                table_data,
+                (1 << 1) | /* ACPI Processor ID valid */
+                (1 << 2) | /* Processor is a Thread */
+                (1 << 3),  /* Node is a Leaf */
+                parent_offset, uid++, NULL, 0);
+        }
+    }
+
+    g_queue_free(list);
     acpi_table_end(linker, &table);
 }
+#endif
 
 /* build rev1/rev3/rev5.1 FADT */
 void build_fadt(GArray *tbl, BIOSLinker *linker, const AcpiFadtData *f,

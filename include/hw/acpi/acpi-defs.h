@@ -92,4 +92,42 @@ typedef struct AcpiFadtData {
 #define ACPI_FADT_ARM_PSCI_COMPLIANT  (1 << 0)
 #define ACPI_FADT_ARM_PSCI_USE_HVC    (1 << 1)
 
+/*
+ * CPPC register definition from kernel header
+ * include/acpi/cppc_acpi.h
+ * The last element is newly added for easy use
+ */
+enum cppc_regs {
+    HIGHEST_PERF,
+    NOMINAL_PERF,
+    LOW_NON_LINEAR_PERF,
+    LOWEST_PERF,
+    GUARANTEED_PERF,
+    DESIRED_PERF,
+    MIN_PERF,
+    MAX_PERF,
+    PERF_REDUC_TOLERANCE,
+    TIME_WINDOW,
+    CTR_WRAP_TIME,
+    REFERENCE_CTR,
+    DELIVERED_CTR,
+    PERF_LIMITED,
+    ENABLE,
+    AUTO_SEL_ENABLE,
+    AUTO_ACT_WINDOW,
+    ENERGY_PERF,
+    REFERENCE_PERF,
+    LOWEST_FREQ,
+    NOMINAL_FREQ,
+    CPPC_REG_COUNT,
+};
+
+#define CPPC_REG_PER_CPU_STRIDE     0x40
+
+/*
+ * Offset for each CPPC register; -1 for unavailable
+ * The whole register space is unavailable if desired perf offset is -1.
+ */
+extern int cppc_regs_offset[CPPC_REG_COUNT];
+
 #endif
