@@ -612,6 +612,8 @@ static void ehci_free_queue(EHCIQueue *q, const char *warn)
         ehci_trace_guest_bug(q->ehci, warn);
     }
     QTAILQ_REMOVE(head, q, next);
+    memset(q, 0, sizeof(*q));
+    *(volatile char *)q = *(volatile char *)q;
     g_free(q);
 }
 
