@@ -24,6 +24,7 @@
 #include "sysemu/cryptodev.h"
 #include "migration/migration.h"
 #include "migration/postcopy-ram.h"
+#include "migration/register.h"
 #include "trace.h"
 
 #include <sys/ioctl.h>
@@ -2068,6 +2069,7 @@ static int vhost_user_backend_cleanup(struct vhost_dev *dev)
     u->region_rb_len = 0;
     g_free(u);
     dev->opaque = 0;
+    unregister_savevm(NULL, "vhost-user", dev);
 
     return 0;
 }
