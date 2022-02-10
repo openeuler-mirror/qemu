@@ -1,6 +1,9 @@
 #ifndef QEMU_MMAP_ALLOC_H
 #define QEMU_MMAP_ALLOC_H
 
+#define HUGETLBFS_MAGIC       0x958458f6
+
+size_t qemu_fd_getfiletype(int fd);
 
 size_t qemu_fd_getpagesize(int fd);
 

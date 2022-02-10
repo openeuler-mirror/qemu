@@ -29,6 +29,28 @@
 #include <sys/vfs.h>
 #endif
 
+size_t qemu_fd_getfiletype(int fd)
+{
+    struct statfs fs;
+    int ret;
+
+    if (fd != -1) {
+        do {
+            ret = fstatfs(fd, &fs);
+        } while (ret != 0 && errno == EINTR);
+
+        if (ret != 0) {
+            fprintf(stderr, "Couldn't fstatfs() fd: %s\n",
+                    strerror(errno));
+            return -1;
+        }
+        return fs.f_type;
+    } else {
+        fprintf(stderr, "fd is invalid \n");
+        return -1;
+    }
+}
+
 size_t qemu_fd_getpagesize(int fd)
 {
 #ifdef CONFIG_LINUX
