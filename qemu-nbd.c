@@ -800,6 +800,10 @@ int main(int argc, char **argv)
     trace_init_file();
     qemu_set_log(LOG_TRACE);
 
+    if (!seen_aio && (flags & BDRV_O_NOCACHE)) {
+        flags |= BDRV_O_NATIVE_AIO;
+    }
+
     socket_activation = check_socket_activation();
     if (socket_activation == 0) {
         setup_address_and_port(&bindto, &port);

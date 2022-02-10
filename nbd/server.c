@@ -2606,6 +2606,7 @@ static coroutine_fn void nbd_trip(void *opaque)
     NBDRequestData *req;
     NBDRequest request = { 0 };    /* GCC thinks it can be used uninitialized */
     int ret;
+    bool client_closing;
     Error *local_err = NULL;
 
     trace_nbd_trip();
@@ -2681,8 +2682,11 @@ disconnect:
     if (local_err) {
         error_reportf_err(local_err, "Disconnect client, due to: ");
     }
+    client_closing = client->closing;
     nbd_request_put(req);
-    client_close(client, true);
+    if (!client_closing) {
+        client_close(client, true);
+    }
     nbd_client_put(client);
 }
 
