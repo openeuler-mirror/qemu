@@ -65,6 +65,7 @@ GList *range_list_insert(GList *list, Range *data)
         range_extend(l->data, l->next->data);
         g_free(l->next->data);
         new_l = g_list_delete_link(list, l->next);
+        l->next = NULL;
         assert(new_l == list);
     }
 
