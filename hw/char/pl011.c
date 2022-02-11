@@ -255,6 +255,10 @@ static void pl011_write(void *opaque, hwaddr offset,
     case 17: /* UARTICR */
         s->int_level &= ~value;
         pl011_update(s);
+        if (!s->int_enabled && !s->int_level) {
+            s->read_count = 0;
+            s->read_pos = 0;
+        }
         break;
     case 18: /* UARTDMACR */
         s->dmacr = value;
