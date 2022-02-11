@@ -34,6 +34,12 @@ int qemu_loglevel;
 static int log_append = 0;
 static GArray *debug_regions;
 
+#ifdef CONFIG_DISABLE_QEMU_LOG
+int qemu_log(const char *fmt, ...)
+{
+    return 0;
+}
+#else
 /* Return the number of characters emitted.  */
 int qemu_log(const char *fmt, ...)
 {
@@ -56,6 +62,7 @@ int qemu_log(const char *fmt, ...)
     rcu_read_unlock();
     return ret;
 }
+#endif
 
 static void __attribute__((__constructor__)) qemu_logfile_init(void)
 {
