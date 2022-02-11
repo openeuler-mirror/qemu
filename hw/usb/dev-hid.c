@@ -745,7 +745,7 @@ static int usb_ptr_post_load(void *opaque, int version_id)
 {
     USBHIDState *s = opaque;
 
-    if (s->dev.remote_wakeup) {
+    if (s->dev.remote_wakeup & USB_DEVICE_REMOTE_WAKEUP) {
         hid_pointer_activate(&s->hid);
     }
     return 0;

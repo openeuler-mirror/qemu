@@ -751,7 +751,7 @@ int usb_desc_handle_control(USBDevice *dev, USBPacket *p,
         if (config->bmAttributes & USB_CFG_ATT_SELFPOWER) {
             data[0] |= 1 << USB_DEVICE_SELF_POWERED;
         }
-        if (dev->remote_wakeup) {
+        if (dev->remote_wakeup & USB_DEVICE_REMOTE_WAKEUP) {
             data[0] |= 1 << USB_DEVICE_REMOTE_WAKEUP;
         }
         data[1] = 0x00;
@@ -761,14 +761,15 @@ int usb_desc_handle_control(USBDevice *dev, USBPacket *p,
     }
     case DeviceOutRequest | USB_REQ_CLEAR_FEATURE:
         if (value == USB_DEVICE_REMOTE_WAKEUP) {
-            dev->remote_wakeup = 0;
+            dev->remote_wakeup &= ~USB_DEVICE_REMOTE_WAKEUP;
             ret = 0;
         }
         trace_usb_clear_device_feature(dev->addr, value, ret);
         break;
     case DeviceOutRequest | USB_REQ_SET_FEATURE:
+        dev->remote_wakeup |= USB_DEVICE_REMOTE_WAKEUP_IS_SUPPORTED;
         if (value == USB_DEVICE_REMOTE_WAKEUP) {
-            dev->remote_wakeup = 1;
+            dev->remote_wakeup |= USB_DEVICE_REMOTE_WAKEUP;
             ret = 0;
         }
         trace_usb_set_device_feature(dev->addr, value, ret);
