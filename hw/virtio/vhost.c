@@ -48,6 +48,8 @@ static struct vhost_log *vhost_log_shm;
 static QLIST_HEAD(, vhost_dev) vhost_devices =
     QLIST_HEAD_INITIALIZER(vhost_devices);
 
+bool used_memslots_exceeded;
+
 bool vhost_has_free_slot(void)
 {
     struct vhost_dev *hdev;
@@ -1336,9 +1338,11 @@ static bool vhost_dev_used_memslots_is_exceeded(struct vhost_dev *hdev)
         hdev->vhost_ops->vhost_backend_memslots_limit(hdev)) {
         error_report("vhost backend memory slots limit is less"
                 " than current number of present memory slots");
+	used_memslots_exceeded = true;
         return true;
     }
 
+    used_memslots_exceeded = false;
     return false;
 }
 
@@ -1894,4 +1898,9 @@ int vhost_net_set_backend(struct vhost_dev *hdev,
     }
 
     return -1;
+}
+
+bool used_memslots_is_exceeded(void)
+{
+    return used_memslots_exceeded;
 }
