@@ -1920,6 +1920,28 @@ static int vhost_user_postcopy_notifier(NotifierWithReturn *notifier,
     return 0;
 }
 
+static int vhost_user_load_setup(QEMUFile *f, void *opaque)
+{
+    struct vhost_dev *hdev = opaque;
+    int r;
+
+    if (hdev->vhost_ops && hdev->vhost_ops->vhost_set_mem_table) {
+        r = hdev->vhost_ops->vhost_set_mem_table(hdev, hdev->mem);
+        if (r < 0) {
+            qemu_log("error: vhost_set_mem_table failed: %s(%d)\n",
+                     strerror(errno), errno);
+            return r;
+        } else {
+            qemu_log("info: vhost_set_mem_table OK\n");
+        }
+    }
+    return 0;
+}
+
+SaveVMHandlers savevm_vhost_user_handlers = {
+    .load_setup = vhost_user_load_setup,
+};
+
 static int vhost_user_backend_init(struct vhost_dev *dev, void *opaque,
                                    Error **errp)
 {
@@ -2044,6 +2066,7 @@ static int vhost_user_backend_init(struct vhost_dev *dev, void *opaque,
 
     u->postcopy_notifier.notify = vhost_user_postcopy_notifier;
     postcopy_add_notifier(&u->postcopy_notifier);
+    register_savevm_live("vhost-user", -1, 1, &savevm_vhost_user_handlers, dev);
 
     return 0;
 }
