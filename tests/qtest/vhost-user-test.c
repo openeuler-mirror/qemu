@@ -799,6 +799,23 @@ static void test_read_guest_mem(void *obj, void *arg, QGuestAllocator *alloc)
     read_guest_mem_server(global_qtest, server);
 }
 
+static void wait_for_rings_started(TestServer *s, size_t count)
+{
+    gint64 end_time;
+
+    g_mutex_lock(&s->data_mutex);
+    end_time = g_get_monotonic_time() + 5 * G_TIME_SPAN_SECOND;
+    while (ctpop64(s->rings) != count) {
+        if (!g_cond_wait_until(&s->data_cond, &s->data_mutex, end_time)) {
+            /* timeout has passed */
+            g_assert_cmpint(ctpop64(s->rings), ==, count);
+            break;
+        }
+    }
+
+    g_mutex_unlock(&s->data_mutex);
+}
+
 static void test_migrate(void *obj, void *arg, QGuestAllocator *alloc)
 {
     TestServer *s = arg;
@@ -869,6 +886,7 @@ static void test_migrate(void *obj, void *arg, QGuestAllocator *alloc)
     qtest_qmp_eventwait(to, "RESUME");
 
     g_assert(wait_for_fds(dest));
+    wait_for_rings_started(dest, 2);
     read_guest_mem_server(to, dest);
 
     g_source_destroy(source);
@@ -878,23 +896,6 @@ static void test_migrate(void *obj, void *arg, QGuestAllocator *alloc)
     test_server_free(dest);
     g_free(uri);
     g_string_free(dest_cmdline, true);
-}
-
-static void wait_for_rings_started(TestServer *s, size_t count)
-{
-    gint64 end_time;
-
-    g_mutex_lock(&s->data_mutex);
-    end_time = g_get_monotonic_time() + 5 * G_TIME_SPAN_SECOND;
-    while (ctpop64(s->rings) != count) {
-        if (!g_cond_wait_until(&s->data_cond, &s->data_mutex, end_time)) {
-            /* timeout has passed */
-            g_assert_cmpint(ctpop64(s->rings), ==, count);
-            break;
-        }
-    }
-
-    g_mutex_unlock(&s->data_mutex);
 }
 
 static inline void test_server_connect(TestServer *server)
