@@ -459,7 +459,9 @@ int vhost_net_start(VirtIODevice *dev, NetClientState *ncs,
             peer = qemu_get_peer(ncs, n->max_queue_pairs);
         }
 
-        if (peer->vring_enable) {
+        /* ovs needs to restore all states of vring */
+        if (peer->vring_enable ||
+	        ncs[i].peer->info->type == NET_CLIENT_DRIVER_VHOST_USER) {
             /* restore vring enable state */
             r = vhost_set_vring_enable(peer, peer->vring_enable);
 

@@ -14,6 +14,8 @@
 #define IAC_SB 250
 #define IAC 255
 
+#define CHR_FOR_VHOST_USER     0x32a1
+
 /* character device */
 typedef struct CharBackend CharBackend;
 
@@ -70,6 +72,7 @@ struct Chardev {
     GSource *gsource;
     GMainContext *gcontext;
     DECLARE_BITMAP(features, QEMU_CHAR_FEATURE_LAST);
+    int chr_for_flag;
 };
 
 /**
@@ -227,6 +230,16 @@ int qemu_chr_write(Chardev *s, const uint8_t *buf, int len, bool write_all);
 #define qemu_chr_write_all(s, buf, len) qemu_chr_write(s, buf, len, true)
 int qemu_chr_wait_connected(Chardev *chr, Error **errp);
 
+/**
+ * @qemu_chr_set_reconnect_time:
+ *
+ * Set reconnect time for char disconnect.
+ * Currently, only vhost user will call it.
+ *
+ * @reconnect_time the reconnect_time to be set
+ */
+void qemu_chr_set_reconnect_time(Chardev *chr, int64_t reconnect_time);
+
 #define TYPE_CHARDEV "chardev"
 OBJECT_DECLARE_TYPE(Chardev, ChardevClass, CHARDEV)
 
@@ -306,6 +319,9 @@ struct ChardevClass {
 
     /* handle various events */
     void (*chr_be_event)(Chardev *s, QEMUChrEvent event);
+
+    /* set reconnect time */
+    void (*chr_set_reconnect_time)(Chardev *chr, int64_t reconnect_time);
 };
 
 Chardev *qemu_chardev_new(const char *id, const char *typename,
