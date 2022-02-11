@@ -56,6 +56,8 @@ static unsigned int used_shared_memslots;
 static QLIST_HEAD(, vhost_dev) vhost_devices =
     QLIST_HEAD_INITIALIZER(vhost_devices);
 
+bool used_memslots_exceeded;
+
 unsigned int vhost_get_max_memslots(void)
 {
     unsigned int max = UINT_MAX;
@@ -1569,8 +1571,11 @@ int vhost_dev_init(struct vhost_dev *hdev, void *opaque,
         error_setg(errp, "vhost backend memory slots limit (%d) is less"
                    " than current number of used (%d) and reserved (%d)"
                    " memory slots for memory devices.", limit, used, reserved);
+        used_memslots_exceeded = true;
         r = -EINVAL;
         goto fail_busyloop;
+    } else {
+        used_memslots_exceeded = false;
     }
 
     return 0;
@@ -2404,4 +2409,9 @@ fail:
     }
 
     return ret;
+}
+
+bool used_memslots_is_exceeded(void)
+{
+    return used_memslots_exceeded;
 }
