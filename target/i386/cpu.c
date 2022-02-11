@@ -5197,7 +5197,7 @@ void cpu_x86_cpuid(CPUX86State *env, uint32_t index, uint32_t count,
 {
     X86CPU *cpu = env_archcpu(env);
     CPUState *cs = env_cpu(env);
-    uint32_t die_offset;
+    uint32_t die_offset, smt_width;
     uint32_t limit;
     uint32_t signature[3];
     X86CPUTopoInfo topo_info;
@@ -5205,6 +5205,9 @@ void cpu_x86_cpuid(CPUX86State *env, uint32_t index, uint32_t count,
     topo_info.dies_per_pkg = env->nr_dies;
     topo_info.cores_per_die = cs->nr_cores;
     topo_info.threads_per_core = cs->nr_threads;
+
+    die_offset = apicid_die_offset(&topo_info);
+    smt_width = apicid_smt_width(&topo_info);
 
     /* Calculate & apply limits for different index ranges */
     if (index >= 0xC0000000) {
@@ -5273,8 +5276,25 @@ void cpu_x86_cpuid(CPUX86State *env, uint32_t index, uint32_t count,
         /* cache info: needed for Core compatibility */
         if (cpu->cache_info_passthrough) {
             host_cpuid(index, count, eax, ebx, ecx, edx);
-            /* QEMU gives out its own APIC IDs, never pass down bits 31..26.  */
-            *eax &= ~0xFC000000;
+            /*
+             * QEMU gives out its own APIC IDs, never pass down bits 31..26.
+             * Update the cache topo bits 25..14, according to the guest
+             * vCPU topology instead of the host pCPU topology.
+             */
+            *eax &= ~0xFFFFC000;
+            switch (count) {
+            case 0: /* L1 dcache info */
+            case 1: /* L1 icache info */
+            case 2: /* L2 cache info */
+                *eax |= ((1 << smt_width) - 1) << 14;
+                break;
+            case 3: /* L3 cache info */
+                *eax |= ((1 << die_offset) - 1) << 14;
+                break;
+            default: /* end of info */
+                *eax = *ebx = *ecx = *edx = 0;
+                break;
+            }
             if ((*eax & 31) && cs->nr_cores > 1) {
                 *eax |= (cs->nr_cores - 1) << 26;
             }
@@ -5299,7 +5319,6 @@ void cpu_x86_cpuid(CPUX86State *env, uint32_t index, uint32_t count,
                                     eax, ebx, ecx, edx);
                 break;
             case 3: /* L3 cache info */
-                die_offset = apicid_die_offset(&topo_info);
                 if (cpu->enable_l3_cache) {
                     encode_cache_cpuid4(env->cache_info_cpuid4.l3_cache,
                                         (1 << die_offset), cs->nr_cores,
@@ -5706,9 +5725,31 @@ void cpu_x86_cpuid(CPUX86State *env, uint32_t index, uint32_t count,
         }
         break;
     case 0x8000001D:
+        /* Populate AMD Processor Cache Information */
         *eax = 0;
         if (cpu->cache_info_passthrough) {
             host_cpuid(index, count, eax, ebx, ecx, edx);
+
+            /*
+             * Clear BITs[25:14] and then update them based on the guest
+             * vCPU topology, like what we do in encode_cache_cpuid8000001d
+             * when cache_info_passthrough is not enabled.
+             */
+            *eax &= ~0x03FFC000;
+            switch (count) {
+            case 0: /* L1 dcache info */
+            case 1: /* L1 icache info */
+            case 2: /* L2 cache info */
+                *eax |= ((topo_info.threads_per_core - 1) << 14);
+                break;
+            case 3: /* L3 cache info */
+                *eax |= ((topo_info.cores_per_die *
+                          topo_info.threads_per_core - 1) << 14);
+                break;
+            default: /* end of info */
+                *eax = *ebx = *ecx = *edx = 0;
+                break;
+            }
             break;
         }
         switch (count) {
