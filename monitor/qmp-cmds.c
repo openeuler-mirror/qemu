@@ -466,3 +466,8 @@ HumanReadableText *qmp_x_query_irq(Error **errp)
 
     return human_readable_text_from_str(buf);
 }
+
+int64_t qmp_query_rtc_date_diff(Error **errp)
+{
+    return get_rtc_date_diff();
+}

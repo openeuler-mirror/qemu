@@ -527,3 +527,12 @@
  'data': { '*option': 'str' },
  'returns': ['CommandLineOptionInfo'],
  'allow-preconfig': true }
+
+##
+# @query-rtc-date-diff:
+#
+# get vm's time offset
+#
+# Since: 2.8
+##
+{ 'command': 'query-rtc-date-diff', 'returns': 'int64' }

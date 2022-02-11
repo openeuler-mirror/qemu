@@ -143,7 +143,8 @@ static void pl031_write(void * opaque, hwaddr offset,
         s->tick_offset += value - pl031_get_count(s);
 
         qemu_get_timedate(&tm, s->tick_offset);
-        qapi_event_send_rtc_change(qemu_timedate_diff(&tm));
+        set_rtc_date_diff(qemu_timedate_diff(&tm));
+        qapi_event_send_rtc_change(get_rtc_date_diff());
 
         pl031_set_alarm(s);
         break;
