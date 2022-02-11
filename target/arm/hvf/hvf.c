@@ -449,15 +449,15 @@ static bool hvf_arm_get_host_cpu_features(ARMHostCPUFeatures *ahcf)
         int reg;
         uint64_t *val;
     } regs[] = {
-        { HV_SYS_REG_ID_AA64PFR0_EL1, &host_isar.id_aa64pfr0 },
-        { HV_SYS_REG_ID_AA64PFR1_EL1, &host_isar.id_aa64pfr1 },
-        { HV_SYS_REG_ID_AA64DFR0_EL1, &host_isar.id_aa64dfr0 },
-        { HV_SYS_REG_ID_AA64DFR1_EL1, &host_isar.id_aa64dfr1 },
-        { HV_SYS_REG_ID_AA64ISAR0_EL1, &host_isar.id_aa64isar0 },
-        { HV_SYS_REG_ID_AA64ISAR1_EL1, &host_isar.id_aa64isar1 },
-        { HV_SYS_REG_ID_AA64MMFR0_EL1, &host_isar.id_aa64mmfr0 },
-        { HV_SYS_REG_ID_AA64MMFR1_EL1, &host_isar.id_aa64mmfr1 },
-        { HV_SYS_REG_ID_AA64MMFR2_EL1, &host_isar.id_aa64mmfr2 },
+        { HV_SYS_REG_ID_AA64PFR0_EL1, &host_isar.regs[ID_AA64PFR0] },
+        { HV_SYS_REG_ID_AA64PFR1_EL1, &host_isar.regs[ID_AA64PFR1] },
+        { HV_SYS_REG_ID_AA64DFR0_EL1, &host_isar.regs[ID_AA64DFR0] },
+        { HV_SYS_REG_ID_AA64DFR1_EL1, &host_isar.regs[ID_AA64DFR1] },
+        { HV_SYS_REG_ID_AA64ISAR0_EL1, &host_isar.regs[ID_AA64ISAR0] },
+        { HV_SYS_REG_ID_AA64ISAR1_EL1, &host_isar.regs[ID_AA64ISAR1] },
+        { HV_SYS_REG_ID_AA64MMFR0_EL1, &host_isar.regs[ID_AA64MMFR0] },
+        { HV_SYS_REG_ID_AA64MMFR1_EL1, &host_isar.regs[ID_AA64MMFR1] },
+        { HV_SYS_REG_ID_AA64MMFR2_EL1, &host_isar.regs[ID_AA64MMFR2] },
     };
     hv_vcpu_t fd;
     hv_return_t r = HV_SUCCESS;
@@ -593,7 +593,7 @@ int hvf_arch_init_vcpu(CPUState *cpu)
 
     /* We're limited to underlying hardware caps, override internal versions */
     ret = hv_vcpu_get_sys_reg(cpu->hvf->fd, HV_SYS_REG_ID_AA64MMFR0_EL1,
-                              &arm_cpu->isar.id_aa64mmfr0);
+                              &arm_cpu->isar.regs[ID_AA64MMFR0]);
     assert_hvf_ok(ret);
 
     return 0;

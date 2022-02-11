@@ -307,6 +307,13 @@ bool kvm_arm_pmu_supported(void);
 bool kvm_arm_sve_supported(void);
 
 /**
+ * kvm_arm_cpu_feature_supported:
+ *
+ * Returns true if KVM can set CPU features and false otherwise.
+ */
+bool kvm_arm_cpu_feature_supported(void);
+
+/**
  * kvm_arm_get_max_vm_ipa_size:
  * @ms: Machine state handle
  * @fixed_ipa: True when the IPA limit is fixed at 40. This is the case
@@ -527,5 +534,8 @@ static inline const char *its_class_name(void)
         return "arm-gicv3-its";
     }
 }
+
+int kvm_arm_get_one_reg(ARMCPU *cpu, uint64_t regidx, uint64_t *target);
+int kvm_arm_set_one_reg(ARMCPU *cpu, uint64_t regidx, uint64_t *source);
 
 #endif
