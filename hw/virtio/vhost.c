@@ -45,20 +45,20 @@
 static struct vhost_log *vhost_log;
 static struct vhost_log *vhost_log_shm;
 
-static unsigned int used_memslots;
 static QLIST_HEAD(, vhost_dev) vhost_devices =
     QLIST_HEAD_INITIALIZER(vhost_devices);
 
 bool vhost_has_free_slot(void)
 {
-    unsigned int slots_limit = ~0U;
     struct vhost_dev *hdev;
 
     QLIST_FOREACH(hdev, &vhost_devices, entry) {
-        unsigned int r = hdev->vhost_ops->vhost_backend_memslots_limit(hdev);
-        slots_limit = MIN(slots_limit, r);
+        if (hdev->vhost_ops->vhost_get_used_memslots() >=
+            hdev->vhost_ops->vhost_backend_memslots_limit(hdev)) {
+	    return false;
+	}
     }
-    return slots_limit > used_memslots;
+    return true;
 }
 
 static void vhost_dev_sync_region(struct vhost_dev *dev,
@@ -521,7 +521,6 @@ static void vhost_commit(MemoryListener *listener)
                        dev->n_mem_sections * sizeof dev->mem->regions[0];
     dev->mem = g_realloc(dev->mem, regions_size);
     dev->mem->nregions = dev->n_mem_sections;
-    used_memslots = dev->mem->nregions;
     for (i = 0; i < dev->n_mem_sections; i++) {
         struct vhost_memory_region *cur_vmr = dev->mem->regions + i;
         struct MemoryRegionSection *mrs = dev->mem_sections + i;
@@ -697,6 +696,7 @@ static void vhost_region_add_section(struct vhost_dev *dev,
         dev->tmp_sections[dev->n_tmp_sections - 1].fv = NULL;
         memory_region_ref(section->mr);
     }
+    dev->vhost_ops->vhost_set_used_memslots(dev);
 }
 
 /* Used for both add and nop callbacks */
@@ -710,6 +710,17 @@ static void vhost_region_addnop(MemoryListener *listener,
         return;
     }
     vhost_region_add_section(dev, section);
+}
+
+static void vhost_region_del(MemoryListener *listener,
+                             MemoryRegionSection *section)
+{
+    struct vhost_dev *dev = container_of(listener, struct vhost_dev,
+                                         memory_listener);
+    if (!vhost_section(dev, section)) {
+        return;
+    }
+    dev->vhost_ops->vhost_set_used_memslots(dev);
 }
 
 static void vhost_iommu_unmap_notify(IOMMUNotifier *n, IOMMUTLBEntry *iotlb)
@@ -1319,6 +1330,18 @@ static void vhost_virtqueue_cleanup(struct vhost_virtqueue *vq)
     event_notifier_cleanup(&vq->masked_notifier);
 }
 
+static bool vhost_dev_used_memslots_is_exceeded(struct vhost_dev *hdev)
+{
+    if (hdev->vhost_ops->vhost_get_used_memslots() >
+        hdev->vhost_ops->vhost_backend_memslots_limit(hdev)) {
+        error_report("vhost backend memory slots limit is less"
+                " than current number of present memory slots");
+        return true;
+    }
+
+    return false;
+}
+
 int vhost_dev_init(struct vhost_dev *hdev, void *opaque,
                    VhostBackendType backend_type, uint32_t busyloop_timeout,
                    Error **errp)
@@ -1374,6 +1397,7 @@ int vhost_dev_init(struct vhost_dev *hdev, void *opaque,
         .name = "vhost",
         .begin = vhost_begin,
         .commit = vhost_commit,
+        .region_del = vhost_region_del,
         .region_add = vhost_region_addnop,
         .region_nop = vhost_region_addnop,
         .log_start = vhost_log_start,
@@ -1420,9 +1444,13 @@ int vhost_dev_init(struct vhost_dev *hdev, void *opaque,
     memory_listener_register(&hdev->memory_listener, &address_space_memory);
     QLIST_INSERT_HEAD(&vhost_devices, hdev, entry);
 
-    if (used_memslots > hdev->vhost_ops->vhost_backend_memslots_limit(hdev)) {
-        error_setg(errp, "vhost backend memory slots limit is less"
-                   " than current number of present memory slots");
+    /*
+     * If we started a VM without any vhost device,
+     * vhost_dev_used_memslots_is_exceeded will always return false for the
+     * first time vhost device hot-plug(vhost_get_used_memslots is always 0),
+     * so it needs to double check here
+     */
+    if (vhost_dev_used_memslots_is_exceeded(hdev)) {
         r = -EINVAL;
         goto fail_busyloop;
     }
