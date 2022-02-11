@@ -21,6 +21,8 @@
 #include "qemu/option.h"
 #include "trace.h"
 
+#define VHOST_USER_RECONNECT_TIME (3)
+
 typedef struct NetVhostUserState {
     NetClientState nc;
     CharBackend chr; /* only queue index 0 */
@@ -287,6 +289,7 @@ static void net_vhost_user_event(void *opaque, QEMUChrEvent event)
     trace_vhost_user_event(chr->label, event);
     switch (event) {
     case CHR_EVENT_OPENED:
+        qemu_chr_set_reconnect_time(chr, VHOST_USER_RECONNECT_TIME);
         if (vhost_user_start(queues, ncs, s->vhost_user) < 0) {
             qemu_chr_fe_disconnect(&s->chr);
             return;

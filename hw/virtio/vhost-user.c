@@ -1926,8 +1926,14 @@ static int vhost_user_backend_init(struct vhost_dev *dev, void *opaque,
     uint64_t features, protocol_features, ram_slots;
     struct vhost_user *u;
     int err;
+    Chardev *chr;
 
     assert(dev->vhost_ops->backend_type == VHOST_BACKEND_TYPE_USER);
+
+    chr = qemu_chr_fe_get_driver(((VhostUserState *)opaque)->chr);
+    if (chr) {
+        chr->chr_for_flag = CHR_FOR_VHOST_USER;
+    }
 
     u = g_new0(struct vhost_user, 1);
     u->user = opaque;
