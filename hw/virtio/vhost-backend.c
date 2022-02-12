@@ -300,7 +300,7 @@ static void vhost_kernel_set_used_memslots(struct vhost_dev *dev)
     vhost_kernel_used_memslots = dev->mem->nregions;
 }
 
-static unsigned int vhost_kernel_get_used_memslots(void)
+unsigned int vhost_kernel_get_used_memslots(void)
 {
     return vhost_kernel_used_memslots;
 }

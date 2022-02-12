@@ -27,7 +27,9 @@
         'query-tpm-models',
         'query-tpm-types',
         'ringbuf-read',
-        'query-rtc-date-diff' ],
+        'query-rtc-date-diff',
+        'query-vhost-user-used-memslots',
+        'query-vhost-kernel-used-memslots' ],
     # Externally visible types whose member names may use uppercase
     'member-name-exceptions': [     # visible in:
         'ACPISlotType',             # query-acpi-ospm-status

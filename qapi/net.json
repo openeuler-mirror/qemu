@@ -696,3 +696,21 @@
 ##
 { 'event': 'FAILOVER_NEGOTIATED',
   'data': {'device-id': 'str'} }
+
+##
+# @query-vhost-kernel-used-memslots:
+#
+# Get vhost-kernel nic used memslots
+#
+# Since: 4.1
+##
+{ 'command': 'query-vhost-kernel-used-memslots', 'returns': 'uint32' }
+
+##
+# @query-vhost-user-used-memslots:
+#
+# Get vhost-user nic used memslots
+#
+# Since: 4.1
+##
+{ 'command': 'query-vhost-user-used-memslots', 'returns': 'uint32' }
