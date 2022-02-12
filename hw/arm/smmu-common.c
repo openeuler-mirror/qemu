@@ -470,13 +470,14 @@ IOMMUMemoryRegion *smmu_iommu_mr(SMMUState *s, uint32_t sid)
 /* Unmap the whole notifier's range */
 static void smmu_unmap_notifier_range(IOMMUNotifier *n)
 {
-    IOMMUTLBEvent event;
+    IOMMUTLBEvent event = {};
 
     event.type = IOMMU_NOTIFIER_UNMAP;
     event.entry.target_as = &address_space_memory;
     event.entry.iova = n->start;
     event.entry.perm = IOMMU_NONE;
     event.entry.addr_mask = n->end - n->start;
+    event.entry.granularity = IOMMU_INV_GRAN_DOMAIN;
 
     memory_region_notify_iommu_one(n, &event);
 }
