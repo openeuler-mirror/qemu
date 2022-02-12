@@ -20,6 +20,9 @@
 #include "qemu/error-report.h"
 #include "qemu/option.h"
 #include "trace.h"
+#include "include/hw/virtio/vhost.h"
+
+#define VHOST_USER_RECONNECT_TIME (3)
 
 typedef struct NetVhostUserState {
     NetClientState nc;
@@ -287,6 +290,7 @@ static void net_vhost_user_event(void *opaque, QEMUChrEvent event)
     trace_vhost_user_event(chr->label, event);
     switch (event) {
     case CHR_EVENT_OPENED:
+        qemu_chr_set_reconnect_time(chr, VHOST_USER_RECONNECT_TIME);
         if (vhost_user_start(queues, ncs, s->vhost_user) < 0) {
             qemu_chr_fe_disconnect(&s->chr);
             return;
@@ -366,6 +370,11 @@ static int net_vhost_user_init(NetClientState *peer, const char *device,
         qemu_chr_fe_set_handlers(&s->chr, NULL, NULL,
                                  net_vhost_user_event, NULL, nc0->name, NULL,
                                  true);
+        if (used_memslots_is_exceeded()) {
+            error_report("used memslots exceeded the backend limit, quit "
+                            "loop");
+            goto err;
+        }
     } while (!s->started);
 
     assert(s->vhost_net);

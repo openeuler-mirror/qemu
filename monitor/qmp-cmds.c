@@ -37,6 +37,7 @@
 #include "qapi/qapi-commands-machine.h"
 #include "qapi/qapi-commands-misc.h"
 #include "qapi/qapi-commands-ui.h"
+#include "qapi/qapi-commands-net.h"
 #include "qapi/type-helpers.h"
 #include "qapi/qmp/qerror.h"
 #include "exec/ramlist.h"
@@ -44,6 +45,7 @@
 #include "hw/acpi/acpi_dev_interface.h"
 #include "hw/intc/intc.h"
 #include "hw/rdma/rdma.h"
+#include "hw/virtio/vhost-backend.h"
 
 NameInfo *qmp_query_name(Error **errp)
 {
@@ -473,4 +475,14 @@ HumanReadableText *qmp_x_query_irq(Error **errp)
 int64_t qmp_query_rtc_date_diff(Error **errp)
 {
     return get_rtc_date_diff();
+}
+
+uint32_t qmp_query_vhost_kernel_used_memslots(Error **errp)
+{
+    return vhost_kernel_get_used_memslots();
+}
+
+uint32_t qmp_query_vhost_user_used_memslots(Error **errp)
+{
+    return vhost_user_get_used_memslots();
 }

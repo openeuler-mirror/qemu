@@ -1202,6 +1202,12 @@ void qmp_netdev_del(const char *id, Error **errp)
         return;
     }
 
+    if (nc->info->type == NET_CLIENT_DRIVER_VHOST_USER && nc->peer) {
+        error_setg(errp, "Device '%s' is a netdev for vhostuser,"
+                   "please delete the peer front-end device (virtio-net) first.", id);
+        return;
+    }
+
     qemu_del_net_client(nc);
 
     /*

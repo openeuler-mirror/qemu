@@ -2241,12 +2241,17 @@ void virtio_queue_set_rings(VirtIODevice *vdev, int n, hwaddr desc,
 
 void virtio_queue_set_num(VirtIODevice *vdev, int n, int num)
 {
+    int vq_max_size = VIRTQUEUE_MAX_SIZE;
+
+    if (!strcmp(vdev->name, "virtio-net")) {
+        vq_max_size = VIRTIO_NET_VQ_MAX_SIZE;
+    }
+
     /* Don't allow guest to flip queue between existent and
      * nonexistent states, or to set it to an invalid size.
      */
     if (!!num != !!vdev->vq[n].vring.num ||
-        num > VIRTQUEUE_MAX_SIZE ||
-        num < 0) {
+        num > vq_max_size || num < 0) {
         return;
     }
     vdev->vq[n].vring.num = num;
@@ -2396,7 +2401,7 @@ VirtQueue *virtio_add_queue(VirtIODevice *vdev, int queue_size,
             break;
     }
 
-    if (i == VIRTIO_QUEUE_MAX || queue_size > VIRTQUEUE_MAX_SIZE) {
+    if (i == VIRTIO_QUEUE_MAX) {
         qemu_log("unacceptable queue_size (%d) or num (%d)\n",
                  queue_size, i);
         abort();
@@ -2417,6 +2422,7 @@ void virtio_delete_queue(VirtQueue *vq)
 {
     vq->vring.num = 0;
     vq->vring.num_default = 0;
+    vq->vring.align = 0;
     vq->handle_output = NULL;
     vq->handle_aio_output = NULL;
     g_free(vq->used_elems);
@@ -2854,6 +2860,35 @@ static const VMStateDescription vmstate_virtio = {
     }
 };
 
+static void check_vring_avail_num(VirtIODevice *vdev, int index)
+{
+    uint16_t nheads;
+    VRingMemoryRegionCaches *caches;
+
+    rcu_read_lock();
+    caches = qatomic_rcu_read(&vdev->vq[index].vring.caches);
+    if (caches == NULL) {
+        /*
+         * caches may be NULL if virtio_reset is called at the same time,
+         * such as when the virtual machine starts.
+         */
+        rcu_read_unlock();
+        return;
+    }
+
+    /* Check it isn't doing strange things with descriptor numbers. */
+    nheads = vring_avail_idx(&vdev->vq[index]) - vdev->vq[index].last_avail_idx;
+    if (nheads > vdev->vq[index].vring.num) {
+        qemu_log("VQ %d size 0x%x Guest index 0x%x "
+                 "inconsistent with Host index 0x%x: "
+                 "delta 0x%x\n",
+                 index, vdev->vq[index].vring.num,
+                 vring_avail_idx(&vdev->vq[index]),
+                 vdev->vq[index].last_avail_idx, nheads);
+    }
+    rcu_read_unlock();
+}
+
 int virtio_save(VirtIODevice *vdev, QEMUFile *f)
 {
     BusState *qbus = qdev_get_parent_bus(DEVICE(vdev));
@@ -2883,6 +2918,8 @@ int virtio_save(VirtIODevice *vdev, QEMUFile *f)
     for (i = 0; i < VIRTIO_QUEUE_MAX; i++) {
         if (vdev->vq[i].vring.num == 0)
             break;
+
+        check_vring_avail_num(vdev, i);
 
         qemu_put_be32(f, vdev->vq[i].vring.num);
         if (k->has_variable_vring_alignment) {
@@ -2941,6 +2978,13 @@ static int virtio_set_features_nocheck(VirtIODevice *vdev, uint64_t val)
 {
     VirtioDeviceClass *k = VIRTIO_DEVICE_GET_CLASS(vdev);
     bool bad = (val & ~(vdev->host_features)) != 0;
+    uint64_t feat = val & ~(vdev->host_features);
+
+    if (bad && k->print_features) {
+	qemu_log("error: Please check host config, "\
+		 "because host does not support required feature bits 0x%" PRIx64 "\n", feat);
+        k->print_features(feat);
+    }
 
     val &= vdev->host_features;
     if (k->set_features) {

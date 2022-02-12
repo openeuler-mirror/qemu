@@ -51,12 +51,11 @@
 #define MAX_VLAN    (1 << 12)   /* Per 802.1Q definition */
 
 /* previously fixed value */
-#define VIRTIO_NET_RX_QUEUE_DEFAULT_SIZE 256
-#define VIRTIO_NET_TX_QUEUE_DEFAULT_SIZE 256
+#define VIRTIO_NET_VHOST_USER_DEFAULT_SIZE 2048
 
 /* for now, only allow larger queue_pairs; with virtio-1, guest can downsize */
-#define VIRTIO_NET_RX_QUEUE_MIN_SIZE VIRTIO_NET_RX_QUEUE_DEFAULT_SIZE
-#define VIRTIO_NET_TX_QUEUE_MIN_SIZE VIRTIO_NET_TX_QUEUE_DEFAULT_SIZE
+#define VIRTIO_NET_RX_QUEUE_MIN_SIZE 256
+#define VIRTIO_NET_TX_QUEUE_MIN_SIZE 256
 
 #define VIRTIO_NET_IP4_ADDR_SIZE   8        /* ipv4 saddr + daddr */
 
@@ -622,6 +621,28 @@ static void virtio_net_set_mrg_rx_bufs(VirtIONet *n, int mergeable_rx_bufs,
     }
 }
 
+static void virtio_net_set_default_queue_size(VirtIONet *n)
+{
+    NetClientState *peer = n->nic_conf.peers.ncs[0];
+
+    /* Default value is 0 if not set */
+    if (n->net_conf.rx_queue_size == 0) {
+        if (peer && peer->info->type == NET_CLIENT_DRIVER_VHOST_USER) {
+            n->net_conf.rx_queue_size = VIRTIO_NET_VHOST_USER_DEFAULT_SIZE;
+        } else {
+            n->net_conf.rx_queue_size = VIRTIO_NET_VQ_MAX_SIZE;
+        }
+    }
+
+    if (n->net_conf.tx_queue_size == 0) {
+        if (peer && peer->info->type == NET_CLIENT_DRIVER_VHOST_USER) {
+            n->net_conf.tx_queue_size = VIRTIO_NET_VHOST_USER_DEFAULT_SIZE;
+        } else {
+            n->net_conf.tx_queue_size = VIRTIO_NET_VQ_MAX_SIZE;
+        }
+    }
+}
+
 static int virtio_net_max_tx_queue_size(VirtIONet *n)
 {
     NetClientState *peer = n->nic_conf.peers.ncs[0];
@@ -630,14 +651,14 @@ static int virtio_net_max_tx_queue_size(VirtIONet *n)
      * Backends other than vhost-user don't support max queue size.
      */
     if (!peer) {
-        return VIRTIO_NET_TX_QUEUE_DEFAULT_SIZE;
+        return VIRTIO_NET_VQ_MAX_SIZE;
     }
 
     if (peer->info->type != NET_CLIENT_DRIVER_VHOST_USER) {
-        return VIRTIO_NET_TX_QUEUE_DEFAULT_SIZE;
+        return VIRTIO_NET_VQ_MAX_SIZE;
     }
 
-    return VIRTQUEUE_MAX_SIZE;
+    return VIRTIO_NET_VQ_MAX_SIZE;
 }
 
 static int peer_attach(VirtIONet *n, int index)
@@ -2644,7 +2665,10 @@ static void virtio_net_handle_tx_bh(VirtIODevice *vdev, VirtQueue *vq)
         return;
     }
     virtio_queue_set_notification(vq, 0);
-    qemu_bh_schedule(q->tx_bh);
+
+    if (q->tx_bh) {
+        qemu_bh_schedule(q->tx_bh);
+    }
 }
 
 static void virtio_net_tx_timer(void *opaque)
@@ -3385,29 +3409,31 @@ static void virtio_net_device_realize(DeviceState *dev, Error **errp)
     virtio_net_set_config_size(n, n->host_features);
     virtio_init(vdev, "virtio-net", VIRTIO_ID_NET, n->config_size);
 
+    virtio_net_set_default_queue_size(n);
+
     /*
      * We set a lower limit on RX queue size to what it always was.
      * Guests that want a smaller ring can always resize it without
      * help from us (using virtio 1 and up).
      */
     if (n->net_conf.rx_queue_size < VIRTIO_NET_RX_QUEUE_MIN_SIZE ||
-        n->net_conf.rx_queue_size > VIRTQUEUE_MAX_SIZE ||
+        n->net_conf.rx_queue_size > VIRTIO_NET_VQ_MAX_SIZE ||
         !is_power_of_2(n->net_conf.rx_queue_size)) {
         error_setg(errp, "Invalid rx_queue_size (= %" PRIu16 "), "
                    "must be a power of 2 between %d and %d.",
                    n->net_conf.rx_queue_size, VIRTIO_NET_RX_QUEUE_MIN_SIZE,
-                   VIRTQUEUE_MAX_SIZE);
+                   VIRTIO_NET_VQ_MAX_SIZE);
         virtio_cleanup(vdev);
         return;
     }
 
     if (n->net_conf.tx_queue_size < VIRTIO_NET_TX_QUEUE_MIN_SIZE ||
-        n->net_conf.tx_queue_size > VIRTQUEUE_MAX_SIZE ||
+        n->net_conf.tx_queue_size > VIRTIO_NET_VQ_MAX_SIZE ||
         !is_power_of_2(n->net_conf.tx_queue_size)) {
         error_setg(errp, "Invalid tx_queue_size (= %" PRIu16 "), "
                    "must be a power of 2 between %d and %d",
                    n->net_conf.tx_queue_size, VIRTIO_NET_TX_QUEUE_MIN_SIZE,
-                   VIRTQUEUE_MAX_SIZE);
+                   VIRTIO_NET_VQ_MAX_SIZE);
         virtio_cleanup(vdev);
         return;
     }
@@ -3676,10 +3702,8 @@ static Property virtio_net_properties[] = {
                        TX_TIMER_INTERVAL),
     DEFINE_PROP_INT32("x-txburst", VirtIONet, net_conf.txburst, TX_BURST),
     DEFINE_PROP_STRING("tx", VirtIONet, net_conf.tx),
-    DEFINE_PROP_UINT16("rx_queue_size", VirtIONet, net_conf.rx_queue_size,
-                       VIRTIO_NET_RX_QUEUE_DEFAULT_SIZE),
-    DEFINE_PROP_UINT16("tx_queue_size", VirtIONet, net_conf.tx_queue_size,
-                       VIRTIO_NET_TX_QUEUE_DEFAULT_SIZE),
+    DEFINE_PROP_UINT16("rx_queue_size", VirtIONet, net_conf.rx_queue_size, 0),
+    DEFINE_PROP_UINT16("tx_queue_size", VirtIONet, net_conf.tx_queue_size, 0),
     DEFINE_PROP_UINT16("host_mtu", VirtIONet, net_conf.mtu, 0),
     DEFINE_PROP_BOOL("x-mtu-bypass-backend", VirtIONet, mtu_bypass_backend,
                      true),
@@ -3688,6 +3712,46 @@ static Property virtio_net_properties[] = {
     DEFINE_PROP_BOOL("failover", VirtIONet, failover, false),
     DEFINE_PROP_END_OF_LIST(),
 };
+
+static void virtio_net_print_features(uint64_t features)
+{
+    Property *props = virtio_net_properties;
+    int feature_cnt = 0;
+
+    if (!features) {
+        return;
+    }
+    printf("virtio_net_feature: ");
+
+    for (; features && props->name; props++) {
+        /* The bitnr of property may be default(0) besides 'csum' property. */
+        if (props->bitnr == 0 && strcmp(props->name, "csum")) {
+            continue;
+        }
+
+        /* Features only support 64bit. */
+        if (props->bitnr > 63) {
+            continue;
+        }
+
+        if (virtio_has_feature(features, props->bitnr)) {
+            virtio_clear_feature(&features, props->bitnr);
+            if (feature_cnt != 0) {
+                printf(", ");
+            }
+            printf("%s", props->name);
+            feature_cnt++;
+        }
+    }
+
+    if (features) {
+        if (feature_cnt != 0) {
+            printf(", ");
+        }
+        printf("unkown bits 0x%." PRIx64, features);
+    }
+    printf("\n");
+}
 
 static void virtio_net_class_init(ObjectClass *klass, void *data)
 {
@@ -3703,6 +3767,7 @@ static void virtio_net_class_init(ObjectClass *klass, void *data)
     vdc->set_config = virtio_net_set_config;
     vdc->get_features = virtio_net_get_features;
     vdc->set_features = virtio_net_set_features;
+    vdc->print_features = virtio_net_print_features;
     vdc->bad_features = virtio_net_bad_features;
     vdc->reset = virtio_net_reset;
     vdc->set_status = virtio_net_set_status;

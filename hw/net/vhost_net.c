@@ -152,9 +152,26 @@ static int vhost_net_get_fd(NetClientState *backend)
     }
 }
 
+static uint64_t vhost_get_mask_features(const int *feature_bits, uint64_t features)
+{
+    const int *bit = feature_bits;
+    uint64_t out_features = 0;
+
+    while (*bit != VHOST_INVALID_FEATURE_BIT) {
+        uint64_t bit_mask = (1ULL << *bit);
+        if (features & bit_mask) {
+            out_features |= bit_mask;
+        }
+        bit++;
+    }
+    return out_features;
+}
+
 struct vhost_net *vhost_net_init(VhostNetOptions *options)
 {
     int r;
+    VirtIONet *n;
+    VirtIODevice *vdev;
     bool backend_kernel = options->backend_type == VHOST_BACKEND_TYPE_KERNEL;
     struct vhost_net *net = g_new0(struct vhost_net, 1);
     uint64_t features = 0;
@@ -180,7 +197,46 @@ struct vhost_net *vhost_net_init(VhostNetOptions *options)
         net->backend = r;
         net->dev.protocol_features = 0;
     } else {
-        net->dev.backend_features = 0;
+        /* for ovs restart when vm start.
+         * Normal situation:
+         * 1.vm start.
+         * 2.vhost_net_init init ok, then dev.acked_features is 0x40000000.
+         * 3.guest virtio-net mod load. qemu will call virtio_net_set_features set
+         * dev.acked_features to 0x40408000.
+         * 4.feature set to ovs's vhostuser(0x40408000).
+         * 5.ovs restart.
+         * 6.vhost_user_stop will save net->dev.acked_features(0x40408000) to
+         * VhostUserState's acked_features(0x40408000).
+         * 7.restart ok.
+         * 8.vhost_net_init fun call vhost_user_get_acked_features get the save
+         * features, and set to net->dev.acked_features.
+         * Abnormal situation:
+         * 1.vm start.
+         * 2.vhost_net_init init ok, then dev.acked_features is 0x40000000.
+         * 3.ovs restart.
+         * 4.vhost_user_stop will save net->dev.acked_features(0x40000000) to
+         * VhostUserState's acked_features(0x40000000).
+         * 5.guest virtio-net mod load. qemu will call virtio_net_set_features set
+         * dev.acked_features to 0x40408000.
+         * 6.restart ok.
+         * 7.vhost_net_init fun call vhost_user_get_acked_features get the save
+         * features(0x40000000), and set to net->dev.acked_features(0x40000000).
+         * 8.feature set to ovs's vhostuser(0x40000000).
+         *
+         * in abnormal situation, qemu set the wrong features to ovs's vhostuser,
+         * then the vm's network will be down.
+         * in abnormal situation, we found it just lost the guest feartures in
+         * acked_features, so hear we set the acked_features to vm's featrue
+         * just the same as guest virtio-net mod load.
+         */
+        if (options->net_backend->peer) {
+            n = qemu_get_nic_opaque(options->net_backend->peer);
+            vdev = VIRTIO_DEVICE(n);
+            net->dev.backend_features = vhost_get_mask_features(vhost_net_get_feature_bits(net),
+                                                                vdev->guest_features);
+        } else {
+            net->dev.backend_features = 0;
+        }
         net->dev.protocol_features = 0;
         net->backend = -1;
 
@@ -376,7 +432,9 @@ int vhost_net_start(VirtIODevice *dev, NetClientState *ncs,
             goto err_start;
         }
 
-        if (peer->vring_enable) {
+	/* ovs needs to restore all states of vring */
+        if (peer->vring_enable ||
+	    ncs[i].peer->info->type == NET_CLIENT_DRIVER_VHOST_USER) {
             /* restore vring enable state */
             r = vhost_set_vring_enable(peer, peer->vring_enable);
 

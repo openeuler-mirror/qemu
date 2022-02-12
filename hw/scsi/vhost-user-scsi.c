@@ -29,6 +29,9 @@
 #include "hw/virtio/virtio-access.h"
 #include "chardev/char-fe.h"
 #include "sysemu/sysemu.h"
+#include "qemu/log.h"
+
+#define VHOST_USER_SCSI_RECONNECT_TIME 3
 
 /* Features supported by the host application */
 static const int user_feature_bits[] = {
@@ -59,7 +62,7 @@ static void vhost_user_scsi_set_status(VirtIODevice *vdev, uint8_t status)
         ret = vhost_scsi_common_start(vsc);
         if (ret < 0) {
             error_report("unable to start vhost-user-scsi: %s", strerror(-ret));
-            exit(1);
+            return;
         }
     } else {
         vhost_scsi_common_stop(vsc);
@@ -89,11 +92,43 @@ static void vhost_dummy_handle_output(VirtIODevice *vdev, VirtQueue *vq)
 {
 }
 
+static void vhost_user_scsi_event(void *opaque, QEMUChrEvent event)
+{
+    int ret;
+    VHostUserSCSI *s = (VHostUserSCSI *)opaque;
+    VHostSCSICommon *vsc = VHOST_SCSI_COMMON(s);
+    VirtIODevice *vdev = VIRTIO_DEVICE(s);
+
+    qemu_log("event:%d, vdev status:%d\n", event, vdev->status);
+
+    /* if CHR_EVENT_CLOSED, do nothing */
+    if (event != CHR_EVENT_OPENED) {
+        return;
+    };
+
+    /* if status of vdev is not DRIVER_OK, just waiting.
+     * vsc should start when status change to DRIVER_OK */
+    if (!(vdev->status & VIRTIO_CONFIG_S_DRIVER_OK)) {
+        return;
+    }
+
+    /* vsc may not fully start because of vhost app stopping */
+    if (vsc->dev.started) {
+        vhost_scsi_common_stop(vsc);
+    }
+
+    ret = vhost_scsi_common_start(vsc);
+    if (ret < 0) {
+        qemu_log("unable to start vhost-user-scsi: %s\n", strerror(-ret));
+    }
+}
+
 static void vhost_user_scsi_realize(DeviceState *dev, Error **errp)
 {
     VirtIOSCSICommon *vs = VIRTIO_SCSI_COMMON(dev);
     VHostUserSCSI *s = VHOST_USER_SCSI(dev);
     VHostSCSICommon *vsc = VHOST_SCSI_COMMON(s);
+    Chardev *chr;
     struct vhost_virtqueue *vqs = NULL;
     Error *err = NULL;
     int ret;
@@ -131,6 +166,11 @@ static void vhost_user_scsi_realize(DeviceState *dev, Error **errp)
     vsc->channel = 0;
     vsc->lun = 0;
     vsc->target = vs->conf.boot_tpgt;
+
+    chr = qemu_chr_fe_get_driver(&vs->conf.chardev);
+    qemu_chr_set_reconnect_time(chr, VHOST_USER_SCSI_RECONNECT_TIME);
+    qemu_chr_fe_set_handlers(&vs->conf.chardev, NULL, NULL,
+                             vhost_user_scsi_event, NULL, s, NULL, true);
 
     return;
 

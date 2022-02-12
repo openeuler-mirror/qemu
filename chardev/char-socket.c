@@ -393,6 +393,22 @@ static GSource *tcp_chr_add_watch(Chardev *chr, GIOCondition cond)
     return qio_channel_create_watch(s->ioc, cond);
 }
 
+static void tcp_chr_set_reconnect_time(Chardev *chr,
+                                       int64_t reconnect_time)
+{
+    SocketChardev *s = SOCKET_CHARDEV(chr);
+    s->reconnect_time = reconnect_time;
+}
+
+void qemu_chr_set_reconnect_time(Chardev *chr, int64_t reconnect_time)
+{
+    ChardevClass *cc = CHARDEV_GET_CLASS(chr);
+
+    if (cc->chr_set_reconnect_time) {
+        cc->chr_set_reconnect_time(chr, reconnect_time);
+    }
+}
+
 static void remove_hup_source(SocketChardev *s)
 {
     if (s->hup_source != NULL) {
@@ -591,7 +607,7 @@ static int tcp_chr_sync_read(Chardev *chr, const uint8_t *buf, int len)
     if (s->state != TCP_CHARDEV_STATE_DISCONNECTED) {
         qio_channel_set_blocking(s->ioc, false, NULL);
     }
-    if (size == 0) {
+    if (size == 0 && chr->chr_for_flag != CHR_FOR_VHOST_USER) {
         /* connection closed */
         tcp_chr_disconnect(chr);
     }
@@ -1585,6 +1601,7 @@ static void char_socket_class_init(ObjectClass *oc, void *data)
     cc->set_msgfds = tcp_set_msgfds;
     cc->chr_add_client = tcp_chr_add_client;
     cc->chr_add_watch = tcp_chr_add_watch;
+    cc->chr_set_reconnect_time = tcp_chr_set_reconnect_time;
     cc->chr_update_read_handler = tcp_chr_update_read_handler;
 
     object_class_property_add(oc, "addr", "SocketAddress",

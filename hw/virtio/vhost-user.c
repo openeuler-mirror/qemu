@@ -24,6 +24,7 @@
 #include "sysemu/cryptodev.h"
 #include "migration/migration.h"
 #include "migration/postcopy-ram.h"
+#include "migration/register.h"
 #include "trace.h"
 
 #include <sys/ioctl.h>
@@ -233,6 +234,7 @@ static VhostUserMsg m __attribute__ ((unused));
 
 /* The version of the protocol we support */
 #define VHOST_USER_VERSION    (0x1)
+static unsigned int vhost_user_used_memslots;
 
 struct vhost_user {
     struct vhost_dev *dev;
@@ -1919,14 +1921,42 @@ static int vhost_user_postcopy_notifier(NotifierWithReturn *notifier,
     return 0;
 }
 
+static int vhost_user_load_setup(QEMUFile *f, void *opaque)
+{
+    struct vhost_dev *hdev = opaque;
+    int r;
+
+    if (hdev->vhost_ops && hdev->vhost_ops->vhost_set_mem_table) {
+        r = hdev->vhost_ops->vhost_set_mem_table(hdev, hdev->mem);
+        if (r < 0) {
+            qemu_log("error: vhost_set_mem_table failed: %s(%d)\n",
+                     strerror(errno), errno);
+            return r;
+        } else {
+            qemu_log("info: vhost_set_mem_table OK\n");
+        }
+    }
+    return 0;
+}
+
+SaveVMHandlers savevm_vhost_user_handlers = {
+    .load_setup = vhost_user_load_setup,
+};
+
 static int vhost_user_backend_init(struct vhost_dev *dev, void *opaque,
                                    Error **errp)
 {
     uint64_t features, protocol_features, ram_slots;
     struct vhost_user *u;
     int err;
+    Chardev *chr;
 
     assert(dev->vhost_ops->backend_type == VHOST_BACKEND_TYPE_USER);
+
+    chr = qemu_chr_fe_get_driver(((VhostUserState *)opaque)->chr);
+    if (chr) {
+        chr->chr_for_flag = CHR_FOR_VHOST_USER;
+    }
 
     u = g_new0(struct vhost_user, 1);
     u->user = opaque;
@@ -2037,6 +2067,7 @@ static int vhost_user_backend_init(struct vhost_dev *dev, void *opaque,
 
     u->postcopy_notifier.notify = vhost_user_postcopy_notifier;
     postcopy_add_notifier(&u->postcopy_notifier);
+    register_savevm_live("vhost-user", -1, 1, &savevm_vhost_user_handlers, dev);
 
     return 0;
 }
@@ -2068,6 +2099,7 @@ static int vhost_user_backend_cleanup(struct vhost_dev *dev)
     u->region_rb_len = 0;
     g_free(u);
     dev->opaque = 0;
+    unregister_savevm(NULL, "vhost-user", dev);
 
     return 0;
 }
@@ -2493,6 +2525,30 @@ void vhost_user_cleanup(VhostUserState *user)
     user->chr = NULL;
 }
 
+static void vhost_user_set_used_memslots(struct vhost_dev *dev)
+{
+    unsigned int counter = 0;
+    int i;
+
+    for (i = 0; i < dev->mem->nregions; ++i) {
+        struct vhost_memory_region *reg = dev->mem->regions + i;
+        ram_addr_t offset;
+        MemoryRegion *mr;
+
+        mr = memory_region_from_host((void *)(uintptr_t)reg->userspace_addr,
+                                    &offset);
+        if (mr && memory_region_get_fd(mr) > 0) {
+            counter++;
+        }
+    }
+    vhost_user_used_memslots = counter;
+}
+
+unsigned int vhost_user_get_used_memslots(void)
+{
+    return vhost_user_used_memslots;
+}
+
 const VhostOps user_ops = {
         .backend_type = VHOST_BACKEND_TYPE_USER,
         .vhost_backend_init = vhost_user_backend_init,
@@ -2526,4 +2582,6 @@ const VhostOps user_ops = {
         .vhost_backend_mem_section_filter = vhost_user_mem_section_filter,
         .vhost_get_inflight_fd = vhost_user_get_inflight_fd,
         .vhost_set_inflight_fd = vhost_user_set_inflight_fd,
+        .vhost_set_used_memslots = vhost_user_set_used_memslots,
+        .vhost_get_used_memslots = vhost_user_get_used_memslots,
 };

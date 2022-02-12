@@ -125,6 +125,8 @@ typedef int (*vhost_vq_get_addr_op)(struct vhost_dev *dev,
 typedef int (*vhost_get_device_id_op)(struct vhost_dev *dev, uint32_t *dev_id);
 
 typedef bool (*vhost_force_iommu_op)(struct vhost_dev *dev);
+typedef void (*vhost_set_used_memslots_op)(struct vhost_dev *dev);
+typedef unsigned int (*vhost_get_used_memslots_op)(void);
 
 typedef struct VhostOps {
     VhostBackendType backend_type;
@@ -171,6 +173,8 @@ typedef struct VhostOps {
     vhost_vq_get_addr_op  vhost_vq_get_addr;
     vhost_get_device_id_op vhost_get_device_id;
     vhost_force_iommu_op vhost_force_iommu;
+    vhost_set_used_memslots_op vhost_set_used_memslots;
+    vhost_get_used_memslots_op vhost_get_used_memslots;
 } VhostOps;
 
 int vhost_backend_update_device_iotlb(struct vhost_dev *dev,
@@ -186,4 +190,6 @@ int vhost_backend_handle_iotlb_msg(struct vhost_dev *dev,
 
 int vhost_user_gpu_set_socket(struct vhost_dev *dev, int fd);
 
+unsigned int vhost_kernel_get_used_memslots(void);
+unsigned int vhost_user_get_used_memslots(void);
 #endif /* VHOST_BACKEND_H */
