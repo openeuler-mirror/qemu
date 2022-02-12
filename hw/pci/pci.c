@@ -2411,6 +2411,7 @@ static void pci_add_option_rom(PCIDevice *pdev, bool is_default_rom,
     } else {
         snprintf(name, sizeof(name), "%s.rom", object_get_typename(OBJECT(pdev)));
     }
+    qemu_log("add rom file: %s\n", name);
     pdev->has_rom = true;
     memory_region_init_rom(&pdev->rom, OBJECT(pdev), name, pdev->romsize, &error_fatal);
     ptr = memory_region_get_ram_ptr(&pdev->rom);

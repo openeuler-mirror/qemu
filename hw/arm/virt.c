@@ -33,6 +33,7 @@
 #include "qemu/datadir.h"
 #include "qemu/units.h"
 #include "qemu/option.h"
+#include "qemu/log.h"
 #include "monitor/qdev.h"
 #include "qapi/error.h"
 #include "hw/sysbus.h"
@@ -971,6 +972,7 @@ static void virt_powerdown_req(Notifier *n, void *opaque)
 {
     VirtMachineState *s = container_of(n, VirtMachineState, powerdown_notifier);
 
+    qemu_log("send powerdown to vm.\n");
     if (s->acpi_dev) {
         acpi_send_event(s->acpi_dev, ACPI_POWER_DOWN_STATUS);
     } else {
@@ -2072,6 +2074,7 @@ static void machvirt_init(MachineState *machine)
     }
 
     create_fdt(vms);
+    qemu_log("cpu init start\n");
 
     possible_cpus = mc->possible_cpu_arch_ids(machine);
     assert(possible_cpus->len == max_cpus);

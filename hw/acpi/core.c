@@ -24,6 +24,7 @@
 #include "hw/acpi/acpi.h"
 #include "hw/nvram/fw_cfg.h"
 #include "qemu/config-file.h"
+#include "qemu/log.h"
 #include "qapi/error.h"
 #include "qapi/opts-visitor.h"
 #include "qapi/qapi-events-run-state.h"
@@ -560,13 +561,16 @@ static void acpi_pm1_cnt_write(ACPIREGS *ar, uint16_t val)
         uint16_t sus_typ = (val >> 10) & 7;
         switch (sus_typ) {
         case 0: /* soft power off */
+            qemu_log("VM will be soft power off\n");
             qemu_system_shutdown_request(SHUTDOWN_CAUSE_GUEST_SHUTDOWN);
             break;
         case 1:
+            qemu_log("VM will be suspend state\n");
             qemu_system_suspend_request();
             break;
         default:
             if (sus_typ == ar->pm1.cnt.s4_val) { /* S4 request */
+                qemu_log("VM will be S4 state\n");
                 qapi_event_send_suspend_disk();
                 qemu_system_shutdown_request(SHUTDOWN_CAUSE_GUEST_SHUTDOWN);
             }

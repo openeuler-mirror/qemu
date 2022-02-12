@@ -708,9 +708,11 @@ static bool main_loop_should_exit(void)
     }
     if (qemu_powerdown_requested()) {
         qemu_system_powerdown();
+        qemu_log("domain is power down by outside operation\n");
     }
     if (qemu_vmstop_requested(&r)) {
         vm_stop(r);
+        qemu_log("domain is stopped by outside operation\n");
     }
     return false;
 }

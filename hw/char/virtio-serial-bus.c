@@ -257,6 +257,8 @@ static size_t send_control_event(VirtIOSerial *vser, uint32_t port_id,
     virtio_stw_p(vdev, &cpkt.value, value);
 
     trace_virtio_serial_send_control_event(port_id, event, value);
+    qemu_log("virtio serial port %d send control message"
+             " event = %d, value = %d\n", port_id, event, value);
     return send_control_msg(vser, &cpkt, sizeof(cpkt));
 }
 
@@ -364,6 +366,9 @@ static void handle_control_message(VirtIOSerial *vser, void *buf, size_t len)
     cpkt.value = virtio_lduw_p(vdev, &gcpkt->value);
 
     trace_virtio_serial_handle_control_message(cpkt.event, cpkt.value);
+    qemu_log("virtio serial port '%u' handle control message"
+             " event = %d, value = %d\n",
+             virtio_ldl_p(vdev, &gcpkt->id), cpkt.event, cpkt.value);
 
     if (cpkt.event == VIRTIO_CONSOLE_DEVICE_READY) {
         if (!cpkt.value) {

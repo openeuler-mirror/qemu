@@ -18,6 +18,7 @@
 #include "hw/qdev-properties.h"
 #include "hw/virtio/virtio-scsi.h"
 #include "qemu/module.h"
+#include "qemu/log.h"
 #include "virtio-pci.h"
 #include "qom/object.h"
 
@@ -51,6 +52,8 @@ static void virtio_scsi_pci_realize(VirtIOPCIProxy *vpci_dev, Error **errp)
     VirtIOSCSIConf *conf = &dev->vdev.parent_obj.conf;
     char *bus_name;
 
+    qemu_log("virtio scsi HBA %s begin to initialize.\n",
+             !proxy->id ? "NULL" : proxy->id);
     if (conf->num_queues == VIRTIO_SCSI_AUTO_NUM_QUEUES) {
         conf->num_queues =
             virtio_pci_optimal_num_queues(VIRTIO_SCSI_VQ_NUM_FIXED);
