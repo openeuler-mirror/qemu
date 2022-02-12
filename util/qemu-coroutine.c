@@ -21,7 +21,7 @@
 #include "block/aio.h"
 
 enum {
-    POOL_BATCH_SIZE = 64,
+    POOL_BATCH_SIZE = 128,
 };
 
 /** Free list to speed up creation */

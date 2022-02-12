@@ -206,7 +206,15 @@ static void do_token_in(USBDevice *s, USBPacket *p)
 
     case SETUP_STATE_DATA:
         if (s->setup_buf[0] & USB_DIR_IN) {
-            int len = s->setup_len - s->setup_index;
+            int len;
+            if (s->setup_len > sizeof(s->data_buf)) {
+                fprintf(stderr,
+                        "usb_generic_handle_packet: ctrl buffer too small do_token_in(%d > %zu)\n",
+                        s->setup_len, sizeof(s->data_buf));
+                p->status = USB_RET_STALL;
+                return;
+            }
+            len = s->setup_len - s->setup_index;
             if (len > p->iov.size) {
                 len = p->iov.size;
             }
@@ -244,7 +252,15 @@ static void do_token_out(USBDevice *s, USBPacket *p)
 
     case SETUP_STATE_DATA:
         if (!(s->setup_buf[0] & USB_DIR_IN)) {
-            int len = s->setup_len - s->setup_index;
+            int len;
+            if (s->setup_len > sizeof(s->data_buf)) {
+                fprintf(stderr,
+                        "usb_generic_handle_packet: ctrl buffer too small do_token_out(%d > %zu)\n",
+                        s->setup_len, sizeof(s->data_buf));
+                p->status = USB_RET_STALL;
+                return;
+            }
+            len = s->setup_len - s->setup_index;
             if (len > p->iov.size) {
                 len = p->iov.size;
             }
