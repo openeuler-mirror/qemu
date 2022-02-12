@@ -36,6 +36,7 @@
 #include "qemu/option.h"
 #include "qemu/qemu-print.h"
 #include "qemu/option_int.h"
+#include "qemu/log.h"
 #include "sysemu/block-backend.h"
 #include "migration/misc.h"
 #include "migration/migration.h"
@@ -707,7 +708,7 @@ DeviceState *qdev_device_add_from_qdict(const QDict *opts,
     if (*errp) {
         goto err_del_dev;
     }
-
+    qemu_log("add qdev %s:%s success\n", driver, dev->id ? dev->id : "none");
     if (!qdev_realize(DEVICE(dev), bus, errp)) {
         goto err_del_dev;
     }

@@ -56,4 +56,6 @@ void monitor_register_hmp(const char *name, bool info,
 void monitor_register_hmp_info_hrt(const char *name,
                                    HumanReadableText *(*handler)(Error **errp));
 
+void monitor_qapi_event_discard_io_error(void);
+
 #endif /* MONITOR_H */

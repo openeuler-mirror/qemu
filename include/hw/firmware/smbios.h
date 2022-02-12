@@ -193,6 +193,9 @@ struct smbios_type_4 {
     uint8_t thread_count;
     uint16_t processor_characteristics;
     uint16_t processor_family2;
+    uint16_t corecount2;
+    uint16_t enabledcorecount2;
+    uint16_t threadcount2;
 } QEMU_PACKED;
 
 /* SMBIOS type 11 - OEM strings */

@@ -1945,7 +1945,14 @@ int virtio_set_status(VirtIODevice *vdev, uint8_t val)
         k->set_status(vdev, val);
     }
     vdev->status = val;
-
+    if (val) {
+        qemu_log("%s device status is %d that means %s\n",
+                 vdev->name, val,
+                 (val & VIRTIO_CONFIG_S_DRIVER_OK) ? "DRIVER OK" :
+                 (val & VIRTIO_CONFIG_S_DRIVER) ? "DRIVER" :
+                 (val & VIRTIO_CONFIG_S_ACKNOWLEDGE) ? "ACKNOWLEDGE" :
+                 (val & VIRTIO_CONFIG_S_FAILED) ? "FAILED" : "UNKNOWN");
+    }
     return 0;
 }
 
@@ -2389,8 +2396,11 @@ VirtQueue *virtio_add_queue(VirtIODevice *vdev, int queue_size,
             break;
     }
 
-    if (i == VIRTIO_QUEUE_MAX || queue_size > VIRTQUEUE_MAX_SIZE)
+    if (i == VIRTIO_QUEUE_MAX || queue_size > VIRTQUEUE_MAX_SIZE) {
+        qemu_log("unacceptable queue_size (%d) or num (%d)\n",
+                 queue_size, i);
         abort();
+    }
 
     vdev->vq[i].vring.num = queue_size;
     vdev->vq[i].vring.num_default = queue_size;

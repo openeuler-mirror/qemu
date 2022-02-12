@@ -27,6 +27,7 @@
 #include "hw/qdev-properties.h"
 #include "trace.h"
 #include "qapi/error.h"
+#include "qemu/log.h"
 
 #include "hcd-xhci.h"
 
@@ -3017,14 +3018,17 @@ static void xhci_runtime_write(void *ptr, hwaddr reg,
     XHCIInterrupter *intr;
     int v;
 
-    trace_usb_xhci_runtime_write(reg, val);
-
     if (reg < 0x20) {
         trace_usb_xhci_unimplemented("runtime write", reg);
         return;
     }
     v = (reg - 0x20) / 0x20;
+    if (v >= xhci->numintrs) {
+        qemu_log("intr nr out of range (%d >= %d)\n", v, xhci->numintrs);
+        return;
+    }
     intr = &xhci->intr[v];
+    trace_usb_xhci_runtime_write(reg, val);
 
     switch (reg & 0x1f) {
     case 0x00: /* IMAN */

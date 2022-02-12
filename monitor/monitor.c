@@ -29,10 +29,14 @@
 #include "qapi/qapi-emit-events.h"
 #include "qapi/qapi-visit-control.h"
 #include "qapi/qmp/qdict.h"
+#include "qapi/qmp/qjson.h"
 #include "qemu/error-report.h"
 #include "qemu/option.h"
 #include "sysemu/qtest.h"
 #include "trace.h"
+#include "qemu/log.h"
+#include "qapi/qmp/qjson.h"
+#include "qapi/qmp/qobject.h"
 
 /*
  * To prevent flooding clients, events can be throttled. The
@@ -296,6 +300,7 @@ static MonitorQAPIEventConf monitor_qapi_event_conf[QAPI_EVENT__MAX] = {
     [QAPI_EVENT_QUORUM_FAILURE]    = { 1000 * SCALE_MS },
     [QAPI_EVENT_VSERPORT_CHANGE]   = { 1000 * SCALE_MS },
     [QAPI_EVENT_MEMORY_DEVICE_SIZE_CHANGE] = { 1000 * SCALE_MS },
+    [QAPI_EVENT_BLOCK_IO_ERROR]    = { 60L * 1000 * SCALE_MS },
 };
 
 /*
@@ -318,6 +323,7 @@ static void monitor_qapi_event_emit(QAPIEvent event, QDict *qdict)
 {
     Monitor *mon;
     MonitorQMP *qmp_mon;
+    GString *json;
 
     trace_monitor_protocol_event_emit(event, qdict);
     QTAILQ_FOREACH(mon, &mon_list, entry) {
@@ -328,6 +334,13 @@ static void monitor_qapi_event_emit(QAPIEvent event, QDict *qdict)
         qmp_mon = container_of(mon, MonitorQMP, common);
         if (qmp_mon->commands != &qmp_cap_negotiation_commands) {
             qmp_send_response(qmp_mon, qdict);
+            json = qobject_to_json(QOBJECT(qdict));
+            if (json) {
+                if (!strstr(json->str, "RTC_CHANGE")) {
+                    qemu_log("%s\n", json->str);
+                }
+                g_string_free(json, true);
+            }
         }
     }
 }
@@ -756,6 +769,33 @@ int monitor_init_opts(QemuOpts *opts, Error **errp)
     ret = monitor_init(options, true, errp);
     qapi_free_MonitorOptions(options);
     return ret;
+}
+
+void monitor_qapi_event_discard_io_error(void)
+{
+    GHashTableIter event_iter;
+    MonitorQAPIEventState *evstate;
+    gpointer key, value;
+    GString *json;
+
+    qemu_mutex_lock(&monitor_lock);
+    g_hash_table_iter_init(&event_iter, monitor_qapi_event_state);
+    while (g_hash_table_iter_next(&event_iter, &key, &value)) {
+        evstate = key;
+        /* Only QAPI_EVENT_BLOCK_IO_ERROR is discarded */
+        if (evstate->event == QAPI_EVENT_BLOCK_IO_ERROR) {
+            g_hash_table_iter_remove(&event_iter);
+            json = qobject_to_json(QOBJECT(evstate->qdict));
+            qemu_log(" %s event discarded\n", json->str);
+            timer_del(evstate->timer);
+            timer_free(evstate->timer);
+            qobject_unref(evstate->data);
+            qobject_unref(evstate->qdict);
+            g_string_free(json, true);
+            g_free(evstate);
+        }
+    }
+    qemu_mutex_unlock(&monitor_lock);
 }
 
 QemuOptsList qemu_mon_opts = {

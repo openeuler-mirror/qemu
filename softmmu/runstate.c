@@ -448,6 +448,7 @@ void qemu_system_reset(ShutdownCause reason)
         qapi_event_send_reset(shutdown_caused_by_guest(reason), reason);
     }
     cpu_synchronize_all_post_reset();
+    monitor_qapi_event_discard_io_error();
 }
 
 /*
