@@ -2401,7 +2401,7 @@ VirtQueue *virtio_add_queue(VirtIODevice *vdev, int queue_size,
             break;
     }
 
-    if (i == VIRTIO_QUEUE_MAX || queue_size > VIRTQUEUE_MAX_SIZE) {
+    if (i == VIRTIO_QUEUE_MAX) {
         qemu_log("unacceptable queue_size (%d) or num (%d)\n",
                  queue_size, i);
         abort();
