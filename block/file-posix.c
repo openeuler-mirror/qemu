@@ -128,6 +128,10 @@
 #define FTYPE_CD     1
 
 #define MAX_BLOCKSIZE	4096
+#define DEFAULT_BUFFER_SIZE 65536
+#define BUFFER_ALIGN_SIZE   65536
+#define MIN_BUFFER_SIZE     65536
+#define MAX_BUFFER_SIZE     16777216
 
 /* Posix file locking bytes. Libvirt takes byte 0, we start from higher bytes,
  * leaving a few more bytes for its future use. */
@@ -205,6 +209,8 @@ typedef struct RawPosixAIOData {
 
     off_t aio_offset;
     uint64_t aio_nbytes;
+
+    size_t buffer_size;
 
     union {
         struct {
@@ -2218,7 +2224,8 @@ static void raw_close(BlockDriverState *bs)
  */
 static int coroutine_fn
 raw_regular_truncate(BlockDriverState *bs, int fd, int64_t offset,
-                     PreallocMode prealloc, Error **errp)
+                     PreallocMode prealloc, size_t buffer_size,
+                     Error **errp)
 {
     RawPosixAIOData acb;
 
@@ -2227,6 +2234,7 @@ raw_regular_truncate(BlockDriverState *bs, int fd, int64_t offset,
         .aio_fildes     = fd,
         .aio_type       = QEMU_AIO_TRUNCATE,
         .aio_offset     = offset,
+        .buffer_size    = buffer_size,
         .truncate       = {
             .prealloc       = prealloc,
             .errp           = errp,
@@ -2252,7 +2260,8 @@ static int coroutine_fn raw_co_truncate(BlockDriverState *bs, int64_t offset,
 
     if (S_ISREG(st.st_mode)) {
         /* Always resizes to the exact @offset */
-        return raw_regular_truncate(bs, s->fd, offset, prealloc, errp);
+        return raw_regular_truncate(bs, s->fd, offset, prealloc,
+                                    DEFAULT_BUFFER_SIZE, errp);
     }
 
     if (prealloc != PREALLOC_MODE_OFF) {
@@ -2465,6 +2474,8 @@ raw_co_create(BlockdevCreateOptions *options, Error **errp)
     int fd;
     uint64_t perm, shared;
     int result = 0;
+    int flags = O_RDWR | O_BINARY;
+    size_t buffer_size = DEFAULT_BUFFER_SIZE;
 
     /* Validate options and set default values */
     assert(options->driver == BLOCKDEV_DRIVER_FILE);
@@ -2484,9 +2495,19 @@ raw_co_create(BlockdevCreateOptions *options, Error **errp)
         error_setg(errp, "Extent size hint is too large");
         goto out;
     }
+    if (!file_opts->has_cache) {
+        file_opts->cache = g_strdup("writeback");
+    }
+    if (file_opts->preallocation == PREALLOC_MODE_FULL &&
+        !strcmp(file_opts->cache, "none")) {
+        flags |= O_DIRECT;
+    }
+    if (file_opts->has_buffersize) {
+        buffer_size = file_opts->buffersize;
+    }
 
     /* Create file */
-    fd = qemu_create(file_opts->filename, O_RDWR | O_BINARY, 0644, errp);
+    fd = qemu_create(file_opts->filename, flags, 0644, errp);
     if (fd < 0) {
         result = -errno;
         goto out;
@@ -2521,7 +2542,8 @@ raw_co_create(BlockdevCreateOptions *options, Error **errp)
     }
 
     /* Clear the file by truncating it to 0 */
-    result = raw_regular_truncate(NULL, fd, 0, PREALLOC_MODE_OFF, errp);
+    result = raw_regular_truncate(NULL, fd, 0, PREALLOC_MODE_OFF,
+                                  buffer_size, errp);
     if (result < 0) {
         goto out_unlock;
     }
@@ -2565,7 +2587,8 @@ raw_co_create(BlockdevCreateOptions *options, Error **errp)
     /* Resize and potentially preallocate the file to the desired
      * final size */
     result = raw_regular_truncate(NULL, fd, file_opts->size,
-                                  file_opts->preallocation, errp);
+                                  file_opts->preallocation,
+                                  buffer_size, errp);
     if (result < 0) {
         goto out_unlock;
     }
@@ -2586,6 +2609,7 @@ out_close:
         error_setg_errno(errp, -result, "Could not close the new file");
     }
 out:
+    g_free(file_opts->cache);
     return result;
 }
 
@@ -2602,6 +2626,8 @@ static int coroutine_fn raw_co_create_opts(BlockDriver *drv,
     PreallocMode prealloc;
     char *buf = NULL;
     Error *local_err = NULL;
+    size_t buffersize = DEFAULT_BUFFER_SIZE;
+    char *cache = NULL;
 
     /* Skip file: protocol prefix */
     strstart(filename, "file:", &filename);
@@ -2624,6 +2650,21 @@ static int coroutine_fn raw_co_create_opts(BlockDriver *drv,
         return -EINVAL;
     }
 
+    buffersize = qemu_opt_get_size_del(opts, BLOCK_OPT_BUFFER_SIZE,
+                                       DEFAULT_BUFFER_SIZE);
+    if (buffersize < MIN_BUFFER_SIZE || buffersize > MAX_BUFFER_SIZE) {
+        error_setg_errno(errp, EINVAL, "Buffer size must be between %d "
+                         "and %d", MIN_BUFFER_SIZE, MAX_BUFFER_SIZE);
+        return -EINVAL;
+    }
+
+    cache = qemu_opt_get_del(opts, BLOCK_OPT_CACHE);
+    if (!cache) {
+        cache = g_strdup("writeback");
+    }
+
+    buffersize = ROUND_UP(buffersize, BUFFER_ALIGN_SIZE);
+
     options = (BlockdevCreateOptions) {
         .driver     = BLOCKDEV_DRIVER_FILE,
         .u.file     = {
@@ -2635,6 +2676,10 @@ static int coroutine_fn raw_co_create_opts(BlockDriver *drv,
             .nocow              = nocow,
             .has_extent_size_hint = has_extent_size_hint,
             .extent_size_hint   = extent_size_hint,
+            .has_buffersize     = true,
+            .buffersize         = buffersize,
+            .has_cache          = true,
+            .cache              = cache,
         },
     };
     return raw_co_create(&options, errp);
@@ -3132,6 +3177,16 @@ static QemuOptsList raw_create_opts = {
             .name = BLOCK_OPT_EXTENT_SIZE_HINT,
             .type = QEMU_OPT_SIZE,
             .help = "Extent size hint for the image file, 0 to disable"
+        },
+        {
+            .name = BLOCK_OPT_CACHE,
+            .type = QEMU_OPT_STRING,
+            .help = "Cache mode (allowed values: writeback, none)"
+        },
+        {
+            .name = BLOCK_OPT_BUFFER_SIZE,
+            .type = QEMU_OPT_SIZE,
+            .help = "write buffer size"
         },
         { /* end of list */ }
     }
