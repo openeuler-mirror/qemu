@@ -63,6 +63,15 @@ static uint32_t pl031_get_count(PL031State *s)
     return s->tick_offset + now / NANOSECONDS_PER_SECOND;
 }
 
+static void pl031_get_date(Object *obj, struct tm *current_tm, Error **errp)
+{
+    PL031State *s = PL031(obj);
+    time_t ti = pl031_get_count(s);
+
+    /* Changed to UTC time */
+    gmtime_r(&ti, current_tm);
+}
+
 static void pl031_set_alarm(PL031State *s)
 {
     uint32_t ticks;
@@ -201,6 +210,20 @@ static void pl031_init(Object *obj)
         qemu_clock_get_ns(rtc_clock) / NANOSECONDS_PER_SECOND;
 
     s->timer = timer_new_ns(rtc_clock, pl031_interrupt, s);
+    object_property_add_tm(OBJECT(s), "date", pl031_get_date);
+}
+
+static void pl031_realize(DeviceState *d, Error **errp)
+{
+    object_property_add_alias(qdev_get_machine(), "rtc-time",
+                              OBJECT(d), "date");
+}
+
+static void pl031_unrealize(DeviceState *d)
+{
+    if (object_property_find(qdev_get_machine(), "rtc-time")) {
+        object_property_del(qdev_get_machine(), "rtc-time");
+    }
 }
 
 static void pl031_finalize(Object *obj)
@@ -337,6 +360,8 @@ static void pl031_class_init(ObjectClass *klass, void *data)
     DeviceClass *dc = DEVICE_CLASS(klass);
 
     dc->vmsd = &vmstate_pl031;
+    dc->realize = pl031_realize;
+    dc->unrealize = pl031_unrealize;
     device_class_set_props(dc, pl031_properties);
 }
 
