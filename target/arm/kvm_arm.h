@@ -377,6 +377,9 @@ void kvm_arm_pvtime_init(CPUState *cs, uint64_t ipa);
 
 int kvm_arm_set_irq(int cpu, int irqtype, int irq, int level);
 
+int kvm_arm_get_one_reg(ARMCPU *cpu, uint64_t regidx, uint64_t *target);
+int kvm_arm_set_one_reg(ARMCPU *cpu, uint64_t regidx, uint64_t *source);
+
 #else
 
 /*
@@ -399,6 +402,11 @@ static inline bool kvm_arm_sve_supported(void)
 }
 
 static inline bool kvm_arm_steal_time_supported(void)
+{
+    return false;
+}
+
+static inline bool kvm_arm_cpu_feature_supported(void)
 {
     return false;
 }
@@ -447,6 +455,18 @@ static inline void kvm_arm_steal_time_finalize(ARMCPU *cpu, Error **errp)
 }
 
 static inline void kvm_arm_sve_get_vls(CPUState *cs, unsigned long *map)
+{
+    g_assert_not_reached();
+}
+
+static inline int kvm_arm_get_one_reg(ARMCPU *cpu, uint64_t regidx,
+                                      uint64_t *target)
+{
+    g_assert_not_reached();
+}
+
+static inline int kvm_arm_set_one_reg(ARMCPU *cpu, uint64_t regidx,
+                                      uint64_t *source)
 {
     g_assert_not_reached();
 }
@@ -534,8 +554,5 @@ static inline const char *its_class_name(void)
         return "arm-gicv3-its";
     }
 }
-
-int kvm_arm_get_one_reg(ARMCPU *cpu, uint64_t regidx, uint64_t *target);
-int kvm_arm_set_one_reg(ARMCPU *cpu, uint64_t regidx, uint64_t *source);
 
 #endif
