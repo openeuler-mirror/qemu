@@ -2544,7 +2544,7 @@ static void vhost_user_set_used_memslots(struct vhost_dev *dev)
     vhost_user_used_memslots = counter;
 }
 
-unsigned int vhost_user_get_used_memslots(void)
+static unsigned int vhost_user_get_used_memslots(void)
 {
     return vhost_user_used_memslots;
 }

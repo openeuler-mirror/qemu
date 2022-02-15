@@ -190,6 +190,4 @@ int vhost_backend_handle_iotlb_msg(struct vhost_dev *dev,
 
 int vhost_user_gpu_set_socket(struct vhost_dev *dev, int fd);
 
-unsigned int vhost_kernel_get_used_memslots(void);
-unsigned int vhost_user_get_used_memslots(void);
 #endif /* VHOST_BACKEND_H */
