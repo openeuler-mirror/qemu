@@ -168,8 +168,8 @@ bool write_cpustate_to_list(ARMCPU *cpu, bool kvm_sync)
         if (kvm_sync) {
             if (is_id_reg(ri)) {
                 /* Only sync if we can sync to KVM successfully. */
-                uint64_t oldval;
-                uint64_t kvmval;
+                uint64_t oldval = 0;
+                uint64_t kvmval = 0;
 
                 if (kvm_arm_get_one_reg(cpu, cpu->cpreg_indexes[i], &oldval)) {
                     continue;
