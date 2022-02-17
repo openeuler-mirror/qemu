@@ -6711,14 +6711,6 @@ static bool x86_cpu_get_paging_enabled(const CPUState *cs)
 
     return cpu->env.cr[0] & CR0_PG_MASK;
 }
-#endif /* !CONFIG_USER_ONLY */
-
-static void x86_cpu_set_pc(CPUState *cs, vaddr value)
-{
-    X86CPU *cpu = X86_CPU(cs);
-
-    cpu->env.eip = value;
-}
 
 /* At present, we check the vm is *LARGE* or not, i.e. whether
  * the memory size is more than 4T or not.
@@ -6735,6 +6727,14 @@ void x86_cpu_adjuest_by_ram_size(ram_addr_t ram_size, X86CPU *cpu)
         cpu->phys_bits = LARGE_VM_CPU_PHYS_BITS;
         cpu->fill_mtrr_mask = true;
     }
+}
+#endif /* !CONFIG_USER_ONLY */
+
+static void x86_cpu_set_pc(CPUState *cs, vaddr value)
+{
+    X86CPU *cpu = X86_CPU(cs);
+
+    cpu->env.eip = value;
 }
 
 int x86_cpu_pending_interrupt(CPUState *cs, int interrupt_request)
