@@ -1842,10 +1842,12 @@ struct X86CPU {
 extern const VMStateDescription vmstate_x86_cpu;
 #endif
 
+#ifndef CONFIG_USER_ONLY
 #define DEFAULT_VM_CPU_PHYS_BITS 42
 #define LARGE_VM_CPU_PHYS_BITS 46
 
 void x86_cpu_adjuest_by_ram_size(ram_addr_t ram_size, X86CPU *cpu);
+#endif
 
 int x86_cpu_pending_interrupt(CPUState *cs, int interrupt_request);
 
