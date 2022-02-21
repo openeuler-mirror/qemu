@@ -3824,6 +3824,14 @@ static const X86CPUDefinition builtin_x86_defs[] = {
                 },
             },
             {
+                .version = 6,
+                .note = "5-level EPT",
+                .props = (PropValue[]) {
+                    { "vmx-page-walk-5", "on" },
+                    { /* end of list */ }
+                },
+            },
+            {
                 .version = 7,
                 .note = "TSX, taa-no",
                 .props = (PropValue[]) {
