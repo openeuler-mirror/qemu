@@ -39,6 +39,7 @@
 #include "hw/sysbus.h"
 #include "hw/arm/boot.h"
 #include "hw/arm/primecell.h"
+#include "hw/arm/topology.h"
 #include "hw/arm/virt.h"
 #include "hw/block/flash.h"
 #include "hw/vfio/vfio-calxeda-xgmac.h"
@@ -51,6 +52,8 @@
 #include "sysemu/tpm.h"
 #include "sysemu/kvm.h"
 #include "sysemu/hvf.h"
+#include "sysemu/cpus.h"
+#include "sysemu/hw_accel.h"
 #include "hw/loader.h"
 #include "qapi/error.h"
 #include "qemu/bitops.h"
@@ -154,6 +157,7 @@ static const MemMapEntry base_memmap[] = {
     [VIRT_NVDIMM_ACPI] =        { 0x09090000, NVDIMM_ACPI_IO_LEN},
     [VIRT_PVTIME] =             { 0x090a0000, 0x00010000 },
     [VIRT_SECURE_GPIO] =        { 0x090b0000, 0x00001000 },
+    [VIRT_CPU_ACPI] =           { 0x090c0000, ACPI_CPU_HOTPLUG_REG_LEN },
     [VIRT_MMIO] =               { 0x0a000000, 0x00000200 },
     [VIRT_CPUFREQ] =            { 0x0b000000, 0x00010000 },
     /* ...repeating for a total of NUM_VIRTIO_TRANSPORTS, each of that size */
@@ -210,6 +214,10 @@ static const char *valid_cpus[] = {
     ARM_CPU_TYPE_NAME("host"),
     ARM_CPU_TYPE_NAME("max"),
 };
+
+static MemoryRegion *secure_sysmem;
+static MemoryRegion *tag_sysmem;
+static MemoryRegion *secure_tag_sysmem;
 
 static bool cpu_type_valid(const char *cpu)
 {
@@ -684,6 +692,7 @@ static void fdt_add_pmu_nodes(const VirtMachineState *vms)
 static inline DeviceState *create_acpi_ged(VirtMachineState *vms)
 {
     DeviceState *dev;
+    AcpiDeviceIfClass *adevc;
     MachineState *ms = MACHINE(vms);
     int irq = vms->irqmap[VIRT_ACPI_GED];
     uint32_t event = ACPI_GED_PWR_DOWN_EVT;
@@ -696,11 +705,20 @@ static inline DeviceState *create_acpi_ged(VirtMachineState *vms)
         event |= ACPI_GED_NVDIMM_HOTPLUG_EVT;
     }
 
+    if (vms->cpu_hotplug_enabled) {
+        event |= ACPI_GED_CPU_HOTPLUG_EVT;
+    }
+
     dev = qdev_new(TYPE_ACPI_GED);
     qdev_prop_set_uint32(dev, "ged-event", event);
 
+    adevc = ACPI_DEVICE_IF_GET_CLASS(dev);
+    adevc->madt_cpu = virt_madt_cpu_entry;
+    adevc->cpu_cppc = virt_acpi_dsdt_cpu_cppc;
+
     sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0, vms->memmap[VIRT_ACPI_GED].base);
     sysbus_mmio_map(SYS_BUS_DEVICE(dev), 1, vms->memmap[VIRT_PCDIMM_ACPI].base);
+    sysbus_mmio_map(SYS_BUS_DEVICE(dev), 3, vms->memmap[VIRT_CPU_ACPI].base);
     sysbus_connect_irq(SYS_BUS_DEVICE(dev), 0, qdev_get_gpio_in(vms->gic, irq));
 
     sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
@@ -756,6 +774,54 @@ static void create_v2m(VirtMachineState *vms)
     vms->msi_controller = VIRT_MSI_CTRL_GICV2M;
 }
 
+static void connect_gic_cpu_irqs(VirtMachineState *vms, int i)
+{
+    DeviceState *cpudev = DEVICE(qemu_get_cpu(i));
+    SysBusDevice *gicbusdev = SYS_BUS_DEVICE(vms->gic);
+    int ppibase = NUM_IRQS + i * GIC_INTERNAL + GIC_NR_SGIS;
+    int num_cpus = object_property_get_uint(OBJECT(vms->gic), "num-cpu", NULL);
+    int gic_type = vms->gic_version;
+    int irq;
+    /* Mapping from the output timer irq lines from the CPU to the
+     * GIC PPI inputs we use for the virt board.
+     */
+    const int timer_irq[] = {
+        [GTIMER_PHYS] = ARCH_TIMER_NS_EL1_IRQ,
+        [GTIMER_VIRT] = ARCH_TIMER_VIRT_IRQ,
+        [GTIMER_HYP]  = ARCH_TIMER_NS_EL2_IRQ,
+        [GTIMER_SEC]  = ARCH_TIMER_S_EL1_IRQ,
+    };
+
+    for (irq = 0; irq < ARRAY_SIZE(timer_irq); irq++) {
+        qdev_connect_gpio_out(cpudev, irq,
+                              qdev_get_gpio_in(vms->gic,
+                                               ppibase + timer_irq[irq]));
+    }
+
+    if (gic_type == 3) {
+        qemu_irq irq = qdev_get_gpio_in(vms->gic,
+                                        ppibase + ARCH_GIC_MAINT_IRQ);
+        qdev_connect_gpio_out_named(cpudev, "gicv3-maintenance-interrupt",
+                                    0, irq);
+    } else if (vms->virt) {
+        qemu_irq irq = qdev_get_gpio_in(vms->gic,
+                                        ppibase + ARCH_GIC_MAINT_IRQ);
+        sysbus_connect_irq(gicbusdev, i + 4 * num_cpus, irq);
+    }
+
+    qdev_connect_gpio_out_named(cpudev, "pmu-interrupt", 0,
+                                qdev_get_gpio_in(vms->gic, ppibase
+                                                 + VIRTUAL_PMU_IRQ));
+
+    sysbus_connect_irq(gicbusdev, i, qdev_get_gpio_in(cpudev, ARM_CPU_IRQ));
+    sysbus_connect_irq(gicbusdev, i + num_cpus,
+                       qdev_get_gpio_in(cpudev, ARM_CPU_FIQ));
+    sysbus_connect_irq(gicbusdev, i + 2 * num_cpus,
+                       qdev_get_gpio_in(cpudev, ARM_CPU_VIRQ));
+    sysbus_connect_irq(gicbusdev, i + 3 * num_cpus,
+                       qdev_get_gpio_in(cpudev, ARM_CPU_VFIQ));
+}
+
 static void create_gic(VirtMachineState *vms, MemoryRegion *mem)
 {
     MachineState *ms = MACHINE(vms);
@@ -763,14 +829,22 @@ static void create_gic(VirtMachineState *vms, MemoryRegion *mem)
     SysBusDevice *gicbusdev;
     const char *gictype;
     int type = vms->gic_version, i;
+    /* The max number of CPUs suppored by GIC */
+    unsigned int num_cpus = ms->smp.cpus;
+    /* The number of CPUs present before boot */
     unsigned int smp_cpus = ms->smp.cpus;
     uint32_t nb_redist_regions = 0;
+
+    if (vms->cpu_hotplug_enabled) {
+        num_cpus = ms->smp.max_cpus;
+    }
+    assert(num_cpus >= smp_cpus);
 
     gictype = (type == 3) ? gicv3_class_name() : gic_class_name();
 
     vms->gic = qdev_new(gictype);
     qdev_prop_set_uint32(vms->gic, "revision", type);
-    qdev_prop_set_uint32(vms->gic, "num-cpu", smp_cpus);
+    qdev_prop_set_uint32(vms->gic, "num-cpu", num_cpus);
     /* Note that the num-irq property counts both internal and external
      * interrupts; there are always 32 of the former (mandated by GIC spec).
      */
@@ -782,7 +856,7 @@ static void create_gic(VirtMachineState *vms, MemoryRegion *mem)
     if (type == 3) {
         uint32_t redist0_capacity =
                     vms->memmap[VIRT_GIC_REDIST].size / GICV3_REDIST_SIZE;
-        uint32_t redist0_count = MIN(smp_cpus, redist0_capacity);
+        uint32_t redist0_count = MIN(num_cpus, redist0_capacity);
 
         nb_redist_regions = virt_gicv3_redist_region_count(vms);
 
@@ -803,7 +877,7 @@ static void create_gic(VirtMachineState *vms, MemoryRegion *mem)
                     vms->memmap[VIRT_HIGH_GIC_REDIST2].size / GICV3_REDIST_SIZE;
 
             qdev_prop_set_uint32(vms->gic, "redist-region-count[1]",
-                MIN(smp_cpus - redist0_count, redist1_capacity));
+                MIN(num_cpus - redist0_count, redist1_capacity));
         }
     } else {
         if (!kvm_irqchip_in_kernel()) {
@@ -830,50 +904,14 @@ static void create_gic(VirtMachineState *vms, MemoryRegion *mem)
 
     /* Wire the outputs from each CPU's generic timer and the GICv3
      * maintenance interrupt signal to the appropriate GIC PPI inputs,
-     * and the GIC's IRQ/FIQ/VIRQ/VFIQ interrupt outputs to the CPU's inputs.
+     * and the GIC's IRQ/FIQ/VIRQ/VFIQ interrupt outputs to the CPU's
+     * inputs.
+     *
+     * The irqs of remaining CPUs (if we has) will be connected during
+     * hotplugging.
      */
     for (i = 0; i < smp_cpus; i++) {
-        DeviceState *cpudev = DEVICE(qemu_get_cpu(i));
-        int ppibase = NUM_IRQS + i * GIC_INTERNAL + GIC_NR_SGIS;
-        int irq;
-        /* Mapping from the output timer irq lines from the CPU to the
-         * GIC PPI inputs we use for the virt board.
-         */
-        const int timer_irq[] = {
-            [GTIMER_PHYS] = ARCH_TIMER_NS_EL1_IRQ,
-            [GTIMER_VIRT] = ARCH_TIMER_VIRT_IRQ,
-            [GTIMER_HYP]  = ARCH_TIMER_NS_EL2_IRQ,
-            [GTIMER_SEC]  = ARCH_TIMER_S_EL1_IRQ,
-        };
-
-        for (irq = 0; irq < ARRAY_SIZE(timer_irq); irq++) {
-            qdev_connect_gpio_out(cpudev, irq,
-                                  qdev_get_gpio_in(vms->gic,
-                                                   ppibase + timer_irq[irq]));
-        }
-
-        if (type == 3) {
-            qemu_irq irq = qdev_get_gpio_in(vms->gic,
-                                            ppibase + ARCH_GIC_MAINT_IRQ);
-            qdev_connect_gpio_out_named(cpudev, "gicv3-maintenance-interrupt",
-                                        0, irq);
-        } else if (vms->virt) {
-            qemu_irq irq = qdev_get_gpio_in(vms->gic,
-                                            ppibase + ARCH_GIC_MAINT_IRQ);
-            sysbus_connect_irq(gicbusdev, i + 4 * smp_cpus, irq);
-        }
-
-        qdev_connect_gpio_out_named(cpudev, "pmu-interrupt", 0,
-                                    qdev_get_gpio_in(vms->gic, ppibase
-                                                     + VIRTUAL_PMU_IRQ));
-
-        sysbus_connect_irq(gicbusdev, i, qdev_get_gpio_in(cpudev, ARM_CPU_IRQ));
-        sysbus_connect_irq(gicbusdev, i + smp_cpus,
-                           qdev_get_gpio_in(cpudev, ARM_CPU_FIQ));
-        sysbus_connect_irq(gicbusdev, i + 2 * smp_cpus,
-                           qdev_get_gpio_in(cpudev, ARM_CPU_VIRQ));
-        sysbus_connect_irq(gicbusdev, i + 3 * smp_cpus,
-                           qdev_get_gpio_in(cpudev, ARM_CPU_VFIQ));
+        connect_gic_cpu_irqs(vms, i);
     }
 
     fdt_add_gic_node(vms);
@@ -1975,18 +2013,17 @@ static void machvirt_init(MachineState *machine)
 {
     VirtMachineState *vms = VIRT_MACHINE(machine);
     VirtMachineClass *vmc = VIRT_MACHINE_GET_CLASS(machine);
+    MachineState *ms = MACHINE(machine);
     MachineClass *mc = MACHINE_GET_CLASS(machine);
     const CPUArchIdList *possible_cpus;
     MemoryRegion *sysmem = get_system_memory();
-    MemoryRegion *secure_sysmem = NULL;
-    MemoryRegion *tag_sysmem = NULL;
-    MemoryRegion *secure_tag_sysmem = NULL;
     int n, virt_max_cpus;
     bool firmware_loaded;
     bool aarch64 = true;
     bool has_ged = !vmc->no_ged;
     unsigned int smp_cpus = machine->smp.cpus;
     unsigned int max_cpus = machine->smp.max_cpus;
+    ObjectClass *cpu_class;
 
     /*
      * In accelerated mode, the memory map is computed earlier in kvm_type()
@@ -2076,110 +2113,33 @@ static void machvirt_init(MachineState *machine)
     create_fdt(vms);
     qemu_log("cpu init start\n");
 
+    cpu_class = object_class_by_name(ms->cpu_type);
+    vms->cpu_hotplug_enabled = has_ged && firmware_loaded &&
+        virt_is_acpi_enabled(vms) && vms->gic_version == 3 &&
+        !!object_class_dynamic_cast(cpu_class, TYPE_AARCH64_CPU);
+
     possible_cpus = mc->possible_cpu_arch_ids(machine);
     assert(possible_cpus->len == max_cpus);
     for (n = 0; n < possible_cpus->len; n++) {
         Object *cpuobj;
         CPUState *cs;
 
+        if (kvm_enabled() && vms->cpu_hotplug_enabled) {
+            if (kvm_create_parked_vcpu(n) < 0) {
+                error_report("mach-virt: Create KVM parked vCPU failed");
+                exit(1);
+            }
+        }
+
         if (n >= smp_cpus) {
-            break;
+            continue;
         }
 
         cpuobj = object_new(possible_cpus->cpus[n].type);
-        object_property_set_int(cpuobj, "mp-affinity",
-                                possible_cpus->cpus[n].arch_id, NULL);
+        aarch64 &= object_property_get_bool(cpuobj, "aarch64", NULL);
 
         cs = CPU(cpuobj);
         cs->cpu_index = n;
-
-        numa_cpu_pre_plug(&possible_cpus->cpus[cs->cpu_index], DEVICE(cpuobj),
-                          &error_fatal);
-
-        aarch64 &= object_property_get_bool(cpuobj, "aarch64", NULL);
-
-        if (!vms->secure) {
-            object_property_set_bool(cpuobj, "has_el3", false, NULL);
-        }
-
-        if (!vms->virt && object_property_find(cpuobj, "has_el2")) {
-            object_property_set_bool(cpuobj, "has_el2", false, NULL);
-        }
-
-        if (vms->psci_conduit != QEMU_PSCI_CONDUIT_DISABLED) {
-            object_property_set_int(cpuobj, "psci-conduit", vms->psci_conduit,
-                                    NULL);
-
-            /* Secondary CPUs start in PSCI powered-down state */
-            if (n > 0) {
-                object_property_set_bool(cpuobj, "start-powered-off", true,
-                                         NULL);
-            }
-        }
-
-        if (vmc->kvm_no_adjvtime &&
-            object_property_find(cpuobj, "kvm-no-adjvtime")) {
-            object_property_set_bool(cpuobj, "kvm-no-adjvtime", true, NULL);
-        }
-
-        if (vmc->no_kvm_steal_time &&
-            object_property_find(cpuobj, "kvm-steal-time")) {
-            object_property_set_bool(cpuobj, "kvm-steal-time", false, NULL);
-        }
-
-        if (vmc->no_pmu && object_property_find(cpuobj, "pmu")) {
-            object_property_set_bool(cpuobj, "pmu", false, NULL);
-        }
-
-        if (object_property_find(cpuobj, "reset-cbar")) {
-            object_property_set_int(cpuobj, "reset-cbar",
-                                    vms->memmap[VIRT_CPUPERIPHS].base,
-                                    &error_abort);
-        }
-
-        object_property_set_link(cpuobj, "memory", OBJECT(sysmem),
-                                 &error_abort);
-        if (vms->secure) {
-            object_property_set_link(cpuobj, "secure-memory",
-                                     OBJECT(secure_sysmem), &error_abort);
-        }
-
-        if (vms->mte) {
-            /* Create the memory region only once, but link to all cpus. */
-            if (!tag_sysmem) {
-                /*
-                 * The property exists only if MemTag is supported.
-                 * If it is, we must allocate the ram to back that up.
-                 */
-                if (!object_property_find(cpuobj, "tag-memory")) {
-                    error_report("MTE requested, but not supported "
-                                 "by the guest CPU");
-                    exit(1);
-                }
-
-                tag_sysmem = g_new(MemoryRegion, 1);
-                memory_region_init(tag_sysmem, OBJECT(machine),
-                                   "tag-memory", UINT64_MAX / 32);
-
-                if (vms->secure) {
-                    secure_tag_sysmem = g_new(MemoryRegion, 1);
-                    memory_region_init(secure_tag_sysmem, OBJECT(machine),
-                                       "secure-tag-memory", UINT64_MAX / 32);
-
-                    /* As with ram, secure-tag takes precedence over tag.  */
-                    memory_region_add_subregion_overlap(secure_tag_sysmem, 0,
-                                                        tag_sysmem, -1);
-                }
-            }
-
-            object_property_set_link(cpuobj, "tag-memory", OBJECT(tag_sysmem),
-                                     &error_abort);
-            if (vms->secure) {
-                object_property_set_link(cpuobj, "secure-tag-memory",
-                                         OBJECT(secure_tag_sysmem),
-                                         &error_abort);
-            }
-        }
 
         qdev_realize(DEVICE(cpuobj), NULL, &error_fatal);
         object_unref(cpuobj);
@@ -2260,7 +2220,7 @@ static void machvirt_init(MachineState *machine)
     }
 
     vms->bootinfo.ram_size = machine->ram_size;
-    vms->bootinfo.nb_cpus = smp_cpus;
+    vms->bootinfo.nb_cpus = vms->cpu_hotplug_enabled ? max_cpus : smp_cpus;
     vms->bootinfo.board_id = -1;
     vms->bootinfo.loader_start = vms->memmap[VIRT_MEM].base;
     vms->bootinfo.get_dtb = machvirt_dtb;
@@ -2513,6 +2473,7 @@ static const CPUArchIdList *virt_possible_cpu_arch_ids(MachineState *ms)
     int n;
     unsigned int max_cpus = ms->smp.max_cpus;
     VirtMachineState *vms = VIRT_MACHINE(ms);
+    ARMCPUTopoInfo topo;
 
     if (ms->possible_cpus) {
         assert(ms->possible_cpus->len == max_cpus);
@@ -2524,10 +2485,19 @@ static const CPUArchIdList *virt_possible_cpu_arch_ids(MachineState *ms)
     ms->possible_cpus->len = max_cpus;
     for (n = 0; n < ms->possible_cpus->len; n++) {
         ms->possible_cpus->cpus[n].type = ms->cpu_type;
+        ms->possible_cpus->cpus[n].vcpus_count = 1;
         ms->possible_cpus->cpus[n].arch_id =
             virt_cpu_mp_affinity(vms, n);
+
+        topo_ids_from_idx(n, ms->smp.clusters, ms->smp.cores, ms->smp.threads, &topo);
+        ms->possible_cpus->cpus[n].props.has_socket_id = true;
+        ms->possible_cpus->cpus[n].props.socket_id = topo.pkg_id;
+        ms->possible_cpus->cpus[n].props.has_cluster_id = true;
+        ms->possible_cpus->cpus[n].props.cluster_id = topo.cluster_id;
+        ms->possible_cpus->cpus[n].props.has_core_id = true;
+        ms->possible_cpus->cpus[n].props.core_id = topo.core_id;
         ms->possible_cpus->cpus[n].props.has_thread_id = true;
-        ms->possible_cpus->cpus[n].props.thread_id = n;
+        ms->possible_cpus->cpus[n].props.thread_id = topo.smt_id;
     }
     return ms->possible_cpus;
 }
@@ -2575,6 +2545,286 @@ static void virt_memory_plug(HotplugHandler *hotplug_dev,
                          dev, &error_abort);
 }
 
+static void virt_cpu_pre_plug(HotplugHandler *hotplug_dev,
+                              DeviceState *dev, Error **errp)
+{
+    ARMCPUTopoInfo topo;
+    Object *cpuobj = OBJECT(dev);
+    CPUState *cs = CPU(dev);
+    ARMCPU *cpu = ARM_CPU(dev);
+    MachineState *ms = MACHINE(hotplug_dev);
+    MachineClass *mc = MACHINE_GET_CLASS(hotplug_dev);
+    VirtMachineState *vms = VIRT_MACHINE(hotplug_dev);
+    VirtMachineClass *vmc = VIRT_MACHINE_GET_CLASS(hotplug_dev);
+    const CPUArchIdList *possible_cpus = mc->possible_cpu_arch_ids(ms);
+    const CPUArchId *cpu_slot = NULL;
+    MemoryRegion *sysmem = get_system_memory();
+    int smp_clusters = ms->smp.clusters;
+    int smp_cores = ms->smp.cores;
+    int smp_threads = ms->smp.threads;
+
+    if (!object_dynamic_cast(OBJECT(cpu), ms->cpu_type)) {
+        error_setg(errp, "Invalid CPU type, expected cpu type: '%s'",
+                   ms->cpu_type);
+        return;
+    }
+
+    /* if cpu idx is not set, set it based on socket/cluster/core/thread
+     * properties
+     */
+    if (cs->cpu_index == UNASSIGNED_CPU_INDEX) {
+        int max_socket = ms->smp.max_cpus / smp_threads / smp_cores / smp_clusters;
+        if (cpu->socket_id < 0 || cpu->socket_id >= max_socket) {
+            error_setg(errp, "Invalid CPU socket-id: %u must be in range 0:%u",
+                       cpu->socket_id, max_socket - 1);
+            return;
+        }
+        if (cpu->cluster_id < 0 || cpu->cluster_id >= smp_clusters) {
+            error_setg(errp, "Invalid CPU cluster-id: %u must be in range 0:%u",
+                       cpu->cluster_id, smp_clusters - 1);
+            return;
+        }
+        if (cpu->core_id < 0 || cpu->core_id >= smp_cores) {
+            error_setg(errp, "Invalid CPU core-id: %u must be in range 0:%u",
+                       cpu->core_id, smp_cores - 1);
+            return;
+        }
+        if (cpu->thread_id < 0 || cpu->thread_id >= smp_threads) {
+            error_setg(errp, "Invalid CPU thread-id: %u must be in range 0:%u",
+                       cpu->thread_id, smp_threads - 1);
+            return;
+        }
+
+        topo.pkg_id = cpu->socket_id;
+        topo.cluster_id = cpu->cluster_id;
+        topo.core_id = cpu->core_id;
+        topo.smt_id = cpu->thread_id;
+        cs->cpu_index = idx_from_topo_ids(smp_clusters, smp_cores, smp_threads, &topo);
+    }
+
+    /* Some hotplug capability checks */
+    if (cs->cpu_index >= ms->smp.cpus) {
+        if (!vms->acpi_dev) {
+            error_setg(errp, "CPU cold/hot plug is disabled: "
+                             "missing acpi device.");
+            return;
+        }
+        if (!vms->cpu_hotplug_enabled) {
+            error_setg(errp, "CPU cold/hot plug is disabled: "
+                             "should use AArch64 CPU and GICv3.");
+            return;
+        }
+    }
+
+    /* if 'address' properties socket-id/cluster-id/core-id/thread-id are not
+     * set, set them so that machine_query_hotpluggable_cpus would show correct
+     * values
+     */
+    topo_ids_from_idx(cs->cpu_index, smp_clusters, smp_cores, smp_threads, &topo);
+    if (cpu->socket_id != -1 && cpu->socket_id != topo.pkg_id) {
+        error_setg(errp, "property socket-id: %u doesn't match set idx:"
+            " 0x%x (socket-id: %u)", cpu->socket_id, cs->cpu_index, topo.pkg_id);
+        return;
+    }
+    cpu->socket_id = topo.pkg_id;
+
+    if (cpu->cluster_id != -1 && cpu->cluster_id != topo.cluster_id) {
+        error_setg(errp, "property cluster-id: %u doesn't match set idx:"
+            " 0x%x (cluster-id: %u)", cpu->cluster_id, cs->cpu_index, topo.cluster_id);
+        return;
+    }
+    cpu->cluster_id = topo.cluster_id;
+
+    if (cpu->core_id != -1 && cpu->core_id != topo.core_id) {
+        error_setg(errp, "property core-id: %u doesn't match set idx:"
+            " 0x%x (core-id: %u)", cpu->core_id, cs->cpu_index, topo.core_id);
+        return;
+    }
+    cpu->core_id = topo.core_id;
+
+    if (cpu->thread_id != -1 && cpu->thread_id != topo.smt_id) {
+        error_setg(errp, "property thread-id: %u doesn't match set idx:"
+            " 0x%x (thread-id: %u)", cpu->thread_id, cs->cpu_index, topo.smt_id);
+        return;
+    }
+    cpu->thread_id = topo.smt_id;
+
+    /* Init some properties */
+
+    object_property_set_int(cpuobj, "mp-affinity",
+                            possible_cpus->cpus[cs->cpu_index].arch_id, NULL);
+
+    cpu_slot = &possible_cpus->cpus[cs->cpu_index];
+    if (cpu_slot->cpu) {
+        error_setg(errp, "CPU[%d] with mp_affinity %" PRIu64 " exists",
+                   cs->cpu_index, cpu->mp_affinity);
+        return;
+    }
+
+    numa_cpu_pre_plug(&possible_cpus->cpus[cs->cpu_index], DEVICE(cpuobj),
+                      &error_fatal);
+
+    if (!vms->secure) {
+        object_property_set_bool(cpuobj, "has_el3", false, NULL);
+    }
+
+    if (!vms->virt && object_property_find(cpuobj, "has_el2")) {
+        object_property_set_bool(cpuobj, "has_el2", false, NULL);
+    }
+
+    if (vms->psci_conduit != QEMU_PSCI_CONDUIT_DISABLED) {
+        object_property_set_int(cpuobj, "psci-conduit", vms->psci_conduit,
+                                NULL);
+
+        /* Secondary CPUs start in PSCI powered-down state */
+        if (cs->cpu_index > 0) {
+            object_property_set_bool(cpuobj, "start-powered-off", true,
+                                     NULL);
+        }
+    }
+
+    if (vmc->kvm_no_adjvtime &&
+        object_property_find(cpuobj, "kvm-no-adjvtime")) {
+        object_property_set_bool(cpuobj, "kvm-no-adjvtime", true, NULL);
+    }
+
+    if (vmc->no_kvm_steal_time &&
+        object_property_find(cpuobj, "kvm-steal-time")) {
+        object_property_set_bool(cpuobj, "kvm-steal-time", false, NULL);
+    }
+
+    if (vmc->no_pmu && object_property_find(cpuobj, "pmu")) {
+        object_property_set_bool(cpuobj, "pmu", false, NULL);
+    }
+
+    if (object_property_find(cpuobj, "reset-cbar")) {
+        object_property_set_int(cpuobj, "reset-cbar",
+                                vms->memmap[VIRT_CPUPERIPHS].base,
+                                &error_abort);
+    }
+
+    object_property_set_link(cpuobj, "memory", OBJECT(sysmem),
+                             &error_abort);
+    if (vms->secure) {
+        object_property_set_link(cpuobj, "secure-memory",
+                                 OBJECT(secure_sysmem), &error_abort);
+    }
+
+    if (vms->mte) {
+        /* Create the memory region only once, but link to all cpus. */
+        if (!tag_sysmem) {
+            /*
+             * The property exists only if MemTag is supported.
+             * If it is, we must allocate the ram to back that up.
+             */
+            if (!object_property_find(cpuobj, "tag-memory")) {
+                error_report("MTE requested, but not supported "
+                             "by the guest CPU");
+                exit(1);
+            }
+
+            tag_sysmem = g_new(MemoryRegion, 1);
+            memory_region_init(tag_sysmem, OBJECT(ms),
+                               "tag-memory", UINT64_MAX / 32);
+
+            if (vms->secure) {
+                secure_tag_sysmem = g_new(MemoryRegion, 1);
+                memory_region_init(secure_tag_sysmem, OBJECT(ms),
+                                   "secure-tag-memory", UINT64_MAX / 32);
+
+                /* As with ram, secure-tag takes precedence over tag.  */
+                memory_region_add_subregion_overlap(secure_tag_sysmem, 0,
+                                                    tag_sysmem, -1);
+            }
+        }
+
+        object_property_set_link(cpuobj, "tag-memory", OBJECT(tag_sysmem),
+                                 &error_abort);
+        if (vms->secure) {
+            object_property_set_link(cpuobj, "secure-tag-memory",
+                                     OBJECT(secure_tag_sysmem),
+                                     &error_abort);
+        }
+    }
+
+    /* If we use KVM accel, we should pause all vcpus to
+     * allow hot access of vcpu registers.
+     */
+    if (dev->hotplugged && kvm_enabled()) {
+        pause_all_vcpus();
+    }
+}
+
+static void virt_cpu_plug(HotplugHandler *hotplug_dev,
+                          DeviceState *dev, Error **errp)
+{
+    CPUArchId *cpu_slot;
+    CPUState *cs = CPU(dev);
+    int ncpu = cs->cpu_index;
+    MachineState *ms = MACHINE(hotplug_dev);
+    VirtMachineState *vms = VIRT_MACHINE(hotplug_dev);
+    bool pmu = object_property_get_bool(OBJECT(first_cpu), "pmu", NULL);
+    bool steal_time = object_property_get_bool(OBJECT(first_cpu),
+                                               "kvm-steal-time", NULL);
+    GICv3State *gicv3;
+    ARMGICv3CommonClass *agcc;
+    Error *local_err = NULL;
+
+    /* For CPU that is cold/hot plugged */
+    if (ncpu >= ms->smp.cpus) {
+        /* Realize GIC related parts of CPU */
+        assert(vms->gic_version == 3);
+        gicv3 = ARM_GICV3_COMMON(vms->gic);
+        agcc = ARM_GICV3_COMMON_GET_CLASS(gicv3);
+        agcc->cpu_hotplug_realize(gicv3, ncpu);
+        connect_gic_cpu_irqs(vms, ncpu);
+
+        /* Init PMU and steal_time part */
+        if (kvm_enabled()) {
+            hwaddr pvtime_reg_base = vms->memmap[VIRT_PVTIME].base;
+
+            if (pmu) {
+                assert(arm_feature(&ARM_CPU(cs)->env, ARM_FEATURE_PMU));
+                if (kvm_irqchip_in_kernel()) {
+                    kvm_arm_pmu_set_irq(cs, PPI(VIRTUAL_PMU_IRQ));
+                }
+                kvm_arm_pmu_init(cs);
+            }
+            if (steal_time) {
+                kvm_arm_pvtime_init(cs, pvtime_reg_base +
+                                        ncpu * PVTIME_SIZE_PER_CPU);
+            }
+        }
+
+        /* Register CPU reset and trigger it manually */
+        cpu_synchronize_state(cs);
+        cpu_hotplug_register_reset(ncpu);
+        cpu_hotplug_reset_manually(ncpu);
+        cpu_synchronize_post_reset(cs);
+    }
+
+    if (dev->hotplugged && kvm_enabled()) {
+        resume_all_vcpus();
+    }
+
+    if (vms->acpi_dev) {
+        hotplug_handler_plug(HOTPLUG_HANDLER(vms->acpi_dev), dev, &local_err);
+        if (local_err) {
+            goto out;
+        }
+    }
+
+    vms->boot_cpus++;
+    if (vms->fw_cfg) {
+        fw_cfg_modify_i16(vms->fw_cfg, FW_CFG_NB_CPUS, vms->boot_cpus);
+    }
+
+    cpu_slot = &ms->possible_cpus->cpus[ncpu];
+    cpu_slot->cpu = OBJECT(dev);
+out:
+    error_propagate(errp, local_err);
+}
+
 static void virt_machine_device_pre_plug_cb(HotplugHandler *hotplug_dev,
                                             DeviceState *dev, Error **errp)
 {
@@ -2608,6 +2858,8 @@ static void virt_machine_device_pre_plug_cb(HotplugHandler *hotplug_dev,
         qdev_prop_set_uint32(dev, "len-reserved-regions", 1);
         qdev_prop_set_string(dev, "reserved-regions[0]", resv_prop_str);
         g_free(resv_prop_str);
+    } else if (object_dynamic_cast(OBJECT(dev), TYPE_CPU)) {
+        virt_cpu_pre_plug(hotplug_dev, dev, errp);
     }
 }
 
@@ -2626,6 +2878,8 @@ static void virt_machine_device_plug_cb(HotplugHandler *hotplug_dev,
     }
     if (object_dynamic_cast(OBJECT(dev), TYPE_PC_DIMM)) {
         virt_memory_plug(hotplug_dev, dev, errp);
+    } else if (object_dynamic_cast(OBJECT(dev), TYPE_CPU)) {
+        virt_cpu_plug(hotplug_dev, dev, errp);
     }
     if (object_dynamic_cast(OBJECT(dev), TYPE_VIRTIO_IOMMU_PCI)) {
         PCIDevice *pdev = PCI_DEVICE(dev);
@@ -2706,7 +2960,8 @@ static HotplugHandler *virt_machine_get_hotplug_handler(MachineState *machine,
     MachineClass *mc = MACHINE_GET_CLASS(machine);
 
     if (device_is_dynamic_sysbus(mc, dev) ||
-       (object_dynamic_cast(OBJECT(dev), TYPE_PC_DIMM))) {
+       (object_dynamic_cast(OBJECT(dev), TYPE_PC_DIMM)) ||
+       (object_dynamic_cast(OBJECT(dev), TYPE_CPU))) {
         return HOTPLUG_HANDLER(machine);
     }
     if (object_dynamic_cast(OBJECT(dev), TYPE_VIRTIO_IOMMU_PCI)) {
@@ -2786,6 +3041,7 @@ static void virt_machine_class_init(ObjectClass *oc, void *data)
     mc->default_cpu_type = ARM_CPU_TYPE_NAME("cortex-a15");
     mc->get_default_cpu_node_id = virt_get_default_cpu_node_id;
     mc->kvm_type = virt_kvm_type;
+    mc->has_hotpluggable_cpus = true;
     assert(!mc->get_hotplug_handler);
     mc->get_hotplug_handler = virt_machine_get_hotplug_handler;
     hc->pre_plug = virt_machine_device_pre_plug_cb;

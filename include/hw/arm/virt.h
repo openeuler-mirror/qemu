@@ -38,6 +38,7 @@
 #include "sysemu/kvm.h"
 #include "hw/intc/arm_gicv3_common.h"
 #include "qom/object.h"
+#include "hw/acpi/acpi_dev_interface.h"
 
 #define NUM_GICV2M_SPIS       64
 #define NUM_VIRTIO_TRANSPORTS 32
@@ -87,6 +88,7 @@ enum {
     VIRT_ACPI_GED,
     VIRT_NVDIMM_ACPI,
     VIRT_PVTIME,
+    VIRT_CPU_ACPI,
     VIRT_LOWMEMMAP_LAST,
 };
 
@@ -147,6 +149,7 @@ struct VirtMachineState {
     bool its;
     bool tcg_its;
     bool virt;
+    bool cpu_hotplug_enabled;
     bool ras;
     bool mte;
     OnOffAuto acpi;
@@ -165,6 +168,7 @@ struct VirtMachineState {
     uint32_t msi_phandle;
     uint32_t iommu_phandle;
     int psci_conduit;
+    uint32_t boot_cpus;
     hwaddr highest_gpa;
     DeviceState *gic;
     DeviceState *acpi_dev;
@@ -181,6 +185,11 @@ OBJECT_DECLARE_TYPE(VirtMachineState, VirtMachineClass, VIRT_MACHINE)
 
 void virt_acpi_setup(VirtMachineState *vms);
 bool virt_is_acpi_enabled(VirtMachineState *vms);
+void virt_madt_cpu_entry(AcpiDeviceIf *adev, int uid,
+                         const CPUArchIdList *cpu_list, GArray *entry,
+                         bool force_enabled);
+void virt_acpi_dsdt_cpu_cppc(AcpiDeviceIf *adev, int uid,
+                             int num_cpu, Aml *dev);
 
 /* Return the number of used redistributor regions  */
 static inline int virt_gicv3_redist_region_count(VirtMachineState *vms)
@@ -189,8 +198,9 @@ static inline int virt_gicv3_redist_region_count(VirtMachineState *vms)
                 vms->memmap[VIRT_GIC_REDIST].size / GICV3_REDIST_SIZE;
 
     assert(vms->gic_version == VIRT_GIC_VERSION_3);
+    GICv3State *s = ARM_GICV3_COMMON(vms->gic);
 
-    return MACHINE(vms)->smp.cpus > redist0_capacity ? 2 : 1;
+    return s->num_cpu > redist0_capacity ? 2 : 1;
 }
 
 #endif /* QEMU_ARM_VIRT_H */

@@ -814,6 +814,24 @@ static void do_cpu_reset(void *opaque)
     }
 }
 
+void cpu_hotplug_register_reset(int ncpu)
+{
+    CPUState *cpu_0 = qemu_get_cpu(0);
+    CPUState *cpu = qemu_get_cpu(ncpu);
+    QEMUResetEntry *entry = qemu_get_reset_entry(do_cpu_reset, cpu_0);
+
+    assert(entry);
+    /* Gather the reset handlers of all CPUs */
+    qemu_register_reset_after(entry, do_cpu_reset, cpu);
+}
+
+void cpu_hotplug_reset_manually(int ncpu)
+{
+    CPUState *cpu = qemu_get_cpu(ncpu);
+
+    do_cpu_reset(cpu);
+}
+
 /**
  * load_image_to_fw_cfg() - Load an image file into an fw_cfg entry identified
  *                          by key.

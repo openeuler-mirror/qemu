@@ -119,6 +119,9 @@ struct arm_boot_info {
     arm_endianness endianness;
 };
 
+void cpu_hotplug_register_reset(int ncpu);
+void cpu_hotplug_reset_manually(int ncpu);
+
 /**
  * arm_load_kernel - Loads memory with everything needed to boot
  *

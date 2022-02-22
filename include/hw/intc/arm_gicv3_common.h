@@ -306,10 +306,14 @@ typedef struct ARMGICv3CommonClass ARMGICv3CommonClass;
 DECLARE_OBJ_CHECKERS(GICv3State, ARMGICv3CommonClass,
                      ARM_GICV3_COMMON, TYPE_ARM_GICV3_COMMON)
 
+typedef void (*CPUHotplugRealize)(GICv3State *s, int ncpu);
+
 struct ARMGICv3CommonClass {
     /*< private >*/
     SysBusDeviceClass parent_class;
     /*< public >*/
+
+    CPUHotplugRealize cpu_hotplug_realize;
 
     void (*pre_save)(GICv3State *s);
     void (*post_load)(GICv3State *s);

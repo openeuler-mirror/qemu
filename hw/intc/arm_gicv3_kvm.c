@@ -76,6 +76,7 @@ struct KVMARMGICv3Class {
     ARMGICv3CommonClass parent_class;
     DeviceRealize parent_realize;
     void (*parent_reset)(DeviceState *dev);
+    CPUHotplugRealize parent_cpu_hotplug_realize;
 };
 
 static void kvm_arm_gicv3_set_irq(void *opaque, int irq, int level)
@@ -341,6 +342,10 @@ static void kvm_arm_gicv3_put(GICv3State *s)
         for (ncpu = 0; ncpu < s->num_cpu; ncpu++) {
             GICv3CPUState *c = &s->cpu[ncpu];
 
+            if (!qemu_get_cpu(ncpu)) {
+                continue;
+            }
+
             reg64 = c->gicr_propbaser;
             regl = (uint32_t)reg64;
             kvm_gicr_access(s, GICR_PROPBASER, ncpu, &regl, true);
@@ -359,6 +364,10 @@ static void kvm_arm_gicv3_put(GICv3State *s)
 
     for (ncpu = 0; ncpu < s->num_cpu; ncpu++) {
         GICv3CPUState *c = &s->cpu[ncpu];
+
+        if (!qemu_get_cpu(ncpu)) {
+            continue;
+        }
 
         reg = c->gicr_ctlr;
         kvm_gicr_access(s, GICR_CTLR, ncpu, &reg, true);
@@ -456,6 +465,10 @@ static void kvm_arm_gicv3_put(GICv3State *s)
         GICv3CPUState *c = &s->cpu[ncpu];
         int num_pri_bits;
 
+        if (!qemu_get_cpu(ncpu)) {
+            continue;
+        }
+
         kvm_gicc_access(s, ICC_SRE_EL1, ncpu, &c->icc_sre_el1, true);
         kvm_gicc_access(s, ICC_CTLR_EL1, ncpu,
                         &c->icc_ctlr_el1[GICV3_NS], true);
@@ -523,6 +536,10 @@ static void kvm_arm_gicv3_get(GICv3State *s)
     /* Redistributor state (one per CPU) */
 
     for (ncpu = 0; ncpu < s->num_cpu; ncpu++) {
+        if (!qemu_get_cpu(ncpu)) {
+            continue;
+        }
+
         GICv3CPUState *c = &s->cpu[ncpu];
 
         kvm_gicr_access(s, GICR_CTLR, ncpu, &reg, false);
@@ -558,6 +575,10 @@ static void kvm_arm_gicv3_get(GICv3State *s)
 
     if (redist_typer & GICR_TYPER_PLPIS) {
         for (ncpu = 0; ncpu < s->num_cpu; ncpu++) {
+            if (!qemu_get_cpu(ncpu)) {
+                continue;
+            }
+
             GICv3CPUState *c = &s->cpu[ncpu];
 
             kvm_gicr_access(s, GICR_PROPBASER, ncpu, &regl, false);
@@ -611,6 +632,10 @@ static void kvm_arm_gicv3_get(GICv3State *s)
      */
 
     for (ncpu = 0; ncpu < s->num_cpu; ncpu++) {
+        if (!qemu_get_cpu(ncpu)) {
+            continue;
+        }
+
         GICv3CPUState *c = &s->cpu[ncpu];
         int num_pri_bits;
 
@@ -764,6 +789,20 @@ static void vm_change_state_handler(void *opaque, bool running,
     }
 }
 
+static void kvm_arm_gicv3_cpu_realize(GICv3State *s, int ncpu)
+{
+    ARMCPU *cpu = ARM_CPU(qemu_get_cpu(ncpu));
+
+    define_arm_cp_regs(cpu, gicv3_cpuif_reginfo);
+}
+
+static void kvm_arm_gicv3_cpu_hotplug_realize(GICv3State *s, int ncpu)
+{
+    KVMARMGICv3Class *kagcc = KVM_ARM_GICV3_GET_CLASS(s);
+
+    kagcc->parent_cpu_hotplug_realize(s, ncpu);
+    kvm_arm_gicv3_cpu_realize(s, ncpu);
+}
 
 static void kvm_arm_gicv3_realize(DeviceState *dev, Error **errp)
 {
@@ -790,9 +829,9 @@ static void kvm_arm_gicv3_realize(DeviceState *dev, Error **errp)
     gicv3_init_irqs_and_mmio(s, kvm_arm_gicv3_set_irq, NULL);
 
     for (i = 0; i < s->num_cpu; i++) {
-        ARMCPU *cpu = ARM_CPU(qemu_get_cpu(i));
-
-        define_arm_cp_regs(cpu, gicv3_cpuif_reginfo);
+        if (qemu_get_cpu(i)) {
+            kvm_arm_gicv3_cpu_realize(s, i);
+        }
     }
 
     /* Try to create the device via the device control API */
@@ -877,6 +916,8 @@ static void kvm_arm_gicv3_class_init(ObjectClass *klass, void *data)
     ARMGICv3CommonClass *agcc = ARM_GICV3_COMMON_CLASS(klass);
     KVMARMGICv3Class *kgc = KVM_ARM_GICV3_CLASS(klass);
 
+    kgc->parent_cpu_hotplug_realize = agcc->cpu_hotplug_realize;
+    agcc->cpu_hotplug_realize = kvm_arm_gicv3_cpu_hotplug_realize;
     agcc->pre_save = kvm_arm_gicv3_get;
     agcc->post_load = kvm_arm_gicv3_put;
     device_class_set_parent_realize(dc, kvm_arm_gicv3_realize,

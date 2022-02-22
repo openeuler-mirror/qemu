@@ -120,8 +120,24 @@ static void acpi_dsdt_add_cppc(Aml *dev, uint64_t cpu_base, int *regs_offset)
     aml_append(dev, aml_name_decl("_CPC", cpc));
 }
 
-static void acpi_dsdt_add_cpus(Aml *scope, VirtMachineState *vms,
-                               const MemMapEntry *cppc_memmap)
+void virt_acpi_dsdt_cpu_cppc(AcpiDeviceIf *adev, int ncpu, int num_cpu, Aml *dev)
+{
+    VirtMachineState *vms = VIRT_MACHINE(qdev_get_machine());
+    const MemMapEntry *cppc_memmap = &vms->memmap[VIRT_CPUFREQ];
+
+    /*
+    * Append _CPC and _PSD to support CPU frequence show
+    * Check CPPC available by DESIRED_PERF register
+    */
+    if (cppc_regs_offset[DESIRED_PERF] != -1) {
+        acpi_dsdt_add_cppc(dev,
+                           cppc_memmap->base + ncpu * CPPC_REG_PER_CPU_STRIDE,
+                           cppc_regs_offset);
+        acpi_dsdt_add_psd(dev, num_cpu);
+    }
+}
+
+static void acpi_dsdt_add_cpus(Aml *scope, VirtMachineState *vms)
 {
     MachineState *ms = MACHINE(vms);
     uint16_t i;
@@ -131,16 +147,7 @@ static void acpi_dsdt_add_cpus(Aml *scope, VirtMachineState *vms,
         aml_append(dev, aml_name_decl("_HID", aml_string("ACPI0007")));
         aml_append(dev, aml_name_decl("_UID", aml_int(i)));
 
-        /*
-         * Append _CPC and _PSD to support CPU frequence show
-         * Check CPPC available by DESIRED_PERF register
-         */
-        if (cppc_regs_offset[DESIRED_PERF] != -1) {
-            acpi_dsdt_add_cppc(dev,
-                               cppc_memmap->base + i * CPPC_REG_PER_CPU_STRIDE,
-                               cppc_regs_offset);
-            acpi_dsdt_add_psd(dev, ms->smp.cpus);
-        }
+        virt_acpi_dsdt_cpu_cppc(NULL, i, ms->smp.cpus, dev);
 
         aml_append(scope, dev);
     }
@@ -771,14 +778,69 @@ static void build_append_gicr(GArray *table_data, uint64_t base, uint32_t size)
     build_append_int_noprefix(table_data, size, 4); /* Discovery Range Length */
 }
 
+void virt_madt_cpu_entry(AcpiDeviceIf *adev, int i,
+                         const CPUArchIdList *possible_cpus, GArray *table_data,
+                         bool force_enabled)
+{
+    VirtMachineState *vms = VIRT_MACHINE(qdev_get_machine());
+    const MemMapEntry *memmap = vms->memmap;
+    ARMCPU *armcpu = ARM_CPU(qemu_get_cpu(i));
+    uint64_t physical_base_address = 0, gich = 0, gicv = 0;
+    uint32_t vgic_interrupt = vms->virt ? PPI(ARCH_GIC_MAINT_IRQ) : 0;
+    uint32_t pmu_interrupt, enabled;
+    static bool pmu;
+
+    if (i == 0) {
+        pmu = arm_feature(&armcpu->env, ARM_FEATURE_PMU);
+    }
+    /* FEATURE_PMU should be all enabled or disabled for CPUs */
+    assert(!armcpu || arm_feature(&armcpu->env, ARM_FEATURE_PMU) == pmu);
+    pmu_interrupt = pmu ? PPI(VIRTUAL_PMU_IRQ) : 0;
+    enabled = armcpu || force_enabled ? 1 /* Enabled */ : 0 /* Disabled */;
+
+    if (vms->gic_version == 2) {
+        physical_base_address = memmap[VIRT_GIC_CPU].base;
+        gicv = memmap[VIRT_GIC_VCPU].base;
+        gich = memmap[VIRT_GIC_HYP].base;
+    }
+
+    /* 5.2.12.14 GIC Structure */
+    build_append_int_noprefix(table_data, 0xB, 1);  /* Type */
+    build_append_int_noprefix(table_data, 76, 1);   /* Length */
+    build_append_int_noprefix(table_data, 0, 2);    /* Reserved */
+    build_append_int_noprefix(table_data, i, 4);    /* GIC ID */
+    build_append_int_noprefix(table_data, i, 4);    /* ACPI Processor UID */
+    /* Flags */
+    build_append_int_noprefix(table_data, enabled, 4);    /* Enabled */
+    /* Parking Protocol Version */
+    build_append_int_noprefix(table_data, 0, 4);
+    /* Performance Interrupt GSIV */
+    build_append_int_noprefix(table_data, pmu_interrupt, 4);
+    build_append_int_noprefix(table_data, 0, 8); /* Parked Address */
+    /* Physical Base Address */
+    build_append_int_noprefix(table_data, physical_base_address, 8);
+    build_append_int_noprefix(table_data, gicv, 8); /* GICV */
+    build_append_int_noprefix(table_data, gich, 8); /* GICH */
+    /* VGIC Maintenance interrupt */
+    build_append_int_noprefix(table_data, vgic_interrupt, 4);
+    build_append_int_noprefix(table_data, 0, 8);    /* GICR Base Address*/
+    /* MPIDR */
+    build_append_int_noprefix(table_data, possible_cpus->cpus[i].arch_id, 8);
+}
+
 static void
 build_madt(GArray *table_data, BIOSLinker *linker, VirtMachineState *vms)
 {
     int i;
     VirtMachineClass *vmc = VIRT_MACHINE_GET_CLASS(vms);
+    MachineClass *mc = MACHINE_GET_CLASS(vms);
+    MachineState *ms = MACHINE(vms);
+    const CPUArchIdList *possible_cpus = mc->possible_cpu_arch_ids(ms);
     const MemMapEntry *memmap = vms->memmap;
     AcpiTable table = { .sig = "APIC", .rev = 3, .oem_id = vms->oem_id,
                         .oem_table_id = vms->oem_table_id };
+    /* The MADT GICC numbers */
+    int num_cpu = ms->smp.cpus;
 
     acpi_table_begin(&table, table_data);
     /* Local Interrupt Controller Address */
@@ -797,41 +859,11 @@ build_madt(GArray *table_data, BIOSLinker *linker, VirtMachineState *vms)
     build_append_int_noprefix(table_data, vms->gic_version, 1);
     build_append_int_noprefix(table_data, 0, 3);   /* Reserved */
 
-    for (i = 0; i < MACHINE(vms)->smp.cpus; i++) {
-        ARMCPU *armcpu = ARM_CPU(qemu_get_cpu(i));
-        uint64_t physical_base_address = 0, gich = 0, gicv = 0;
-        uint32_t vgic_interrupt = vms->virt ? PPI(ARCH_GIC_MAINT_IRQ) : 0;
-        uint32_t pmu_interrupt = arm_feature(&armcpu->env, ARM_FEATURE_PMU) ?
-                                             PPI(VIRTUAL_PMU_IRQ) : 0;
-
-        if (vms->gic_version == 2) {
-            physical_base_address = memmap[VIRT_GIC_CPU].base;
-            gicv = memmap[VIRT_GIC_VCPU].base;
-            gich = memmap[VIRT_GIC_HYP].base;
-        }
-
-        /* 5.2.12.14 GIC Structure */
-        build_append_int_noprefix(table_data, 0xB, 1);  /* Type */
-        build_append_int_noprefix(table_data, 76, 1);   /* Length */
-        build_append_int_noprefix(table_data, 0, 2);    /* Reserved */
-        build_append_int_noprefix(table_data, i, 4);    /* GIC ID */
-        build_append_int_noprefix(table_data, i, 4);    /* ACPI Processor UID */
-        /* Flags */
-        build_append_int_noprefix(table_data, 1, 4);    /* Enabled */
-        /* Parking Protocol Version */
-        build_append_int_noprefix(table_data, 0, 4);
-        /* Performance Interrupt GSIV */
-        build_append_int_noprefix(table_data, pmu_interrupt, 4);
-        build_append_int_noprefix(table_data, 0, 8); /* Parked Address */
-        /* Physical Base Address */
-        build_append_int_noprefix(table_data, physical_base_address, 8);
-        build_append_int_noprefix(table_data, gicv, 8); /* GICV */
-        build_append_int_noprefix(table_data, gich, 8); /* GICH */
-        /* VGIC Maintenance interrupt */
-        build_append_int_noprefix(table_data, vgic_interrupt, 4);
-        build_append_int_noprefix(table_data, 0, 8);    /* GICR Base Address*/
-        /* MPIDR */
-        build_append_int_noprefix(table_data, armcpu->mp_affinity, 8);
+    if (vms->cpu_hotplug_enabled) {
+        num_cpu = ms->smp.max_cpus;
+    }
+    for (i = 0; i < num_cpu; i++) {
+        virt_madt_cpu_entry(NULL, i, possible_cpus, table_data, false);
     }
 
     if (vms->gic_version == 3) {
@@ -921,6 +953,7 @@ build_dsdt(GArray *table_data, BIOSLinker *linker, VirtMachineState *vms)
     const int *irqmap = vms->irqmap;
     AcpiTable table = { .sig = "DSDT", .rev = 2, .oem_id = vms->oem_id,
                         .oem_table_id = vms->oem_table_id };
+    bool cpu_aml_built = false;
 
     acpi_table_begin(&table, table_data);
     dsdt = init_aml_allocator();
@@ -931,7 +964,6 @@ build_dsdt(GArray *table_data, BIOSLinker *linker, VirtMachineState *vms)
      * the RTC ACPI device at all when using UEFI.
      */
     scope = aml_scope("\\_SB");
-    acpi_dsdt_add_cpus(scope, vms, &memmap[VIRT_CPUFREQ]);
     acpi_dsdt_add_uart(scope, &memmap[VIRT_UART],
                        (irqmap[VIRT_UART] + ARM_SPI_BASE));
     if (vmc->acpi_expose_flash) {
@@ -961,6 +993,19 @@ build_dsdt(GArray *table_data, BIOSLinker *linker, VirtMachineState *vms)
                                      AML_SYSTEM_MEMORY,
                                      memmap[VIRT_PCDIMM_ACPI].base);
         }
+
+        if (event & ACPI_GED_CPU_HOTPLUG_EVT) {
+            CPUHotplugFeatures opts = {
+                .acpi_1_compatible = false, .has_legacy_cphp = false
+            };
+            build_cpus_aml(dsdt, ms, opts, memmap[VIRT_CPU_ACPI].base,
+                           "\\_SB", NULL, AML_SYSTEM_MEMORY);
+            cpu_aml_built = true;
+        }
+    }
+
+    if (!cpu_aml_built) {
+        acpi_dsdt_add_cpus(scope, vms);
     }
 
     acpi_dsdt_add_power_button(scope);
