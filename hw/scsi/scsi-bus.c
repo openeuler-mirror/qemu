@@ -167,8 +167,6 @@ void scsi_retry_requests(SCSIDevice *s)
         scsi_req_unref(req);
     }
     aio_context_release(blk_get_aio_context(s->conf.blk));
-    /* Drop the reference that was acquired in scsi_dma_restart_cb */
-    object_unref(OBJECT(s));
 }
 
 static void scsi_dma_restart_bh(void *opaque)
@@ -179,6 +177,9 @@ static void scsi_dma_restart_bh(void *opaque)
     s->bh = NULL;
 
     scsi_retry_requests(s);
+
+    /* Drop the reference that was acquired in scsi_dma_restart_cb */
+    object_unref(OBJECT(s));
 }
 
 void scsi_req_retry(SCSIRequest *req)
