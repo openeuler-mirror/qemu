@@ -1,0 +1,1 @@
+obj-y += core3.o core3_board.o

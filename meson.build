@@ -56,13 +56,17 @@ python = import('python').find_installation()
 
 supported_oses = ['windows', 'freebsd', 'netbsd', 'openbsd', 'darwin', 'sunos', 'linux']
 supported_cpus = ['ppc', 'ppc64', 's390x', 'riscv', 'x86', 'x86_64',
-  'arm', 'aarch64', 'mips', 'mips64', 'sparc', 'sparc64']
+  'arm', 'aarch64', 'mips', 'mips64', 'sparc', 'sparc64', 'sw64']
 
 cpu = host_machine.cpu_family()
 
 # Unify riscv* to a single family.
 if cpu in ['riscv32', 'riscv64']
   cpu = 'riscv'
+endif
+
+if cpu == 'sw_64'
+  cpu = 'sw64'
 endif
 
 targetos = host_machine.system()
@@ -77,6 +81,8 @@ elif cpu in ['ppc', 'ppc64']
   kvm_targets = ['ppc-softmmu', 'ppc64-softmmu']
 elif cpu in ['mips', 'mips64']
   kvm_targets = ['mips-softmmu', 'mipsel-softmmu', 'mips64-softmmu', 'mips64el-softmmu']
+elif cpu == 'sw64'
+  kvm_targets = ['sw64-softmmu']
 else
   kvm_targets = []
 endif
@@ -359,6 +365,8 @@ if not get_option('tcg').disabled()
     tcg_arch = 'i386'
   elif config_host['ARCH'] == 'ppc64'
     tcg_arch = 'ppc'
+  elif config_host['ARCH'] in ['sw64']
+    tcg_arch = 'sw64'
   endif
   add_project_arguments('-iquote', meson.current_source_dir() / 'tcg' / tcg_arch,
                         language: ['c', 'cpp', 'objc'])
@@ -1814,6 +1822,7 @@ disassemblers = {
   'sh4' : ['CONFIG_SH4_DIS'],
   'sparc' : ['CONFIG_SPARC_DIS'],
   'xtensa' : ['CONFIG_XTENSA_DIS'],
+  'sw64' : ['CONFIG_SW64_DIS'],
 }
 if link_language == 'cpp'
   disassemblers += {
@@ -2466,6 +2475,7 @@ if have_system
     'hw/sparc',
     'hw/sparc64',
     'hw/ssi',
+    'hw/sw64',
     'hw/timer',
     'hw/tpm',
     'hw/usb',

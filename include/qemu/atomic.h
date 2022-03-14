@@ -85,6 +85,8 @@
 #define smp_read_barrier_depends()   ({ barrier(); __atomic_thread_fence(__ATOMIC_CONSUME); })
 #elif defined(__alpha__)
 #define smp_read_barrier_depends()   asm volatile("mb":::"memory")
+#elif defined(__sw_64__)
+#define smp_read_barrier_depends()   asm volatile("memb":::"memory")
 #else
 #define smp_read_barrier_depends()   barrier()
 #endif

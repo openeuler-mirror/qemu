@@ -207,6 +207,8 @@ static void initialize_debug_host(CPUDebug *s)
     s->info.cap_insn_split = 6;
 #elif defined(__hppa__)
     s->info.print_insn = print_insn_hppa;
+#elif defined(__sw_64__)
+    s->info.print_insn = print_insn_sw_64;
 #endif
 }
 

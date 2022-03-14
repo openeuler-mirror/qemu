@@ -207,6 +207,8 @@ typedef struct mips_elf_abiflags_v0 {
 
 #define EF_AVR_MACH     0x7F       /* Mask for AVR e_flags to get core type */
 
+#define EM_SW64                0x9916     /* SW64 */
+
 /* This is the info that is needed to parse the dynamic section of the file */
 #define DT_NULL		0
 #define DT_NEEDED	1
@@ -1416,6 +1418,48 @@ typedef struct {
 #define EF_RISCV_FLOAT_ABI_QUAD   0x0006
 #define EF_RISCV_RVE              0x0008
 #define EF_RISCV_TSO              0x0010
+
+/*
+ SW_64 ELF relocation types
+ */
+#define EM_SW_64               0x9916
+#define R_SW_64_NONE            0       /* No reloc */
+#define R_SW_64_REFLONG         1       /* Direct 32 bit */
+#define R_SW_64_REFQUAD         2       /* Direct 64 bit */
+#define R_SW_64_GPREL32         3       /* GP relative 32 bit */
+#define R_SW_64_LITERAL         4       /* GP relative 16 bit w/optimization */
+#define R_SW_64_LITUSE          5       /* Optimization hint for LITERAL */
+#define R_SW_64_GPDISP          6       /* Add displacement to GP */
+#define R_SW_64_BRADDR          7       /* PC+4 relative 23 bit shifted */
+#define R_SW_64_HINT            8       /* PC+4 relative 16 bit shifted */
+#define R_SW_64_SREL16          9       /* PC relative 16 bit */
+#define R_SW_64_SREL32          10      /* PC relative 32 bit */
+#define R_SW_64_SREL64          11      /* PC relative 64 bit */
+#define R_SW_64_GPRELHIGH       17      /* GP relative 32 bit, high 16 bits */
+#define R_SW_64_GPRELLOW        18      /* GP relative 32 bit, low 16 bits */
+#define R_SW_64_GPREL16         19      /* GP relative 16 bit */
+#define R_SW_64_COPY            24      /* Copy symbol at runtime */
+#define R_SW_64_GLOB_DAT        25      /* Create GOT entry */
+#define R_SW_64_JMP_SLOT        26      /* Create PLT entry */
+#define R_SW_64_RELATIVE        27      /* Adjust by program base */
+#define R_SW_64_TLS_GD_HI       28
+#define R_SW_64_TLSGD           29
+#define R_SW_64_TLS_LDM         30
+#define R_SW_64_DTPMOD64        31
+#define R_SW_64_GOTDTPREL       32
+#define R_SW_64_DTPREL64        33
+#define R_SW_64_DTPRELHI        34
+#define R_SW_64_DTPRELLO        35
+#define R_SW_64_DTPREL16        36
+#define R_SW_64_GOTTPREL        37
+#define R_SW_64_TPREL64         38
+#define R_SW_64_TPRELHI         39
+#define R_SW_64_TPRELLO         40
+#define R_SW_64_TPREL16         41
+/* Keep this the last entry.  */
+#define R_SW_64_NUM             46
+/* Legal values for sh_flags field of Elf64_Shdr.  */
+#define SHF_SW_64_GPREL         0x10000000
 
 typedef struct elf32_rel {
   Elf32_Addr	r_offset;
