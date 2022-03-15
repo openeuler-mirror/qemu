@@ -79,6 +79,19 @@ union cc_arg {
     int i[2];
 };
 
+/**
+ * coroutines list for libcare
+ */
+struct CoroutineInformation {
+    sigjmp_buf *env;
+    QLIST_ENTRY(CoroutineInformation) next;
+};
+
+static QemuMutex coro_mtx;
+QLIST_HEAD(, CoroutineInformation) coro_info_list = QLIST_HEAD_INITIALIZER(pool);
+int coro_env_offset = offsetof(struct CoroutineInformation, env);
+int coro_next_offset = offsetof(struct CoroutineInformation, next);
+
 /*
  * QEMU_ALWAYS_INLINE only does so if __OPTIMIZE__, so we cannot use it.
  * always_inline is required to avoid TSan runtime fatal errors.
@@ -329,4 +342,43 @@ Coroutine *qemu_coroutine_self(void)
 bool qemu_in_coroutine(void)
 {
     return current && current->caller;
+}
+
+static void __attribute__((constructor)) coro_mutex_init(void)
+{
+    qemu_mutex_init(&coro_mtx);
+}
+
+void qemu_coroutine_info_add(const Coroutine *co_)
+{
+    CoroutineUContext *co;
+    struct CoroutineInformation *coro_info;
+
+    /* save coroutine env to coro_info_list */
+    co = DO_UPCAST(CoroutineUContext, base, co_);
+    coro_info = g_malloc0(sizeof(struct CoroutineInformation));
+    coro_info->env = &co->env;
+
+    qemu_mutex_lock(&coro_mtx);
+    QLIST_INSERT_HEAD(&coro_info_list, coro_info, next);
+    qemu_mutex_unlock(&coro_mtx);
+}
+
+void qemu_coroutine_info_delete(const Coroutine *co_)
+{
+    CoroutineUContext *co;
+    struct CoroutineInformation *coro_info;
+
+    /* Remove relative coroutine env info from coro_info_list */
+    co = DO_UPCAST(CoroutineUContext, base, co_);
+
+    qemu_mutex_lock(&coro_mtx);
+    QLIST_FOREACH(coro_info, &coro_info_list, next) {
+        if (coro_info->env == &co->env) {
+            QLIST_REMOVE(coro_info, next);
+            g_free(coro_info);
+            break;
+        }
+    }
+    qemu_mutex_unlock(&coro_mtx);
 }
