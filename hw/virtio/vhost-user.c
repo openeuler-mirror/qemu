@@ -491,6 +491,8 @@ static int vhost_user_write(struct vhost_dev *dev, VhostUserMsg *msg,
         return ret < 0 ? -saved_errno : -EIO;
     }
 
+    trace_vhost_user_write(msg->hdr.request, msg->hdr.flags);
+
     return 0;
 }
 
@@ -543,6 +545,8 @@ static int vhost_user_set_log_base(struct vhost_dev *dev, uint64_t base,
             return -EPROTO;
         }
     }
+
+    trace_vhost_user_read(msg.hdr.request, msg.hdr.flags);
 
     return 0;
 }
