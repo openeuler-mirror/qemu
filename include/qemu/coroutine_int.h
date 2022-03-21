@@ -73,5 +73,6 @@ Coroutine *qemu_coroutine_new(void);
 void qemu_coroutine_delete(Coroutine *co);
 CoroutineAction qemu_coroutine_switch(Coroutine *from, Coroutine *to,
                                       CoroutineAction action);
-
+void qemu_coroutine_info_add(const Coroutine *co_);
+void qemu_coroutine_info_delete(const Coroutine *co_);
 #endif
