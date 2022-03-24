@@ -496,6 +496,22 @@ static int64_t cvtnum(const char *name, const char *value)
     return cvtnum_full(name, value, 0, INT64_MAX);
 }
 
+static bool is_reg_file(const char *filename)
+{
+    struct stat st;
+
+    /* file not exist, file will be create later, so it's a reg file */
+    if (access(filename, F_OK) == -1) {
+        return true;
+    }
+
+    /* file exist, check file type */
+    if (stat(filename, &st) >= 0 && S_ISREG(st.st_mode)) {
+        return true;
+    }
+    return false;
+}
+
 static int img_create(int argc, char **argv)
 {
     int c;
@@ -586,12 +602,14 @@ static int img_create(int argc, char **argv)
         error_exit("Unexpected argument: %s", argv[optind]);
     }
 
-    if (!options) {
-        options = g_strdup_printf(BLOCK_OPT_CACHE"=%s", cache);
-    } else {
-        char *old_options = options;
-        options = g_strdup_printf("%s,"BLOCK_OPT_CACHE"=%s", options, cache);
-        g_free(old_options);
+    if (is_reg_file(filename)) {
+        if (!options) {
+            options = g_strdup_printf(BLOCK_OPT_CACHE"=%s", cache);
+        } else {
+            char *old_options = options;
+            options = g_strdup_printf("%s,"BLOCK_OPT_CACHE"=%s", options, cache);
+            g_free(old_options);
+        }
     }
 
     bdrv_img_create(filename, fmt, base_filename, base_fmt,
