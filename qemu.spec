@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 63
+Release: 64
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY-SA-4.0
@@ -344,6 +344,7 @@ Patch0331: fix-cve-2020-35504.patch
 Patch0332: fix-cve-2020-35505.patch
 Patch0333: virtio-balloon-apply-upstream-patch.patch
 Patch0334: add-Phytium-s-CPU-models-FT-2000-and-Tengyun-S2500.patch
+Patch0335: hw-scsi-scsi-disk-MODE_PAGE_ALLS-not-allowed-in-MODE.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -740,6 +741,9 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Mon Mar 28 2022 Jinhao Gao <gaojinhao@huawei.com>
+- hw/scsi/scsi-disk: MODE_PAGE_ALLS not allowed in MODE SELECT commands(fix CVE-2021-3930)
+
 * Tue Dec 21 2021 imxcc <xingchaochao@huawei.com>
 - add Phytium's CPU models: FT-2000+ and Tengyun-S2500
 
