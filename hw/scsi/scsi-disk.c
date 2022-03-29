@@ -255,10 +255,8 @@ static bool scsi_handle_rw_error(SCSIDiskReq *r, int ret, bool acct_failed)
     }
 }
 
-static bool scsi_disk_req_check_error(SCSIDiskReq *r, int ret, bool acct_failed)
+static bool scsi_disk_req_handle_error(SCSIDiskReq *r, int ret, bool acct_failed)
 {
-    SCSIDiskState *s = DO_UPCAST(SCSIDiskState, qdev, r->req.dev);
-
     if (r->req.io_canceled) {
         scsi_req_cancel_complete(&r->req);
         return true;
@@ -266,6 +264,17 @@ static bool scsi_disk_req_check_error(SCSIDiskReq *r, int ret, bool acct_failed)
 
     if (ret < 0) {
         return scsi_handle_rw_error(r, ret, acct_failed);
+    }
+
+    return false;
+}
+
+static bool scsi_disk_req_check_error(SCSIDiskReq *r, int ret, bool acct_failed)
+{
+    SCSIDiskState *s = DO_UPCAST(SCSIDiskState, qdev, r->req.dev);
+
+    if (r->req.io_canceled || ret < 0) {
+        return scsi_disk_req_handle_error(r, ret, acct_failed);
     }
 
     blk_error_retry_reset_timeout(s->qdev.conf.blk);
@@ -418,7 +427,7 @@ static void scsi_do_read(SCSIDiskReq *r, int ret)
     SCSIDiskClass *sdc = (SCSIDiskClass *) object_get_class(OBJECT(s));
 
     assert (r->req.aiocb == NULL);
-    if (scsi_disk_req_check_error(r, ret, false)) {
+    if (scsi_disk_req_handle_error(r, ret, false)) {
         goto done;
     }
 
@@ -458,6 +467,9 @@ static void scsi_do_read_cb(void *opaque, int ret)
         block_acct_failed(blk_get_stats(s->qdev.conf.blk), &r->acct);
     } else {
         block_acct_done(blk_get_stats(s->qdev.conf.blk), &r->acct);
+        if (!r->req.io_canceled) {
+            blk_error_retry_reset_timeout(s->qdev.conf.blk);
+        }
     }
     scsi_do_read(opaque, ret);
     aio_context_release(blk_get_aio_context(s->qdev.conf.blk));
