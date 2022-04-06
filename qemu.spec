@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 64
+Release: 65
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY-SA-4.0
@@ -345,6 +345,9 @@ Patch0332: fix-cve-2020-35505.patch
 Patch0333: virtio-balloon-apply-upstream-patch.patch
 Patch0334: add-Phytium-s-CPU-models-FT-2000-and-Tengyun-S2500.patch
 Patch0335: hw-scsi-scsi-disk-MODE_PAGE_ALLS-not-allowed-in-MODE.patch
+Patch0336: hw-rdma-Fix-possible-mremap-overflow-in-the-pvrdma-d.patch
+Patch0337: pvrdma-Ensure-correct-input-on-ring-init-CVE-2021-36.patch
+Patch0338: pvrdma-Fix-the-ring-init-error-flow-CVE-2021-3608.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -741,6 +744,11 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Wed Apr 06 2022 yezengruan <yezengruan@huawei.com>
+- hw/rdma: Fix possible mremap overflow in the pvrdma device (CVE-2021-3582)
+- pvrdma: Ensure correct input on ring init (CVE-2021-3607)
+- pvrdma: Fix the ring init error flow (CVE-2021-3608)
+
 * Mon Mar 28 2022 Jinhao Gao <gaojinhao@huawei.com>
 - hw/scsi/scsi-disk: MODE_PAGE_ALLS not allowed in MODE SELECT commands(fix CVE-2021-3930)
 
