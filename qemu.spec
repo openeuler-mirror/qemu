@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 65
+Release: 66
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY-SA-4.0
@@ -348,6 +348,8 @@ Patch0335: hw-scsi-scsi-disk-MODE_PAGE_ALLS-not-allowed-in-MODE.patch
 Patch0336: hw-rdma-Fix-possible-mremap-overflow-in-the-pvrdma-d.patch
 Patch0337: pvrdma-Ensure-correct-input-on-ring-init-CVE-2021-36.patch
 Patch0338: pvrdma-Fix-the-ring-init-error-flow-CVE-2021-3608.patch
+Patch0339: vhost-vsock-detach-the-virqueue-element-in-case-of-e.patch
+Patch0340: virtio-net-fix-map-leaking-on-error-during-receive.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -744,6 +746,10 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Fri Apr 15 2022 yezengruan <yezengruan@huawei.com>
+- vhost-vsock: detach the virqueue element in case of error (CVE-2022-26354)
+- virtio-net: fix map leaking on error during receive (CVE-2022-26353)
+
 * Wed Apr 06 2022 yezengruan <yezengruan@huawei.com>
 - hw/rdma: Fix possible mremap overflow in the pvrdma device (CVE-2021-3582)
 - pvrdma: Ensure correct input on ring init (CVE-2021-3607)
