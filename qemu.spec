@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 66
+Release: 67
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY-SA-4.0
@@ -350,6 +350,11 @@ Patch0337: pvrdma-Ensure-correct-input-on-ring-init-CVE-2021-36.patch
 Patch0338: pvrdma-Fix-the-ring-init-error-flow-CVE-2021-3608.patch
 Patch0339: vhost-vsock-detach-the-virqueue-element-in-case-of-e.patch
 Patch0340: virtio-net-fix-map-leaking-on-error-during-receive.patch
+Patch0341: hw-block-fdc-Extract-blk_create_empty_drive.patch
+Patch0342: hw-block-fdc-Kludge-missing-floppy-drive-to-fix-CVE-.patch
+Patch0343: tests-fdc-test-Add-a-regression-test-for-CVE-2021-20.patch
+Patch0344: display-qxl-render-fix-race-condition-in-qxl_cursor-.patch
+Patch0345: ui-cursor-fix-integer-overflow-in-cursor_alloc-CVE-2.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -746,6 +751,13 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Tue May 10 2022 yezengruan <yezengruan@huawei.com>
+- hw/block/fdc: Extract blk_create_empty_drive()
+- hw/block/fdc: Kludge missing floppy drive to fix CVE-2021-20196
+- tests/fdc-test: Add a regression test for CVE-2021-20196
+- display/qxl-render: fix race condition in qxl_cursor (CVE-2021-4207)
+- ui/cursor: fix integer overflow in cursor_alloc (CVE-2021-4206)
+
 * Fri Apr 15 2022 yezengruan <yezengruan@huawei.com>
 - vhost-vsock: detach the virqueue element in case of error (CVE-2022-26354)
 - virtio-net: fix map leaking on error during receive (CVE-2022-26353)
