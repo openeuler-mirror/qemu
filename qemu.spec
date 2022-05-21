@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 67
+Release: 68
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY-SA-4.0
@@ -355,6 +355,10 @@ Patch0342: hw-block-fdc-Kludge-missing-floppy-drive-to-fix-CVE-.patch
 Patch0343: tests-fdc-test-Add-a-regression-test-for-CVE-2021-20.patch
 Patch0344: display-qxl-render-fix-race-condition-in-qxl_cursor-.patch
 Patch0345: ui-cursor-fix-integer-overflow-in-cursor_alloc-CVE-2.patch
+Patch0346: hw-intc-arm_gicv3_dist-Rename-64-bit-accessors-with-.patch
+Patch0347: hw-intc-arm_gicv3-Replace-mis-used-MEMTX_-constants-.patch
+Patch0348: hw-intc-arm_gicv3-Check-for-MEMTX_OK-instead-of-MEMT.patch
+Patch0349: net-colo-compare.c-Check-that-colo-compare-is-active.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -751,6 +755,12 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Sat May 21 2022 yezengruan <yezengruan@huawei.com>
+- hw/intc/arm_gicv3_dist: Rename 64-bit accessors with 'q' suffix
+- hw/intc/arm_gicv3: Replace mis-used MEMTX_* constants by booleans
+- hw/intc/arm_gicv3: Check for !MEMTX_OK instead of MEMTX_ERROR (CVE-2021-3750)
+- net/colo-compare.c: Check that colo-compare is active
+
 * Tue May 10 2022 yezengruan <yezengruan@huawei.com>
 - hw/block/fdc: Extract blk_create_empty_drive()
 - hw/block/fdc: Kludge missing floppy drive to fix CVE-2021-20196

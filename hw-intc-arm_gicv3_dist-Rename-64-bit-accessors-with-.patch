@@ -1,0 +1,67 @@
+From d8b202275adace1bfcce4fc735f5b05642a08406 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Philippe=20Mathieu-Daud=C3=A9?= <philmd@redhat.com>
+Date: Thu, 26 Aug 2021 20:07:03 +0200
+Subject: [PATCH 1/4] hw/intc/arm_gicv3_dist: Rename 64-bit accessors with 'q'
+ suffix
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+QEMU load/store API (docs/devel/loads-stores.rst) uses the 'q'
+suffix for 64-bit accesses. Rename the current 'll' suffix to
+have the GIC dist accessors better match the rest of the codebase.
+
+Signed-off-by: Philippe Mathieu-Daudé <philmd@redhat.com>
+Message-id: 20210826180704.2131949-2-philmd@redhat.com
+Signed-off-by: Peter Maydell <peter.maydell@linaro.org>
+---
+ hw/intc/arm_gicv3_dist.c | 12 ++++++------
+ 1 file changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/hw/intc/arm_gicv3_dist.c b/hw/intc/arm_gicv3_dist.c
+index b65f56f903..7e9b393d9a 100644
+--- a/hw/intc/arm_gicv3_dist.c
++++ b/hw/intc/arm_gicv3_dist.c
+@@ -763,8 +763,8 @@ static MemTxResult gicd_writel(GICv3State *s, hwaddr offset,
+     }
+ }
+ 
+-static MemTxResult gicd_writell(GICv3State *s, hwaddr offset,
+-                                uint64_t value, MemTxAttrs attrs)
++static MemTxResult gicd_writeq(GICv3State *s, hwaddr offset,
++                               uint64_t value, MemTxAttrs attrs)
+ {
+     /* Our only 64-bit registers are GICD_IROUTER<n> */
+     int irq;
+@@ -779,8 +779,8 @@ static MemTxResult gicd_writell(GICv3State *s, hwaddr offset,
+     }
+ }
+ 
+-static MemTxResult gicd_readll(GICv3State *s, hwaddr offset,
+-                               uint64_t *data, MemTxAttrs attrs)
++static MemTxResult gicd_readq(GICv3State *s, hwaddr offset,
++                              uint64_t *data, MemTxAttrs attrs)
+ {
+     /* Our only 64-bit registers are GICD_IROUTER<n> */
+     int irq;
+@@ -812,7 +812,7 @@ MemTxResult gicv3_dist_read(void *opaque, hwaddr offset, uint64_t *data,
+         r = gicd_readl(s, offset, data, attrs);
+         break;
+     case 8:
+-        r = gicd_readll(s, offset, data, attrs);
++        r = gicd_readq(s, offset, data, attrs);
+         break;
+     default:
+         r = MEMTX_ERROR;
+@@ -854,7 +854,7 @@ MemTxResult gicv3_dist_write(void *opaque, hwaddr offset, uint64_t data,
+         r = gicd_writel(s, offset, data, attrs);
+         break;
+     case 8:
+-        r = gicd_writell(s, offset, data, attrs);
++        r = gicd_writeq(s, offset, data, attrs);
+         break;
+     default:
+         r = MEMTX_ERROR;
+-- 
+2.27.0
+
