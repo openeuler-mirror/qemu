@@ -221,9 +221,7 @@ struct AcpiBuildTables {
     BIOSLinker *linker;
 } AcpiBuildTables;
 
-#ifdef __aarch64__
 /* Definitions of the hardcoded cache info*/
-
 typedef enum {
     ARM_L1D_CACHE,
     ARM_L1I_CACHE,
@@ -265,8 +263,6 @@ struct offset_status {
     uint32_t l1d_offset;
     uint32_t l1i_offset;
 };
-
-#endif
 
 typedef
 struct CrsRangeEntry {
@@ -540,6 +536,9 @@ void build_slit(GArray *table_data, BIOSLinker *linker, MachineState *ms,
                 const char *oem_id, const char *oem_table_id);
 
 void build_pptt(GArray *table_data, BIOSLinker *linker, MachineState *ms,
+                const char *oem_id, const char *oem_table_id);
+
+void build_pptt_arm(GArray *table_data, BIOSLinker *linker, MachineState *ms,
                 const char *oem_id, const char *oem_table_id);
 
 void build_fadt(GArray *tbl, BIOSLinker *linker, const AcpiFadtData *f,
