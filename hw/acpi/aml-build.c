@@ -2016,7 +2016,6 @@ static void build_processor_hierarchy_node(GArray *tbl, uint32_t flags,
     }
 }
 
-#ifdef __aarch64__
 /*
  * ACPI spec, Revision 6.3
  * 5.2.29.2 Cache Type Structure (Type 1)
@@ -2072,7 +2071,7 @@ static void build_cache_hierarchy_node(GArray *tbl, uint32_t next_level,
  * ACPI spec, Revision 6.3
  * 5.2.29 Processor Properties Topology Table (PPTT)
  */
-void build_pptt(GArray *table_data, BIOSLinker *linker, MachineState *ms,
+void build_pptt_arm(GArray *table_data, BIOSLinker *linker, MachineState *ms,
                 const char *oem_id, const char *oem_table_id)
 {
     MachineClass *mc = MACHINE_GET_CLASS(ms);
@@ -2172,7 +2171,6 @@ void build_pptt(GArray *table_data, BIOSLinker *linker, MachineState *ms,
     acpi_table_end(linker, &table);
 }
 
-#else
 /*
  * ACPI spec, Revision 6.3
  * 5.2.29 Processor Properties Topology Table (PPTT)
@@ -2263,7 +2261,6 @@ void build_pptt(GArray *table_data, BIOSLinker *linker, MachineState *ms,
     g_queue_free(list);
     acpi_table_end(linker, &table);
 }
-#endif
 
 /* build rev1/rev3/rev5.1 FADT */
 void build_fadt(GArray *tbl, BIOSLinker *linker, const AcpiFadtData *f,
