@@ -104,6 +104,7 @@ typedef struct E1000State_st {
         e1000x_txd_props props;
         e1000x_txd_props tso_props;
         uint16_t tso_frames;
+        bool busy;
     } tx;
 
     struct {
@@ -670,6 +671,9 @@ process_tx_desc(E1000State *s, struct e1000_tx_desc *dp)
         msh = tp->tso_props.hdr_len + tp->tso_props.mss;
         do {
             bytes = split_size;
+            if (tp->size >= msh) {
+                goto eop;
+            }
             if (tp->size + bytes > msh)
                 bytes = msh - tp->size;
 
@@ -695,6 +699,7 @@ process_tx_desc(E1000State *s, struct e1000_tx_desc *dp)
         tp->size += split_size;
     }
 
+eop:
     if (!(txd_lower & E1000_TXD_CMD_EOP))
         return;
     if (!(tp->cptse && tp->size < tp->tso_props.hdr_len)) {
@@ -744,6 +749,11 @@ start_xmit(E1000State *s)
         return;
     }
 
+    if (s->tx.busy) {
+        return;
+    }
+    s->tx.busy = true;
+
     while (s->mac_reg[TDH] != s->mac_reg[TDT]) {
         base = tx_desc_base(s) +
                sizeof(struct e1000_tx_desc) * s->mac_reg[TDH];
@@ -770,6 +780,7 @@ start_xmit(E1000State *s)
             break;
         }
     }
+    s->tx.busy = false;
     set_ics(s, 0, cause);
 }
 
