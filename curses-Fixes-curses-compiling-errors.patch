@@ -1,0 +1,60 @@
+From a90cb5bc6accc02d155d74f08e630a26f252f435 Mon Sep 17 00:00:00 2001
+From: Yonggang Luo <luoyonggang@gmail.com>
+Date: Tue, 13 Oct 2020 07:43:46 +0800
+Subject: [PATCH 2/4] curses: Fixes curses compiling errors.
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+This is the compiling error:
+../ui/curses.c: In function 'curses_refresh':
+../ui/curses.c:256:5: error: 'next_maybe_keycode' may be used uninitialized in this function [-Werror=maybe-uninitialized]
+  256 |     curses2foo(_curses2keycode, _curseskey2keycode, chr, maybe_keycode)
+      |     ^~~~~~~~~~
+../ui/curses.c:302:32: note: 'next_maybe_keycode' was declared here
+  302 |             enum maybe_keycode next_maybe_keycode;
+      |                                ^~~~~~~~~~~~~~~~~~
+../ui/curses.c:256:5: error: 'maybe_keycode' may be used uninitialized in this function [-Werror=maybe-uninitialized]
+  256 |     curses2foo(_curses2keycode, _curseskey2keycode, chr, maybe_keycode)
+      |     ^~~~~~~~~~
+../ui/curses.c:265:24: note: 'maybe_keycode' was declared here
+  265 |     enum maybe_keycode maybe_keycode;
+      |                        ^~~~~~~~~~~~~
+cc1.exe: all warnings being treated as errors
+
+gcc version 10.2.0 (Rev1, Built by MSYS2 project)
+
+Signed-off-by: Yonggang Luo <luoyonggang@gmail.com>
+Reviewed-by: Gerd Hoffmann <kraxel@redhat.com>
+Reviewed-by: Daniel P. Berrangé <berrange@redhat.com>
+Message-id: 20201012234348.1427-4-luoyonggang@gmail.com
+Signed-off-by: Gerd Hoffmann <kraxel@redhat.com>
+---
+ ui/curses.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/ui/curses.c b/ui/curses.c
+index a6e260eb96..18fcfe82d8 100644
+--- a/ui/curses.c
++++ b/ui/curses.c
+@@ -259,7 +259,7 @@ static int curses2foo(const int _curses2foo[], const int _curseskey2foo[],
+ static void curses_refresh(DisplayChangeListener *dcl)
+ {
+     int chr, keysym, keycode, keycode_alt;
+-    enum maybe_keycode maybe_keycode;
++    enum maybe_keycode maybe_keycode = CURSES_KEYCODE;
+ 
+     curses_winch_check();
+ 
+@@ -296,7 +296,7 @@ static void curses_refresh(DisplayChangeListener *dcl)
+ 
+         /* alt or esc key */
+         if (keycode == 1) {
+-            enum maybe_keycode next_maybe_keycode;
++            enum maybe_keycode next_maybe_keycode = CURSES_KEYCODE;
+             int nextchr = console_getch(&next_maybe_keycode);
+ 
+             if (nextchr != -1) {
+-- 
+2.17.1
+

@@ -1,0 +1,43 @@
+From 3b8e4bca9d5d51219778950456d52226a9caffdf Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Philippe=20Mathieu-Daud=C3=A9?= <f4bug@amsat.org>
+Date: Tue, 5 Jun 2018 22:28:51 -0300
+Subject: [PATCH 4/7] hw/sd/sdcard: Simplify realize() a bit
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+We don't need to check if sd->blk is set twice.
+
+Reviewed-by: Peter Maydell <peter.maydell@linaro.org>
+Signed-off-by: Philippe Mathieu-Daudé <f4bug@amsat.org>
+Reviewed-by: Alistair Francis <alistair.francis@wdc.com>
+Message-Id: <20200630133912.9428-18-f4bug@amsat.org>
+---
+ hw/sd/sd.c | 10 +++++-----
+ 1 file changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/hw/sd/sd.c b/hw/sd/sd.c
+index ed3eae930b..caac17e71b 100644
+--- a/hw/sd/sd.c
++++ b/hw/sd/sd.c
+@@ -2090,12 +2090,12 @@ static void sd_realize(DeviceState *dev, Error **errp)
+         return;
+     }
+ 
+-    if (sd->blk && blk_is_read_only(sd->blk)) {
+-        error_setg(errp, "Cannot use read-only drive as SD card");
+-        return;
+-    }
+-
+     if (sd->blk) {
++        if (blk_is_read_only(sd->blk)) {
++            error_setg(errp, "Cannot use read-only drive as SD card");
++            return;
++        }
++
+         ret = blk_set_perm(sd->blk, BLK_PERM_CONSISTENT_READ | BLK_PERM_WRITE,
+                            BLK_PERM_ALL, errp);
+         if (ret < 0) {
+-- 
+2.17.1
+

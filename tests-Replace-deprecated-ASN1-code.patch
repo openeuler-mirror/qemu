@@ -1,0 +1,98 @@
+From d3918f6f22ad23b18f83eb446ee787d41ffd4631 Mon Sep 17 00:00:00 2001
+From: Stefan Weil <sw@weilnetz.de>
+Date: Thu, 28 Jan 2021 18:15:23 +0100
+Subject: [PATCH 4/4] tests: Replace deprecated ASN1 code
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+This fixes several compiler warnings on MacOS with Homebrew. The
+git development branch for forthcoming libtasn1 4.17.0 has introduced
+deprecation warnings for several macros/types that we use.
+
+Signed-off-by: Stefan Weil <sw@weilnetz.de>
+Signed-off-by: Daniel P. Berrangé <berrange@redhat.com>
+---
+ tests/crypto-tls-x509-helpers.c | 10 +++++-----
+ tests/crypto-tls-x509-helpers.h |  2 +-
+ tests/pkix_asn1_tab.c           |  2 +-
+ 3 files changed, 7 insertions(+), 7 deletions(-)
+
+diff --git a/tests/crypto-tls-x509-helpers.c b/tests/crypto-tls-x509-helpers.c
+index 9b669c2a4b..5471434ca2 100644
+--- a/tests/crypto-tls-x509-helpers.c
++++ b/tests/crypto-tls-x509-helpers.c
+@@ -30,7 +30,7 @@
+  * This stores some static data that is needed when
+  * encoding extensions in the x509 certs
+  */
+-ASN1_TYPE pkix_asn1;
++asn1_node pkix_asn1;
+ 
+ /*
+  * To avoid consuming random entropy to generate keys,
+@@ -118,7 +118,7 @@ void test_tls_cleanup(const char *keyfile)
+ /*
+  * Turns an ASN1 object into a DER encoded byte array
+  */
+-static void test_tls_der_encode(ASN1_TYPE src,
++static void test_tls_der_encode(asn1_node src,
+                                 const char *src_name,
+                                 gnutls_datum_t *res)
+ {
+@@ -296,7 +296,7 @@ test_tls_generate_cert(QCryptoTLSTestCertReq *req,
+      * the 'critical' field which we want control over
+      */
+     if (req->basicConstraintsEnable) {
+-        ASN1_TYPE ext = ASN1_TYPE_EMPTY;
++        asn1_node ext = NULL;
+ 
+         asn1_create_element(pkix_asn1, "PKIX1.BasicConstraints", &ext);
+         asn1_write_value(ext, "cA",
+@@ -323,7 +323,7 @@ test_tls_generate_cert(QCryptoTLSTestCertReq *req,
+      * to be 'critical'
+      */
+     if (req->keyUsageEnable) {
+-        ASN1_TYPE ext = ASN1_TYPE_EMPTY;
++        asn1_node ext = NULL;
+         char str[2];
+ 
+         str[0] = req->keyUsageValue & 0xff;
+@@ -353,7 +353,7 @@ test_tls_generate_cert(QCryptoTLSTestCertReq *req,
+      * set this the hard way building up ASN1 data ourselves
+      */
+     if (req->keyPurposeEnable) {
+-        ASN1_TYPE ext = ASN1_TYPE_EMPTY;
++        asn1_node ext = NULL;
+ 
+         asn1_create_element(pkix_asn1, "PKIX1.ExtKeyUsageSyntax", &ext);
+         if (req->keyPurposeOID1) {
+diff --git a/tests/crypto-tls-x509-helpers.h b/tests/crypto-tls-x509-helpers.h
+index 08efba4e19..8fcd7785ab 100644
+--- a/tests/crypto-tls-x509-helpers.h
++++ b/tests/crypto-tls-x509-helpers.h
+@@ -125,7 +125,7 @@ void test_tls_cleanup(const char *keyfile);
+     };                                                                  \
+     test_tls_generate_cert(&varname, NULL)
+ 
+-extern const ASN1_ARRAY_TYPE pkix_asn1_tab[];
++extern const asn1_static_node pkix_asn1_tab[];
+ 
+ #endif /* QCRYPTO_HAVE_TLS_TEST_SUPPORT */
+ 
+diff --git a/tests/pkix_asn1_tab.c b/tests/pkix_asn1_tab.c
+index f15fc515cb..4aaf736d3f 100644
+--- a/tests/pkix_asn1_tab.c
++++ b/tests/pkix_asn1_tab.c
+@@ -8,7 +8,7 @@
+ 
+ #ifdef QCRYPTO_HAVE_TLS_TEST_SUPPORT
+ 
+-const ASN1_ARRAY_TYPE pkix_asn1_tab[] = {
++const asn1_static_node pkix_asn1_tab[] = {
+   {"PKIX1", 536875024, 0},
+   {0, 1073741836, 0},
+   {"id-ce", 1879048204, 0},
+-- 
+2.17.1
+
