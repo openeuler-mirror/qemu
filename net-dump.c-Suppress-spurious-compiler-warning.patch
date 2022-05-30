@@ -1,0 +1,51 @@
+From 55dee3d51d658d72edecd28168be69f822bff970 Mon Sep 17 00:00:00 2001
+From: liuxiangdong <liuxiangdong5@huawei.com>
+Date: Tue, 8 Feb 2022 15:10:25 +0800
+Subject: [PATCH 3/4] net/dump.c: Suppress spurious compiler warning
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Compiling with gcc version 11.2.0 (Ubuntu 11.2.0-13ubuntu1) results in
+a (spurious) warning:
+
+  In function ‘dump_receive_iov’,
+      inlined from ‘filter_dump_receive_iov’ at ../net/dump.c:157:5:
+  ../net/dump.c:89:9: error: ‘writev’ specified size 18446744073709551600
+exceeds maximum object size 9223372036854775807 [-Werror=stringop-overflow=]
+     89 |     if (writev(s->fd, dumpiov, cnt + 1) != sizeof(hdr) + caplen) {
+        |         ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  In file included from /home/ptomsich/qemu/include/qemu/osdep.h:108,
+                   from ../net/dump.c:25:
+  ../net/dump.c: In function ‘filter_dump_receive_iov’:
+  /usr/include/x86_64-linux-gnu/sys/uio.h:52:16: note: in a call to function
+‘writev’ declared with attribute ‘read_only (2, 3)’
+     52 | extern ssize_t writev (int __fd, const struct iovec *__iovec, int
+__count)
+        |                ^~~~~~
+  cc1: all warnings being treated as errors
+
+This change helps that version of GCC to understand what is going on
+and suppresses this warning.
+
+Signed-off-by: Philipp Tomsich <philipp.toms...@vrull.eu>
+---
+ net/dump.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/net/dump.c b/net/dump.c
+index 23b3628dde..3cf9fe869d 100644
+--- a/net/dump.c
++++ b/net/dump.c
+@@ -86,7 +86,7 @@ static ssize_t dump_receive_iov(DumpState *s, const struct iovec *iov, int cnt)
+     dumpiov[0].iov_len = sizeof(hdr);
+     cnt = iov_copy(&dumpiov[1], cnt, iov, cnt, 0, caplen);
+ 
+-    if (writev(s->fd, dumpiov, cnt + 1) != sizeof(hdr) + caplen) {
++    if (writev(s->fd, &dumpiov[0], cnt + 1) != sizeof(hdr) + caplen) {
+         error_report("network dump write error - stopping dump");
+         close(s->fd);
+         s->fd = -1;
+-- 
+2.17.1
+

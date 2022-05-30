@@ -1,0 +1,48 @@
+From 3fb16cbd24233829b3696e06abb12db317d68aac Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Philippe=20Mathieu-Daud=C3=A9?= <f4bug@amsat.org>
+Date: Wed, 3 Jun 2020 19:59:16 +0200
+Subject: [PATCH 3/7] hw/sd/sdcard: Restrict Class 6 commands to SCSD cards
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Only SCSD cards support Class 6 (Block Oriented Write Protection)
+commands.
+
+  "SD Specifications Part 1 Physical Layer Simplified Spec. v3.01"
+
+  4.3.14 Command Functional Difference in Card Capacity Types
+
+  * Write Protected Group
+
+  SDHC and SDXC do not support write-protected groups. Issuing
+  CMD28, CMD29 and CMD30 generates the ILLEGAL_COMMAND error.
+
+Cc: qemu-stable@nongnu.org
+Reviewed-by: Peter Maydell <peter.maydell@linaro.org>
+Signed-off-by: Philippe Mathieu-Daudé <f4bug@amsat.org>
+Reviewed-by: Alistair Francis <alistair.francis@wdc.com>
+Message-Id: <20200630133912.9428-7-f4bug@amsat.org>
+---
+ hw/sd/sd.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/hw/sd/sd.c b/hw/sd/sd.c
+index 917195a65b..ed3eae930b 100644
+--- a/hw/sd/sd.c
++++ b/hw/sd/sd.c
+@@ -905,6 +905,11 @@ static sd_rsp_type_t sd_normal_command(SDState *sd, SDRequest req)
+         sd->multi_blk_cnt = 0;
+     }
+ 
++    if (sd_cmd_class[req.cmd] == 6 && FIELD_EX32(sd->ocr, OCR, CARD_CAPACITY)) {
++        /* Only Standard Capacity cards support class 6 commands */
++        return sd_illegal;
++    }
++
+     switch (req.cmd) {
+     /* Basic commands (Class 0 and Class 1) */
+     case 0:	/* CMD0:   GO_IDLE_STATE */
+-- 
+2.17.1
+

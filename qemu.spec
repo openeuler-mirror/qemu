@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 68
+Release: 69
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY-SA-4.0
@@ -359,6 +359,17 @@ Patch0346: hw-intc-arm_gicv3_dist-Rename-64-bit-accessors-with-.patch
 Patch0347: hw-intc-arm_gicv3-Replace-mis-used-MEMTX_-constants-.patch
 Patch0348: hw-intc-arm_gicv3-Check-for-MEMTX_OK-instead-of-MEMT.patch
 Patch0349: net-colo-compare.c-Check-that-colo-compare-is-active.patch
+Patch0350: e1000-fail-early-for-evil-descriptor.patch
+Patch0351: e1000-fix-tx-re-entrancy-problem.patch
+Patch0352: hw-sd-sdcard-Restrict-Class-6-commands-to-SCSD-cards.patch
+Patch0353: hw-sd-sdcard-Simplify-realize-a-bit.patch
+Patch0354: hw-sd-sdcard-Do-not-allow-invalid-SD-card-sizes.patch
+Patch0355: hw-sd-sdcard-Update-coding-style-to-make-checkpatch..patch
+Patch0356: hw-sd-sdcard-Do-not-switch-to-ReceivingData-if-addre.patch
+Patch0357: scsi-qemu-pr-helper-Fix-out-of-bounds-access-to-trnp.patch
+Patch0358: curses-Fixes-curses-compiling-errors.patch
+Patch0359: net-dump.c-Suppress-spurious-compiler-warning.patch
+Patch0360: tests-Replace-deprecated-ASN1-code.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -755,6 +766,19 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Mon May 30 2022 sundongxu <sundongxu3@huawei.com>
+- e1000: fail early for evil descriptor
+- e1000: fix tx re-entrancy problem
+- hw/sd/sdcard: Do not allow invalid SD card sizes
+- hw/sd/sdcard: Do not switch to ReceivingData if address is invalid
+- hw/sd/sdcard: Restrict Class 6 commands to SCSD cards
+- hw/sd/sdcard: Simplify realize() a bit
+- hw/sd/sdcard: Update coding style to make checkpatch.pl happy
+- scsi/qemu-pr-helper: Fix out-of-bounds access to trnptid_list[]
+- curses: Fixes curses compiling errors.
+- net/dump.c: Suppress spurious compiler warning
+- tests: Replace deprecated ASN1 code
+
 * Sat May 21 2022 yezengruan <yezengruan@huawei.com>
 - hw/intc/arm_gicv3_dist: Rename 64-bit accessors with 'q' suffix
 - hw/intc/arm_gicv3: Replace mis-used MEMTX_* constants by booleans
