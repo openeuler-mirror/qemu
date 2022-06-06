@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 69
+Release: 70
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY-SA-4.0
@@ -370,6 +370,7 @@ Patch0357: scsi-qemu-pr-helper-Fix-out-of-bounds-access-to-trnp.patch
 Patch0358: curses-Fixes-curses-compiling-errors.patch
 Patch0359: net-dump.c-Suppress-spurious-compiler-warning.patch
 Patch0360: tests-Replace-deprecated-ASN1-code.patch
+Patch0361: hw-block-fdc-Prevent-end-of-track-overrun-CVE-2021-3.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -766,7 +767,10 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
-* Mon May 30 2022 sundongxu <sundongxu3@huawei.com>
+* Thu Jun 02 2022 yezengruan <yezengruan@huawei.com>
+- hw/block/fdc: Prevent end-of-track overrun (CVE-2021-3507)
+
+* Sat May 28 2022 sundongxu <sundongxu3@huawei.com>
 - e1000: fail early for evil descriptor
 - e1000: fix tx re-entrancy problem
 - hw/sd/sdcard: Do not allow invalid SD card sizes
