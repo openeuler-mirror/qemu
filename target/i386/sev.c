@@ -90,6 +90,10 @@ struct SevGuestState {
     gchar *send_packet_hdr;
     size_t send_packet_hdr_len;
 
+    /* needed by live migration of HYGON CSV2 guest */
+    gchar *send_vmsa_packet_hdr;
+    size_t send_vmsa_packet_hdr_len;
+
     uint32_t reset_cs;
     uint32_t reset_ip;
     bool reset_data_valid;
@@ -183,6 +187,9 @@ static const char *const sev_fw_errlist[] = {
 #define SHARED_REGION_LIST_CONT     0x1
 #define SHARED_REGION_LIST_END      0x2
 
+#define ENCRYPTED_CPU_STATE_CONT    0x1
+#define ENCRYPTED_CPU_STATE_END     0x2
+
 static struct ConfidentialGuestMemoryEncryptionOps sev_memory_encryption_ops = {
     .save_setup = sev_save_setup,
     .save_outgoing_page = sev_save_outgoing_page,
@@ -194,6 +201,8 @@ static struct ConfidentialGuestMemoryEncryptionOps sev_memory_encryption_ops = {
     .save_queued_outgoing_pages = csv_save_queued_outgoing_pages,
     .queue_incoming_page = csv_queue_incoming_page,
     .load_queued_incoming_pages = csv_load_queued_incoming_pages,
+    .save_outgoing_cpu_state = csv_save_outgoing_cpu_state,
+    .load_incoming_cpu_state = csv_load_incoming_cpu_state,
 };
 
 static int
@@ -1047,6 +1056,9 @@ sev_send_finish(void)
     }
 
     g_free(sev_guest->send_packet_hdr);
+    if (sev_es_enabled() && is_hygon_cpu()) {
+        g_free(sev_guest->send_vmsa_packet_hdr);
+    }
     sev_set_guest_state(sev_guest, SEV_STATE_RUNNING);
 }
 
@@ -2236,6 +2248,195 @@ int csv_load_queued_incoming_pages(QEMUFile *f)
     }
 
     return csv_receive_update_data_batch(s);
+}
+
+static int
+sev_send_vmsa_get_packet_len(int *fw_err)
+{
+    int ret;
+    struct kvm_sev_send_update_vmsa update = { 0, };
+
+    ret = sev_ioctl(sev_guest->sev_fd, KVM_SEV_SEND_UPDATE_VMSA,
+                    &update, fw_err);
+    if (*fw_err != SEV_RET_INVALID_LEN) {
+        ret = 0;
+        error_report("%s: failed to get session length ret=%d fw_error=%d '%s'",
+                     __func__, ret, *fw_err, fw_error_to_str(*fw_err));
+        goto err;
+    }
+
+    ret = update.hdr_len;
+
+err:
+    return ret;
+}
+
+static int
+sev_send_update_vmsa(SevGuestState *s, QEMUFile *f, uint32_t cpu_id,
+                     uint32_t cpu_index, uint32_t size, uint64_t *bytes_sent)
+{
+    int ret, fw_error;
+    guchar *trans = NULL;
+    struct kvm_sev_send_update_vmsa update = {};
+
+    /*
+     * If this is first call then query the packet header bytes and allocate
+     * the packet buffer.
+     */
+    if (!s->send_vmsa_packet_hdr) {
+        s->send_vmsa_packet_hdr_len = sev_send_vmsa_get_packet_len(&fw_error);
+        if (s->send_vmsa_packet_hdr_len < 1) {
+            error_report("%s: SEND_UPDATE_VMSA fw_error=%d '%s'",
+                         __func__, fw_error, fw_error_to_str(fw_error));
+            return 1;
+        }
+
+        s->send_vmsa_packet_hdr = g_new(gchar, s->send_vmsa_packet_hdr_len);
+    }
+
+    /* allocate transport buffer */
+    trans = g_new(guchar, size);
+
+    update.vcpu_id = cpu_id;
+    update.hdr_uaddr = (uintptr_t)s->send_vmsa_packet_hdr;
+    update.hdr_len = s->send_vmsa_packet_hdr_len;
+    update.trans_uaddr = (uintptr_t)trans;
+    update.trans_len = size;
+
+    trace_kvm_sev_send_update_vmsa(cpu_id, cpu_index, trans, size);
+
+    ret = sev_ioctl(s->sev_fd, KVM_SEV_SEND_UPDATE_VMSA, &update, &fw_error);
+    if (ret) {
+        error_report("%s: SEND_UPDATE_VMSA ret=%d fw_error=%d '%s'",
+                     __func__, ret, fw_error, fw_error_to_str(fw_error));
+        goto err;
+    }
+
+    /*
+     * Migration of vCPU's VMState according to the instance_id
+     * (i.e. CPUState.cpu_index)
+     */
+    qemu_put_be32(f, sizeof(uint32_t));
+    qemu_put_buffer(f, (uint8_t *)&cpu_index, sizeof(uint32_t));
+    *bytes_sent += 4 + sizeof(uint32_t);
+
+    qemu_put_be32(f, update.hdr_len);
+    qemu_put_buffer(f, (uint8_t *)update.hdr_uaddr, update.hdr_len);
+    *bytes_sent += 4 + update.hdr_len;
+
+    qemu_put_be32(f, update.trans_len);
+    qemu_put_buffer(f, (uint8_t *)update.trans_uaddr, update.trans_len);
+    *bytes_sent += 4 + update.trans_len;
+
+err:
+    g_free(trans);
+    return ret;
+}
+
+int csv_save_outgoing_cpu_state(QEMUFile *f, uint64_t *bytes_sent)
+{
+    SevGuestState *s = sev_guest;
+    CPUState *cpu;
+    int ret = 0;
+
+    /* Only support migrate VMSAs for HYGON CSV2 guest */
+    if (!sev_es_enabled() || !is_hygon_cpu()) {
+        return 0;
+    }
+
+    CPU_FOREACH(cpu) {
+        qemu_put_be32(f, ENCRYPTED_CPU_STATE_CONT);
+        *bytes_sent += 4;
+        ret = sev_send_update_vmsa(s, f, kvm_arch_vcpu_id(cpu),
+                                   cpu->cpu_index, TARGET_PAGE_SIZE, bytes_sent);
+        if (ret) {
+            goto err;
+        }
+    }
+
+    qemu_put_be32(f, ENCRYPTED_CPU_STATE_END);
+    *bytes_sent += 4;
+
+err:
+    return ret;
+}
+
+static int sev_receive_update_vmsa(QEMUFile *f)
+{
+    int ret = 1, fw_error = 0;
+    CPUState *cpu;
+    uint32_t cpu_index, cpu_id = 0;
+    gchar *hdr = NULL, *trans = NULL;
+    struct kvm_sev_receive_update_vmsa update = {};
+
+    /* get cpu index buffer */
+    assert(qemu_get_be32(f) == sizeof(uint32_t));
+    qemu_get_buffer(f, (uint8_t *)&cpu_index, sizeof(uint32_t));
+
+    CPU_FOREACH(cpu) {
+        if (cpu->cpu_index == cpu_index) {
+            cpu_id = kvm_arch_vcpu_id(cpu);
+            break;
+        }
+    }
+    update.vcpu_id = cpu_id;
+
+    /* get packet header */
+    update.hdr_len = qemu_get_be32(f);
+    if (!check_blob_length(update.hdr_len)) {
+        return 1;
+    }
+
+    hdr = g_new(gchar, update.hdr_len);
+    qemu_get_buffer(f, (uint8_t *)hdr, update.hdr_len);
+    update.hdr_uaddr = (uintptr_t)hdr;
+
+    /* get transport buffer */
+    update.trans_len = qemu_get_be32(f);
+    if (!check_blob_length(update.trans_len)) {
+        goto err;
+    }
+
+    trans = g_new(gchar, update.trans_len);
+    update.trans_uaddr = (uintptr_t)trans;
+    qemu_get_buffer(f, (uint8_t *)update.trans_uaddr, update.trans_len);
+
+    trace_kvm_sev_receive_update_vmsa(cpu_id, cpu_index,
+                trans, update.trans_len, hdr, update.hdr_len);
+
+    ret = sev_ioctl(sev_guest->sev_fd, KVM_SEV_RECEIVE_UPDATE_VMSA,
+                    &update, &fw_error);
+    if (ret) {
+        error_report("Error RECEIVE_UPDATE_VMSA ret=%d fw_error=%d '%s'",
+                     ret, fw_error, fw_error_to_str(fw_error));
+    }
+
+err:
+    g_free(trans);
+    g_free(hdr);
+    return ret;
+}
+
+int csv_load_incoming_cpu_state(QEMUFile *f)
+{
+    int status, ret = 0;
+
+    /* Only support migrate VMSAs for HYGON CSV2 guest */
+    if (!sev_es_enabled() || !is_hygon_cpu()) {
+        return 0;
+    }
+
+    status = qemu_get_be32(f);
+    while (status == ENCRYPTED_CPU_STATE_CONT) {
+        ret = sev_receive_update_vmsa(f);
+        if (ret) {
+            break;
+        }
+
+        status = qemu_get_be32(f);
+    }
+
+    return ret;
 }
 
 static const QemuUUID sev_hash_table_header_guid = {

@@ -1281,6 +1281,33 @@ static int ram_save_shared_region_list(RAMState *rs, QEMUFile *f)
     return 0;
 }
 
+/**
+ * ram_save_encrypted_cpu_state: send the encrypted cpu state
+ */
+static int ram_save_encrypted_cpu_state(RAMState *rs, QEMUFile *f)
+{
+    int ret;
+    uint64_t bytes_xmit = 0;
+    PageSearchStatus *pss = &rs->pss[RAM_CHANNEL_PRECOPY];
+    MachineState *ms = MACHINE(qdev_get_machine());
+    ConfidentialGuestSupportClass *cgs_class =
+        (ConfidentialGuestSupportClass *) object_get_class(OBJECT(ms->cgs));
+    struct ConfidentialGuestMemoryEncryptionOps *ops =
+        cgs_class->memory_encryption_ops;
+
+    ram_transferred_add(save_page_header(pss, f,
+                                         pss->last_sent_block,
+                                         RAM_SAVE_FLAG_ENCRYPTED_DATA));
+    qemu_put_be32(f, RAM_SAVE_ENCRYPTED_CPU_STATE);
+    ret = ops->save_outgoing_cpu_state(f, &bytes_xmit);
+    if (ret < 0) {
+        return ret;
+    }
+    ram_transferred_add(4 + bytes_xmit);
+
+    return 0;
+}
+
 static int load_encrypted_data(QEMUFile *f, uint8_t *ptr)
 {
     MachineState *ms = MACHINE(qdev_get_machine());
@@ -1305,6 +1332,8 @@ static int load_encrypted_data(QEMUFile *f, uint8_t *ptr)
             return -EINVAL;
         }
         return ops->load_queued_incoming_pages(f);
+    } else if (flag == RAM_SAVE_ENCRYPTED_CPU_STATE) {
+        return ops->load_incoming_cpu_state(f);
     } else {
         error_report("unknown encrypted flag %x", flag);
         return 1;
@@ -3493,6 +3522,19 @@ static int ram_save_complete(QEMUFile *f, void *opaque)
             if (ret < 0) {
                 qemu_file_set_error(f, ret);
                 return ret;
+            }
+
+            /*
+             * send the encrypted cpu state, for example, CSV2 guest's
+             * vmsa for each vcpu.
+             */
+            if (is_hygon_cpu()) {
+                ret = ram_save_encrypted_cpu_state(rs, f);
+                if (ret < 0) {
+                    error_report("Failed to save encrypted cpu state");
+                    qemu_file_set_error(f, ret);
+                    return ret;
+                }
             }
         }
     }

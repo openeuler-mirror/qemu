@@ -2052,6 +2052,14 @@ struct kvm_sev_send_update_data {
 	__u32 trans_len;
 };
 
+struct kvm_sev_send_update_vmsa {
+	__u32 vcpu_id;
+	__u64 hdr_uaddr;
+	__u32 hdr_len;
+	__u64 trans_uaddr;
+	__u32 trans_len;
+};
+
 struct kvm_sev_receive_start {
 	__u32 handle;
 	__u32 policy;
@@ -2066,6 +2074,14 @@ struct kvm_sev_receive_update_data {
 	__u32 hdr_len;
 	__u64 guest_uaddr;
 	__u32 guest_len;
+	__u64 trans_uaddr;
+	__u32 trans_len;
+};
+
+struct kvm_sev_receive_update_vmsa {
+	__u32 vcpu_id;
+	__u64 hdr_uaddr;
+	__u32 hdr_len;
 	__u64 trans_uaddr;
 	__u32 trans_len;
 };

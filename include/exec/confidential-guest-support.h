@@ -90,6 +90,12 @@ struct ConfidentialGuestMemoryEncryptionOps {
 
     /* Load the incoming encrypted pages queued in list into guest memory */
     int (*load_queued_incoming_pages)(QEMUFile *f);
+
+    /* Write the encrypted cpu state */
+    int (*save_outgoing_cpu_state)(QEMUFile *f, uint64_t *bytes_sent);
+
+    /* Load the encrypted cpu state */
+    int (*load_incoming_cpu_state)(QEMUFile *f);
 };
 
 typedef struct ConfidentialGuestSupportClass {

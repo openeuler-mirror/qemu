@@ -43,6 +43,7 @@ typedef struct SevKernelLoaderContext {
 
 #define RAM_SAVE_ENCRYPTED_PAGE_BATCH     0x4
 #define RAM_SAVE_ENCRYPTED_PAGE_BATCH_END 0x5
+#define RAM_SAVE_ENCRYPTED_CPU_STATE      0x6
 
 #ifdef CONFIG_SEV
 bool sev_enabled(void);

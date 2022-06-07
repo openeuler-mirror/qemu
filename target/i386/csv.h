@@ -59,5 +59,7 @@ int csv_queue_outgoing_page(uint8_t *ptr, uint32_t sz, uint64_t addr);
 int csv_save_queued_outgoing_pages(QEMUFile *f, uint64_t *bytes_sent);
 int csv_queue_incoming_page(QEMUFile *f, uint8_t *ptr);
 int csv_load_queued_incoming_pages(QEMUFile *f);
+int csv_save_outgoing_cpu_state(QEMUFile *f, uint64_t *bytes_sent);
+int csv_load_incoming_cpu_state(QEMUFile *f);
 
 #endif
