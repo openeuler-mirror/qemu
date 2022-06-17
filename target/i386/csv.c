@@ -47,6 +47,7 @@ struct ConfidentialGuestMemoryEncryptionOps csv3_memory_encryption_ops = {
     .queue_incoming_page = NULL,
     .load_queued_incoming_pages = NULL,
     .save_outgoing_cpu_state = csv3_save_outgoing_context,
+    .load_incoming_cpu_state = csv3_load_incoming_context,
 };
 
 #define CSV3_OUTGOING_PAGE_NUM \
@@ -644,10 +645,54 @@ err:
     return ret;
 }
 
+static int
+csv3_receive_encrypt_context(Csv3GuestState *s, QEMUFile *f)
+{
+    int ret = 1, fw_error = 0;
+    gchar *hdr = NULL, *trans = NULL;
+    struct kvm_csv3_receive_encrypt_context update = {};
+
+    /* get packet header */
+    update.hdr_len = qemu_get_be32(f);
+
+    hdr = g_new(gchar, update.hdr_len);
+    qemu_get_buffer(f, (uint8_t *)hdr, update.hdr_len);
+    update.hdr_uaddr = (uintptr_t)hdr;
+
+    /* get transport buffer */
+    update.trans_len = qemu_get_be32(f);
+
+    trans = g_new(gchar, update.trans_len);
+    update.trans_uaddr = (uintptr_t)trans;
+    qemu_get_buffer(f, (uint8_t *)update.trans_uaddr, update.trans_len);
+
+    trace_kvm_csv3_receive_encrypt_context(trans, update.trans_len, hdr, update.hdr_len);
+
+    ret = csv3_ioctl(KVM_CSV3_RECEIVE_ENCRYPT_CONTEXT, &update, &fw_error);
+    if (ret) {
+        error_report("Error RECEIVE_ENCRYPT_CONTEXT ret=%d fw_error=%d '%s'",
+                     ret, fw_error, fw_error_to_str(fw_error));
+        goto err;
+    }
+
+err:
+    g_free(trans);
+    g_free(hdr);
+    return ret;
+}
+
 int csv3_save_outgoing_context(QEMUFile *f, uint64_t *bytes_sent)
 {
     Csv3GuestState *s = &csv3_guest;
 
     /* send csv3 context. */
     return csv3_send_encrypt_context(s, f, bytes_sent);
+}
+
+int csv3_load_incoming_context(QEMUFile *f)
+{
+    Csv3GuestState *s = &csv3_guest;
+
+    /* receive csv3 context. */
+    return csv3_receive_encrypt_context(s, f);
 }

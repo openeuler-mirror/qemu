@@ -25,3 +25,4 @@ kvm_csv3_launch_encrypt_data(uint64_t gpa, void *addr, uint64_t len) "gpa 0x%" P
 kvm_csv3_send_encrypt_data(void *dst, int len) "trans %p len %d"
 kvm_csv3_send_encrypt_context(void *dst, int len) "trans %p len %d"
 kvm_csv3_receive_encrypt_data(void *dst, int len, void *hdr, int hdr_len) "trans %p len %d hdr %p hdr_len %d"
+kvm_csv3_receive_encrypt_context(void *dst, int len, void *hdr, int hdr_len) "trans %p len %d hdr %p hdr_len %d"
