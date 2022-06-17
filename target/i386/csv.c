@@ -16,8 +16,13 @@
 #include "qapi/error.h"
 #include "sysemu/kvm.h"
 #include "exec/address-spaces.h"
+#include "migration/blocker.h"
+#include "migration/qemu-file.h"
+#include "migration/misc.h"
+#include "monitor/monitor.h"
 
 #include <linux/kvm.h>
+#include <linux/psp-sev.h>
 
 #ifdef CONFIG_NUMA
 #include <numaif.h>
@@ -29,6 +34,19 @@
 #include "csv.h"
 
 bool csv_kvm_cpu_reset_inhibit;
+
+struct ConfidentialGuestMemoryEncryptionOps csv3_memory_encryption_ops = {
+    .save_setup = sev_save_setup,
+    .save_outgoing_page = NULL,
+    .is_gfn_in_unshared_region = NULL,
+    .save_outgoing_shared_regions_list = sev_save_outgoing_shared_regions_list,
+    .load_incoming_shared_regions_list = sev_load_incoming_shared_regions_list,
+    .queue_outgoing_page = csv3_queue_outgoing_page,
+    .save_queued_outgoing_pages = csv3_save_queued_outgoing_pages,
+};
+
+#define CSV3_OUTGOING_PAGE_NUM \
+        (CSV3_OUTGOING_PAGE_WINDOW_SIZE / TARGET_PAGE_SIZE)
 
 Csv3GuestState csv3_guest = { 0 };
 
@@ -70,6 +88,7 @@ csv3_init(uint32_t policy, int fd, void *state, struct sev_ops *ops)
         csv3_guest.fw_error_to_str = ops->fw_error_to_str;
         QTAILQ_INIT(&csv3_guest.dma_map_regions_list);
         qemu_mutex_init(&csv3_guest.dma_map_regions_list_mutex);
+        csv3_guest.sev_send_start = ops->sev_send_start;
     }
     return 0;
 }
@@ -300,4 +319,167 @@ void csv3_shared_region_dma_unmap(uint64_t start, uint64_t end)
 end:
     qemu_mutex_unlock(&s->dma_map_regions_list_mutex);
     return;
+}
+
+static inline hwaddr csv3_hva_to_gfn(uint8_t *ptr)
+{
+    ram_addr_t offset = RAM_ADDR_INVALID;
+
+    kvm_physical_memory_addr_from_host(kvm_state, ptr, &offset);
+
+    return offset >> TARGET_PAGE_BITS;
+}
+
+static int
+csv3_send_start(QEMUFile *f, uint64_t *bytes_sent)
+{
+    if (csv3_guest.sev_send_start)
+        return csv3_guest.sev_send_start(f, bytes_sent);
+    else
+        return -1;
+}
+
+static int
+csv3_send_get_packet_len(int *fw_err)
+{
+    int ret;
+    struct kvm_csv3_send_encrypt_data update = {0};
+
+    update.hdr_len = 0;
+    update.trans_len = 0;
+    ret = csv3_ioctl(KVM_CSV3_SEND_ENCRYPT_DATA, &update, fw_err);
+    if (*fw_err != SEV_RET_INVALID_LEN) {
+        error_report("%s: failed to get session length ret=%d fw_error=%d '%s'",
+                    __func__, ret, *fw_err, fw_error_to_str(*fw_err));
+        ret = 0;
+        goto err;
+    }
+
+    if (update.hdr_len <= INT_MAX)
+        ret = update.hdr_len;
+    else
+        ret = 0;
+
+err:
+    return ret;
+}
+
+static int
+csv3_send_encrypt_data(Csv3GuestState *s, QEMUFile *f,
+                       uint8_t *ptr, uint32_t size, uint64_t *bytes_sent)
+{
+    int ret, fw_error = 0;
+    guchar *trans;
+    uint32_t guest_addr_entry_num;
+    uint32_t i;
+    struct kvm_csv3_send_encrypt_data update = { };
+
+    /*
+     * If this is first call then query the packet header bytes and allocate
+     * the packet buffer.
+     */
+    if (!s->send_packet_hdr) {
+        s->send_packet_hdr_len = csv3_send_get_packet_len(&fw_error);
+        if (s->send_packet_hdr_len < 1) {
+            error_report("%s: SEND_UPDATE fw_error=%d '%s'",
+                         __func__, fw_error, fw_error_to_str(fw_error));
+            return 1;
+        }
+
+        s->send_packet_hdr = g_new(gchar, s->send_packet_hdr_len);
+    }
+
+    if (!s->guest_addr_len || !s->guest_addr_data) {
+        error_report("%s: invalid host address or size", __func__);
+        return 1;
+    } else {
+        guest_addr_entry_num = s->guest_addr_len / sizeof(struct guest_addr_entry);
+    }
+
+    /* allocate transport buffer */
+    trans = g_new(guchar, guest_addr_entry_num * TARGET_PAGE_SIZE);
+
+    update.hdr_uaddr = (uintptr_t)s->send_packet_hdr;
+    update.hdr_len = s->send_packet_hdr_len;
+    update.guest_addr_data = (uintptr_t)s->guest_addr_data;
+    update.guest_addr_len = s->guest_addr_len;
+    update.trans_uaddr = (uintptr_t)trans;
+    update.trans_len = guest_addr_entry_num * TARGET_PAGE_SIZE;
+
+    trace_kvm_csv3_send_encrypt_data(trans, update.trans_len);
+
+    ret = csv3_ioctl(KVM_CSV3_SEND_ENCRYPT_DATA, &update, &fw_error);
+    if (ret) {
+        error_report("%s: SEND_ENCRYPT_DATA ret=%d fw_error=%d '%s'",
+                     __func__, ret, fw_error, fw_error_to_str(fw_error));
+        goto err;
+    }
+
+    for (i = 0; i < guest_addr_entry_num; i++) {
+        if (s->guest_addr_data[i].share)
+            memcpy(trans + i * TARGET_PAGE_SIZE, (guchar *)s->guest_hva_data[i].hva,
+                   TARGET_PAGE_SIZE);
+    }
+
+    qemu_put_be32(f, update.hdr_len);
+    qemu_put_buffer(f, (uint8_t *)update.hdr_uaddr, update.hdr_len);
+    *bytes_sent += 4 + update.hdr_len;
+
+    qemu_put_be32(f, update.guest_addr_len);
+    qemu_put_buffer(f, (uint8_t *)update.guest_addr_data, update.guest_addr_len);
+    *bytes_sent += 4 + update.guest_addr_len;
+
+    qemu_put_be32(f, update.trans_len);
+    qemu_put_buffer(f, (uint8_t *)update.trans_uaddr, update.trans_len);
+    *bytes_sent += (4 + update.trans_len);
+
+err:
+    s->guest_addr_len = 0;
+    g_free(trans);
+    return ret;
+}
+
+int
+csv3_queue_outgoing_page(uint8_t *ptr, uint32_t sz, uint64_t addr)
+{
+    Csv3GuestState *s = &csv3_guest;
+    uint32_t i = 0;
+
+    if (!s->guest_addr_data) {
+        s->guest_hva_data = g_new0(struct guest_hva_entry, CSV3_OUTGOING_PAGE_NUM);
+        s->guest_addr_data = g_new0(struct guest_addr_entry, CSV3_OUTGOING_PAGE_NUM);
+        s->guest_addr_len = 0;
+    }
+
+    if (s->guest_addr_len >= sizeof(struct guest_addr_entry) * CSV3_OUTGOING_PAGE_NUM) {
+        error_report("Failed to queue outgoing page");
+        return 1;
+    }
+
+    i = s->guest_addr_len / sizeof(struct guest_addr_entry);
+    s->guest_hva_data[i].hva = (uintptr_t)ptr;
+    s->guest_addr_data[i].share = 0;
+    s->guest_addr_data[i].reserved = 0;
+    s->guest_addr_data[i].gfn = csv3_hva_to_gfn(ptr);
+    s->guest_addr_len += sizeof(struct guest_addr_entry);
+
+    return 0;
+}
+
+int
+csv3_save_queued_outgoing_pages(QEMUFile *f, uint64_t *bytes_sent)
+{
+    Csv3GuestState *s = &csv3_guest;
+
+    /*
+     * If this is a first buffer then create outgoing encryption context
+     * and write our PDH, policy and session data.
+     */
+    if (!csv3_check_state(SEV_STATE_SEND_UPDATE) &&
+        csv3_send_start(f, bytes_sent)) {
+        error_report("Failed to create outgoing context");
+        return 1;
+    }
+
+    return csv3_send_encrypt_data(s, f, NULL, 0, bytes_sent);
 }

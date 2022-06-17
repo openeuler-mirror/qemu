@@ -2481,6 +2481,90 @@ ram_save_encrypted_pages_in_batch(RAMState *rs, PageSearchStatus *pss)
 #endif
 
 /**
+ * ram_save_csv3_pages - send the given csv3 VM pages to the stream
+ */
+static int ram_save_csv3_pages(RAMState *rs, PageSearchStatus *pss)
+{
+    bool page_dirty;
+    int ret;
+    int tmppages, pages = 0;
+    uint8_t *p;
+    uint32_t host_len = 0;
+    uint64_t bytes_xmit = 0;
+    RAMBlock *block = pss->block;
+    ram_addr_t offset = 0;
+    hwaddr paddr = RAM_ADDR_INVALID;
+    MachineState *ms = MACHINE(qdev_get_machine());
+    ConfidentialGuestSupportClass *cgs_class =
+        (ConfidentialGuestSupportClass *) object_get_class(OBJECT(ms->cgs));
+    struct ConfidentialGuestMemoryEncryptionOps *ops =
+        cgs_class->memory_encryption_ops;
+
+    if (!kvm_csv3_enabled())
+        return 0;
+
+    do {
+        page_dirty = migration_bitmap_clear_dirty(rs, block, pss->page);
+
+        /* Check the pages is dirty and if it is send it */
+        if (page_dirty) {
+            ret = kvm_physical_memory_addr_from_host(kvm_state,
+                    block->host + (pss->page << TARGET_PAGE_BITS), &paddr);
+            /* Process ROM or MMIO */
+            if (paddr == RAM_ADDR_INVALID ||
+                memory_region_is_rom(block->mr)) {
+                tmppages = migration_ops->ram_save_target_page(rs, pss);
+            } else {
+                /* Caculate the offset and host virtual address of the page */
+                offset = pss->page << TARGET_PAGE_BITS;
+                p = block->host + offset;
+
+                if (ops->queue_outgoing_page(p, TARGET_PAGE_SIZE, offset))
+                    return -1;
+
+                tmppages = 1;
+                host_len += TARGET_PAGE_SIZE;
+
+                stat64_add(&mig_stats.normal_pages, 1);
+            }
+        } else {
+            tmppages = 0;
+        }
+
+        if (tmppages >= 0) {
+            pages += tmppages;
+        } else {
+            return tmppages;
+        }
+
+        pss_find_next_dirty(pss);
+    } while (offset_in_ramblock(block,
+                                ((ram_addr_t)pss->page) << TARGET_PAGE_BITS) &&
+             host_len < CSV3_OUTGOING_PAGE_WINDOW_SIZE);
+
+    /* Check if there are any queued pages */
+    if (host_len != 0) {
+        /* Always set offset as 0 for csv3. */
+        ram_transferred_add(save_page_header(pss, pss->pss_channel,
+                                             block, 0 | RAM_SAVE_FLAG_ENCRYPTED_DATA));
+
+        qemu_put_be32(pss->pss_channel, RAM_SAVE_ENCRYPTED_PAGE);
+        ram_transferred_add(4);
+        /* Process the queued pages in batch */
+        ret = ops->save_queued_outgoing_pages(pss->pss_channel, &bytes_xmit);
+        if (ret) {
+            return -1;
+        }
+        ram_transferred_add(bytes_xmit);
+    }
+
+    /* The offset we leave with is the last one we looked at */
+    pss->page--;
+
+    return pages;
+}
+
+/**
  * ram_save_host_page: save a whole host page
  *
  * Starting at *offset send pages up to the end of the current host
@@ -2514,6 +2598,9 @@ static int ram_save_host_page(RAMState *rs, PageSearchStatus *pss)
         error_report("block %s should not be migrated !", pss->block->idstr);
         return 0;
     }
+
+    if (kvm_csv3_enabled())
+        return ram_save_csv3_pages(rs, pss);
 
 #ifdef CONFIG_HYGON_CSV_MIG_ACCEL
     /*

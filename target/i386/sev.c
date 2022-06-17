@@ -1270,7 +1270,11 @@ int sev_kvm_init(ConfidentialGuestSupport *cgs, Error **errp)
     qemu_add_vm_change_state_handler(sev_vm_state_change, sev);
     migration_add_notifier(&sev_migration_state, sev_migration_state_notifier);
 
-    cgs_class->memory_encryption_ops = &sev_memory_encryption_ops;
+    if (csv3_enabled()) {
+        cgs_class->memory_encryption_ops = &csv3_memory_encryption_ops;
+    } else {
+        cgs_class->memory_encryption_ops = &sev_memory_encryption_ops;
+    }
     QTAILQ_INIT(&sev->shared_regions_list);
 
     /* Determine whether support MSR_AMD64_SEV_ES_GHCB */
@@ -2654,9 +2658,17 @@ bool sev_add_kernel_loader_hashes(SevKernelLoaderContext *ctx, Error **errp)
     return ret;
 }
 
+static int _sev_send_start(QEMUFile *f, uint64_t *bytes_sent)
+{
+    SevGuestState *s = sev_guest;
+
+    return sev_send_start(s, f, bytes_sent);
+}
+
 struct sev_ops sev_ops = {
     .sev_ioctl = sev_ioctl,
     .fw_error_to_str = fw_error_to_str,
+    .sev_send_start = _sev_send_start,
 };
 
 static void

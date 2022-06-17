@@ -81,6 +81,18 @@ struct dma_map_region {
     QTAILQ_ENTRY(dma_map_region) list;
 };
 
+#define CSV3_OUTGOING_PAGE_WINDOW_SIZE (512 * TARGET_PAGE_SIZE)
+
+struct guest_addr_entry {
+    uint64_t share:    1;
+    uint64_t reserved: 11;
+    uint64_t gfn:      52;
+};
+
+struct guest_hva_entry {
+    uint64_t  hva;
+};
+
 struct Csv3GuestState {
     uint32_t policy;
     int sev_fd;
@@ -89,11 +101,19 @@ struct Csv3GuestState {
     const char *(*fw_error_to_str)(int code);
     QTAILQ_HEAD(, dma_map_region) dma_map_regions_list;
     QemuMutex dma_map_regions_list_mutex;
+    gchar *send_packet_hdr;
+    size_t send_packet_hdr_len;
+    struct guest_hva_entry *guest_hva_data;
+    struct guest_addr_entry *guest_addr_data;
+    size_t guest_addr_len;
+
+    int (*sev_send_start)(QEMUFile *f, uint64_t *bytes_sent);
 };
 
 typedef struct Csv3GuestState Csv3GuestState;
 
 extern struct Csv3GuestState csv3_guest;
+extern struct ConfidentialGuestMemoryEncryptionOps csv3_memory_encryption_ops;
 extern int csv3_init(uint32_t policy, int fd, void *state, struct sev_ops *ops);
 extern int csv3_launch_encrypt_vmcb(void);
 
@@ -101,5 +121,7 @@ int csv3_load_data(uint64_t gpa, uint8_t *ptr, uint64_t len, Error **errp);
 
 int csv3_shared_region_dma_map(uint64_t start, uint64_t end);
 void csv3_shared_region_dma_unmap(uint64_t start, uint64_t end);
+int csv3_queue_outgoing_page(uint8_t *ptr, uint32_t sz, uint64_t addr);
+int csv3_save_queued_outgoing_pages(QEMUFile *f, uint64_t *bytes_sent);
 
 #endif
