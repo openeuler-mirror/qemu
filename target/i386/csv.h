@@ -108,6 +108,7 @@ struct Csv3GuestState {
     size_t guest_addr_len;
 
     int (*sev_send_start)(QEMUFile *f, uint64_t *bytes_sent);
+    int (*sev_receive_start)(QEMUFile *f);
 };
 
 typedef struct Csv3GuestState Csv3GuestState;
@@ -121,6 +122,7 @@ int csv3_load_data(uint64_t gpa, uint8_t *ptr, uint64_t len, Error **errp);
 
 int csv3_shared_region_dma_map(uint64_t start, uint64_t end);
 void csv3_shared_region_dma_unmap(uint64_t start, uint64_t end);
+int csv3_load_incoming_page(QEMUFile *f, uint8_t *ptr);
 int csv3_queue_outgoing_page(uint8_t *ptr, uint32_t sz, uint64_t addr);
 int csv3_save_queued_outgoing_pages(QEMUFile *f, uint64_t *bytes_sent);
 

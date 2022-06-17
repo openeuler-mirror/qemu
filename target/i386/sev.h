@@ -84,6 +84,7 @@ struct sev_ops {
     int (*sev_ioctl)(int fd, int cmd, void *data, int *error);
     const char *(*fw_error_to_str)(int code);
     int (*sev_send_start)(QEMUFile *f, uint64_t *bytes_sent);
+    int (*sev_receive_start)(QEMUFile *f);
 };
 
 extern struct sev_ops sev_ops;

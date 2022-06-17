@@ -2665,10 +2665,18 @@ static int _sev_send_start(QEMUFile *f, uint64_t *bytes_sent)
     return sev_send_start(s, f, bytes_sent);
 }
 
+static int _sev_receive_start(QEMUFile *f)
+{
+    SevGuestState *s = sev_guest;
+
+    return sev_receive_start(s, f);
+}
+
 struct sev_ops sev_ops = {
     .sev_ioctl = sev_ioctl,
     .fw_error_to_str = fw_error_to_str,
     .sev_send_start = _sev_send_start,
+    .sev_receive_start = _sev_receive_start,
 };
 
 static void

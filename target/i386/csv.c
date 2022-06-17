@@ -38,11 +38,14 @@ bool csv_kvm_cpu_reset_inhibit;
 struct ConfidentialGuestMemoryEncryptionOps csv3_memory_encryption_ops = {
     .save_setup = sev_save_setup,
     .save_outgoing_page = NULL,
+    .load_incoming_page = csv3_load_incoming_page,
     .is_gfn_in_unshared_region = NULL,
     .save_outgoing_shared_regions_list = sev_save_outgoing_shared_regions_list,
     .load_incoming_shared_regions_list = sev_load_incoming_shared_regions_list,
     .queue_outgoing_page = csv3_queue_outgoing_page,
     .save_queued_outgoing_pages = csv3_save_queued_outgoing_pages,
+    .queue_incoming_page = NULL,
+    .load_queued_incoming_pages = NULL,
 };
 
 #define CSV3_OUTGOING_PAGE_NUM \
@@ -89,6 +92,7 @@ csv3_init(uint32_t policy, int fd, void *state, struct sev_ops *ops)
         QTAILQ_INIT(&csv3_guest.dma_map_regions_list);
         qemu_mutex_init(&csv3_guest.dma_map_regions_list_mutex);
         csv3_guest.sev_send_start = ops->sev_send_start;
+        csv3_guest.sev_receive_start = ops->sev_receive_start;
     }
     return 0;
 }
@@ -482,4 +486,87 @@ csv3_save_queued_outgoing_pages(QEMUFile *f, uint64_t *bytes_sent)
     }
 
     return csv3_send_encrypt_data(s, f, NULL, 0, bytes_sent);
+}
+
+static int
+csv3_receive_start(QEMUFile *f)
+{
+    if (csv3_guest.sev_receive_start)
+        return csv3_guest.sev_receive_start(f);
+    else
+        return -1;
+}
+
+static int csv3_receive_encrypt_data(QEMUFile *f, uint8_t *ptr)
+{
+    int ret = 1, fw_error = 0;
+    uint32_t i, guest_addr_entry_num;
+    gchar *hdr = NULL, *trans = NULL;
+    struct guest_addr_entry *guest_addr_data;
+    struct kvm_csv3_receive_encrypt_data update = {};
+    void *hva = NULL;
+    MemoryRegion *mr = NULL;
+
+    /* get packet header */
+    update.hdr_len = qemu_get_be32(f);
+
+    hdr = g_new(gchar, update.hdr_len);
+    qemu_get_buffer(f, (uint8_t *)hdr, update.hdr_len);
+    update.hdr_uaddr = (uintptr_t)hdr;
+
+    /* get guest addr data */
+    update.guest_addr_len = qemu_get_be32(f);
+
+    guest_addr_data = (struct guest_addr_entry *)g_new(gchar, update.guest_addr_len);
+    qemu_get_buffer(f, (uint8_t *)guest_addr_data, update.guest_addr_len);
+    update.guest_addr_data = (uintptr_t)guest_addr_data;
+
+    /* get transport buffer */
+    update.trans_len = qemu_get_be32(f);
+
+    trans = g_new(gchar, update.trans_len);
+    update.trans_uaddr = (uintptr_t)trans;
+    qemu_get_buffer(f, (uint8_t *)update.trans_uaddr, update.trans_len);
+
+    /* update share memory. */
+    guest_addr_entry_num = update.guest_addr_len / sizeof(struct guest_addr_entry);
+    for (i = 0; i < guest_addr_entry_num; i++) {
+        if (guest_addr_data[i].share) {
+            hva = gpa2hva(&mr,
+                          ((uint64_t)guest_addr_data[i].gfn << TARGET_PAGE_BITS),
+                          TARGET_PAGE_SIZE,
+                          NULL);
+            if (hva)
+                memcpy(hva, trans + i * TARGET_PAGE_SIZE, TARGET_PAGE_SIZE);
+        }
+    }
+
+    trace_kvm_csv3_receive_encrypt_data(trans, update.trans_len, hdr, update.hdr_len);
+
+    ret = csv3_ioctl(KVM_CSV3_RECEIVE_ENCRYPT_DATA, &update, &fw_error);
+    if (ret) {
+        error_report("Error RECEIVE_ENCRYPT_DATA ret=%d fw_error=%d '%s'",
+                     ret, fw_error, fw_error_to_str(fw_error));
+        goto err;
+    }
+
+err:
+    g_free(trans);
+    g_free(guest_addr_data);
+    g_free(hdr);
+    return ret;
+}
+
+int csv3_load_incoming_page(QEMUFile *f, uint8_t *ptr)
+{
+    /*
+     * If this is first buffer and SEV is not in recieiving state then
+     * use RECEIVE_START command to create a encryption context.
+     */
+    if (!csv3_check_state(SEV_STATE_RECEIVE_UPDATE) &&
+        csv3_receive_start(f)) {
+        return 1;
+    }
+
+    return csv3_receive_encrypt_data(f, ptr);
 }
