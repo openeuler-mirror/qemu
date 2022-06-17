@@ -125,5 +125,6 @@ void csv3_shared_region_dma_unmap(uint64_t start, uint64_t end);
 int csv3_load_incoming_page(QEMUFile *f, uint8_t *ptr);
 int csv3_queue_outgoing_page(uint8_t *ptr, uint32_t sz, uint64_t addr);
 int csv3_save_queued_outgoing_pages(QEMUFile *f, uint64_t *bytes_sent);
+int csv3_save_outgoing_context(QEMUFile *f, uint64_t *bytes_sent);
 
 #endif

@@ -46,6 +46,7 @@ struct ConfidentialGuestMemoryEncryptionOps csv3_memory_encryption_ops = {
     .save_queued_outgoing_pages = csv3_save_queued_outgoing_pages,
     .queue_incoming_page = NULL,
     .load_queued_incoming_pages = NULL,
+    .save_outgoing_cpu_state = csv3_save_outgoing_context,
 };
 
 #define CSV3_OUTGOING_PAGE_NUM \
@@ -569,4 +570,84 @@ int csv3_load_incoming_page(QEMUFile *f, uint8_t *ptr)
     }
 
     return csv3_receive_encrypt_data(f, ptr);
+}
+
+static int
+csv3_send_get_context_len(int *fw_err, int *context_len, int *hdr_len)
+{
+    int ret = 0;
+    struct kvm_csv3_send_encrypt_context update = { 0 };
+
+    ret = csv3_ioctl(KVM_CSV3_SEND_ENCRYPT_CONTEXT, &update, fw_err);
+    if (*fw_err != SEV_RET_INVALID_LEN) {
+        error_report("%s: failed to get context length ret=%d fw_error=%d '%s'",
+                    __func__, ret, *fw_err, fw_error_to_str(*fw_err));
+        ret = -1;
+        goto err;
+    }
+
+    if (update.trans_len <= INT_MAX && update.hdr_len <= INT_MAX) {
+        *context_len = update.trans_len;
+        *hdr_len = update.hdr_len;
+    }
+    ret = 0;
+err:
+    return ret;
+}
+
+static int
+csv3_send_encrypt_context(Csv3GuestState *s, QEMUFile *f, uint64_t *bytes_sent)
+{
+    int ret, fw_error = 0;
+    int context_len = 0;
+    int hdr_len = 0;
+    guchar *trans;
+    guchar *hdr;
+    struct kvm_csv3_send_encrypt_context update = { };
+
+    ret = csv3_send_get_context_len(&fw_error, &context_len, &hdr_len);
+    if (context_len < 1 || hdr_len < 1) {
+        error_report("%s: fail to get context length fw_error=%d '%s'",
+                     __func__, fw_error, fw_error_to_str(fw_error));
+        return 1;
+    }
+
+    /* allocate transport buffer */
+    trans = g_new(guchar, context_len);
+    hdr = g_new(guchar, hdr_len);
+
+    update.hdr_uaddr = (uintptr_t)hdr;
+    update.hdr_len = hdr_len;
+    update.trans_uaddr = (uintptr_t)trans;
+    update.trans_len = context_len;
+
+    trace_kvm_csv3_send_encrypt_context(trans, update.trans_len);
+
+    ret = csv3_ioctl(KVM_CSV3_SEND_ENCRYPT_CONTEXT, &update, &fw_error);
+    if (ret) {
+        error_report("%s: SEND_ENCRYPT_CONTEXT ret=%d fw_error=%d '%s'",
+                     __func__, ret, fw_error, fw_error_to_str(fw_error));
+        goto err;
+    }
+
+    qemu_put_be32(f, update.hdr_len);
+    qemu_put_buffer(f, (uint8_t *)update.hdr_uaddr, update.hdr_len);
+    *bytes_sent += 4 + update.hdr_len;
+
+    qemu_put_be32(f, update.trans_len);
+    qemu_put_buffer(f, (uint8_t *)update.trans_uaddr, update.trans_len);
+    *bytes_sent += 4 + update.trans_len;
+
+err:
+    g_free(trans);
+    g_free(hdr);
+    return ret;
+}
+
+int csv3_save_outgoing_context(QEMUFile *f, uint64_t *bytes_sent)
+{
+    Csv3GuestState *s = &csv3_guest;
+
+    /* send csv3 context. */
+    return csv3_send_encrypt_context(s, f, bytes_sent);
 }
