@@ -1190,6 +1190,15 @@ int sev_kvm_init(ConfidentialGuestSupport *cgs, Error **errp)
             error_setg(errp, "%s: failed to create encryption context", __func__);
             goto err;
         }
+    } else {
+        /*
+         * The CSV2 guest is not resettable after migrated to target machine,
+         * set csv_kvm_cpu_reset_inhibit to true to indicate the CSV2 guest is
+         * not resettable.
+         */
+        if (is_hygon_cpu() && sev_es_enabled()) {
+            csv_kvm_cpu_reset_inhibit = true;
+        }
     }
 
     ram_block_notifier_add(&sev_ram_notifier);

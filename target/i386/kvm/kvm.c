@@ -32,6 +32,7 @@
 #include "sysemu/runstate.h"
 #include "kvm_i386.h"
 #include "sev.h"
+#include "csv.h"
 #include "xen-emu.h"
 #include "hyperv.h"
 #include "hyperv-proto.h"
@@ -5710,6 +5711,9 @@ bool kvm_has_waitpkg(void)
 
 bool kvm_arch_cpu_check_are_resettable(void)
 {
+    if (is_hygon_cpu())
+        return !csv_kvm_cpu_reset_inhibit;
+
     return !sev_es_enabled();
 }
 
