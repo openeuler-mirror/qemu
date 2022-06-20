@@ -1427,7 +1427,6 @@ int qemu_savevm_state_complete_precopy_non_iterable(QEMUFile *f,
         ret = vmstate_save(f, se, vmdesc);
         if (ret) {
             qemu_file_set_error(f, ret);
-            json_writer_free(vmdesc);
             return ret;
         }
         trace_savevm_section_end(se->idstr, se->section_id, 0);
@@ -1444,7 +1443,6 @@ int qemu_savevm_state_complete_precopy_non_iterable(QEMUFile *f,
             error_report("%s: bdrv_inactivate_all() failed (%d)",
                          __func__, ret);
             qemu_file_set_error(f, ret);
-            json_writer_free(vmdesc);
             return ret;
         }
     }
