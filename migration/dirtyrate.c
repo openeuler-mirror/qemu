@@ -157,7 +157,7 @@ static void cleanup_dirtyrate_stat(struct DirtyRateConfig config)
 {
     /* last calc-dirty-rate qmp use dirty ring mode */
     if (dirtyrate_mode == DIRTY_RATE_MEASURE_MODE_DIRTY_RING) {
-        free(DirtyStat.dirty_ring.rates);
+        g_free(DirtyStat.dirty_ring.rates);
         DirtyStat.dirty_ring.rates = NULL;
     }
 }
@@ -522,10 +522,10 @@ static void calculate_dirtyrate_dirty_ring(struct DirtyRateConfig config)
         nvcpu++;
     }
 
-    dirty_pages = malloc(sizeof(*dirty_pages) * nvcpu);
+    dirty_pages = g_new(DirtyPageRecord, nvcpu);
 
     DirtyStat.dirty_ring.nvcpu = nvcpu;
-    DirtyStat.dirty_ring.rates = malloc(sizeof(DirtyRateVcpu) * nvcpu);
+    DirtyStat.dirty_ring.rates = g_new(DirtyRateVcpu, nvcpu);
 
     dirtyrate_global_dirty_log_start();
 
@@ -556,7 +556,7 @@ static void calculate_dirtyrate_dirty_ring(struct DirtyRateConfig config)
     }
 
     DirtyStat.dirty_rate = dirtyrate_sum;
-    free(dirty_pages);
+    g_free(dirty_pages);
 }
 
 static void calculate_dirtyrate_sample_vm(struct DirtyRateConfig config)
