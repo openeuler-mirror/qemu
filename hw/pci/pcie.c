@@ -28,6 +28,8 @@
 #include "hw/pci/pcie_regs.h"
 #include "hw/pci/pcie_port.h"
 #include "qemu/range.h"
+#include "hw/vfio/pci.h"
+#include "hw/vfio/vfio-common.h"
 
 //#define DEBUG_PCIE
 #ifdef DEBUG_PCIE
@@ -39,6 +41,8 @@
 #define PCIE_DEV_PRINTF(dev, fmt, ...)                                  \
     PCIE_DPRINTF("%s:%x "fmt, (dev)->name, (dev)->devfn, ## __VA_ARGS__)
 
+#define TYPE_VFIO_PCI   "vfio-pci"
+#define PCI_VFIO(obj)   OBJECT_CHECK(VFIOPCIDevice, obj, TYPE_VFIO_PCI)
 
 /***************************************************************************
  * pci express capability helper functions
@@ -416,6 +420,7 @@ void pcie_cap_slot_plug_cb(HotplugHandler *hotplug_dev, DeviceState *dev,
     PCIDevice *hotplug_pdev = PCI_DEVICE(hotplug_dev);
     uint8_t *exp_cap = hotplug_pdev->config + hotplug_pdev->exp.exp_cap;
     PCIDevice *pci_dev = PCI_DEVICE(dev);
+    DeviceClass *dc = DEVICE_GET_CLASS(pci_dev);
 
     /* Don't send event when device is enabled during qemu machine creation:
      * it is present on boot, no hotplug event is necessary. We do send an
@@ -444,6 +449,19 @@ void pcie_cap_slot_plug_cb(HotplugHandler *hotplug_dev, DeviceState *dev,
         pcie_cap_slot_event(PCI_DEVICE(hotplug_dev),
                             PCI_EXP_HP_EV_PDC | PCI_EXP_HP_EV_ABP);
     }
+
+    /*
+     * When device is a migratable vfio device,
+     * we need to notify vfio device to change device state: running
+     */
+    if (strcmp(dc->desc, "VFIO-based PCI device assignment") == 0) {
+        VFIOPCIDevice *vdev = PCI_VFIO(pci_dev);
+        VFIODevice *vbasedev = &vdev->vbasedev;
+        if (vfio_device_enable(vbasedev)) {
+            error_setg_errno(errp, EBUSY,
+                             "Enable vfio device %s failed.", vbasedev->name);
+        }
+    }
 }
 
 void pcie_cap_slot_unplug_cb(HotplugHandler *hotplug_dev, DeviceState *dev,
@@ -470,11 +488,26 @@ void pcie_cap_slot_unplug_request_cb(HotplugHandler *hotplug_dev,
     Error *local_err = NULL;
     PCIDevice *pci_dev = PCI_DEVICE(dev);
     PCIBus *bus = pci_get_bus(pci_dev);
+    DeviceClass *dc = DEVICE_GET_CLASS(pci_dev);
 
     pcie_cap_slot_plug_common(PCI_DEVICE(hotplug_dev), dev, &local_err);
     if (local_err) {
         error_propagate(errp, local_err);
         return;
+    }
+
+    /*
+     * Before unplug a vfio device,
+     * we need to notify vfio device to stop and release migration resource.
+     */
+    if (strcmp(dc->desc, "VFIO-based PCI device assignment") == 0) {
+        VFIOPCIDevice *vdev = PCI_VFIO(pci_dev);
+        VFIODevice *vbasedev = &vdev->vbasedev;
+        if (vfio_device_disable(vbasedev)) {
+            error_setg_errno(errp, EBUSY,
+                             "Disable vfio device %s failed.", vbasedev->name);
+            return;
+        }
     }
 
     dev->pending_deleted_event = true;

@@ -305,8 +305,50 @@ struct vfio_region_info_cap_type {
 #define VFIO_REGION_TYPE_PCI_VENDOR_MASK	(0xffff)
 #define VFIO_REGION_TYPE_GFX                    (1)
 #define VFIO_REGION_TYPE_CCW			(2)
+#define VFIO_REGION_TYPE_MIGRATION              (3)
 
 /* sub-types for VFIO_REGION_TYPE_PCI_* */
+
+/* sub-types for VFIO_REGION_TYPE_MIGRATION */
+#define VFIO_REGION_SUBTYPE_MIGRATION           (1)
+
+typedef enum {
+    VFIO_DEVICE_STOP = 0xffff0001,
+    VFIO_DEVICE_CONTINUE,
+    VFIO_DEVICE_MIGRATION_CANCEL
+} VFIOCmd;
+
+struct vfio_device_migration_info {
+    __u32 device_state;
+#define VFIO_DEVICE_STATE_STOP      (0)
+#define VFIO_DEVICE_STATE_RUNNING   (1 << 0)
+#define VFIO_DEVICE_STATE_SAVING    (1 << 1)
+#define VFIO_DEVICE_STATE_RESUMING  (1 << 2)
+#define VFIO_DEVICE_STATE_MASK      (VFIO_DEVICE_STATE_RUNNING | \
+				     VFIO_DEVICE_STATE_SAVING |  \
+				     VFIO_DEVICE_STATE_RESUMING)
+
+#define VFIO_DEVICE_STATE_VALID(state) \
+	(state & VFIO_DEVICE_STATE_RESUMING ? \
+	(state & VFIO_DEVICE_STATE_MASK) == VFIO_DEVICE_STATE_RESUMING : 1)
+
+#define VFIO_DEVICE_STATE_IS_ERROR(state) \
+	((state & VFIO_DEVICE_STATE_MASK) == (VFIO_DEVICE_STATE_SAVING | \
+					      VFIO_DEVICE_STATE_RESUMING))
+
+#define VFIO_DEVICE_STATE_SET_ERROR(state) \
+	((state & ~VFIO_DEVICE_STATE_MASK) | VFIO_DEVICE_SATE_SAVING | \
+					     VFIO_DEVICE_STATE_RESUMING)
+    
+    __u32 reserved;
+    
+    __u32 device_cmd;
+    __u32 version_id;
+
+    __u64 pending_bytes;
+    __u64 data_offset;
+    __u64 data_size;
+};
 
 /* 8086 vendor PCI sub-types */
 #define VFIO_REGION_SUBTYPE_INTEL_IGD_OPREGION	(1)
@@ -943,6 +985,34 @@ struct vfio_iommu_spapr_tce_remove {
 };
 #define VFIO_IOMMU_SPAPR_TCE_REMOVE	_IO(VFIO_TYPE, VFIO_BASE + 20)
 
+/**
+ * for log buf control
+ */
+struct vfio_log_buf_sge {
+	__u64 len;
+	__u64 addr;
+};
+
+struct vfio_log_buf_info {
+	__u32 uuid;
+	__u64 buffer_size;
+	__u64 addrs_size;
+	__u64 frag_size;
+	struct vfio_log_buf_sge *sgevec;
+};
+
+struct vfio_log_buf_ctl {
+	__u32 argsz;
+	__u32 flags;
+	#define VFIO_DEVICE_LOG_BUF_FLAG_SETUP (1 << 0)
+	#define VFIO_DEVICE_LOG_BUF_FLAG_RELEASE (1 << 1)
+	#define VFIO_DEVICE_LOG_BUF_FLAG_START	(1 << 2)
+	#define VFIO_DEVICE_LOG_BUF_FLAG_STOP (1 << 3)
+	#define VFIO_DEVICE_LOG_BUF_FLAG_STATUS_QUERY (1 << 4)
+	void* data;
+};
+#define VFIO_LOG_BUF_CTL _IO(VFIO_TYPE, VFIO_BASE + 21)
+#define VFIO_GET_LOG_BUF_FD _IO(VFIO_TYPE, VFIO_BASE + 22)
 /* ***************************************************************** */
 
 #endif /* VFIO_H */

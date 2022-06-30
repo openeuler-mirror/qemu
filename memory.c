@@ -35,6 +35,8 @@
 #include "hw/boards.h"
 #include "migration/vmstate.h"
 
+#include "hw/vfio/vfio-common.h"
+
 //#define DEBUG_UNASSIGNED
 
 static unsigned memory_region_transaction_depth;
@@ -1788,7 +1790,9 @@ bool memory_region_is_ram_device(MemoryRegion *mr)
 uint8_t memory_region_get_dirty_log_mask(MemoryRegion *mr)
 {
     uint8_t mask = mr->dirty_log_mask;
-    if (global_dirty_log && mr->ram_block) {
+    RAMBlock *rb = mr->ram_block;
+
+    if (global_dirty_log && rb && qemu_ram_is_migratable(rb)) {
         mask |= (1 << DIRTY_MEMORY_MIGRATION);
     }
     return mask;
@@ -2022,6 +2026,15 @@ static void memory_region_sync_dirty_bitmap(MemoryRegion *mr)
         if (!listener->log_sync) {
             continue;
         }
+
+        /* We need to scan whole dirty page bytemap rather than 
+         * every mrs for vfio memory listener.
+         */
+        if (vfio_memory_listener_check(listener)) {
+            listener->log_sync(listener, NULL);
+            continue;
+        }
+
         as = listener->address_space;
         view = address_space_get_flatview(as);
         FOR_EACH_FLAT_RANGE(fr, view) {

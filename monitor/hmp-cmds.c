@@ -1319,6 +1319,10 @@ void hmp_migrate_set_parameter(Monitor *mon, const QDict *qdict)
         p->has_block_incremental = true;
         visit_type_bool(v, param, &p->block_incremental, &err);
         break;
+    case MIGRATION_PARAMETER_MEMORY_CHECK:
+        p->has_memory_check = true;
+        visit_type_bool(v, param, &p->memory_check, &err);
+        break;
     case MIGRATION_PARAMETER_MULTIFD_CHANNELS:
         p->has_multifd_channels = true;
         visit_type_int(v, param, &p->multifd_channels, &err);

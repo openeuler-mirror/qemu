@@ -60,6 +60,8 @@
 #include "hw/boards.h"
 #include "hw/hw.h"
 
+#include "hw/vfio/vfio-common.h"
+
 #ifdef CONFIG_LINUX
 
 #include <sys/prctl.h>
@@ -1024,12 +1026,14 @@ void cpu_synchronize_all_pre_loadvm(void)
 static int do_vm_stop(RunState state, bool send_stop)
 {
     int ret = 0;
+    int rret = 0;
 
     if (runstate_is_running()) {
         runstate_set(state);
         cpu_disable_ticks();
         pause_all_vcpus();
         vm_state_notify(0, state);
+        rret = set_all_vfio_device(false);
         if (send_stop) {
             qapi_event_send_stop();
         }
@@ -1038,7 +1042,7 @@ static int do_vm_stop(RunState state, bool send_stop)
     bdrv_drain_all();
     ret = bdrv_flush_all();
 
-    return ret;
+    return rret ? rret : ret;
 }
 
 /* Special vm_stop() variant for terminating the process.  Historically clients
@@ -2146,7 +2150,8 @@ int vm_prepare_start(void)
     cpu_enable_ticks();
     runstate_set(RUN_STATE_RUNNING);
     vm_state_notify(1, RUN_STATE_RUNNING);
-    return 0;
+
+    return set_all_vfio_device(true);
 }
 
 void vm_start(void)

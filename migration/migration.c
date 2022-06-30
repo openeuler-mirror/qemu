@@ -55,6 +55,8 @@
 #include "qemu/queue.h"
 #include "multifd.h"
 
+#include "hw/vfio/vfio-common.h"
+
 #define MAX_THROTTLE  (32 << 20)      /* Migration transfer speed throttling */
 
 /* Amount of time to allocate to each "chunk" of bandwidth-throttled
@@ -448,6 +450,7 @@ static void process_incoming_migration_bh(void *opaque)
 static void process_incoming_migration_co(void *opaque)
 {
     MigrationIncomingState *mis = migration_incoming_get_current();
+    MigrationState *ms = migrate_get_current();
     PostcopyState ps;
     int ret;
     Error *local_err = NULL;
@@ -504,6 +507,10 @@ static void process_incoming_migration_co(void *opaque)
     if (ret < 0) {
         error_report("load of migration failed: %s", strerror(-ret));
         goto fail;
+    }
+    if (ms->parameters.memory_check == 1) {
+        migration_memory_check();
+        ms->parameters.memory_check = 0;
     }
     mis->bh = qemu_bh_new(process_incoming_migration_bh, mis);
     qemu_bh_schedule(mis->bh);
@@ -1349,6 +1356,9 @@ static void migrate_params_test_apply(MigrateSetParameters *params,
     if (params->has_block_incremental) {
         dest->block_incremental = params->block_incremental;
     }
+    if (params->has_memory_check) {
+        dest->memory_check = params->memory_check;
+    }
     if (params->has_multifd_channels) {
         dest->multifd_channels = params->multifd_channels;
     }
@@ -1451,6 +1461,9 @@ static void migrate_params_apply(MigrateSetParameters *params, Error **errp)
 
     if (params->has_block_incremental) {
         s->parameters.block_incremental = params->block_incremental;
+    }
+    if (params->has_memory_check) {
+        s->parameters.memory_check = params->memory_check;
     }
     if (params->has_multifd_channels) {
         s->parameters.multifd_channels = params->multifd_channels;

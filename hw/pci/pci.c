@@ -978,6 +978,10 @@ static PCIReqIDCache pci_req_id_cache_get(PCIDevice *dev)
 
 uint16_t pci_requester_id(PCIDevice *dev)
 {
+    if (dev->device_bdf > 0 && dev->device_bdf <= UINT16_MAX) {
+        return dev->device_bdf & UINT16_MAX;
+    }
+
     return pci_req_id_cache_extract(&dev->requester_id_cache);
 }
 
@@ -1047,6 +1051,7 @@ static PCIDevice *do_pci_register_device(PCIDevice *pci_dev,
 
     pci_dev->devfn = devfn;
     pci_dev->requester_id_cache = pci_req_id_cache_get(pci_dev);
+    pci_dev->device_bdf = UINT16_MAX + 1;
     pstrcpy(pci_dev->name, sizeof(pci_dev->name), name);
 
     memory_region_init(&pci_dev->bus_master_container_region, OBJECT(pci_dev),
