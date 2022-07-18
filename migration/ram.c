@@ -55,6 +55,7 @@
 #include "savevm.h"
 #include "qemu/iov.h"
 #include "multifd.h"
+#include "hw/vfio/vfio-common.h"
 
 /***********************************************************/
 /* ram save/restore */
@@ -1670,6 +1671,7 @@ static int ram_save_host_page(RAMState *rs, PageSearchStatus *pss,
                               bool last_stage)
 {
     int tmppages, pages = 0;
+    int qemu_file_err;
     size_t pagesize_bits =
         qemu_ram_pagesize(pss->block) >> TARGET_PAGE_BITS;
 
@@ -1688,6 +1690,12 @@ static int ram_save_host_page(RAMState *rs, PageSearchStatus *pss,
         tmppages = ram_save_target_page(rs, pss, last_stage);
         if (tmppages < 0) {
             return tmppages;
+        }
+
+        if (!last_stage) {
+            qemu_file_err = qemu_file_get_error(rs->f);
+            if (qemu_file_err != 0)
+                return qemu_file_err;
         }
 
         pages += tmppages;
@@ -2588,6 +2596,7 @@ static int ram_save_complete(QEMUFile *f, void *opaque)
 {
     RAMState **temp = opaque;
     RAMState *rs = *temp;
+    MigrationState *ms = migrate_get_current();
     int ret = 0;
 
     WITH_RCU_READ_LOCK_GUARD() {
@@ -2622,6 +2631,9 @@ static int ram_save_complete(QEMUFile *f, void *opaque)
         multifd_send_sync_main(rs->f);
         qemu_put_be64(f, RAM_SAVE_FLAG_EOS);
         qemu_fflush(f);
+        if (ms->parameters.memory_check == 1) {
+            migration_memory_check();
+        }
     }
 
     return ret;

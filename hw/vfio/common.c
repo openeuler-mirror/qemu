@@ -27,8 +27,10 @@
 
 #include "hw/vfio/vfio-common.h"
 #include "hw/vfio/vfio.h"
+#include "hw/boards.h"
 #include "exec/address-spaces.h"
 #include "exec/memory.h"
+#include "exec/ram_addr.h"
 #include "hw/hw.h"
 #include "qemu/error-report.h"
 #include "qemu/main-loop.h"
@@ -38,11 +40,19 @@
 #include "sysemu/reset.h"
 #include "trace.h"
 #include "qapi/error.h"
+#include "migration/migration.h"
+#include "migration/qemu-file.h"
+
+
 
 VFIOGroupList vfio_group_list =
     QLIST_HEAD_INITIALIZER(vfio_group_list);
 static QLIST_HEAD(, VFIOAddressSpace) vfio_address_spaces =
     QLIST_HEAD_INITIALIZER(vfio_address_spaces);
+
+#define LOG_BUF_DEBUG
+#define LOG_BUF_PAGE_OFFSET 12 /* 4K each byte of the log buf */
+#define LOG_BUF_FRAG_SIZE   (2 * 1024 * 1024) /* fix to 2M */
 
 #ifdef CONFIG_KVM
 /*
@@ -813,10 +823,347 @@ static void vfio_listener_region_del(MemoryListener *listener,
     }
 }
 
+static int vfio_notify_device(const VFIOContainer *container, unsigned int flags)
+{
+    int ret = -1;
+    struct vfio_log_buf_ctl log_buf_ctl = {
+        .argsz = 0,
+        .data = NULL,
+        .flags = flags
+    };
+
+    if (container->log_buf.fd <= 0) {
+        error_report("vfio: error log buf fd invalid");
+        return ret;
+    }
+
+    ret = ioctl(container->log_buf.fd, VFIO_LOG_BUF_CTL, &log_buf_ctl);
+    if (ret != 0) {
+        error_report("vfio: error log buf control flags %d failed ret %d",
+                     flags, ret);
+        return ret;
+    }
+
+    return 0;
+}
+
+static int vfio_notify_device_log_buf_stop(const VFIOContainer *container)
+{
+    return vfio_notify_device(container, VFIO_DEVICE_LOG_BUF_FLAG_STOP);
+}
+
+static int vfio_notify_device_log_buf_start(const VFIOContainer *container)
+{
+    return vfio_notify_device(container, VFIO_DEVICE_LOG_BUF_FLAG_START);
+}
+
+static __u32 vfio_generate_uuid(void)
+{
+    return (__u32)getpid();
+}
+
+static void vfio_munmap_log_buf(VFIOContainer *container)
+{
+    int i, ret;
+    struct vfio_log_buf_info *log_buf_info = &container->log_buf.info;
+
+    for (i = 0; i < log_buf_info->addrs_size; i++) {
+        if (log_buf_info->sgevec[i].addr != 0) {
+            ret = munmap((void *)(log_buf_info->sgevec[i].addr),
+                         log_buf_info->frag_size);
+            if (ret != 0) {
+                error_report("vfio: error munmap log buf failed ret %d", ret);
+            }
+            memset(&(log_buf_info->sgevec[i]), 0,
+                   sizeof(struct vfio_log_buf_sge));
+        }
+    }
+}
+
+static int vfio_release_log_buf(VFIOContainer *container)
+{
+    int ret;
+
+    vfio_munmap_log_buf(container);
+
+    ret = vfio_notify_device(container, VFIO_DEVICE_LOG_BUF_FLAG_RELEASE);
+    if (ret != 0) {
+        error_report("vfio: error release log buf failed");
+    }
+
+    if (container->log_buf.info.sgevec != NULL) {
+        free(container->log_buf.info.sgevec);
+        container->log_buf.info.sgevec = NULL;
+    }
+
+    if (container->log_buf.fd > 0) {
+        close(container->log_buf.fd);
+        container->log_buf.fd = 0;
+    }
+
+    return ret;
+}
+
+static int vfio_map_log_buf(VFIOLogBuf *log_buf)
+{
+    int i;
+
+    for (i = 0; i < log_buf->info.addrs_size; i++) {
+        log_buf->info.sgevec[i].addr = (uint64_t)mmap(NULL, 
+                                                      log_buf->info.frag_size,
+                                                      PROT_READ|PROT_WRITE,
+                                                      MAP_SHARED,
+                                                      log_buf->fd,
+                                                      i * log_buf->info.frag_size);
+        if (log_buf->info.sgevec[i].addr == 0) {
+            error_report("vfio: error mmap log buf failed");
+            return -1;
+        }
+        log_buf->info.sgevec[i].len = log_buf->info.frag_size;
+    }
+
+    return 0;
+}
+
+static int vfio_driver_setup_log_buf(int fd,
+                                     VFIOLogBuf *log_buf,
+                                     ram_addr_t log_buf_size)
+{
+    int ret;
+    struct vfio_log_buf_info log_buf_info;
+
+    log_buf_info.uuid = vfio_generate_uuid();
+    log_buf_info.frag_size = LOG_BUF_FRAG_SIZE;
+    __u32 addrs_size = log_buf_size / log_buf_info.frag_size;
+    if (log_buf_size % log_buf_info.frag_size != 0) {
+        addrs_size++;
+    }
+    log_buf_info.addrs_size = addrs_size;
+    log_buf_info.buffer_size = log_buf_info.addrs_size * log_buf_info.frag_size;
+
+    struct vfio_log_buf_ctl log_buf_ctl;
+    log_buf_ctl.argsz = sizeof(log_buf_info);
+    log_buf_ctl.data = &log_buf_info;
+    log_buf_ctl.flags = VFIO_DEVICE_LOG_BUF_FLAG_SETUP;
+
+    ret = ioctl(fd, VFIO_LOG_BUF_CTL, &log_buf_ctl);
+    if (ret != 0) {
+        error_report("vfio: error kernel set up log buf failed");
+        return ret;
+    }
+
+    log_buf->info.uuid = log_buf_info.uuid;
+    log_buf->info.frag_size = log_buf_info.frag_size;
+    log_buf->info.addrs_size = log_buf_info.addrs_size;
+
+    return 0;
+}
+
+static hwaddr last_ram_addr(void)
+{
+    MemoryRegion *root = address_space_memory.root;
+    MemoryRegion *sub_mr = NULL;
+    hwaddr last;
+
+    QTAILQ_FOREACH(sub_mr, &root->subregions, subregions_link) {
+        if (!strcmp(sub_mr->name, "mach-virt.ram")) {
+            break;
+        }
+    }
+
+    if (!sub_mr) {
+        /* assume there is a memory region which named 'mach-virt.ram',
+         * otherwith we should check why failed!
+         */
+        error_report("can't find the 'mach-virt.ram' memory region.");
+        abort();
+    }
+
+    last = sub_mr->addr + int128_get64(sub_mr->size);
+    if (last < sub_mr->addr) {
+        error_report("the ram range beyond the UINT64_MAX.");
+        abort();
+    }
+
+    return last;
+}
+
+static int vfio_setup_log_buf(VFIOContainer *container)
+{
+    VFIOLogBuf *log_buf = &container->log_buf;
+    int ret;
+
+    if (log_buf->info.sgevec != NULL) {
+        warn_report("vfio: warning log buf already setup");
+        return 0;
+    }
+
+    log_buf->fd = ioctl(container->fd, VFIO_GET_LOG_BUF_FD, NULL);
+    if (log_buf->fd <= 0) {
+        error_report("vfio: error get log buf fd failed");
+        return log_buf->fd;
+    }
+
+    ram_addr_t log_buf_size = last_ram_addr() >> LOG_BUF_PAGE_OFFSET;
+    ret = vfio_driver_setup_log_buf(log_buf->fd, log_buf, log_buf_size);
+    if (ret != 0) {
+        goto close_fd_exit;
+    }
+
+    log_buf->info.sgevec = (struct vfio_log_buf_sge *)malloc( \
+        log_buf->info.addrs_size * sizeof(struct vfio_log_buf_sge));
+    if (log_buf->info.sgevec == NULL) {
+        error_report("vfio: error out of memory");
+        goto release_log_buf_exit;
+    }
+
+    ret = vfio_map_log_buf(log_buf);
+    if (ret != 0) {
+        goto free_log_buf_exit;
+    }
+
+    return 0;
+
+free_log_buf_exit:
+    vfio_munmap_log_buf(container);
+    free(log_buf->info.sgevec);
+    log_buf->info.sgevec = NULL;
+
+release_log_buf_exit:
+    ret = vfio_notify_device(container, VFIO_DEVICE_LOG_BUF_FLAG_RELEASE);
+    if (ret != 0) {
+        error_report("vfio: error release log buf failed");
+    }
+
+close_fd_exit:
+    close(log_buf->fd);
+    log_buf->fd = 0;
+
+    return ret;
+}
+
+static void vfio_listener_log_global_start(MemoryListener *listener)
+{
+    VFIOContainer *container = container_of(listener, VFIOContainer, listener);
+    int ret;
+
+    ret = vfio_setup_log_buf(container);
+    if (ret != 0) {
+        error_report("vfio: error set up log buf failed");
+        qemu_file_set_error(migrate_get_current()->to_dst_file, ret);
+        return;
+    }
+
+    ret = vfio_notify_device_log_buf_start(container);
+    if (ret != 0) {
+        error_report("vfio: error kernel start log buf failed");
+        qemu_file_set_error(migrate_get_current()->to_dst_file, ret);
+        return;
+    }
+}
+
+static ram_addr_t target_phys_addr_to_ram_addr(hwaddr target_phys_addr,
+                                               uint64_t size)
+{
+    MemoryRegion *root = address_space_memory.root;
+    MemoryRegionSection mrs;
+    hwaddr mr_gpa = 0;
+    ram_addr_t ram_addr = ~0UL;
+
+    mrs = memory_region_find(root, target_phys_addr, size);
+    if (!mrs.mr) {
+        error_report("cant't the related memory region for "
+                     "target_phys_addr: 0x%lx", target_phys_addr);
+        return ram_addr;
+    }
+
+    if (!mrs.mr->ram) {
+        error_report("%s is't a ram memory region", mrs.mr->name);
+        goto exit;
+    }
+
+    root = mrs.mr;
+    do {
+        mr_gpa += root->addr;
+        root = root->container;
+    } while (root);
+
+    ram_addr = target_phys_addr - mr_gpa + mrs.mr->ram_block->offset;
+
+exit:
+    memory_region_unref(mrs.mr);
+
+    return ram_addr;
+}
+
+static void vfio_listener_log_sync_full(MemoryListener *listener,
+                                        MemoryRegionSection *section)
+{
+    VFIOContainer *container = container_of(listener, VFIOContainer, listener);
+    unsigned long i, j;
+    hwaddr target_phys_addr;
+    ram_addr_t ram_addr;
+    uint8_t *val;
+    int ret;
+
+    ret = vfio_notify_device(container, VFIO_DEVICE_LOG_BUF_FLAG_STATUS_QUERY);
+    if (ret != 0) {
+        error_report("vfio: failed to query dirty log status from NIC");
+        qemu_file_set_error(migrate_get_current()->to_dst_file, ret);
+        return;
+    }
+
+    for (i = 0; i < container->log_buf.info.addrs_size; i++) {
+        for (j = 0; j < container->log_buf.info.frag_size; j++) {
+            val = (uint8_t *)container->log_buf.info.sgevec[i].addr + j;
+            if (*val == 0xff) {
+                target_phys_addr = (i * container->log_buf.info.frag_size + j) << \
+                                   LOG_BUF_PAGE_OFFSET;
+                ram_addr = target_phys_addr_to_ram_addr(target_phys_addr,
+                                                        1 << LOG_BUF_PAGE_OFFSET);
+                if (ram_addr == ~0UL)
+                    continue;
+                cpu_physical_memory_set_dirty_range(ram_addr,
+                                                    1 << LOG_BUF_PAGE_OFFSET,
+                                                    1 << DIRTY_MEMORY_MIGRATION);
+                *val = 0;
+            }
+        }
+    }
+}
+
+static void vfio_listener_log_global_stop(MemoryListener *listener)
+{
+    VFIOContainer *container = container_of(listener, VFIOContainer, listener);
+    int ret;
+
+    ret = vfio_notify_device_log_buf_stop(container);
+    if (ret != 0) {
+        error_report("vfio: error kernel device stop log buf error");
+    }
+
+    ret = vfio_release_log_buf(container);
+    if (ret != 0) {
+        error_report("vfio: error release log buf error");
+    }
+}
+
 static const MemoryListener vfio_memory_listener = {
     .region_add = vfio_listener_region_add,
     .region_del = vfio_listener_region_del,
+    .log_global_start = vfio_listener_log_global_start,
+    .log_sync = vfio_listener_log_sync_full,
+    .log_global_stop = vfio_listener_log_global_stop,
 };
+
+bool vfio_memory_listener_check(MemoryListener * listener)
+{
+    if (!listener || !listener->log_sync) {
+        return false;
+    }
+
+    return listener->log_sync == vfio_listener_log_sync_full;
+}
 
 static void vfio_listener_release(VFIOContainer *container)
 {
@@ -925,6 +1272,14 @@ int vfio_region_setup(Object *obj, VFIODevice *vbasedev, VFIORegion *region,
     return 0;
 }
 
+static void vfio_subregion_unmap(VFIORegion *region, int index)
+{
+    memory_region_del_subregion(region->mem, &region->mmaps[index].mem);
+    munmap(region->mmaps[index].mmap, region->mmaps[index].size);
+    object_unparent(OBJECT(&region->mmaps[index].mem));
+    region->mmaps[index].mmap = NULL;
+}
+
 int vfio_region_mmap(VFIORegion *region)
 {
     int i, prot = 0;
@@ -955,10 +1310,7 @@ int vfio_region_mmap(VFIORegion *region)
             region->mmaps[i].mmap = NULL;
 
             for (i--; i >= 0; i--) {
-                memory_region_del_subregion(region->mem, &region->mmaps[i].mem);
-                munmap(region->mmaps[i].mmap, region->mmaps[i].size);
-                object_unparent(OBJECT(&region->mmaps[i].mem));
-                region->mmaps[i].mmap = NULL;
+                vfio_subregion_unmap(region, i);
             }
 
             return ret;
@@ -981,6 +1333,21 @@ int vfio_region_mmap(VFIORegion *region)
     }
 
     return 0;
+}
+
+void vfio_region_unmap(VFIORegion *region)
+{
+    int i;
+
+    if (!region->mem) {
+        return;
+    }
+
+    for (i = 0; i < region->nr_mmaps; i++) {
+        if (region->mmaps[i].mmap) {
+            vfio_subregion_unmap(region, i);
+        }
+    }
 }
 
 void vfio_region_exit(VFIORegion *region)
@@ -1205,6 +1572,31 @@ static int vfio_init_container(VFIOContainer *container, int group_fd,
     return 0;
 }
 
+static int vfio_get_iommu_info(VFIOContainer *container,
+                               struct vfio_iommu_type1_info **info)
+{
+    size_t argsz = sizeof(struct vfio_iommu_type1_info);
+
+    *info = g_new0(struct vfio_iommu_type1_info, 1);
+
+again:
+    (*info)->argsz = argsz;
+
+    if (ioctl(container->fd, VFIO_IOMMU_GET_INFO, *info)) {
+        g_free(*info);
+        *info = NULL;
+        return -errno;
+    }
+
+    if (((*info)->argsz > argsz)) {
+        argsz = (*info)->argsz;
+        *info = g_realloc(*info, argsz);
+        goto again;
+    }
+
+    return 0;
+}
+
 static int vfio_connect_container(VFIOGroup *group, AddressSpace *as,
                                   Error **errp)
 {
@@ -1271,6 +1663,7 @@ static int vfio_connect_container(VFIOGroup *group, AddressSpace *as,
     container->error = NULL;
     QLIST_INIT(&container->giommu_list);
     QLIST_INIT(&container->hostwin_list);
+    memset(&container->log_buf, 0, sizeof(VFIOLogBuf));
 
     ret = vfio_init_container(container, group->fd, errp);
     if (ret) {
@@ -1281,7 +1674,7 @@ static int vfio_connect_container(VFIOGroup *group, AddressSpace *as,
     case VFIO_TYPE1v2_IOMMU:
     case VFIO_TYPE1_IOMMU:
     {
-        struct vfio_iommu_type1_info info;
+        struct vfio_iommu_type1_info *info;
 
         /*
          * FIXME: This assumes that a Type1 IOMMU can map any 64-bit
@@ -1290,15 +1683,15 @@ static int vfio_connect_container(VFIOGroup *group, AddressSpace *as,
          * existing Type1 IOMMUs generally support any IOVA we're
          * going to actually try in practice.
          */
-        info.argsz = sizeof(info);
-        ret = ioctl(fd, VFIO_IOMMU_GET_INFO, &info);
-        /* Ignore errors */
-        if (ret || !(info.flags & VFIO_IOMMU_INFO_PGSIZES)) {
+        ret = vfio_get_iommu_info(container, &info);
+        if (ret || !(info->flags & VFIO_IOMMU_INFO_PGSIZES)) {
             /* Assume 4k IOVA page size */
-            info.iova_pgsizes = 4096;
+            info->iova_pgsizes = 4096;
         }
-        vfio_host_win_add(container, 0, (hwaddr)-1, info.iova_pgsizes);
-        container->pgsizes = info.iova_pgsizes;
+        vfio_host_win_add(container, 0, (hwaddr)-1, info->iova_pgsizes);
+        container->pgsizes = info->iova_pgsizes;
+
+        g_free(info);
         break;
     }
     case VFIO_SPAPR_TCE_v2_IOMMU:
@@ -1379,7 +1772,6 @@ static int vfio_connect_container(VFIOGroup *group, AddressSpace *as,
     QLIST_INSERT_HEAD(&container->group_list, group, container_next);
 
     container->listener = vfio_memory_listener;
-
     memory_listener_register(&container->listener, container->space->as);
 
     if (container->error) {

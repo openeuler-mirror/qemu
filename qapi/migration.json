@@ -636,7 +636,7 @@
            'multifd-channels',
            'xbzrle-cache-size', 'max-postcopy-bandwidth',
            'max-cpu-throttle', 'multifd-compression',
-           'multifd-zlib-level' ,'multifd-zstd-level' ] }
+           'multifd-zlib-level' ,'multifd-zstd-level', 'memory-check' ] }
 
 ##
 # @MigrateSetParameters:
@@ -747,6 +747,8 @@
 #          will consume more CPU.
 #          Defaults to 1. (Since 5.0)
 #
+# @memory-check: whether enable memory check during migration process.
+#
 # Since: 2.4
 ##
 # TODO either fuse back into MigrationParameters, or make
@@ -776,7 +778,8 @@
             '*max-cpu-throttle': 'int',
             '*multifd-compression': 'MultiFDCompression',
             '*multifd-zlib-level': 'int',
-            '*multifd-zstd-level': 'int' } }
+            '*multifd-zstd-level': 'int',
+            '*memory-check': 'bool' } }
 
 ##
 # @migrate-set-parameters:
@@ -934,7 +937,8 @@
             '*max-cpu-throttle': 'uint8',
             '*multifd-compression': 'MultiFDCompression',
             '*multifd-zlib-level': 'uint8',
-            '*multifd-zstd-level': 'uint8' } }
+            '*multifd-zstd-level': 'uint8',
+            '*memory-check': 'bool' } }
 
 ##
 # @query-migrate-parameters:

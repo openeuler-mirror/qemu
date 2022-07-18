@@ -57,6 +57,24 @@ typedef struct VFIORegion {
     uint8_t nr; /* cache the region number for debug */
 } VFIORegion;
 
+typedef struct VFIOStateData {
+    uint8_t *data;
+    uint64_t data_offset;
+    uint64_t data_size;
+} VFIOStateData;
+
+typedef struct VFIOMigration {
+    struct VFIODevice *vbasedev;
+    VMChangeStateEntry *vm_state;
+    VFIORegion region;
+    uint32_t device_state;
+    uint32_t version_id;
+    int vm_running;
+    Notifier migration_state;
+    uint64_t pending_bytes;
+    VFIOStateData state_data;
+} VFIOMigration;
+
 typedef struct VFIOAddressSpace {
     AddressSpace *as;
     QLIST_HEAD(, VFIOContainer) containers;
@@ -64,6 +82,11 @@ typedef struct VFIOAddressSpace {
 } VFIOAddressSpace;
 
 struct VFIOGroup;
+
+typedef struct VFIOLogBuf {
+    struct vfio_log_buf_info info;
+    int fd;
+} VFIOLogBuf;
 
 typedef struct VFIOContainer {
     VFIOAddressSpace *space;
@@ -74,6 +97,7 @@ typedef struct VFIOContainer {
     Error *error;
     bool initialized;
     unsigned long pgsizes;
+    VFIOLogBuf log_buf;
     QLIST_HEAD(, VFIOGuestIOMMU) giommu_list;
     QLIST_HEAD(, VFIOHostDMAWindow) hostwin_list;
     QLIST_HEAD(, VFIOGroup) group_list;
@@ -109,16 +133,22 @@ typedef struct VFIODevice {
     bool needs_reset;
     bool no_mmap;
     bool balloon_allowed;
+    bool enable_migration;
     VFIODeviceOps *ops;
     unsigned int num_irqs;
     unsigned int num_regions;
     unsigned int flags;
+    VFIOMigration *migration;
+    Error *migration_blocker;
 } VFIODevice;
 
 struct VFIODeviceOps {
     void (*vfio_compute_needs_reset)(VFIODevice *vdev);
     int (*vfio_hot_reset_multi)(VFIODevice *vdev);
     void (*vfio_eoi)(VFIODevice *vdev);
+    Object *(*vfio_get_object)(VFIODevice *vdev);
+    void (*vfio_save_config)(VFIODevice *vdev, QEMUFile *f);
+    int (*vfio_load_config)(VFIODevice *vdev, QEMUFile *f);
 };
 
 typedef struct VFIOGroup {
@@ -170,6 +200,7 @@ uint64_t vfio_region_read(void *opaque,
 int vfio_region_setup(Object *obj, VFIODevice *vbasedev, VFIORegion *region,
                       int index, const char *name);
 int vfio_region_mmap(VFIORegion *region);
+void vfio_region_unmap(VFIORegion *region);
 void vfio_region_mmaps_set_enabled(VFIORegion *region, bool enabled);
 void vfio_region_exit(VFIORegion *region);
 void vfio_region_finalize(VFIORegion *region);
@@ -199,5 +230,16 @@ int vfio_spapr_create_window(VFIOContainer *container,
                              hwaddr *pgsize);
 int vfio_spapr_remove_window(VFIOContainer *container,
                              hwaddr offset_within_address_space);
+
+int vfio_migration_probe(VFIODevice *vbasedev, Error **errp);
+void vfio_migration_finalize(VFIODevice *vbasedev);
+
+int vfio_device_enable(VFIODevice *vbasedev);
+int vfio_device_disable(VFIODevice *vbasedev);
+int set_all_vfio_device(bool is_enable);
+
+void migration_memory_check(void);
+
+bool vfio_memory_listener_check(MemoryListener * listener);
 
 #endif /* HW_VFIO_VFIO_COMMON_H */
