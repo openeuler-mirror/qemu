@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 70
+Release: 71
 Epoch: 2
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY-SA-4.0
@@ -371,6 +371,7 @@ Patch0358: curses-Fixes-curses-compiling-errors.patch
 Patch0359: net-dump.c-Suppress-spurious-compiler-warning.patch
 Patch0360: tests-Replace-deprecated-ASN1-code.patch
 Patch0361: hw-block-fdc-Prevent-end-of-track-overrun-CVE-2021-3.patch
+Patch0362: softmmu-Always-initialize-xlat-in-address_space_tran.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -767,6 +768,9 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Tue Jul 19 2022 yezengruan <yezengruan@huawei.com>
+- softmmu: Always initialize xlat in address_space_translate_for_iotlb (CVE-2022-35414)
+
 * Thu Jun 02 2022 yezengruan <yezengruan@huawei.com>
 - hw/block/fdc: Prevent end-of-track overrun (CVE-2021-3507)
 
