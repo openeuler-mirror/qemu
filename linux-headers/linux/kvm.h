@@ -2103,6 +2103,11 @@ struct kvm_csv_command_batch {
 	__u64 csv_batch_list_uaddr;
 };
 
+struct kvm_csv_init {
+	__u64 userid_addr;
+	__u32 len;
+};
+
 #define KVM_DEV_ASSIGN_ENABLE_IOMMU	(1 << 0)
 #define KVM_DEV_ASSIGN_PCI_2_3		(1 << 1)
 #define KVM_DEV_ASSIGN_MASK_INTX	(1 << 2)

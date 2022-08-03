@@ -14,6 +14,8 @@
 #ifndef I386_CSV_H
 #define I386_CSV_H
 
+#define GUEST_POLICY_REUSE_ASID  (1 << 7)
+
 #ifdef CONFIG_CSV
 
 #include "cpu.h"
