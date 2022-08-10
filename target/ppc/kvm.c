@@ -1895,7 +1895,7 @@ static int kvmppc_find_cpu_dt(char *buf, int buf_len)
     return 0;
 }
 
-static uint64_t kvmppc_read_int_dt(const char *filename)
+static uint64_t kvmppc_read_int_dt(const char *filename, Error **errp)
 {
     union {
         uint32_t v32;
@@ -1906,7 +1906,8 @@ static uint64_t kvmppc_read_int_dt(const char *filename)
 
     f = fopen(filename, "rb");
     if (!f) {
-        return -1;
+        error_setg_errno(errp, errno, "error opening %s", filename);
+        return 0;
     }
 
     len = fread(&u, 1, sizeof(u), f);
@@ -1924,33 +1925,48 @@ static uint64_t kvmppc_read_int_dt(const char *filename)
 
 /*
  * Read a CPU node property from the host device tree that's a single
- * integer (32-bit or 64-bit).  Returns 0 if anything goes wrong
- * (can't find or open the property, or doesn't understand the format)
+ * integer (32-bit or 64-bit).  Returns 0 and set errp if anything goes
+ * wrong (can't find or open the property, or doesn't understand the
+ * format)
  */
-static uint64_t kvmppc_read_int_cpu_dt(const char *propname)
+static uint64_t kvmppc_read_int_cpu_dt(const char *propname, Error **errp)
 {
-    char buf[PATH_MAX], *tmp;
-    uint64_t val;
+    g_autofree char *tmp = NULL;
+    char buf[PATH_MAX];
 
     if (kvmppc_find_cpu_dt(buf, sizeof(buf))) {
-        return -1;
+        error_setg(errp, "Failed to read CPU property %s", propname);
+        return 0;
     }
 
     tmp = g_strdup_printf("%s/%s", buf, propname);
-    val = kvmppc_read_int_dt(tmp);
-    g_free(tmp);
 
-    return val;
+    return kvmppc_read_int_dt(tmp, errp);
 }
 
+/*
+ * Read the clock-frequency from the DT. On error (e.g.
+ * 'clock-frequency' is not present in the DT) will
+ * report an error and exit(1).
+ */
 uint64_t kvmppc_get_clockfreq(void)
 {
-    return kvmppc_read_int_cpu_dt("clock-frequency");
+    Error *local_err = NULL;
+    int ret;
+
+    ret = kvmppc_read_int_cpu_dt("clock-frequency", &local_err);
+
+    if (local_err) {
+        error_report_err(local_err);
+        exit(1);
+    }
+
+    return ret;
 }
 
 static int kvmppc_get_dec_bits(void)
 {
-    int nr_bits = kvmppc_read_int_cpu_dt("ibm,dec-bits");
+    int nr_bits = kvmppc_read_int_cpu_dt("ibm,dec-bits", NULL);
 
     if (nr_bits > 0) {
         return nr_bits;
@@ -2335,8 +2351,8 @@ static void alter_insns(uint64_t *word, uint64_t flags, bool on)
 static void kvmppc_host_cpu_class_init(ObjectClass *oc, void *data)
 {
     PowerPCCPUClass *pcc = POWERPC_CPU_CLASS(oc);
-    uint32_t dcache_size = kvmppc_read_int_cpu_dt("d-cache-size");
-    uint32_t icache_size = kvmppc_read_int_cpu_dt("i-cache-size");
+    uint32_t dcache_size = kvmppc_read_int_cpu_dt("d-cache-size", NULL);
+    uint32_t icache_size = kvmppc_read_int_cpu_dt("i-cache-size", NULL);
 
     /* Now fix up the class with information we can query from the host */
     pcc->pvr = mfpvr();
