@@ -133,8 +133,13 @@ struct arm_boot_info {
     bool secure_board_setup;
 
     arm_endianness endianness;
+
+    /* Used when loading firmware into RAM */
     hwaddr firmware_base;
     hwaddr firmware_max_size;
+    /*
+     * Confidential guest boot loads everything into RAM so it can be measured.
+     */
     bool confidential;
 };
 
