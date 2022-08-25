@@ -1,7 +1,7 @@
 Name: qemu
 Version: 4.1.0
-Release: 71
-Epoch: 2
+Release: 72
+Epoch: 10
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY-SA-4.0
 URL: http://www.qemu.org
@@ -423,6 +423,10 @@ BuildRequires: libfdt-devel
 BuildRequires: virglrenderer-devel
 %endif
 
+# for upgrade from qemu-kvm
+Provides: qemu-kvm
+Obsoletes: qemu-kvm < 10:4.1.0
+
 Requires(post): /usr/bin/getent
 Requires(post): /usr/sbin/groupadd
 Requires(post): /usr/sbin/useradd
@@ -768,6 +772,9 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Thu Aug 25 2022 yezengruan <yezengruan@huawei.com>
+- Provides qemu-kvm for upgrade
+
 * Tue Jul 19 2022 yezengruan <yezengruan@huawei.com>
 - softmmu: Always initialize xlat in address_space_translate_for_iotlb (CVE-2022-35414)
 
