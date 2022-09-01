@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 72
+Release: 73
 Epoch: 10
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY-SA-4.0
@@ -372,6 +372,9 @@ Patch0359: net-dump.c-Suppress-spurious-compiler-warning.patch
 Patch0360: tests-Replace-deprecated-ASN1-code.patch
 Patch0361: hw-block-fdc-Prevent-end-of-track-overrun-CVE-2021-3.patch
 Patch0362: softmmu-Always-initialize-xlat-in-address_space_tran.patch
+Patch0363: hw-scsi-lsi53c895a-Do-not-abort-when-DMA-requested-a.patch
+Patch0364: scsi-lsi53c895a-fix-use-after-free-in-lsi_do_msgout-.patch
+Patch0365: scsi-lsi53c895a-really-fix-use-after-free-in-lsi_do_.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -772,6 +775,11 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Tue Aug 30 2022 yezengruan <yezengruan@huawei.com>
+- hw/scsi/lsi53c895a: Do not abort when DMA requested and no data queued
+- scsi/lsi53c895a: fix use-after-free in lsi_do_msgout (CVE-2022-0216)
+- scsi/lsi53c895a: really fix use-after-free in lsi_do_msgout (CVE-2022-0216)
+
 * Thu Aug 25 2022 yezengruan <yezengruan@huawei.com>
 - Provides qemu-kvm for upgrade
 
