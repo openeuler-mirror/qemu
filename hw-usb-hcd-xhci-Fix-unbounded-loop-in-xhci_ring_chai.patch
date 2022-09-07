@@ -1,0 +1,65 @@
+From 61743ee9276c4ec9c3fb99d5b63b5ddf4eaae8fe Mon Sep 17 00:00:00 2001
+From: Thomas Huth <thuth@redhat.com>
+Date: Thu, 4 Aug 2022 15:13:00 +0200
+Subject: [PATCH] hw/usb/hcd-xhci: Fix unbounded loop in
+ xhci_ring_chain_length() (CVE-2020-14394)
+
+The loop condition in xhci_ring_chain_length() is under control of
+the guest, and additionally the code does not check for failed DMA
+transfers (e.g. if reaching the end of the RAM), so the loop there
+could run for a very long time or even forever. Fix it by checking
+the return value of dma_memory_read() and by introducing a maximum
+loop length.
+
+Resolves: https://gitlab.com/qemu-project/qemu/-/issues/646
+Message-Id: <20220804131300.96368-1-thuth@redhat.com>
+Reviewed-by: Mauro Matteo Cascella <mcascell@redhat.com>
+Acked-by: Gerd Hoffmann <kraxel@redhat.com>
+Signed-off-by: Thomas Huth <thuth@redhat.com>
+---
+ hw/usb/hcd-xhci.c | 15 +++++++++++++--
+ 1 file changed, 13 insertions(+), 2 deletions(-)
+
+diff --git a/hw/usb/hcd-xhci.c b/hw/usb/hcd-xhci.c
+index 3b25abcacd..7a318eb967 100644
+--- a/hw/usb/hcd-xhci.c
++++ b/hw/usb/hcd-xhci.c
+@@ -22,6 +22,7 @@
+ #include "qemu/osdep.h"
+ #include "hw/hw.h"
+ #include "qemu/timer.h"
++#include "qemu/log.h"
+ #include "qemu/module.h"
+ #include "qemu/queue.h"
+ #include "hw/usb.h"
+@@ -770,7 +771,7 @@ static int xhci_ring_chain_length(XHCIState *xhci, const XHCIRing *ring)
+     bool control_td_set = 0;
+     uint32_t link_cnt = 0;
+ 
+-    while (1) {
++    do {
+         TRBType type;
+         pci_dma_read(pci_dev, dequeue, &trb, TRB_SIZE);
+         le64_to_cpus(&trb.parameter);
+@@ -806,7 +807,17 @@ static int xhci_ring_chain_length(XHCIState *xhci, const XHCIRing *ring)
+         if (!control_td_set && !(trb.control & TRB_TR_CH)) {
+             return length;
+         }
+-    }
++
++        /*
++         * According to the xHCI spec, Transfer Ring segments should have
++         * a maximum size of 64 kB (see chapter "6 Data Structures")
++         */
++    } while (length < TRB_LINK_LIMIT * 65536 / TRB_SIZE);
++
++    qemu_log_mask(LOG_GUEST_ERROR, "%s: exceeded maximum tranfer ring size!\n",
++                          __func__);
++
++    return -1;
+ }
+ 
+ static void xhci_er_reset(XHCIState *xhci, int v)
+-- 
+2.27.0
+
