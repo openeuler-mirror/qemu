@@ -22,6 +22,8 @@ QDict *wait_command_fd(QTestState *who, int fd, const char *command, ...);
 GCC_FMT_ATTR(2, 3)
 QDict *wait_command(QTestState *who, const char *command, ...);
 
+QDict *qmp_command(QTestState *who, const char *command, ...);
+
 GCC_FMT_ATTR(3, 4)
 void migrate_qmp(QTestState *who, const char *uri, const char *fmt, ...);
 
