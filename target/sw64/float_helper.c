@@ -653,7 +653,6 @@ void helper_ieee_input(CPUSW64State *env, uint64_t val)
 {
 #ifndef CONFIG_USER_ONLY
     uint32_t exp = (uint32_t)(val >> 52) & 0x7ff;
-    uint64_t frac = val & 0xfffffffffffffull;
 
     if (exp == 0x7ff) {
         /* Infinity or NaN.  */
