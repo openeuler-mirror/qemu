@@ -39,7 +39,7 @@ static inline unsigned idx_from_topo_ids(unsigned nr_clusters,
     assert(topo != NULL);
 
     return topo->pkg_id * nr_clusters * nr_cores * nr_threads +
-           topo->cluster_id * nr_cores +
+           topo->cluster_id * nr_cores * nr_threads +
            topo->core_id * nr_threads +
            topo->smt_id;
 }
