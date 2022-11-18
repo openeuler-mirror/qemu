@@ -24,13 +24,5 @@ typedef struct IOMMUConfig {
           };
 } IOMMUConfig;
 
-typedef struct IOMMUPageResponse {
-    union {
-#ifdef __linux__
-        struct iommu_page_response resp;
-#endif
-          };
-} IOMMUPageResponse;
-
 
 #endif /* QEMU_HW_IOMMU_IOMMU_H */
