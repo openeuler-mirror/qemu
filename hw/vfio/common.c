@@ -1566,19 +1566,6 @@ err_out:
     return ret;
 }
 
-static int vfio_dma_sync_ram_section_dirty_bitmap(VFIOContainer *container,
-                                                  MemoryRegionSection *section)
-{
-    ram_addr_t ram_addr;
-
-    ram_addr = memory_region_get_ram_addr(section->mr) +
-               section->offset_within_region;
-
-    return vfio_get_dirty_bitmap(container,
-                    REAL_HOST_PAGE_ALIGN(section->offset_within_address_space),
-                    int128_get64(section->size), ram_addr);
-}
-
 typedef struct {
     IOMMUNotifier n;
     VFIOGuestIOMMU *giommu;
@@ -1663,6 +1650,8 @@ static int vfio_sync_ram_discard_listener_dirty_bitmap(VFIOContainer *container,
 static int vfio_sync_dirty_bitmap(VFIOContainer *container,
                                   MemoryRegionSection *section)
 {
+    ram_addr_t ram_addr;
+
     if (memory_region_is_iommu(section->mr)) {
         VFIOGuestIOMMU *giommu;
 
@@ -1693,7 +1682,12 @@ static int vfio_sync_dirty_bitmap(VFIOContainer *container,
         return vfio_sync_ram_discard_listener_dirty_bitmap(container, section);
     }
 
-    return vfio_dma_sync_ram_section_dirty_bitmap(container, section);
+    ram_addr = memory_region_get_ram_addr(section->mr) +
+               section->offset_within_region;
+
+    return vfio_get_dirty_bitmap(container,
+                   REAL_HOST_PAGE_ALIGN(section->offset_within_address_space),
+                   int128_get64(section->size), ram_addr);
 }
 
 static void vfio_listener_log_sync(MemoryListener *listener,
