@@ -57,7 +57,7 @@ GNUmakefile: ;
 
 EOF
     cd build
-    exec $source_path/configure "$@"
+    exec "$source_path/configure" "$@"
 fi
 
 # Temporary directory used for files created while
@@ -728,7 +728,7 @@ fi
 
 werror=""
 
-. $source_path/scripts/meson-buildoptions.sh
+. "$source_path/scripts/meson-buildoptions.sh"
 
 meson_options=
 meson_option_parse() {
@@ -745,7 +745,7 @@ for opt do
   case "$opt" in
   --help|-h) show_help=yes
   ;;
-  --version|-V) exec cat $source_path/VERSION
+  --version|-V) exec cat "$source_path/VERSION"
   ;;
   --prefix=*) prefix="$optarg"
   ;;
@@ -1503,7 +1503,7 @@ python="$python -B"
 if test -z "$meson"; then
     if test "$explicit_python" = no && has meson && version_ge "$(meson --version)" 0.59.3; then
         meson=meson
-    elif test $git_submodules_action != 'ignore' ; then
+    elif test "$git_submodules_action" != 'ignore' ; then
         meson=git
     elif test -e "${source_path}/meson/meson.py" ; then
         meson=internal
@@ -3352,7 +3352,7 @@ if test "$QEMU_GA_DISTRO" = ""; then
   QEMU_GA_DISTRO=Linux
 fi
 if test "$QEMU_GA_VERSION" = ""; then
-    QEMU_GA_VERSION=$(cat $source_path/VERSION)
+    QEMU_GA_VERSION=$(cat "$source_path"/VERSION)
 fi
 
 QEMU_GA_MSI_MINGW_DLL_PATH="$($pkg_config --variable=prefix glib-2.0)/bin"
@@ -3790,7 +3790,7 @@ fi
 for target in $target_list; do
     target_dir="$target"
     target_name=$(echo $target | cut -d '-' -f 1)
-    mkdir -p $target_dir
+    mkdir -p "$target_dir"
     case $target in
         *-user) symlink "../qemu-$target_name" "$target_dir/qemu-$target_name" ;;
         *) symlink "../qemu-system-$target_name" "$target_dir/qemu-system-$target_name" ;;
