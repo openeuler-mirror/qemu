@@ -24,6 +24,8 @@
 #include "trace.h"
 #include "qemu-common.h"
 
+static unsigned int vhost_vdpa_used_memslots;
+
 /*
  * Return one past the end of the end of section. Be careful with uint64_t
  * conversions!
@@ -763,6 +765,16 @@ static bool  vhost_vdpa_force_iommu(struct vhost_dev *dev)
     return true;
 }
 
+static void vhost_vdpa_set_used_memslots(struct vhost_dev *dev)
+{
+    vhost_vdpa_used_memslots = dev->mem->nregions;
+}
+
+static unsigned int vhost_vdpa_get_used_memslots(void)
+{
+    return vhost_vdpa_used_memslots;
+}
+
 const VhostOps vdpa_ops = {
         .backend_type = VHOST_BACKEND_TYPE_VDPA,
         .vhost_backend_init = vhost_vdpa_init,
@@ -795,4 +807,6 @@ const VhostOps vdpa_ops = {
         .vhost_get_device_id = vhost_vdpa_get_device_id,
         .vhost_vq_get_addr = vhost_vdpa_vq_get_addr,
         .vhost_force_iommu = vhost_vdpa_force_iommu,
+	.vhost_set_used_memslots = vhost_vdpa_set_used_memslots,
+	.vhost_get_used_memslots = vhost_vdpa_get_used_memslots,
 };
