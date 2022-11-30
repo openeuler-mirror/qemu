@@ -5,6 +5,9 @@
 #include "hw/virtio/virtio.h"
 #include "exec/memory.h"
 
+#define VHOST_F_DEVICE_IOTLB 63
+#define VHOST_USER_F_PROTOCOL_FEATURES 30
+
 /* Generic structures common for any vhost based device. */
 
 struct vhost_inflight {
@@ -165,24 +168,26 @@ void vhost_dev_disable_notifiers(struct vhost_dev *hdev, VirtIODevice *vdev);
  * vhost_dev_start() - start the vhost device
  * @hdev: common vhost_dev structure
  * @vdev: the VirtIODevice structure
+ * @vrings: true to have vrings enabled in this call
  *
  * Starts the vhost device. From this point VirtIO feature negotiation
  * can start and the device can start processing VirtIO transactions.
  *
  * Return: 0 on success, < 0 on error.
  */
-int vhost_dev_start(struct vhost_dev *hdev, VirtIODevice *vdev);
+int vhost_dev_start(struct vhost_dev *hdev, VirtIODevice *vdev, bool vrings);
 
 /**
  * vhost_dev_stop() - stop the vhost device
  * @hdev: common vhost_dev structure
  * @vdev: the VirtIODevice structure
+ * @vrings: true to have vrings disabled in this call
  *
  * Stop the vhost device. After the device is stopped the notifiers
  * can be disabled (@vhost_dev_disable_notifiers) and the device can
  * be torn down (@vhost_dev_cleanup).
  */
-void vhost_dev_stop(struct vhost_dev *hdev, VirtIODevice *vdev);
+void vhost_dev_stop(struct vhost_dev *hdev, VirtIODevice *vdev, bool vrings);
 
 /**
  * DOC: vhost device configuration handling

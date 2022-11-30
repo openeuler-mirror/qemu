@@ -319,7 +319,7 @@ static int vhost_net_start_one(struct vhost_net *net,
         goto fail_notifiers;
     }
 
-    r = vhost_dev_start(&net->dev, dev);
+    r = vhost_dev_start(&net->dev, dev, false);
     if (r < 0) {
         goto fail_start;
     }
@@ -368,7 +368,7 @@ fail:
     if (net->nc->info->poll) {
         net->nc->info->poll(net->nc, true);
     }
-    vhost_dev_stop(&net->dev, dev);
+    vhost_dev_stop(&net->dev, dev, false);
 fail_start:
     vhost_dev_disable_notifiers(&net->dev, dev);
 fail_notifiers:
@@ -389,7 +389,7 @@ static void vhost_net_stop_one(struct vhost_net *net,
     if (net->nc->info->poll) {
         net->nc->info->poll(net->nc, true);
     }
-    vhost_dev_stop(&net->dev, dev);
+    vhost_dev_stop(&net->dev, dev, false);
     if (net->nc->info->stop) {
         net->nc->info->stop(net->nc);
     }
