@@ -1,0 +1,31 @@
+From 77af3f7f295a8b775adac7191a76136e779ac1c3 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Philippe=20Mathieu-Daud=C3=A9?= <philmd@linaro.org>
+Date: Mon, 28 Nov 2022 21:27:41 +0100
+Subject: [PATCH 5/5] hw/display/qxl: Assert memory slot fits in preallocated
+ MemoryRegion
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Signed-off-by: Philippe Mathieu-Daudé <philmd@linaro.org>
+Signed-off-by: Stefan Hajnoczi <stefanha@redhat.com>
+Message-Id: <20221128202741.4945-6-philmd@linaro.org>
+---
+ hw/display/qxl.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/hw/display/qxl.c b/hw/display/qxl.c
+index b34f2bd9b1..5a923d30de 100644
+--- a/hw/display/qxl.c
++++ b/hw/display/qxl.c
+@@ -1400,6 +1400,7 @@ static int qxl_add_memslot(PCIQXLDevice *d, uint32_t slot_id, uint64_t delta,
+         qxl_set_guest_bug(d, "%s: pci_region = %d", __func__, pci_region);
+         return 1;
+     }
++    assert(guest_end - pci_start <= memory_region_size(mr));
+ 
+     virt_start = (intptr_t)memory_region_get_ram_ptr(mr);
+     memslot.slot_id = slot_id;
+-- 
+2.27.0
+

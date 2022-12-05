@@ -1,0 +1,53 @@
+From 15907e2ec54501b2e323774f40221f5396bb7281 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Philippe=20Mathieu-Daud=C3=A9?= <philmd@linaro.org>
+Date: Mon, 28 Nov 2022 21:27:37 +0100
+Subject: [PATCH 1/5] hw/display/qxl: Have qxl_log_command Return early if no
+ log_cmd handler
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Only 3 command types are logged: no need to call qxl_phys2virt()
+for the other types. Using different cases will help to pass
+different structure sizes to qxl_phys2virt() in a pair of commits.
+
+Reviewed-by: Marc-André Lureau <marcandre.lureau@redhat.com>
+Signed-off-by: Philippe Mathieu-Daudé <philmd@linaro.org>
+Signed-off-by: Stefan Hajnoczi <stefanha@redhat.com>
+Message-Id: <20221128202741.4945-2-philmd@linaro.org>
+---
+ hw/display/qxl-logger.c | 11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+diff --git a/hw/display/qxl-logger.c b/hw/display/qxl-logger.c
+index 2ec6d8fa3d..551c274c27 100644
+--- a/hw/display/qxl-logger.c
++++ b/hw/display/qxl-logger.c
+@@ -249,6 +249,16 @@ int qxl_log_command(PCIQXLDevice *qxl, const char *ring, QXLCommandExt *ext)
+             qxl_name(qxl_type, ext->cmd.type),
+             compat ? "(compat)" : "");
+ 
++    switch (ext->cmd.type) {
++    case QXL_CMD_DRAW:
++        break;
++    case QXL_CMD_SURFACE:
++        break;
++    case QXL_CMD_CURSOR:
++        break;
++    default:
++        goto out;
++    }
+     data = qxl_phys2virt(qxl, ext->cmd.data, ext->group_id);
+     if (!data) {
+         return 1;
+@@ -271,6 +281,7 @@ int qxl_log_command(PCIQXLDevice *qxl, const char *ring, QXLCommandExt *ext)
+         qxl_log_cmd_cursor(qxl, data, ext->group_id);
+         break;
+     }
++out:
+     fprintf(stderr, "\n");
+     return 0;
+ }
+-- 
+2.27.0
+

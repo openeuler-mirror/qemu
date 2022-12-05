@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 75
+Release: 76
 Epoch: 10
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY-SA-4.0
@@ -377,6 +377,11 @@ Patch0364: scsi-lsi53c895a-fix-use-after-free-in-lsi_do_msgout-.patch
 Patch0365: scsi-lsi53c895a-really-fix-use-after-free-in-lsi_do_.patch
 Patch0366: hw-usb-hcd-xhci-Fix-unbounded-loop-in-xhci_ring_chai.patch
 Patch0367: hw-display-ati_2d-Fix-buffer-overflow-in-ati_2d_blt-.patch
+Patch0368: hw-display-qxl-Have-qxl_log_command-Return-early-if-.patch
+Patch0369: hw-display-qxl-Document-qxl_phys2virt.patch
+Patch0370: hw-display-qxl-Pass-requested-buffer-size-to-qxl_phy.patch
+Patch0371: hw-display-qxl-Avoid-buffer-overrun-in-qxl_phys2virt.patch
+Patch0372: hw-display-qxl-Assert-memory-slot-fits-in-preallocat.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -777,6 +782,9 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Mon Dec 05 2022 yezengruan <yezengruan@huawei.com>
+- fix CVE-2022-4144
+
 * Fri Sep 30 2022 yezengruan <yezengruan@huawei.com>
 - hw/display/ati_2d: Fix buffer overflow in ati_2d_blt (CVE-2021-3638)
 
