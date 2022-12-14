@@ -143,8 +143,9 @@ uint64_t vhost_net_get_acked_features(VHostNetState *net)
 
 void vhost_net_save_acked_features(NetClientState *nc)
 {
-    assert(nc->info->type == NET_CLIENT_DRIVER_VHOST_USER);
-    vhost_user_save_acked_features(nc);
+    if (nc->info->type == NET_CLIENT_DRIVER_VHOST_USER) {
+        vhost_user_save_acked_features(nc);
+    }
 }
 
 static int vhost_net_get_fd(NetClientState *backend)
