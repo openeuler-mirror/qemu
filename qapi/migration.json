@@ -1285,6 +1285,30 @@
   'data': { 'pass': 'int' } }
 
 ##
+# @MIGRATION_MULTIFD_PID:
+#
+# Emitted when multifd thread appear
+#
+# @pid: pid of multifd thread
+#
+# Since: EulerOS Virtual
+##
+{ 'event': 'MIGRATION_MULTIFD_PID',
+  'data': { 'pid': 'int' } }
+
+##
+# @MIGRATION_PID:
+#
+# Emitted when migration thread appear
+#
+# @pid: pid of migration thread
+#
+# Since: EulerOS Virtual
+##
+{ 'event': 'MIGRATION_PID',
+  'data': { 'pid': 'int' } }
+
+##
 # @COLOMessage:
 #
 # The message transmission between Primary side and Secondary side.

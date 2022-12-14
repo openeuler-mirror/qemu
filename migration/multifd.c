@@ -17,6 +17,7 @@
 #include "exec/ramblock.h"
 #include "qemu/error-report.h"
 #include "qapi/error.h"
+#include "qapi/qapi-events-migration.h"
 #include "ram.h"
 #include "migration.h"
 #include "socket.h"
@@ -628,6 +629,9 @@ static void *multifd_send_thread(void *opaque)
     Error *local_err = NULL;
     int ret = 0;
     uint32_t flags = 0;
+
+    /* report multifd thread pid to libvirt */
+    qapi_event_send_migration_multifd_pid(qemu_get_thread_id());
 
     trace_multifd_send_thread_start(p->id);
     rcu_register_thread();
