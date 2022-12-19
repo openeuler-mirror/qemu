@@ -347,6 +347,12 @@ static void tcp_chr_set_reconnect_time(Chardev *chr,
 void qemu_chr_set_reconnect_time(Chardev *chr, int64_t reconnect_time)
 {
     ChardevClass *cc = CHARDEV_GET_CLASS(chr);
+    SocketChardev *s = SOCKET_CHARDEV(chr);
+
+    /* if sock dev is listen, dont set reconnect time */
+    if (s->is_listen) {
+        return;
+    }
 
     if (cc->chr_set_reconnect_time) {
         cc->chr_set_reconnect_time(chr, reconnect_time);
