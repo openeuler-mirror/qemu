@@ -976,6 +976,9 @@ struct ArchCPU {
     bool kvm_sve_finalized;
 #endif /* CONFIG_KVM */
 
+    /* Realm Management Extension */
+    bool kvm_rme;
+
     /* Uniprocessor system with MP extensions */
     bool mp_is_up;
 
