@@ -39,20 +39,6 @@ void kvm_arm_init_debug(KVMState *s);
 int kvm_arm_vcpu_init(CPUState *cs);
 
 /**
- * kvm_arm_vcpu_finalize:
- * @cs: CPUState
- * @feature: feature to finalize
- *
- * Finalizes the configuration of the specified VCPU feature by
- * invoking the KVM_ARM_VCPU_FINALIZE ioctl. Features requiring
- * this are documented in the "KVM_ARM_VCPU_FINALIZE" section of
- * KVM's API documentation.
- *
- * Returns: 0 if success else < 0 error code
- */
-int kvm_arm_vcpu_finalize(CPUState *cs, int feature);
-
-/**
  * kvm_arm_register_device:
  * @mr: memory region for this device
  * @devid: the KVM device ID
@@ -286,6 +272,14 @@ void kvm_arm_set_cpu_features_from_host(ARMCPU *cpu);
 void kvm_arm_add_vcpu_properties(Object *obj);
 
 /**
+ * @cs: CPUState
+ * @feature: a KVM_ARM_VCPU_* feature
+ *
+ * Finalize the configuration of the given vcpu feature.
+ */
+int kvm_arm_vcpu_finalize(CPUState *cs, int feature);
+
+/**
  * kvm_arm_steal_time_finalize:
  * @cpu: ARMCPU for which to finalize kvm-steal-time
  * @errp: Pointer to Error* for error propagation
@@ -408,6 +402,22 @@ bool kvm_arm_tmm_enabled(void);
  */
 int kvm_arm_set_smccc_filter(uint64_t func, uint8_t faction);
 
+/**
+ * kvm_arm_rme_init
+ * @ms: the machine state
+ *
+ * Prepare the machine to be a Realm, if the user enabled it.
+ */
+int kvm_arm_rme_init(MachineState *ms);
+
+/**
+ * kvm_arm_rme_vm_type
+ * @ms: the machine state
+ *
+ * Returns the Realm KVM VM type if the user requested a Realm, 0 otherwise.
+ */
+int kvm_arm_rme_vm_type(MachineState *ms);
+
 #else
 
 /*
@@ -443,6 +453,11 @@ static inline void kvm_arm_set_cpu_features_from_host(ARMCPU *cpu)
 }
 
 static inline void kvm_arm_add_vcpu_properties(Object *obj)
+{
+    g_assert_not_reached();
+}
+
+static inline int kvm_arm_vcpu_finalize(CPUState *cs, int feature)
 {
     g_assert_not_reached();
 }
@@ -509,6 +524,16 @@ static inline void tmm_set_hpre_addr(hwaddr base, int num)
 }
 
 static inline int tmm_get_kae_num(void)
+{
+    g_assert_not_reached();
+}
+
+static inline int kvm_arm_rme_init(MachineState *ms)
+{
+    g_assert_not_reached();
+}
+
+static inline int kvm_arm_rme_vm_type(MachineState *ms)
 {
     g_assert_not_reached();
 }

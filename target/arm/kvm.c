@@ -349,7 +349,12 @@ int kvm_arch_init(MachineState *ms, KVMState *s)
     kvm_arm_init_debug(s);
     kvm_update_ipiv_cap(s);
 
-    return 0;
+    ret = kvm_arm_rme_init(ms);
+    if (ret) {
+        error_report("Failed to enable RME: %s", strerror(-ret));
+    }
+
+    return ret;
 }
 
 unsigned long kvm_arch_vcpu_id(CPUState *cpu)
