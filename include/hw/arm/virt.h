@@ -225,7 +225,7 @@ struct VirtMachineState {
     bool cpu_hotplug_enabled;
     bool ras;
     bool mte;
-    bool dtb_randomness;
+    OnOffAuto dtb_randomness;
     bool pmu;
     int smmu_accel_count;
     OnOffAuto acpi;
