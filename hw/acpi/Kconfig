@@ -15,6 +15,14 @@ config ACPI_X86_ICH
     bool
     select ACPI_X86
 
+config ACPI_LOONGARCH
+    bool
+    select ACPI
+    select ACPI_CPU_HOTPLUG
+    select ACPI_MEMORY_HOTPLUG
+    select ACPI_PIIX4
+    select ACPI_PCIHP
+
 config ACPI_CPU_HOTPLUG
     bool
 
