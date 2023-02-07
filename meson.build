@@ -56,7 +56,7 @@ python = import('python').find_installation()
 
 supported_oses = ['windows', 'freebsd', 'netbsd', 'openbsd', 'darwin', 'sunos', 'linux']
 supported_cpus = ['ppc', 'ppc64', 's390x', 'riscv', 'x86', 'x86_64',
-  'arm', 'aarch64', 'mips', 'mips64', 'sparc', 'sparc64', 'sw64']
+  'arm', 'aarch64', 'mips', 'mips64', 'sparc', 'sparc64', 'sw64', 'loongarch64']
 
 cpu = host_machine.cpu_family()
 
@@ -83,6 +83,8 @@ elif cpu in ['mips', 'mips64']
   kvm_targets = ['mips-softmmu', 'mipsel-softmmu', 'mips64-softmmu', 'mips64el-softmmu']
 elif cpu == 'sw64'
   kvm_targets = ['sw64-softmmu']
+elif cpu == 'loongarch64'
+  kvm_targets = ['loongarch64-softmmu']
 else
   kvm_targets = []
 endif
@@ -367,6 +369,8 @@ if not get_option('tcg').disabled()
     tcg_arch = 'ppc'
   elif config_host['ARCH'] in ['sw64']
     tcg_arch = 'sw64'
+  elif config_host['ARCH'] == 'loongarch64'
+    tcg_arch = 'loongarch64'
   endif
   add_project_arguments('-iquote', meson.current_source_dir() / 'tcg' / tcg_arch,
                         language: ['c', 'cpp', 'objc'])
@@ -1822,6 +1826,7 @@ disassemblers = {
   'sh4' : ['CONFIG_SH4_DIS'],
   'sparc' : ['CONFIG_SPARC_DIS'],
   'xtensa' : ['CONFIG_XTENSA_DIS'],
+  'loongarch64' : ['CONFIG_LOONGARCH_DIS'],
   'sw64' : ['CONFIG_SW64_DIS'],
 }
 if link_language == 'cpp'
