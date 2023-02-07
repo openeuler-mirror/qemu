@@ -1,0 +1,17 @@
+config LS7A_APIC
+    bool
+
+config LS7A_RTC
+    bool
+
+config LOONGSON3A
+    bool
+
+config MEM_HOTPLUG
+    bool
+
+config ACPI_LOONGARCH
+    bool
+
+config E1000E_PCI
+    bool
