@@ -2798,6 +2798,7 @@ static void virt_cpu_plug(HotplugHandler *hotplug_dev,
         }
 
         /* Register CPU reset and trigger it manually */
+        cpu_synchronize_post_init(cs);
         cpu_synchronize_state(cs);
         cpu_hotplug_register_reset(ncpu);
         cpu_hotplug_reset_manually(ncpu);
