@@ -2747,13 +2747,6 @@ static void virt_cpu_pre_plug(HotplugHandler *hotplug_dev,
                                      &error_abort);
         }
     }
-
-    /* If we use KVM accel, we should pause all vcpus to
-     * allow hot access of vcpu registers.
-     */
-    if (dev->hotplugged && kvm_enabled()) {
-        pause_all_vcpus();
-    }
 }
 
 static void virt_cpu_plug(HotplugHandler *hotplug_dev,
@@ -2773,6 +2766,10 @@ static void virt_cpu_plug(HotplugHandler *hotplug_dev,
 
     /* For CPU that is cold/hot plugged */
     if (ncpu >= ms->smp.cpus) {
+        if (dev->hotplugged) {
+            pause_all_vcpus();
+        }
+
         /* Realize GIC related parts of CPU */
         assert(vms->gic_version == 3);
         gicv3 = ARM_GICV3_COMMON(vms->gic);
@@ -2803,6 +2800,10 @@ static void virt_cpu_plug(HotplugHandler *hotplug_dev,
         cpu_hotplug_register_reset(ncpu);
         cpu_hotplug_reset_manually(ncpu);
         cpu_synchronize_post_reset(cs);
+
+        if (dev->hotplugged) {
+            resume_all_vcpus();
+        }
     }
 
     if (dev->hotplugged && kvm_enabled()) {
