@@ -206,14 +206,12 @@ static void cpu_common_realizefn(DeviceState *dev, Error **errp)
         }
     }
 
+#ifdef __aarch64__
     if (dev->hotplugged) {
         cpu_synchronize_post_init(cpu);
-
-#ifdef __aarch64__
-    if (!kvm_enabled())
-#endif
         cpu_resume(cpu);
     }
+#endif
 
     /* NOTE: latest generic point where the cpu is fully realized */
     trace_init_vcpu(cpu);
