@@ -1,5 +1,5 @@
 /*
- * Copyright (c) Huawei Technologies Co., Ltd. 2021-2021. All rights reserved.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2021-2023. All rights reserved.
  * Description: support vm live migration with vfio-pci device
  */
 
@@ -642,6 +642,11 @@ static int vfio_load_state(QEMUFile *f, void *opaque, int version_id)
         if (ret != 0) {
             return ret;
         }
+    }
+
+    ret = vfio_migration_set_state(vbasedev, ~VFIO_DEVICE_STATE_RESUMING, 0);
+    if (ret != 0) {
+        error_report("%s: Failed to cancel state RESUMING", vbasedev->name);
     }
 
     return ret;
