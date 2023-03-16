@@ -984,16 +984,14 @@ static void virt_machine_instance_init(Object *obj)
 
 static bool virt_get_aclint(Object *obj, Error **errp)
 {
-    MachineState *ms = MACHINE(obj);
-    RISCVVirtState *s = RISCV_VIRT_MACHINE(ms);
+    RISCVVirtState *s = RISCV_VIRT_MACHINE(obj);
 
     return s->have_aclint;
 }
 
 static void virt_set_aclint(Object *obj, bool value, Error **errp)
 {
-    MachineState *ms = MACHINE(obj);
-    RISCVVirtState *s = RISCV_VIRT_MACHINE(ms);
+    RISCVVirtState *s = RISCV_VIRT_MACHINE(obj);
 
     s->have_aclint = value;
 }
