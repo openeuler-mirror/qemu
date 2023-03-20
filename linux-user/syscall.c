@@ -1614,6 +1614,9 @@ static abi_long do_pipe(void *cpu_env, abi_ulong pipedes,
 #elif defined(TARGET_MIPS)
         ((CPUMIPSState*)cpu_env)->active_tc.gpr[3] = host_pipe[1];
         return host_pipe[0];
+#elif defined(TARGET_LOONGARCH64)
+        ((CPULOONGARCHState *)cpu_env)->active_tc.gpr[5] = host_pipe[1];
+        return host_pipe[0];
 #elif defined(TARGET_SH4)
         ((CPUSH4State*)cpu_env)->gregs[1] = host_pipe[1];
         return host_pipe[0];

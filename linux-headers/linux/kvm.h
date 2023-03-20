@@ -2008,6 +2008,31 @@ struct kvm_stats_desc {
 	char name[];
 };
 
+#ifdef __loongarch__
+struct kvm_loongarch_vcpu_state {
+    __u8 online_vcpus;
+    __u8 is_migrate;
+    __u32 cpu_freq;
+    __u32 count_ctl;
+    __u64 pending_exceptions;
+    __u64 pending_exceptions_clr;
+    __u64 core_ext_ioisr[4];
+};
+
+#define KVM_CAP_LOONGARCH_FPU 800
+#define KVM_CAP_LOONGARCH_LSX 801
+#define KVM_CAP_LOONGARCH_VZ 802
+#define KVM_REG_LOONGARCH 0x9000000000000000ULL
+#define KVM_LARCH_GET_VCPU_STATE                                              \
+    _IOR(KVMIO, 0xc0, struct kvm_loongarch_vcpu_state)
+#define KVM_LARCH_SET_VCPU_STATE                                              \
+    _IOW(KVMIO, 0xc1, struct kvm_loongarch_vcpu_state)
+#define KVM_LARCH_GET_CPUCFG _IOR(KVMIO, 0xc2, struct kvm_cpucfg)
+#define KVM_LOONGARCH_GET_IOCSR _IOR(KVMIO, 0xc3, struct kvm_iocsr_entry)
+#define KVM_LOONGARCH_SET_IOCSR _IOW(KVMIO, 0xc4, struct kvm_iocsr_entry)
+#define KVM_LARCH_SET_CPUCFG _IOR(KVMIO, 0xc5, struct kvm_cpucfg)
+#endif
+
 #define KVM_GET_STATS_FD  _IO(KVMIO,  0xce)
 
 /* Available with KVM_CAP_XSAVE2 */

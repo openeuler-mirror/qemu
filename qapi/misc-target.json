@@ -33,6 +33,7 @@
                    'TARGET_PPC64',
                    'TARGET_S390X',
                    'TARGET_SH4',
+                   'TARGET_LOONGARCH64',
                    'TARGET_SPARC' ] } }
 
 ##

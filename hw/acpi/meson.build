@@ -6,6 +6,7 @@ acpi_ss.add(files(
   'core.c',
   'utils.c',
 ))
+acpi_ss.add(when: 'CONFIG_ACPI_LOONGARCH', if_true: files('larch_7a.c'))
 acpi_ss.add(when: 'CONFIG_ACPI_CPU_HOTPLUG', if_true: files('cpu.c', 'cpu_hotplug.c'))
 acpi_ss.add(when: 'CONFIG_ACPI_CPU_HOTPLUG', if_false: files('acpi-cpu-hotplug-stub.c'))
 acpi_ss.add(when: 'CONFIG_ACPI_MEMORY_HOTPLUG', if_true: files('memory_hotplug.c'))

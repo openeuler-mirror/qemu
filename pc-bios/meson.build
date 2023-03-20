@@ -86,6 +86,8 @@ blobs = files(
   'opensbi-riscv32-generic-fw_dynamic.elf',
   'opensbi-riscv64-generic-fw_dynamic.elf',
   'npcm7xx_bootrom.bin',
+  'loongarch_bios.bin',
+  'loongarch_vars.bin',
 )
 
 if get_option('install_blobs')

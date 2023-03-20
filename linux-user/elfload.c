@@ -1041,6 +1041,70 @@ static uint32_t get_elf_hwcap(void)
 
 #endif /* TARGET_MIPS */
 
+#ifdef TARGET_LOONGARCH64
+
+#define ELF_START_MMAP 0x80000000
+
+#define ELF_CLASS ELFCLASS64
+#define ELF_ARCH EM_LOONGARCH
+
+#define elf_check_arch(x) ((x) == EM_LOONGARCH)
+
+static inline void init_thread(struct target_pt_regs *regs,
+                               struct image_info *infop)
+{
+    regs->csr_crmd = 2 << 3;
+    regs->csr_era = infop->entry;
+    regs->regs[3] = infop->start_stack;
+}
+
+/* See linux kernel: arch/mips/include/asm/elf.h.  */
+#define ELF_NREG 45
+typedef target_elf_greg_t target_elf_gregset_t[ELF_NREG];
+
+/* See linux kernel: arch/loongarch/include/uapi/asm/reg.h */
+enum {
+    TARGET_EF_R0 = 0,
+    TARGET_EF_R26 = TARGET_EF_R0 + 26,
+    TARGET_EF_R27 = TARGET_EF_R0 + 27,
+    TARGET_EF_CSR_ERA = TARGET_EF_R0 + 32,
+    TARGET_EF_CSR_BADV = TARGET_EF_R0 + 33,
+    TARGET_EF_CSR_CRMD = TARGET_EF_R0 + 34,
+    TARGET_EF_CSR_ESTAT = TARGET_EF_R0 + 38
+};
+
+/* See linux kernel: arch/loongarch/kernel/process.c:elf_dump_regs.  */
+static void elf_core_copy_regs(target_elf_gregset_t *regs,
+                               const CPULOONGARCHState *env)
+{
+    int i;
+
+    (*regs)[TARGET_EF_R0] = 0;
+
+    for (i = 1; i < ARRAY_SIZE(env->active_tc.gpr); i++) {
+        (*regs)[TARGET_EF_R0 + i] = tswapreg(env->active_tc.gpr[i]);
+    }
+
+    (*regs)[TARGET_EF_R26] = 0;
+    (*regs)[TARGET_EF_R27] = 0;
+    (*regs)[TARGET_EF_CSR_ERA] = tswapreg(env->active_tc.PC);
+    (*regs)[TARGET_EF_CSR_BADV] = tswapreg(env->CSR_BADV);
+    (*regs)[TARGET_EF_CSR_CRMD] = tswapreg(env->CSR_CRMD);
+    (*regs)[TARGET_EF_CSR_ESTAT] = tswapreg(env->CSR_ESTAT);
+}
+
+#define USE_ELF_CORE_DUMP
+#define ELF_EXEC_PAGESIZE 4096
+
+#define ELF_HWCAP get_elf_hwcap()
+
+static uint32_t get_elf_hwcap(void)
+{
+    return 0;
+}
+
+#endif /* TARGET_LOONGARCH64 */
+
 #ifdef TARGET_MICROBLAZE
 
 #define ELF_START_MMAP 0x80000000

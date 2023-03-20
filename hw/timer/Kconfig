@@ -60,3 +60,5 @@ config STELLARIS_GPTM
 
 config AVR_TIMER16
     bool
+config LS7A_RTC
+    bool

@@ -533,6 +533,10 @@ static inline void qemu_cleanup_generic_vfree(void *p)
       Valgrind does not support alignments larger than 1 MiB,
       therefore we need special code which handles running on Valgrind. */
 #  define QEMU_VMALLOC_ALIGN (512 * 4096)
+#elif defined(__linux__) && defined(__loongarch__)
+   /* Use 32 MiB alignment so transparent hugepages can be used by KVM. */
+#define QEMU_VMALLOC_ALIGN (qemu_real_host_page_size * \
+                            qemu_real_host_page_size / 8)
 #elif defined(__linux__) && defined(__s390x__)
    /* Use 1 MiB (segment size) alignment so gmap can be used by KVM. */
 #  define QEMU_VMALLOC_ALIGN (256 * 4096)
