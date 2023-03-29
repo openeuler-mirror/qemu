@@ -1364,3 +1364,6 @@ int kvm_arch_msi_data_to_gsi(uint32_t data)
 {
     abort();
 }
+void kvm_arch_accel_class_init(ObjectClass *oc)
+{
+}
