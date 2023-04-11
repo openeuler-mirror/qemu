@@ -248,6 +248,7 @@ void requester_freeze(int *num_vols, void *mountpoints, ErrorSet *errset)
     int num_fixed_drives = 0, i;
     int num_mount_points = 0;
 
+    VSS_BACKUP_TYPE vss_bt = get_vss_backup_type();
     if (vss_ctx.pVssbc) { /* already frozen */
         *num_vols = 0;
         return;
@@ -294,7 +295,7 @@ void requester_freeze(int *num_vols, void *mountpoints, ErrorSet *errset)
         goto out;
     }
 
-    hr = vss_ctx.pVssbc->SetBackupState(true, true, VSS_BT_FULL, false);
+    hr = vss_ctx.pVssbc->SetBackupState(true, true, vss_bt, false);
     if (FAILED(hr)) {
         err_set(errset, hr, "failed to set backup state");
         goto out;
