@@ -1,6 +1,6 @@
 Name: qemu
 Version: 4.1.0
-Release: 76
+Release: 77
 Epoch: 10
 Summary: QEMU is a generic and open source machine emulator and virtualizer
 License: GPLv2 and BSD and MIT and CC-BY-SA-4.0
@@ -382,6 +382,7 @@ Patch0369: hw-display-qxl-Document-qxl_phys2virt.patch
 Patch0370: hw-display-qxl-Pass-requested-buffer-size-to-qxl_phy.patch
 Patch0371: hw-display-qxl-Avoid-buffer-overrun-in-qxl_phys2virt.patch
 Patch0372: hw-display-qxl-Assert-memory-slot-fits-in-preallocat.patch
+Patch0373: hw-pvrdma-Protect-against-buggy-or-malicious-guest-d.patch
 
 BuildRequires: flex
 BuildRequires: bison
@@ -782,6 +783,9 @@ getent passwd qemu >/dev/null || \
 %endif
 
 %changelog
+* Thu May 18 2023 liuxiangdong <liuxiangdong5@huawei.com>
+- hw/pvrdma: Protect against buggy or malicious guest driver (CVE-2022-1050)
+
 * Mon Dec 05 2022 yezengruan <yezengruan@huawei.com>
 - fix CVE-2022-4144
 
