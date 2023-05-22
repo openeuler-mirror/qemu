@@ -29,3 +29,13 @@ int csv3_launch_encrypt_vmcb(void)
 {
     g_assert_not_reached();
 }
+
+int csv3_shared_region_dma_map(uint64_t start, uint64_t end)
+{
+    return 0;
+}
+
+void csv3_shared_region_dma_unmap(uint64_t start, uint64_t end)
+{
+
+}

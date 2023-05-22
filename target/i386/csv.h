@@ -15,6 +15,8 @@
 #define I386_CSV_H
 
 #include "qapi/qapi-commands-misc-target.h"
+#include "qemu/thread.h"
+#include "qemu/queue.h"
 #include "sev.h"
 
 #define GUEST_POLICY_CSV3_BIT    (1 << 6)
@@ -74,12 +76,19 @@ int csv_save_outgoing_cpu_state(QEMUFile *f, uint64_t *bytes_sent);
 int csv_load_incoming_cpu_state(QEMUFile *f);
 
 /* CSV3 */
+struct dma_map_region {
+    uint64_t start, size;
+    QTAILQ_ENTRY(dma_map_region) list;
+};
+
 struct Csv3GuestState {
     uint32_t policy;
     int sev_fd;
     void *state;
     int (*sev_ioctl)(int fd, int cmd, void *data, int *error);
     const char *(*fw_error_to_str)(int code);
+    QTAILQ_HEAD(, dma_map_region) dma_map_regions_list;
+    QemuMutex dma_map_regions_list_mutex;
 };
 
 typedef struct Csv3GuestState Csv3GuestState;
@@ -89,5 +98,8 @@ extern int csv3_init(uint32_t policy, int fd, void *state, struct sev_ops *ops);
 extern int csv3_launch_encrypt_vmcb(void);
 
 int csv3_load_data(uint64_t gpa, uint8_t *ptr, uint64_t len, Error **errp);
+
+int csv3_shared_region_dma_map(uint64_t start, uint64_t end);
+void csv3_shared_region_dma_unmap(uint64_t start, uint64_t end);
 
 #endif

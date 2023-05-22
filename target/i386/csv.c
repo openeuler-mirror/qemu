@@ -15,6 +15,7 @@
 #include "qemu/error-report.h"
 #include "qapi/error.h"
 #include "sysemu/kvm.h"
+#include "exec/address-spaces.h"
 
 #include <linux/kvm.h>
 
@@ -67,6 +68,8 @@ csv3_init(uint32_t policy, int fd, void *state, struct sev_ops *ops)
         csv3_guest.state = state;
         csv3_guest.sev_ioctl = ops->sev_ioctl;
         csv3_guest.fw_error_to_str = ops->fw_error_to_str;
+        QTAILQ_INIT(&csv3_guest.dma_map_regions_list);
+        qemu_mutex_init(&csv3_guest.dma_map_regions_list_mutex);
     }
     return 0;
 }
@@ -166,4 +169,135 @@ csv3_launch_encrypt_vmcb(void)
 
 err:
     return ret;
+}
+
+int csv3_shared_region_dma_map(uint64_t start, uint64_t end)
+{
+    MemoryRegionSection section;
+    AddressSpace *as;
+    QTAILQ_HEAD(, SharedRegionListener) *shared_region_listeners;
+    SharedRegionListener *shl;
+    MemoryListener *listener;
+    uint64_t size;
+    Csv3GuestState *s = &csv3_guest;
+    struct dma_map_region *region, *pos;
+    int ret = 0;
+
+    if (!csv3_enabled())
+        return 0;
+
+    if (end <= start)
+        return 0;
+
+    shared_region_listeners = shared_region_listeners_get();
+    if (QTAILQ_EMPTY(shared_region_listeners))
+        return 0;
+
+    size = end - start;
+
+    qemu_mutex_lock(&s->dma_map_regions_list_mutex);
+    QTAILQ_FOREACH(pos, &s->dma_map_regions_list, list) {
+        if (start >= (pos->start + pos->size)) {
+            continue;
+        } else if ((start + size) <= pos->start) {
+            break;
+        } else {
+            goto end;
+        }
+    }
+    QTAILQ_FOREACH(shl, shared_region_listeners, next) {
+        listener = shl->listener;
+        as = shl->as;
+        section = memory_region_find(as->root, start, size);
+        if (!section.mr) {
+            goto end;
+        }
+
+        if (!memory_region_is_ram(section.mr)) {
+            memory_region_unref(section.mr);
+            goto end;
+        }
+
+        if (listener->region_add) {
+            listener->region_add(listener, &section);
+        }
+        memory_region_unref(section.mr);
+    }
+
+    region = g_malloc0(sizeof(*region));
+    if (!region) {
+        ret = -1;
+        goto end;
+    }
+    region->start = start;
+    region->size = size;
+
+    if (pos) {
+        QTAILQ_INSERT_BEFORE(pos, region, list);
+    } else {
+        QTAILQ_INSERT_TAIL(&s->dma_map_regions_list, region, list);
+    }
+
+end:
+    qemu_mutex_unlock(&s->dma_map_regions_list_mutex);
+    return ret;
+}
+
+void csv3_shared_region_dma_unmap(uint64_t start, uint64_t end)
+{
+    MemoryRegionSection section;
+    AddressSpace *as;
+    QTAILQ_HEAD(, SharedRegionListener) *shared_region_listeners;
+    SharedRegionListener *shl;
+    MemoryListener *listener;
+    uint64_t size;
+    Csv3GuestState *s = &csv3_guest;
+    struct dma_map_region *pos, *next_pos;
+
+    if (!csv3_enabled())
+        return;
+
+    if (end <= start)
+        return;
+
+    shared_region_listeners = shared_region_listeners_get();
+    if (QTAILQ_EMPTY(shared_region_listeners))
+        return;
+
+    size = end - start;
+
+    qemu_mutex_lock(&s->dma_map_regions_list_mutex);
+    QTAILQ_FOREACH_SAFE(pos, &s->dma_map_regions_list, list, next_pos) {
+        uint64_t l, r;
+        uint64_t curr_end = pos->start + pos->size;
+
+        l = MAX(start, pos->start);
+        r = MIN(start + size, pos->start + pos->size);
+        if (l < r) {
+            if ((start <= pos->start) && (start + size >= pos->start + pos->size)) {
+                QTAILQ_FOREACH(shl, shared_region_listeners, next) {
+                    listener = shl->listener;
+                    as = shl->as;
+                    section = memory_region_find(as->root, pos->start, pos->size);
+                    if (!section.mr) {
+                        goto end;
+                    }
+                    if (listener->region_del) {
+                        listener->region_del(listener, &section);
+                    }
+                    memory_region_unref(section.mr);
+                }
+
+                QTAILQ_REMOVE(&s->dma_map_regions_list, pos, list);
+                g_free(pos);
+            }
+            break;
+        }
+        if ((start + size) <= curr_end) {
+            break;
+        }
+    }
+end:
+    qemu_mutex_unlock(&s->dma_map_regions_list_mutex);
+    return;
 }
