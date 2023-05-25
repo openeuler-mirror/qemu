@@ -75,6 +75,7 @@ typedef struct CPULOONGARCHFPUContext {
     uint32_t fcsr0;
     uint32_t fcsr0_rw_bitmask;
     uint32_t vcsr16;
+    uint64_t ftop;
 } CPULOONGARCHFPUContext;
 
 /* fp control and status register definition */
@@ -196,6 +197,15 @@ struct CPULOONGARCHState {
     struct {
         uint64_t guest_addr;
     } st;
+    struct {
+        /* scratch registers */
+        unsigned long scr0;
+        unsigned long scr1;
+        unsigned long scr2;
+        unsigned long scr3;
+        /* loongarch eflag */
+        unsigned long eflag;
+    } lbt;
 };
 
 /*

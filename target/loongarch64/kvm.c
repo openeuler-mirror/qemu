@@ -1277,6 +1277,39 @@ int kvm_loongarch_get_pvtime(LOONGARCHCPU *cpu)
     return 0;
 }
 
+
+static int kvm_loongarch_put_lbt_registers(CPUState *cs)
+{
+    int ret = 0;
+    LOONGARCHCPU *cpu = LOONGARCH_CPU(cs);
+    CPULOONGARCHState *env = &cpu->env;
+
+    ret |= kvm_larch_putq(cs, KVM_REG_LBT_SCR0,  &env->lbt.scr0);
+    ret |= kvm_larch_putq(cs, KVM_REG_LBT_SCR1,  &env->lbt.scr1);
+    ret |= kvm_larch_putq(cs, KVM_REG_LBT_SCR2,  &env->lbt.scr2);
+    ret |= kvm_larch_putq(cs, KVM_REG_LBT_SCR3,  &env->lbt.scr3);
+    ret |= kvm_larch_putq(cs, KVM_REG_LBT_FLAGS, &env->lbt.eflag);
+    ret |= kvm_larch_putq(cs, KVM_REG_LBT_FTOP,  &env->active_fpu.ftop);
+
+    return ret;
+}
+
+static int kvm_loongarch_get_lbt_registers(CPUState *cs)
+{
+    int ret = 0;
+    LOONGARCHCPU *cpu = LOONGARCH_CPU(cs);
+    CPULOONGARCHState *env = &cpu->env;
+
+    ret |= kvm_larch_getq(cs, KVM_REG_LBT_SCR0,  &env->lbt.scr0);
+    ret |= kvm_larch_getq(cs, KVM_REG_LBT_SCR1,  &env->lbt.scr1);
+    ret |= kvm_larch_getq(cs, KVM_REG_LBT_SCR2,  &env->lbt.scr2);
+    ret |= kvm_larch_getq(cs, KVM_REG_LBT_SCR3,  &env->lbt.scr3);
+    ret |= kvm_larch_getq(cs, KVM_REG_LBT_FLAGS, &env->lbt.eflag);
+    ret |= kvm_larch_getq(cs, KVM_REG_LBT_FTOP,  &env->active_fpu.ftop);
+
+    return ret;
+}
+
 int kvm_arch_put_registers(CPUState *cs, int level)
 {
     LOONGARCHCPU *cpu = LOONGARCH_CPU(cs);
@@ -1308,6 +1341,7 @@ int kvm_arch_put_registers(CPUState *cs, int level)
         return ret;
     }
 
+    kvm_loongarch_put_lbt_registers(cs);
     return ret;
 }
 
@@ -1334,6 +1368,7 @@ int kvm_arch_get_registers(CPUState *cs)
 
     kvm_loongarch_get_csr_registers(cs);
     kvm_loongarch_get_fpu_registers(cs);
+    kvm_loongarch_get_lbt_registers(cs);
 
     return ret;
 }
