@@ -1221,7 +1221,6 @@ static void loongarch_build_smbios(LoongarchMachineState *lsms)
     uint8_t *smbios_tables, *smbios_anchor;
     size_t smbios_tables_len, smbios_anchor_len;
     const char *product = "QEMU Virtual Machine";
-    ms->smp.cores = 4;
 
     if (!lsms->fw_cfg) {
         return;
@@ -2005,6 +2004,10 @@ static int64_t ls3a_get_default_cpu_node_id(const MachineState *ms, int idx)
 {
     int nb_numa_nodes = ms->numa_state->num_nodes;
     int smp_cores = ms->smp.cores;
+
+    if (nb_numa_nodes == 0) {
+        nb_numa_nodes = 1;
+    }
     return idx / smp_cores % nb_numa_nodes;
 }
 
