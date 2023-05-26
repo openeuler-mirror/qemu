@@ -2123,7 +2123,7 @@ static void nvme_compare_mdata_cb(void *opaque, int ret)
 
         for (bufp = buf; mbufp < end; bufp += ns->lbaf.ms, mbufp += ns->lbaf.ms) {
             if (memcmp(bufp + pil, mbufp + pil, ns->lbaf.ms - pil)) {
-                req->status = NVME_CMP_FAILURE;
+                req->status = NVME_CMP_FAILURE | NVME_DNR;
                 goto out;
             }
         }
@@ -2132,7 +2132,7 @@ static void nvme_compare_mdata_cb(void *opaque, int ret)
     }
 
     if (memcmp(buf, ctx->mdata.bounce, ctx->mdata.iov.size)) {
-        req->status = NVME_CMP_FAILURE;
+        req->status = NVME_CMP_FAILURE | NVME_DNR;
         goto out;
     }
 
@@ -2181,7 +2181,7 @@ static void nvme_compare_data_cb(void *opaque, int ret)
     }
 
     if (memcmp(buf, ctx->data.bounce, ctx->data.iov.size)) {
-        req->status = NVME_CMP_FAILURE;
+        req->status = NVME_CMP_FAILURE | NVME_DNR;
         goto out;
     }
 
