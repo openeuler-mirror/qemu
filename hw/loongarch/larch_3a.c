@@ -356,7 +356,8 @@ struct kvm_cpucfg ls3a5k_cpucfgs = {
     .cpucfg[LOONGARCH_CPUCFG2] =
         CPUCFG2_FP | CPUCFG2_FPSP | CPUCFG2_FPDP | CPUCFG2_FPVERS |
         CPUCFG2_LSX | CPUCFG2_LASX | CPUCFG2_COMPLEX | CPUCFG2_CRYPTO |
-        CPUCFG2_LLFTP | CPUCFG2_LLFTPREV | CPUCFG2_LSPW | CPUCFG2_LAM,
+        CPUCFG2_LLFTP | CPUCFG2_LLFTPREV | CPUCFG2_X86BT | CPUCFG2_ARMBT |
+        CPUCFG2_MIPSBT | CPUCFG2_LSPW | CPUCFG2_LAM,
     .cpucfg[LOONGARCH_CPUCFG3] =
         CPUCFG3_CCDMA | CPUCFG3_SFB | CPUCFG3_UCACC | CPUCFG3_LLEXC |
         CPUCFG3_SCDLY | CPUCFG3_LLDBAR | CPUCFG3_ITLBT | CPUCFG3_ICACHET |
@@ -1221,7 +1222,6 @@ static void loongarch_build_smbios(LoongarchMachineState *lsms)
     uint8_t *smbios_tables, *smbios_anchor;
     size_t smbios_tables_len, smbios_anchor_len;
     const char *product = "QEMU Virtual Machine";
-    ms->smp.cores = 4;
 
     if (!lsms->fw_cfg) {
         return;
@@ -2005,6 +2005,10 @@ static int64_t ls3a_get_default_cpu_node_id(const MachineState *ms, int idx)
 {
     int nb_numa_nodes = ms->numa_state->num_nodes;
     int smp_cores = ms->smp.cores;
+
+    if (nb_numa_nodes == 0) {
+        nb_numa_nodes = 1;
+    }
     return idx / smp_cores % nb_numa_nodes;
 }
 

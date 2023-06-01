@@ -82,6 +82,7 @@ struct kvm_fpu {
  * Register set = 2: KVM specific registers (see definitions below).
  *
  * Register set = 3: FPU / MSA registers (see definitions below).
+ * Register set = 4: LBT registers (see definitions below).
  *
  * Other sets registers may be added in the future.  Each set would
  * have its own identifier in bits[31..16].
@@ -91,6 +92,7 @@ struct kvm_fpu {
 #define KVM_REG_LOONGARCH_CSR (KVM_REG_LOONGARCH | 0x0000000000010000ULL)
 #define KVM_REG_LOONGARCH_KVM (KVM_REG_LOONGARCH | 0x0000000000020000ULL)
 #define KVM_REG_LOONGARCH_FPU (KVM_REG_LOONGARCH | 0x0000000000030000ULL)
+#define KVM_REG_LOONGARCH_LBT (KVM_REG_LOONGARCH | 0x0000000000040000ULL)
 
 /*
  * KVM_REG_LOONGARCH_GP - General purpose registers from kvm_regs.
@@ -173,6 +175,19 @@ struct kvm_fpu {
     (KVM_REG_LOONGARCH_KVM | KVM_REG_SIZE_U64 | 3)
 #define KVM_REG_LOONGARCH_VCPU_RESET                                          \
     (KVM_REG_LOONGARCH_KVM | KVM_REG_SIZE_U64 | 4)
+
+#define KVM_REG_LBT_SCR0                                                      \
+    (KVM_REG_LOONGARCH_LBT | KVM_REG_SIZE_U64 | 1)
+#define KVM_REG_LBT_SCR1                                                      \
+    (KVM_REG_LOONGARCH_LBT | KVM_REG_SIZE_U64 | 2)
+#define KVM_REG_LBT_SCR2                                                      \
+    (KVM_REG_LOONGARCH_LBT | KVM_REG_SIZE_U64 | 3)
+#define KVM_REG_LBT_SCR3                                                      \
+    (KVM_REG_LOONGARCH_LBT | KVM_REG_SIZE_U64 | 4)
+#define KVM_REG_LBT_FLAGS                                                     \
+    (KVM_REG_LOONGARCH_LBT | KVM_REG_SIZE_U64 | 5)
+#define KVM_REG_LBT_FTOP                                                      \
+    (KVM_REG_LOONGARCH_LBT | KVM_REG_SIZE_U64 | 6)
 
 struct kvm_iocsr_entry {
     __u32 addr;
