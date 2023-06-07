@@ -435,6 +435,23 @@ static void dirtylimit_cleanup(void)
     dirtylimit_state_finalize();
 }
 
+/*
+ * dirty page rate limit is not allowed to set if migration
+ * is running with dirty-limit capability enabled.
+ */
+static bool dirtylimit_is_allowed(void)
+{
+    MigrationState *ms = migrate_get_current();
+
+    if (migration_is_running(ms->state) &&
+        (!qemu_thread_is_self(&ms->thread)) &&
+        migrate_dirty_limit() &&
+        dirtylimit_in_service()) {
+        return false;
+    }
+    return true;
+}
+
 void qmp_cancel_vcpu_dirty_limit(bool has_cpu_index,
                                  int64_t cpu_index,
                                  Error **errp)
@@ -445,6 +462,12 @@ void qmp_cancel_vcpu_dirty_limit(bool has_cpu_index,
 
     if (has_cpu_index && !dirtylimit_vcpu_index_valid(cpu_index)) {
         error_setg(errp, "incorrect cpu index specified");
+        return;
+    }
+
+    if (!dirtylimit_is_allowed()) {
+        error_setg(errp, "can't cancel dirty page rate limit while"
+                   " migration is running");
         return;
     }
 
@@ -495,6 +518,12 @@ void qmp_set_vcpu_dirty_limit(bool has_cpu_index,
 
     if (has_cpu_index && !dirtylimit_vcpu_index_valid(cpu_index)) {
         error_setg(errp, "incorrect cpu index specified");
+        return;
+    }
+
+    if (!dirtylimit_is_allowed()) {
+        error_setg(errp, "can't set dirty page rate limit while"
+                   " migration is running");
         return;
     }
 
