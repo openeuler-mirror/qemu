@@ -317,6 +317,7 @@ bool migration_is_setup_or_active(int state);
 bool migration_is_running(int state);
 
 void migrate_init(MigrationState *s);
+void migrate_params_init(MigrationParameters *params);
 bool migration_is_blocked(Error **errp);
 /* True if outgoing migration has entered postcopy phase */
 bool migration_in_postcopy(void);
