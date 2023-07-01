@@ -755,6 +755,9 @@ static void *do_data_compress(void *opaque)
     RAMBlock *block;
     bool zero_page;
 
+    /* report compress thread pids to libvirt */
+    qapi_event_send_migration_compress_pid(qemu_get_thread_id());
+
     qemu_mutex_lock(&param->mutex);
     while (!param->quit) {
         if (param->block) {
