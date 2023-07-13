@@ -14,6 +14,7 @@
 #include "qemu/osdep.h"
 #include "qemu/error-report.h"
 #include "qapi/error.h"
+#include "sysemu/kvm.h"
 
 #include <linux/kvm.h>
 
@@ -59,6 +60,8 @@ csv3_init(uint32_t policy, int fd, void *state, struct sev_ops *ops)
                        __func__, ret, fw_error, ops->fw_error_to_str(fw_error));
             return -1;
         }
+
+        kvm_csv3_allowed = true;
 
         csv3_guest.sev_fd = fd;
         csv3_guest.state = state;

@@ -27,6 +27,8 @@ bool kvm_msi_use_devid;
 
 bool virtcca_cvm_allowed;
 
+bool kvm_csv3_allowed;
+
 void kvm_flush_coalesced_mmio_buffer(void)
 {
 }

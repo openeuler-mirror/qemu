@@ -39,6 +39,8 @@
 #include "migration/vmstate.h"
 #include "trace.h"
 
+#include "sysemu/kvm.h"
+
 //#define DEBUG_VGA_MEM
 //#define DEBUG_VGA_REG
 
@@ -1790,6 +1792,11 @@ static void vga_update_display(void *opaque)
             s->cursor_blink_time = qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL);
             full_update = 1;
         }
+
+        /* Force to full update in CSV guest. */
+        if (kvm_csv3_enabled())
+            full_update = 1;
+
         switch(graphic_mode) {
         case GMODE_TEXT:
             vga_draw_text(s, full_update);
