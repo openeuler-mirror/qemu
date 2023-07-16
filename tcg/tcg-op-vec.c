@@ -50,9 +50,9 @@ extern TCGv_i32 TCGV_HIGH_link_error(TCGv_i64);
  * tcg_ctx->vec_opt_opc is non-NULL, the tcg_gen_*_vec expanders
  * will validate that their opcode is present in the list.
  */
-#ifdef CONFIG_DEBUG_TCG
-void tcg_assert_listed_vecop(TCGOpcode op)
+static void tcg_assert_listed_vecop(TCGOpcode op)
 {
+#ifdef CONFIG_DEBUG_TCG
     const TCGOpcode *p = tcg_ctx->vecop_list;
     if (p) {
         for (; *p; ++p) {
@@ -62,8 +62,8 @@ void tcg_assert_listed_vecop(TCGOpcode op)
         }
         g_assert_not_reached();
     }
-}
 #endif
+}
 
 bool tcg_can_emit_vecop_list(const TCGOpcode *list,
                              TCGType type, unsigned vece)
