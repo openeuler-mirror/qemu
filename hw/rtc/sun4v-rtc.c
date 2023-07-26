@@ -32,17 +32,10 @@ static uint64_t sun4v_rtc_read(void *opaque, hwaddr addr,
                                 unsigned size)
 {
     uint64_t val = get_clock_realtime() / NANOSECONDS_PER_SECOND;
-#if defined(__sw_64__)
-    if (addr & 4ULL) {
-        /* accessing the high 32 bits */
-        val >>= 32;
-    }
-#else
     if (!(addr & 4ULL)) {
         /* accessing the high 32 bits */
         val >>= 32;
     }
-#endif
     trace_sun4v_rtc_read(addr, val);
     return val;
 }
@@ -56,11 +49,7 @@ static void sun4v_rtc_write(void *opaque, hwaddr addr,
 static const MemoryRegionOps sun4v_rtc_ops = {
     .read = sun4v_rtc_read,
     .write = sun4v_rtc_write,
-#if defined(__sw_64__)
-    .endianness = DEVICE_LITTLE_ENDIAN,
-#else
     .endianness = DEVICE_NATIVE_ENDIAN,
-#endif
 };
 
 void sun4v_rtc_init(hwaddr addr)

@@ -18,8 +18,11 @@
  */
 
 #include "qemu/osdep.h"
+#include "qemu-common.h"
 #include "qemu.h"
+#include "user-internals.h"
 #include "cpu_loop-common.h"
+#include "signal-common.h"
 
 void cpu_loop(CPUSW64State *env)
 {
@@ -89,7 +92,7 @@ void cpu_loop(CPUSW64State *env)
         }
         process_pending_signals (env);
 
-        /* Most of the traps imply a transition through HMcode, which
+        /* Most of the traps imply a transition through hmcode, which
            implies an REI instruction has been executed.  Which means
            that RX and LOCK_ADDR should be cleared.  But there are a
            few exceptions for traps internal to QEMU.  */

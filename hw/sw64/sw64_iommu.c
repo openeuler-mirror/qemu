@@ -124,7 +124,7 @@ static int get_pte(dma_addr_t baseaddr,  uint64_t *pte)
 
     /* TODO: guarantee 64-bit single-copy atomicity */
     ret = dma_memory_read(&address_space_memory, baseaddr,
-                          (uint8_t *)pte, sizeof(*pte));
+                          (uint8_t *)pte, sizeof(*pte), MEMTXATTRS_UNSPECIFIED);
 
     if (ret != MEMTX_OK)
         return -EINVAL;
@@ -195,15 +195,18 @@ static void swvt_ptiotlb_inv_all(SW64IOMMUState *s)
     g_hash_table_remove_all(s->ptiotlb);
 }
 
-static void swvt_lookup_ptiotlb(SW64IOMMUState *s, uint16_t source_id,
-                                hwaddr addr, IOMMUTLBEntry *entry)
+static IOMMUTLBEntry *swvt_lookup_ptiotlb(SW64IOMMUState *s, uint16_t source_id,
+                                hwaddr addr)
 {
     SW64PTIOTLBKey ptkey;
+    IOMMUTLBEntry *entry = NULL;
 
     ptkey.source_id = source_id;
     ptkey.iova = addr;
 
     entry = g_hash_table_lookup(s->ptiotlb, &ptkey);
+
+    return entry;
 }
 
 static IOMMUTLBEntry sw64_translate_iommu(IOMMUMemoryRegion *iommu, hwaddr addr,
@@ -230,7 +233,7 @@ static IOMMUTLBEntry sw64_translate_iommu(IOMMUMemoryRegion *iommu, hwaddr addr,
 
     aligned_addr = addr & IOMMU_PAGE_MASK_8K;
 
-    swvt_lookup_ptiotlb(s, aligned_addr, source_id, cached_entry);
+    cached_entry = swvt_lookup_ptiotlb(s, source_id, aligned_addr);
 
     if (cached_entry)
         goto out;

@@ -16,16 +16,26 @@
 #include "hw/ide/ahci.h"
 #include "sysemu/numa.h"
 #include "sysemu/kvm.h"
-#include "hw/rtc/sun4v-rtc.h"
+#include "sysemu/cpus.h"
 #include "hw/pci/msi.h"
 #include "hw/sw64/sw64_iommu.h"
+#include "hw/loader.h"
+#include "hw/nvram/fw_cfg.h"
 
 #define TYPE_SWBOARD_PCI_HOST_BRIDGE "core_board-pcihost"
 #define SWBOARD_PCI_HOST_BRIDGE(obj) \
     OBJECT_CHECK(BoardState, (obj), TYPE_SWBOARD_PCI_HOST_BRIDGE)
 
+#define CORE3_MAX_CPUS_MASK		0x3ff
+#define CORE3_CORES_SHIFT		10
+#define CORE3_CORES_MASK		0x3ff
+#define CORE3_THREADS_SHIFT		20
+#define CORE3_THREADS_MASK		0xfff
+
 #define MAX_IDE_BUS 2
 #define SW_PIN_TO_IRQ 16
+
+#define SW_FW_CFG_P_BASE (0x804920000000ULL)
 
 typedef struct SWBoard {
     SW64CPU *cpu[MAX_CPUS_CORE3];
@@ -42,6 +52,16 @@ typedef struct TimerState {
     void *opaque;
     int order;
 } TimerState;
+
+static void sw_create_fw_cfg(hwaddr addr)
+{
+    MachineState *ms = MACHINE(qdev_get_machine());
+    uint16_t smp_cpus = ms->smp.cpus;
+    FWCfgState *fw_cfg;
+    fw_cfg = fw_cfg_init_mem_wide(addr + 8, addr, 8, addr + 16, &address_space_memory);
+    fw_cfg_add_i16(fw_cfg, FW_CFG_NB_CPUS, smp_cpus);
+    rom_set_fw(fw_cfg);
+}
 
 #ifndef CONFIG_KVM
 static void swboard_alarm_timer(void *opaque)
@@ -65,10 +85,13 @@ static PCIINTxRoute sw_route_intx_pin_to_irq(void *opaque, int pin)
 
 static uint64_t convert_bit(int n)
 {
-    uint64_t ret = (1UL << n) - 1;
+    uint64_t ret;
 
     if (n == 64)
         ret = 0xffffffffffffffffUL;
+    else
+	ret = (1UL << n) - 1;
+
     return ret;
 }
 
@@ -76,6 +99,9 @@ static uint64_t mcu_read(void *opaque, hwaddr addr, unsigned size)
 {
     MachineState *ms = MACHINE(qdev_get_machine());
     unsigned int smp_cpus = ms->smp.cpus;
+    unsigned int smp_threads = ms->smp.threads;
+    unsigned int smp_cores = ms->smp.cores;
+    unsigned int max_cpus = ms->smp.max_cpus;
     uint64_t ret = 0;
     switch (addr) {
     case 0x0000:
@@ -86,6 +112,12 @@ static uint64_t mcu_read(void *opaque, hwaddr addr, unsigned size)
                 ret |= (1UL << i);
         }
         break;
+    case 0x0080:
+    /* SMP_INFO */
+	ret = (smp_threads & CORE3_THREADS_MASK) << CORE3_THREADS_SHIFT;
+	ret += (smp_cores & CORE3_CORES_MASK) << CORE3_CORES_SHIFT;
+	ret += max_cpus & CORE3_MAX_CPUS_MASK;
+	break;
     /*IO_START*/
     case 0x1300:
         ret = 0x1;
@@ -186,7 +218,7 @@ static void intpu_write(void *opaque, hwaddr addr, uint64_t val,
         val &= 0x1f;
 	cpu = bs->sboard.cpu[val];
 	cpu->env.csr[II_REQ] = 0x100000;
-	cpu_interrupt(CPU(cpu),CPU_INTERRUPT_IIMAIL);
+	cpu_interrupt(CPU(cpu),CPU_INTERRUPT_II0);
 	break;
     default:
         fprintf(stderr, "Unsupported IPU addr: 0x%04lx\n", addr);
@@ -252,6 +284,33 @@ static const MemoryRegionOps msi_ops = {
            .min_access_size = 1,
            .max_access_size = 8,
        },
+};
+
+static uint64_t rtc_read(void *opaque, hwaddr addr, unsigned size)
+{
+    uint64_t val = get_clock_realtime() / NANOSECONDS_PER_SECOND;
+    return val;
+}
+
+static void rtc_write(void *opaque, hwaddr addr, uint64_t val,
+                      unsigned size)
+{
+}
+
+static const MemoryRegionOps rtc_ops = {
+    .read = rtc_read,
+    .write = rtc_write,
+    .endianness = DEVICE_LITTLE_ENDIAN,
+    .valid =
+        {
+            .min_access_size = 1,
+            .max_access_size = 8,
+        },
+    .impl =
+        {
+            .min_access_size = 1,
+            .max_access_size = 8,
+        },
 };
 
 static uint64_t ignore_read(void *opaque, hwaddr addr, unsigned size)
@@ -392,7 +451,7 @@ void core3_board_init(SW64CPU *cpus[MAX_CPUS], MemoryRegion *ram)
     MemoryRegion *mem_ep64 = g_new(MemoryRegion, 1);
     MemoryRegion *conf_piu0 = g_new(MemoryRegion, 1);
     MemoryRegion *io_ep = g_new(MemoryRegion, 1);
-
+    MemoryRegion *io_rtc = g_new(MemoryRegion, 1);
     MachineState *ms = MACHINE(qdev_get_machine());
     unsigned int smp_cpus = ms->smp.cpus;
 
@@ -452,6 +511,10 @@ void core3_board_init(SW64CPU *cpus[MAX_CPUS], MemoryRegion *ram)
                           "pci0-ep-conf-io", 4 * GB);
     memory_region_add_subregion(get_system_memory(), 0x880600000000ULL,
                                 conf_piu0);
+    memory_region_init_io(io_rtc, OBJECT(bs), &rtc_ops, b,
+                          "sw64-rtc", 0x08ULL);
+    memory_region_add_subregion(get_system_memory(), 0x804910000000ULL,
+                                io_rtc);
 #ifdef SW64_VT_IOMMU
     sw64_vt_iommu_init(b);
 #endif
@@ -476,7 +539,7 @@ void core3_board_init(SW64CPU *cpus[MAX_CPUS], MemoryRegion *ram)
                        DEVICE_LITTLE_ENDIAN);
     }
     pci_create_simple(phb->bus, -1, "nec-usb-xhci");
-    sun4v_rtc_init(0x804910000000ULL);
+    sw_create_fw_cfg(SW_FW_CFG_P_BASE);
 }
 
 static const TypeInfo swboard_pcihost_info = {

@@ -44,4 +44,13 @@ typedef struct SW64HostCPUClass {
     uint32_t target;
     const char *dtb_compatible;
 } SW64HostCPUClass;
+
+/**
+ * kvm_sw64_handle_debug:
+ * @cs: CPUState
+ * @debug_exit: debug part of the KVM exit structure
+ *
+ * Returns: TRUE if the debug exception was handled.
+ */
+bool kvm_sw64_handle_debug(CPUState *cs, struct kvm_debug_exit_arch *debug_exit);
 #endif

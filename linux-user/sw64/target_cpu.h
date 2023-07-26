@@ -17,13 +17,26 @@
 #ifndef SW64_TARGET_CPU_H
 #define SW64_TARGET_CPU_H
 
-static inline void cpu_clone_regs(CPUSW64State *env, target_ulong newsp)
+static inline void cpu_clone_regs_child(CPUSW64State *env, target_ulong newsp, unsigned flags)
 {
     if (newsp) {
         env->ir[IDX_SP] = newsp;
     }
     env->ir[IDX_V0] = 0;
     env->ir[IDX_A3] = 0;
+    env->ir[IDX_A4] = 1;  /* OSF/1 secondary return: child */
+}
+
+static inline void cpu_clone_regs_parent(CPUSW64State *env, unsigned flags)
+{
+    /*
+     * OSF/1 secondary return: parent
+     * Note that the kernel does not do this if SETTLS, because the
+     * settls argument register is still live after copy_thread.
+     */
+    if (!(flags & CLONE_SETTLS)) {
+        env->ir[IDX_A4] = 0;
+    }
 }
 
 static inline void cpu_set_tls(CPUSW64State *env, target_ulong newtls)

@@ -25,6 +25,10 @@
 #include "core.h"
 #include "hw/boards.h"
 #include "sysemu/numa.h"
+#include "qemu/uuid.h"
+#include "qemu/bswap.h"
+
+#define VMUUID 0xFF40
 
 static uint64_t cpu_sw64_virt_to_phys(void *opaque, uint64_t addr)
 {
@@ -69,6 +73,7 @@ static const CPUArchIdList *sw64_possible_cpu_arch_ids(MachineState *ms)
         ms->possible_cpus->cpus[i].vcpus_count = 1;
         ms->possible_cpus->cpus[i].arch_id = i;
         ms->possible_cpus->cpus[i].props.has_thread_id = true;
+        ms->possible_cpus->cpus[i].props.has_core_id = true;
         ms->possible_cpus->cpus[i].props.core_id = i;
     }
 
@@ -96,6 +101,7 @@ static void core3_init(MachineState *machine)
     uint64_t kernel_entry, kernel_low, kernel_high;
     BOOT_PARAMS *core3_boot_params = g_new0(BOOT_PARAMS, 1);
     uint64_t param_offset;
+    QemuUUID uuid_out_put;
 
     memset(cpus, 0, sizeof(cpus));
 
@@ -112,6 +118,9 @@ static void core3_init(MachineState *machine)
 
     rom_add_blob_fixed("ram_size", (char *)&buf, 0x8, 0x2040);
 
+    uuid_out_put = qemu_uuid;
+    uuid_out_put = qemu_uuid_bswap(uuid_out_put);
+    pstrcpy_targphys("vm-uuid", VMUUID, 0x12, (char *)&(uuid_out_put));
     param_offset = 0x90B000UL;
     core3_boot_params->cmdline = param_offset | 0xfff0000000000000UL;
     rom_add_blob_fixed("core3_boot_params", (core3_boot_params), 0x48, 0x90A100);
@@ -137,13 +146,24 @@ static void core3_init(MachineState *machine)
 
     /* Start all cpus at the hmcode RESET entry point.  */
     for (i = 0; i < machine->smp.cpus; ++i) {
-        cpus[i]->env.pc = hmcode_entry;
+	if (kvm_enabled())
+	    cpus[i]->env.pc = init_pc;
+	else
+	    cpus[i]->env.pc = hmcode_entry;
         cpus[i]->env.hm_entry = hmcode_entry;
     }
 
     if (!kernel_filename) {
 	uefi_filename = qemu_find_file(QEMU_FILE_TYPE_BIOS, "uefi-bios-sw");
-	load_image_targphys(uefi_filename, 0x2f00000UL, -1);
+	if (uefi_filename == NULL) {
+	    error_report("no virtual bios provided");
+	    exit(1);
+	}
+	size = load_image_targphys(uefi_filename, 0x2f00000UL, -1);
+	if (size < 0) {
+	    error_report("could not load virtual bios: '%s'", uefi_filename);
+	    exit(1);
+	}
 	g_free(uefi_filename);
     } else {
 	/* Load a kernel.  */
@@ -170,6 +190,7 @@ static void core3_machine_init(MachineClass *mc)
     mc->init = core3_init;
     mc->block_default_type = IF_IDE;
     mc->max_cpus = MAX_CPUS_CORE3;
+    mc->pci_allow_0_address = true;
     mc->is_default = 0;
     mc->reset = board_reset;
     mc->possible_cpu_arch_ids = sw64_possible_cpu_arch_ids;
