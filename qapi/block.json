@@ -529,7 +529,8 @@
 # Since: 4.0
 #
 # Example:
-# set new histograms for all io types with intervals
+
+# Set new histograms for all io types with intervals
 # [0, 10), [10, 50), [50, 100), [100, +inf):
 #
 # -> { "execute": "block-latency-histogram-set",
@@ -538,7 +539,8 @@
 # <- { "return": {} }
 #
 # Example:
-# set new histogram only for write, other histograms will remain
+
+# Set new histogram only for write, other histograms will remain
 # not changed (or not created):
 #
 # -> { "execute": "block-latency-histogram-set",
@@ -547,7 +549,8 @@
 # <- { "return": {} }
 #
 # Example:
-# set new histograms with the following intervals:
+
+# Set new histograms with the following intervals:
 #   read, flush: [0, 10), [10, 50), [50, 100), [100, +inf)
 #   write: [0, 1000), [1000, 5000), [5000, +inf)
 #
@@ -558,7 +561,8 @@
 # <- { "return": {} }
 #
 # Example:
-# remove all latency histograms:
+
+# Remove all latency histograms:
 #
 # -> { "execute": "block-latency-histogram-set",
 #      "arguments": { "id": "drive0" } }
