@@ -328,7 +328,7 @@ static void chr_read(void *opaque, const uint8_t *buf, int size)
         if (size != msg.size) {
             g_test_message("Wrong message size received %d != %d",
                            size, msg.size);
-            return;
+            goto out;
         }
     }
 
@@ -429,6 +429,7 @@ static void chr_read(void *opaque, const uint8_t *buf, int size)
         break;
     }
 
+out:
     g_mutex_unlock(&s->data_mutex);
 }
 
