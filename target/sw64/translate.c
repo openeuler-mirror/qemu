@@ -2298,7 +2298,7 @@ DisasJumpType translate_one(DisasContextBase *dcbase, uint32_t insn,
             /* RCID */
             if (disp16 && unlikely(ra == 31)) break;
             va = load_gir(ctx, ra);
-            read_csr(0xc4, va);
+            read_csr(0xc9, va);
             break;
         case 0x0080:
             /* HALT */

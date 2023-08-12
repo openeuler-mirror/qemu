@@ -85,7 +85,7 @@
 
 #elif defined(TARGET_PPC) || defined(TARGET_ALPHA) || \
       defined(TARGET_SPARC) || defined(TARGET_MICROBLAZE) || \
-      defined(TARGET_MIPS)
+      defined(TARGET_MIPS) || defined(TARGET_SW64)
 
 #define TARGET_IOC_SIZEBITS	13
 #define TARGET_IOC_DIRBITS	3
@@ -2268,6 +2268,50 @@ struct target_stat {
     target_long target_st_ctime;
     target_long target_st_ctime_nsec;
     int __unused[2];
+};
+
+#elif defined(TARGET_SW64)
+
+struct target_stat {
+       unsigned int    st_dev;
+       unsigned int    st_ino;
+       unsigned int    st_mode;
+       unsigned int    st_nlink;
+       unsigned int    st_uid;
+       unsigned int    st_gid;
+       unsigned int    st_rdev;
+       abi_long     st_size;
+       abi_ulong    target_st_atime;
+       abi_ulong    target_st_mtime;
+       abi_ulong    target_st_ctime;
+       unsigned int    st_blksize;
+       unsigned int    st_blocks;
+       unsigned int    st_flags;
+       unsigned int    st_gen;
+};
+
+#define TARGET_HAS_STRUCT_STAT64
+struct target_stat64 {
+       abi_ulong    st_dev;
+       abi_ulong    st_ino;
+       abi_ulong    st_rdev;
+       abi_long     st_size;
+       abi_ulong    st_blocks;
+
+       unsigned int    st_mode;
+       unsigned int    st_uid;
+       unsigned int    st_gid;
+       unsigned int    st_blksize;
+       unsigned int    st_nlink;
+       unsigned int    __pad0;
+
+       abi_ulong    target_st_atime;
+       abi_ulong    target_st_atime_nsec;
+       abi_ulong    target_st_mtime;
+       abi_ulong    target_st_mtime_nsec;
+       abi_ulong    target_st_ctime;
+       abi_ulong    target_st_ctime_nsec;
+       abi_long     __unused[3];
 };
 
 #else

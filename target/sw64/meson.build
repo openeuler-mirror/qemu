@@ -4,6 +4,7 @@ sw64_ss.add(files(
   'exception.c',
   'float_helper.c',
   'helper.c',
+  'gdbstub.c',
   'int_helper.c',
   'profile.c',
   'simd_helper.c',

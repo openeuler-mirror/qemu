@@ -1549,6 +1549,22 @@ static inline void init_thread(struct target_pt_regs *regs,
 
 #endif /* TARGET_HPPA */
 
+#ifdef TARGET_SW64
+
+#define ELF_CLASS  ELFCLASS64
+#define ELF_ARCH  EM_SW64
+
+#define ELF_START_MMAP (0x30000000000ULL)
+
+static inline void init_thread(struct target_pt_regs *regs,
+                               struct image_info *infop)
+{
+    regs->pc = infop->entry;
+    regs->usp = infop->start_stack;
+}
+
+#endif /* TARGET_SW64 */
+
 #ifdef TARGET_XTENSA
 
 #define ELF_START_MMAP 0x20000000

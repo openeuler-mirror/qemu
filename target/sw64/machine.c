@@ -11,7 +11,7 @@ VMStateDescription vmstate_sw64_cpu = {
     .fields = (VMStateField[]) {
 #ifdef CONFIG_KVM
 	VMSTATE_UINTTL_ARRAY(k_regs, SW64CPU, 158),
-	VMSTATE_UINTTL_ARRAY(k_vcb, SW64CPU, 36),
+	VMSTATE_UINTTL_ARRAY(k_vcb, SW64CPU, 48),
 #endif
 	VMSTATE_END_OF_LIST()
     }

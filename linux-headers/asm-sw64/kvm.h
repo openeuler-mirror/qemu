@@ -2,6 +2,9 @@
 #define __LINUX_KVM_SW64_H
 
 #include <linux/types.h>
+
+#define __KVM_HAVE_GUEST_DEBUG
+
 /*
  * for KVM_GET_REGS and KVM_SET_REGS
  */
@@ -88,6 +91,16 @@ struct vcpucb {
         unsigned long exit_reason;
         unsigned long ipaddr;
         unsigned long vcpu_irq_vector;
+        unsigned long pri_base;
+        unsigned long stack_pc_dfault;
+        unsigned long guest_p20;
+        unsigned long guest_dfault_double;
+        unsigned long guest_irqs_pending;
+        unsigned long guest_hm_r30;
+        unsigned long migration_mark;
+        unsigned long guest_longtime;
+        unsigned long guest_longtime_offset;
+        unsigned long reserved[3];
 };
 
 /*
@@ -100,6 +113,7 @@ struct kvm_fpu {
  * KVM SW_64 specific structures and definitions
  */
 struct kvm_debug_exit_arch {
+	unsigned long epc;
 };
 
 /* for KVM_SET_GUEST_DEBUG */

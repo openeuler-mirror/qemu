@@ -60,6 +60,8 @@
 
 #define MCU_CLOCK 25000000
 
+#define init_pc 0xffffffff80011100
+
 typedef struct CPUSW64State CPUSW64State;
 typedef CPUSW64State CPUArchState;
 typedef SW64CPU ArchCPU;
@@ -136,7 +138,7 @@ struct SW64CPU {
     CPUSW64State env;
 
     uint64_t k_regs[158];
-    uint64_t k_vcb[36];
+    uint64_t k_vcb[48];
     QEMUTimer *alarm_timer;
     target_ulong irq;
     uint32_t cid;
@@ -227,6 +229,8 @@ static inline SW64CPU *sw64_env_get_cpu(CPUSW64State *env)
 #define SW64_CPU_TYPE_SUFFIX "-" TYPE_SW64_CPU
 #define SW64_CPU_TYPE_NAME(name) (name SW64_CPU_TYPE_SUFFIX)
 int cpu_sw64_signal_handler(int host_signum, void *pinfo, void *puc);
+int sw64_cpu_gdb_read_register(CPUState *cs, uint8_t *buf, int reg);
+int sw64_cpu_gdb_write_register(CPUState *cs, uint8_t *buf, int reg);
 bool sw64_cpu_tlb_fill(CPUState *cs, vaddr address, int size,
 		      MMUAccessType access_type, int mmu_idx,
 		      bool probe, uintptr_t retaddr);
@@ -236,6 +240,10 @@ void sw64_stl_phys(CPUState *cs, hwaddr addr, uint64_t val);
 uint64_t sw64_ldw_phys(CPUState *cs, hwaddr addr);
 void sw64_stw_phys(CPUState *cs, hwaddr addr, uint64_t val);
 uint64_t cpu_sw64_load_fpcr(CPUSW64State *env);
+#ifndef CONFIG_USER_ONLY
+void sw64_cpu_do_interrupt(CPUState *cs);
+bool sw64_cpu_exec_interrupt(CPUState *cpu, int int_req);
+#endif
 void cpu_sw64_store_fpcr(CPUSW64State *env, uint64_t val);
 void sw64_cpu_do_unaligned_access(CPUState *cs, vaddr addr,
     MMUAccessType access_type, int mmu_idx,
@@ -245,7 +253,7 @@ extern struct VMStateDescription vmstate_sw64_cpu;
 
 /* SW64-specific interrupt pending bits */
 #define CPU_INTERRUPT_TIMER CPU_INTERRUPT_TGT_EXT_0
-#define CPU_INTERRUPT_IIMAIL CPU_INTERRUPT_TGT_EXT_1
+#define CPU_INTERRUPT_II0 CPU_INTERRUPT_TGT_EXT_1
 #define CPU_INTERRUPT_MCHK CPU_INTERRUPT_TGT_EXT_2
 #define CPU_INTERRUPT_PCIE CPU_INTERRUPT_TGT_EXT_3
 #define CPU_INTERRUPT_WAKEUP CPU_INTERRUPT_TGT_EXT_3
@@ -281,11 +289,14 @@ enum {
         SWCSR(PTBR,             0x8),
         SWCSR(PRI_BASE,         0x10),
         SWCSR(TIMER_CTL,        0x2a),
+	SWCSR(TIMER_TH,      	0x2b),
         SWCSR(INT_STAT,         0x30),
         SWCSR(INT_CLR,          0x31),
         SWCSR(IER,              0x32),
         SWCSR(INT_PCI_INT,      0x33),
         SWCSR(DVA,              0x4e),
+	SWCSR(SOFT_CID,         0xc9),
+	SWCSR(SHTCLOCK,         0xca),
 };
 
 #include "exec/cpu-all.h"
@@ -302,7 +313,7 @@ void sw64_translate_init(void);
 enum {
     EXCP_NONE,
     EXCP_HALT,
-    EXCP_IIMAIL,
+    EXCP_II0,
     EXCP_OPCDEC,
     EXCP_CALL_SYS,
     EXCP_ARITH,
