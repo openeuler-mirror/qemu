@@ -657,6 +657,7 @@ out:
         virtio_notify(vdev, vq);
         g_free(elem);
         g_free(buf);
+        buf = NULL;
     }
 }
 
