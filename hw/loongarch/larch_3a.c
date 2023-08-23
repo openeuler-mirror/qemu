@@ -82,12 +82,6 @@
 #define TARGET_REALPAGE_MASK (TARGET_PAGE_MASK << 2)
 
 #ifdef CONFIG_KVM
-#define LS_ISA_IO_SIZE 0x02000000
-#else
-#define LS_ISA_IO_SIZE 0x00010000
-#endif
-
-#ifdef CONFIG_KVM
 #define align(x) (((x) + 63) & ~63)
 #else
 #define align(x) (((x) + 15) & ~15)
@@ -1623,8 +1617,6 @@ static void ls3a5k_init(MachineState *args)
     ram_addr_t ram_size = args->ram_size;
     MemoryRegion *address_space_mem = get_system_memory();
     ram_addr_t offset = 0;
-    MemoryRegion *isa_io = g_new(MemoryRegion, 1);
-    MemoryRegion *isa_mem = g_new(MemoryRegion, 1);
     MachineState *machine = args;
     MachineClass *mc = MACHINE_GET_CLASS(machine);
     LoongarchMachineState *lsms = LoongarchMACHINE(machine);
@@ -1801,14 +1793,6 @@ static void ls3a5k_init(MachineState *args)
                                     machine->device_memory->base,
                                     &machine->device_memory->mr);
     }
-
-    memory_region_init_alias(isa_io, NULL, "isa-io", get_system_io(), 0,
-                             LS_ISA_IO_SIZE);
-    memory_region_init(isa_mem, NULL, "isa-mem", PCIE_MEMORY_SIZE);
-    memory_region_add_subregion(get_system_memory(), lsmc->isa_io_base,
-                                isa_io);
-    memory_region_add_subregion(get_system_memory(), PCIE_MEMORY_BASE,
-                                isa_mem);
 
     if (!strcmp(lsmc->bridge_name, "ls7a")) {
         /*Initialize the 7A IO interrupt subsystem*/

@@ -40,6 +40,12 @@
 #define LOONGARCH_HOTPLUG_MEM_ALIGN (1ULL << 28)
 #define LOONGARCH_MAX_RAM_SLOTS 10
 
+#ifdef CONFIG_KVM
+#define LS_ISA_IO_SIZE          0x02000000
+#else
+#define LS_ISA_IO_SIZE          0x00010000
+#endif
+
 /* Memory types: */
 #define SYSTEM_RAM 1
 #define SYSTEM_RAM_RESERVED 2
