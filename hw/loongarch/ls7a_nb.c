@@ -148,16 +148,41 @@ static PCIBus *pci_ls7a_init(MachineState *machine, DeviceState *dev,
 {
     LoongarchMachineState *lsms = LoongarchMACHINE(machine);
     LoongarchMachineClass *lsmc = LoongarchMACHINE_GET_CLASS(lsms);
+    LS7APCIEHost *pciehost = LS7A_PCIE_HOST_BRIDGE(dev);
     PCIExpressHost *e;
+    SysBusDevice *sysbus;
     PCIHostState *phb;
+    MemoryRegion *mmio_alias;
 
     e = PCIE_HOST_BRIDGE(dev);
+    sysbus = SYS_BUS_DEVICE(e);
     phb = PCI_HOST_BRIDGE(e);
-    phb->bus = pci_register_root_bus(
-        dev, "pcie.0", pci_ls7a_set_irq, pci_ls7a_map_irq, pic,
-        get_system_memory(), get_system_io(), (1 << 3), 128, TYPE_PCIE_BUS);
+
+    sysbus_init_mmio(sysbus, &e->mmio);
+
+    memory_region_init(&pciehost->io_mmio, OBJECT(pciehost),
+                       "pciehost-mmio", UINT64_MAX);
+    sysbus_init_mmio(sysbus, &pciehost->io_mmio);
+    mmio_alias = g_new0(MemoryRegion, 1);
+    memory_region_init_alias(mmio_alias, OBJECT(dev), "pcie-mmio",
+                             &pciehost->io_mmio, PCIE_MEMORY_BASE,
+                             PCIE_MEMORY_SIZE);
+    memory_region_add_subregion(get_system_memory(),
+                                PCIE_MEMORY_BASE, mmio_alias);
+
+    memory_region_init(&pciehost->io_ioport, OBJECT(pciehost),
+                       "pciehost-ioport", LS_ISA_IO_SIZE);
+    sysbus_init_mmio(sysbus, &pciehost->io_ioport);
+
+    sysbus_mmio_map(sysbus, 2, LS3A5K_ISA_IO_BASE);
+
+
+    phb->bus = pci_register_root_bus(dev, "pcie.0", pci_ls7a_set_irq,
+                                     pci_ls7a_map_irq, pic,
+                                     &pciehost->io_mmio, &pciehost->io_ioport,
+                                     (1 << 3), 128, TYPE_PCIE_BUS);
+    /*update pcie config memory*/
     pcie_host_mmcfg_update(e, true, lsmc->pciecfg_base, LS_PCIECFG_SIZE);
-    DPRINTF("------ %d\n", __LINE__);
 
     pci_bus_set_route_irq_fn(phb->bus, ls7a_route_intx_pin_to_irq);
 

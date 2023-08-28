@@ -140,6 +140,8 @@
 typedef struct LS7APCIState LS7APCIState;
 typedef struct LS7APCIEHost {
     PCIExpressHost parent_obj;
+    MemoryRegion io_ioport;
+    MemoryRegion io_mmio;
     LS7APCIState *pci_dev;
 } LS7APCIEHost;
 
