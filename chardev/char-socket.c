@@ -819,8 +819,12 @@ static void tcp_chr_websock_handshake(QIOTask *task, gpointer user_data)
 {
     Chardev *chr = user_data;
     SocketChardev *s = user_data;
+    Error *err = NULL;
 
-    if (qio_task_propagate_error(task, NULL)) {
+    if (qio_task_propagate_error(task, &err)) {
+        error_reportf_err(err,
+                          "websock handshake of character device %s failed: ",
+                          chr->label);
         tcp_chr_disconnect(chr);
     } else {
         if (s->do_telnetopt) {
@@ -855,8 +859,12 @@ static void tcp_chr_tls_handshake(QIOTask *task,
 {
     Chardev *chr = user_data;
     SocketChardev *s = user_data;
+    Error *err = NULL;
 
-    if (qio_task_propagate_error(task, NULL)) {
+    if (qio_task_propagate_error(task, &err)) {
+        error_reportf_err(err,
+                          "TLS handshake of character device %s failed: ",
+                          chr->label);
         tcp_chr_disconnect(chr);
     } else {
         if (s->is_websock) {
