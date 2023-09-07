@@ -3629,24 +3629,24 @@ QemuMutex map_client_list_lock;
 static QLIST_HEAD(, MapClient) map_client_list
     = QLIST_HEAD_INITIALIZER(map_client_list);
 
-static void cpu_unregister_map_client_do(MapClient *client)
+static void address_space_unregister_map_client_do(MapClient *client)
 {
     QLIST_REMOVE(client, link);
     g_free(client);
 }
 
-static void cpu_notify_map_clients_locked(void)
+static void address_space_notify_map_clients_locked(AddressSpace *as)
 {
     MapClient *client;
 
     while (!QLIST_EMPTY(&map_client_list)) {
         client = QLIST_FIRST(&map_client_list);
         qemu_bh_schedule(client->bh);
-        cpu_unregister_map_client_do(client);
+        address_space_unregister_map_client_do(client);
     }
 }
 
-void cpu_register_map_client(QEMUBH *bh)
+void address_space_register_map_client(AddressSpace *as, QEMUBH *bh)
 {
     MapClient *client = g_malloc(sizeof(*client));
 
@@ -3654,7 +3654,7 @@ void cpu_register_map_client(QEMUBH *bh)
     client->bh = bh;
     QLIST_INSERT_HEAD(&map_client_list, client, link);
     if (!atomic_read(&bounce.in_use)) {
-        cpu_notify_map_clients_locked();
+        address_space_notify_map_clients_locked(as);
     }
     qemu_mutex_unlock(&map_client_list_lock);
 }
@@ -3675,24 +3675,24 @@ void cpu_exec_init_all(void)
     qemu_mutex_init(&map_client_list_lock);
 }
 
-void cpu_unregister_map_client(QEMUBH *bh)
+void address_space_unregister_map_client(AddressSpace *as, QEMUBH *bh)
 {
     MapClient *client;
 
     qemu_mutex_lock(&map_client_list_lock);
     QLIST_FOREACH(client, &map_client_list, link) {
         if (client->bh == bh) {
-            cpu_unregister_map_client_do(client);
+            address_space_unregister_map_client_do(client);
             break;
         }
     }
     qemu_mutex_unlock(&map_client_list_lock);
 }
 
-static void cpu_notify_map_clients(void)
+static void address_space_notify_map_clients(AddressSpace *as)
 {
     qemu_mutex_lock(&map_client_list_lock);
-    cpu_notify_map_clients_locked();
+    address_space_notify_map_clients_locked(as);
     qemu_mutex_unlock(&map_client_list_lock);
 }
 
@@ -3763,8 +3763,8 @@ flatview_extend_translation(FlatView *fv, hwaddr addr,
  * May map a subset of the requested range, given by and returned in *plen.
  * May return NULL if resources needed to perform the mapping are exhausted.
  * Use only for reads OR writes - not for read-modify-write operations.
- * Use cpu_register_map_client() to know when retrying the map operation is
- * likely to succeed.
+ * Use address_space_register_map_client() to know when retrying the map
+ * operation is likely to succeed.
  */
 void *address_space_map(AddressSpace *as,
                         hwaddr addr,
@@ -3851,7 +3851,7 @@ void address_space_unmap(AddressSpace *as, void *buffer, hwaddr len,
     bounce.buffer = NULL;
     memory_region_unref(bounce.mr);
     atomic_mb_set(&bounce.in_use, false);
-    cpu_notify_map_clients();
+    address_space_notify_map_clients(as);
 }
 
 void *cpu_physical_memory_map(hwaddr addr,
