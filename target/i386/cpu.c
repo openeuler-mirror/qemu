@@ -1246,6 +1246,7 @@ FeatureWordInfo feature_word_info[FEATURE_WORDS] = {
         .feat_names = {
             [54] = "vmx-ins-outs",
             [55] = "vmx-true-ctls",
+            [56] = "vmx-any-errcode",
         },
         .msr = {
             .index = MSR_IA32_VMX_BASIC,
