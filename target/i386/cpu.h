@@ -601,6 +601,7 @@ typedef enum FeatureWord {
     FEAT_SGX_12_0_EAX,  /* CPUID[EAX=0x12,ECX=0].EAX (SGX) */
     FEAT_SGX_12_0_EBX,  /* CPUID[EAX=0x12,ECX=0].EBX (SGX MISCSELECT[31:0]) */
     FEAT_SGX_12_1_EAX,  /* CPUID[EAX=0x12,ECX=1].EAX (SGX ATTRIBUTES[31:0]) */
+    FEAT_7_2_EDX,       /* CPUID[EAX=7,ECX=2].EDX */
     FEATURE_WORDS,
 } FeatureWord;
 
@@ -869,6 +870,8 @@ uint64_t x86_cpu_get_supported_feature_word(FeatureWord w,
 #define CPUID_7_0_EDX_SPEC_CTRL         (1U << 26)
 /* Single Thread Indirect Branch Predictors */
 #define CPUID_7_0_EDX_STIBP             (1U << 27)
+/* Flush L1D cache */
+#define CPUID_7_0_EDX_FLUSH_L1D         (1U << 28)
 /* Arch Capabilities */
 #define CPUID_7_0_EDX_ARCH_CAPABILITIES (1U << 29)
 /* Core Capability */
@@ -886,6 +889,9 @@ uint64_t x86_cpu_get_supported_feature_word(FeatureWord w,
 #define CPUID_7_1_EAX_FSRS              (1U << 11)
 /* Fast Short REP CMPS/SCAS */
 #define CPUID_7_1_EAX_FSRC              (1U << 12)
+
+/* Do not exhibit MXCSR Configuration Dependent Timing (MCDT) behavior */
+#define CPUID_7_2_EDX_MCDT_NO           (1U << 5)
 
 /* XFD Extend Feature Disabled */
 #define CPUID_D_1_EAX_XFD               (1U << 4)
@@ -960,6 +966,11 @@ uint64_t x86_cpu_get_supported_feature_word(FeatureWord w,
 #define MSR_ARCH_CAP_PSCHANGE_MC_NO     (1U << 6)
 #define MSR_ARCH_CAP_TSX_CTRL_MSR       (1U << 7)
 #define MSR_ARCH_CAP_TAA_NO             (1U << 8)
+#define MSR_ARCH_CAP_SBDR_SSDP_NO       (1U << 13)
+#define MSR_ARCH_CAP_FBSDP_NO           (1U << 14)
+#define MSR_ARCH_CAP_PSDP_NO            (1U << 15)
+#define MSR_ARCH_CAP_FB_CLEAR           (1U << 17)
+#define MSR_ARCH_CAP_PBRSB_NO           (1U << 24)
 
 #define MSR_CORE_CAP_SPLIT_LOCK_DETECT  (1U << 5)
 
