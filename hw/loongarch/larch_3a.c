@@ -1842,8 +1842,6 @@ static void ls3a5k_init(MachineState *args)
 
     /*network card*/
     network_init(pci_bus);
-    /* VGA setup.  Don't bother loading the bios.  */
-    pci_vga_init(pci_bus);
 
     sysbus_realize_and_unref(SYS_BUS_DEVICE(qdev_new("iocsr")), &error_fatal);
 
