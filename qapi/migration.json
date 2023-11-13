@@ -891,14 +891,16 @@
 # @mode: Migration mode. See description in @MigMode. Default is 'normal'.
 #        (Since 8.2)
 #
-# @sev-pdh: The target host platform diffie-hellman key encoded in base64
+# @sev-pdh: The target host platform diffie-hellman key encoded in base64, or
+#           pdh filename for hygon
 #           (Since 4.2)
 #
-# @sev-plat-cert: The target host platform certificate chain encoded in base64
+# @sev-plat-cert: The target host platform certificate chain encoded in base64,
+#                 or plat cert filename for hygon
 #                 (Since 4.2)
 #
 # @sev-amd-cert: AMD certificate chain which include ASK and OCA encoded in
-#                base64 (Since 4.2)
+#                base64, or vendor cert filename for hygon (Since 4.2)
 #
 # Features:
 #
@@ -1093,14 +1095,16 @@
 # @mode: Migration mode. See description in @MigMode. Default is 'normal'.
 #        (Since 8.2)
 #
-# @sev-pdh: The target host platform diffie-hellman key encoded in base64
+# @sev-pdh: The target host platform diffie-hellman key encoded in base64, or
+#           pdh filename for hygon
 #           (Since 4.2)
 #
-# @sev-plat-cert: The target host platform certificate chain encoded in base64
+# @sev-plat-cert: The target host platform certificate chain encoded in base64,
+#                 or plat cert filename for hygon
 #                 (Since 4.2)
 #
 # @sev-amd-cert: AMD certificate chain which include ASK and OCA encoded in
-#                base64 (Since 4.2)
+#                base64, or vendor cert filename for hygon (Since 4.2)
 #
 # Features:
 #
@@ -1340,14 +1344,16 @@
 # @mode: Migration mode. See description in @MigMode. Default is 'normal'.
 #        (Since 8.2)
 #
-# @sev-pdh: The target host platform diffie-hellman key encoded in base64
+# @sev-pdh: The target host platform diffie-hellman key encoded in base64, or
+#           pdh filename for hygon
 #           (Since 4.2)
 #
-# @sev-plat-cert: The target host platform certificate chain encoded in base64
+# @sev-plat-cert: The target host platform certificate chain encoded in base64,
+#                 or plat cert filename for hygon
 #                 (Since 4.2)
 #
 # @sev-amd-cert: AMD certificate chain which include ASK and OCA encoded in
-#                base64 (Since 4.2)
+#                base64, or vendor cert filename for hygon (Since 4.2)
 #
 # Features:
 #

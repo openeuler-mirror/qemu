@@ -27,6 +27,7 @@
 #include "crypto/hash.h"
 #include "sysemu/kvm.h"
 #include "sev.h"
+#include "csv.h"
 #include "sysemu/sysemu.h"
 #include "sysemu/runstate.h"
 #include "trace.h"
@@ -979,18 +980,39 @@ int sev_save_setup(const char *pdh, const char *plat_cert,
 {
     SevGuestState *s = sev_guest;
 
-    s->remote_pdh = g_base64_decode(pdh, &s->remote_pdh_len);
+    if (is_hygon_cpu()) {
+        if (sev_read_file_base64(pdh, &s->remote_pdh,
+                                 &s->remote_pdh_len) < 0) {
+            goto error;
+        }
+    } else {
+        s->remote_pdh = g_base64_decode(pdh, &s->remote_pdh_len);
+    }
     if (!check_blob_length(s->remote_pdh_len)) {
         goto error;
     }
 
-    s->remote_plat_cert = g_base64_decode(plat_cert,
-                                          &s->remote_plat_cert_len);
+    if (is_hygon_cpu()) {
+        if (sev_read_file_base64(plat_cert, &s->remote_plat_cert,
+                                 &s->remote_plat_cert_len) < 0) {
+            goto error;
+        }
+    } else {
+        s->remote_plat_cert = g_base64_decode(plat_cert,
+                                              &s->remote_plat_cert_len);
+    }
     if (!check_blob_length(s->remote_plat_cert_len)) {
         goto error;
     }
 
-    s->amd_cert = g_base64_decode(amd_cert, &s->amd_cert_len);
+    if (is_hygon_cpu()) {
+        if (sev_read_file_base64(amd_cert, &s->amd_cert,
+                                 &s->amd_cert_len) < 0) {
+            goto error;
+        }
+    } else {
+        s->amd_cert = g_base64_decode(amd_cert, &s->amd_cert_len);
+    }
     if (!check_blob_length(s->amd_cert_len)) {
         goto error;
     }
