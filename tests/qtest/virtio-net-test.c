@@ -92,6 +92,7 @@ static void tx_test(QVirtioDevice *dev,
     len = ntohl(len);
 
     ret = qemu_recv(socket, buffer, len, 0);
+    g_assert_cmpint(ret, ==, len);
     g_assert_cmpstr(buffer, ==, "TEST");
 }
 
