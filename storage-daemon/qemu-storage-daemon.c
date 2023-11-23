@@ -60,6 +60,7 @@
 #include "trace/control.h"
 
 static const char *pid_file;
+static char *pid_file_realpath;
 static volatile bool exit_requested = false;
 
 void qemu_system_killed(int signal, pid_t pid)
@@ -292,7 +293,7 @@ static void process_options(int argc, char *argv[])
 
 static void pid_file_cleanup(void)
 {
-    unlink(pid_file);
+    unlink(pid_file_realpath);
 }
 
 static void pid_file_init(void)
@@ -305,6 +306,14 @@ static void pid_file_init(void)
 
     if (!qemu_write_pidfile(pid_file, &err)) {
         error_reportf_err(err, "cannot create PID file: ");
+        exit(EXIT_FAILURE);
+    }
+
+    pid_file_realpath = g_malloc(PATH_MAX);
+    if (!realpath(pid_file, pid_file_realpath)) {
+        error_report("cannot resolve PID file path: %s: %s",
+                     pid_file, strerror(errno));
+        unlink(pid_file);
         exit(EXIT_FAILURE);
     }
 
