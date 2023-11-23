@@ -71,6 +71,7 @@ static void test_mirror(void)
     g_assert_cmpint(len, ==, sizeof(send_buf));
     recv_buf = g_malloc(len);
     ret = qemu_recv(recv_sock[0], recv_buf, len, 0);
+    g_assert_cmpint(ret, ==, len);
     g_assert_cmpstr(recv_buf, ==, send_buf);
 
     g_free(recv_buf);
