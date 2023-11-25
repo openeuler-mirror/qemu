@@ -76,7 +76,7 @@ typedef struct BDRVNBDState {
     CoQueue free_sema;
 
     CoMutex receive_mutex;
-    int in_flight;
+    unsigned in_flight;
     NBDClientState state;
 
     QEMUTimer *reconnect_delay_timer;
