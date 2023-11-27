@@ -312,7 +312,7 @@ static inline void powerpc_excp(PowerPCCPU *cpu, int excp_model, int excp)
 
     /*
      * new interrupt handler msr preserves existing HV and ME unless
-     * explicitly overriden
+     * explicitly overridden
      */
     new_msr = env->msr & (((target_ulong)1 << MSR_ME) | MSR_HVB);
 
