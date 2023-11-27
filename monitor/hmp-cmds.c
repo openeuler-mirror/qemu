@@ -46,7 +46,6 @@
 #include "qapi/qapi-visit-migration.h"
 #include "qapi/qmp/qdict.h"
 #include "qapi/qapi-visit-migration.h"
-#include "qapi/qmp/qerror.h"
 #include "qapi/string-input-visitor.h"
 #include "qapi/string-output-visitor.h"
 #include "qom/object_interfaces.h"
@@ -920,7 +919,8 @@ void hmp_sync_profile(Monitor *mon, const QDict *qdict)
     } else {
         Error *err = NULL;
 
-        error_setg(&err, QERR_INVALID_PARAMETER, op);
+        error_setg(&err, "invalid parameter '%s',"
+                   " expecting 'on', 'off', or 'reset'", op);
         hmp_handle_error(mon, err);
     }
 }
