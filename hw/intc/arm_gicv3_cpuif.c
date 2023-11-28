@@ -137,7 +137,7 @@ static uint32_t icv_fullprio_mask(GICv3CPUState *cs)
      * with the group priority, whose mask depends on the value of VBPR
      * for the interrupt group.)
      */
-    return ~0U << (8 - cs->vpribits);
+    return (~0U << (8 - cs->vpribits)) & 0xff;
 }
 
 static int ich_highest_active_virt_prio(GICv3CPUState *cs)
