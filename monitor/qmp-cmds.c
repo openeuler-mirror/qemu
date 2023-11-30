@@ -199,7 +199,8 @@ void qmp_set_password(const char *protocol, const char *password,
     } else if (strcmp(protocol, "vnc") == 0) {
         if (fail_if_connected || disconnect_if_connected) {
             /* vnc supports "connected=keep" only */
-            error_setg(errp, QERR_INVALID_PARAMETER, "connected");
+            error_setg(errp, "parameter 'connected' must be 'keep'"
+                       " when 'protocol' is 'vnc'");
             return;
         }
         /* Note that setting an empty password will not disable login through
