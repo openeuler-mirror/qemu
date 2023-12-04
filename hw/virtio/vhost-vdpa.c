@@ -1100,7 +1100,6 @@ static void vhost_vdpa_svqs_stop(struct vhost_dev *dev)
 
 static int vhost_vdpa_dev_start(struct vhost_dev *dev, bool started)
 {
-    struct vhost_vdpa *v = dev->opaque;
     bool ok;
     trace_vhost_vdpa_dev_start(dev, started);
 
@@ -1121,14 +1120,11 @@ static int vhost_vdpa_dev_start(struct vhost_dev *dev, bool started)
     }
 
     if (started) {
-        memory_listener_register(&v->listener, &address_space_memory);
         return vhost_vdpa_add_status(dev, VIRTIO_CONFIG_S_DRIVER_OK);
     } else {
         vhost_vdpa_reset_device(dev);
         vhost_vdpa_add_status(dev, VIRTIO_CONFIG_S_ACKNOWLEDGE |
                                    VIRTIO_CONFIG_S_DRIVER);
-        memory_listener_unregister(&v->listener);
-
         return 0;
     }
 }
@@ -1320,7 +1316,6 @@ static unsigned int vhost_vdpa_get_used_memslots(void)
 
 static int vhost_vdpa_suspend_device(struct vhost_dev *dev)
 {
-    struct vhost_vdpa *v = dev->opaque;
     int ret;
 
     vhost_vdpa_svqs_stop(dev);
@@ -1331,13 +1326,11 @@ static int vhost_vdpa_suspend_device(struct vhost_dev *dev)
     }
 
     ret = vhost_vdpa_call(dev, VHOST_VDPA_SUSPEND, NULL);
-    memory_listener_unregister(&v->listener);
     return ret;
 }
 
 static int vhost_vdpa_resume_device(struct vhost_dev *dev)
 {
-    struct vhost_vdpa *v = dev->opaque;
     bool ok;
 
     vhost_vdpa_host_notifiers_init(dev);
@@ -1351,7 +1344,6 @@ static int vhost_vdpa_resume_device(struct vhost_dev *dev)
         return 0;
     }
 
-    memory_listener_register(&v->listener, &address_space_memory);
     return vhost_vdpa_call(dev, VHOST_VDPA_RESUME, NULL);
 }
 
