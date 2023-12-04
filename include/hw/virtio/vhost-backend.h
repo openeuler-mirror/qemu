@@ -135,6 +135,9 @@ typedef int (*vhost_set_config_call_op)(struct vhost_dev *dev,
 typedef void (*vhost_set_used_memslots_op)(struct vhost_dev *dev);
 typedef unsigned int (*vhost_get_used_memslots_op)(void);
 
+typedef int (*vhost_dev_suspend_op)(struct vhost_dev *dev);
+typedef int (*vhost_dev_resume_op)(struct vhost_dev *dev);
+
 typedef struct VhostOps {
     VhostBackendType backend_type;
     vhost_backend_init vhost_backend_init;
@@ -186,6 +189,8 @@ typedef struct VhostOps {
     vhost_set_config_call_op vhost_set_config_call;
     vhost_set_used_memslots_op vhost_set_used_memslots;
     vhost_get_used_memslots_op vhost_get_used_memslots;
+    vhost_dev_suspend_op vhost_dev_suspend;
+    vhost_dev_resume_op vhost_dev_resume;
 } VhostOps;
 
 int vhost_backend_update_device_iotlb(struct vhost_dev *dev,
