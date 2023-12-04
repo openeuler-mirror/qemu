@@ -1513,6 +1513,45 @@ static bool  vhost_vdpa_force_iommu(struct vhost_dev *dev)
     return true;
 }
 
+static int vhost_vdpa_suspend_device(struct vhost_dev *dev)
+{
+    struct vhost_vdpa *v = dev->opaque;
+    int ret;
+
+    vhost_vdpa_svqs_stop(dev);
+    vhost_vdpa_host_notifiers_uninit(dev, dev->nvqs);
+
+    if (dev->vq_index + dev->nvqs != dev->vq_index_end) {
+        return 0;
+    }
+
+    ret = vhost_vdpa_call(dev, VHOST_VDPA_SUSPEND, NULL);
+    memory_listener_unregister(&v->listener);
+    return ret;
+}
+
+static int vhost_vdpa_resume_device(struct vhost_dev *dev)
+{
+    struct vhost_vdpa *v = dev->opaque;
+    bool ok;
+
+    vhost_vdpa_host_notifiers_init(dev);
+    ok = vhost_vdpa_svqs_start(dev);
+    if (unlikely(!ok)) {
+        return -1;
+    }
+    for (int i = 0; i < v->dev->nvqs; ++i) {
+        vhost_vdpa_set_vring_ready(v, v->dev->vq_index + i);
+    }
+
+    if (dev->vq_index + dev->nvqs != dev->vq_index_end) {
+        return 0;
+    }
+
+    memory_listener_register(&v->listener, &address_space_memory);
+    return vhost_vdpa_call(dev, VHOST_VDPA_RESUME, NULL);
+}
+
 static int vhost_vdpa_log_sync(struct vhost_dev *dev)
 {
     struct vhost_vdpa *v = dev->opaque;
@@ -1559,4 +1598,6 @@ const VhostOps vdpa_ops = {
         .vhost_log_sync = vhost_vdpa_log_sync,
         .vhost_set_config_call = vhost_vdpa_set_config_call,
         .vhost_reset_status = vhost_vdpa_reset_status,
+        .vhost_dev_suspend = vhost_vdpa_suspend_device,
+        .vhost_dev_resume = vhost_vdpa_resume_device,
 };
