@@ -33,6 +33,7 @@
 #include "qemu/error-report.h"
 #include "hw/virtio/vdpa-dev-mig.h"
 #include "migration/qemu-file-types.h"
+#include "qemu/main-loop.h"
 
 /*
  * Flags used as delimiter:
@@ -225,6 +226,18 @@ err_host_notifiers:
     return ret;
 }
 
+static void vdpa_dev_migration_handle_incoming_bh(void *opaque)
+{
+    struct vhost_dev *hdev = opaque;
+    int ret;
+
+    /* Post start device, unsupport rollback if failed! */
+    ret = vhost_vdpa_set_mig_state(hdev, VDPA_DEVICE_POST_START);
+    if (ret) {
+        error_report("Failed to set state: POST_START\n");
+    }
+}
+
 static void vdpa_dev_vmstate_change(void *opaque, bool running, RunState state)
 {
     VhostVdpaDevice *vdpa = VHOST_VDPA_DEVICE(opaque);
@@ -254,6 +267,10 @@ static void vdpa_dev_vmstate_change(void *opaque, bool running, RunState state)
 
         if (mis->state == RUN_STATE_RESTORE_VM) {
             vhost_vdpa_call(hdev, VHOST_VDPA_RESUME, NULL);
+            /* post resume */
+            mis->bh = qemu_bh_new(vdpa_dev_migration_handle_incoming_bh,
+                                  hdev);
+            qemu_bh_schedule(mis->bh);
         }
     }
 }
