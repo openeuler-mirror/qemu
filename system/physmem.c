@@ -2602,6 +2602,17 @@ static void invalidate_and_set_dirty(MemoryRegion *mr, hwaddr addr,
     cpu_physical_memory_set_dirty_range(addr, length, dirty_log_mask);
 }
 
+int64_t memory_section_set_dirty_bytemap(MemoryRegionSection *section, unsigned long *bytemap)
+{
+    ram_addr_t start = section->offset_within_region +
+                       memory_region_get_ram_addr(section->mr);
+    ram_addr_t pages = int128_get64(section->size) >> TARGET_PAGE_BITS;
+
+    hwaddr idx = BYTE_WORD(
+        section->offset_within_address_space >> TARGET_PAGE_BITS);
+    return cpu_physical_memory_set_dirty_bytemap(bytemap + idx, start, pages);
+}
+
 void memory_region_flush_rom_device(MemoryRegion *mr, hwaddr addr, hwaddr size)
 {
     /*

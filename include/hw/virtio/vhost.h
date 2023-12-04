@@ -43,6 +43,7 @@ typedef unsigned long vhost_log_chunk_t;
 #define VHOST_LOG_PAGE 0x1000
 #define VHOST_LOG_BITS (8 * sizeof(vhost_log_chunk_t))
 #define VHOST_LOG_CHUNK (VHOST_LOG_PAGE * VHOST_LOG_BITS)
+#define VHOST_LOG_CHUNK_BYTES (VHOST_LOG_PAGE * sizeof(vhost_log_chunk_t))
 #define VHOST_INVALID_FEATURE_BIT   (0xff)
 #define VHOST_QUEUE_NUM_CONFIG_INR 0
 

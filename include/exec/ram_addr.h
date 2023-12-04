@@ -535,5 +535,49 @@ uint64_t cpu_physical_memory_sync_dirty_bitmap(RAMBlock *rb,
 
     return num_dirty;
 }
+
+#define BYTES_PER_LONG           (sizeof(unsigned long))
+#define BYTE_WORD(nr)            ((nr) / BYTES_PER_LONG)
+#define BYTES_TO_LONGS(nr)       DIV_ROUND_UP(nr, BYTES_PER_LONG)
+
+static inline int64_t _set_dirty_bytemap_atomic(unsigned long *bytemap, unsigned long cur_pfn)
+{
+    char *byte_of_long = (char *)bytemap;
+    int i;
+    int64_t dirty_num = 0;
+
+    for (i = 0; i < BYTES_PER_LONG; i++) {
+        if (byte_of_long[i]) {
+            cpu_physical_memory_set_dirty_range((cur_pfn + i) << TARGET_PAGE_BITS,
+                                                TARGET_PAGE_SIZE,
+                                                1 << DIRTY_MEMORY_MIGRATION);
+            /* Per byte ops, no need to atomic_xchg */
+            byte_of_long[i] = 0;
+            dirty_num++;
+        }
+    }
+
+    return dirty_num;
+}
+
+static inline int64_t cpu_physical_memory_set_dirty_bytemap(unsigned long *bytemap,
+                                      ram_addr_t start,
+                                      ram_addr_t pages)
+{
+    unsigned long i;
+    unsigned long len = BYTES_TO_LONGS(pages);
+    unsigned long pfn = (start >> TARGET_PAGE_BITS) /
+                         BYTES_PER_LONG * BYTES_PER_LONG;
+    int64_t dirty_mig_bits = 0;
+
+    for (i = 0; i < len; i++) {
+        if (bytemap[i]) {
+            dirty_mig_bits += _set_dirty_bytemap_atomic(&bytemap[i],
+                                                        pfn + BYTES_PER_LONG * i);
+        }
+    }
+
+    return dirty_mig_bits;
+}
 #endif
 #endif
