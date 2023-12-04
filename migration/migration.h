@@ -393,4 +393,6 @@ void migration_cancel(const Error *error);
 
 void populate_vfio_info(MigrationInfo *info);
 
+void migrate_fd_cancel(MigrationState *s);
+
 #endif

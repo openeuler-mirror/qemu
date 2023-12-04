@@ -277,4 +277,8 @@ int vhost_dev_set_inflight(struct vhost_dev *dev,
 int vhost_dev_get_inflight(struct vhost_dev *dev, uint16_t queue_size,
                            struct vhost_inflight *inflight);
 bool used_memslots_is_exceeded(void);
+
+int vhost_dev_resume(struct vhost_dev *hdev, VirtIODevice *vdev, bool vrings);
+int vhost_dev_suspend(struct vhost_dev *hdev, VirtIODevice *vdev, bool vrings);
+
 #endif

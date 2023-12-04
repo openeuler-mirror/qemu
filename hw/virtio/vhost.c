@@ -2201,3 +2201,141 @@ bool used_memslots_is_exceeded(void)
 {
     return used_memslots_exceeded;
 }
+
+int vhost_dev_resume(struct vhost_dev *hdev, VirtIODevice *vdev, bool vrings)
+{
+    int i, r;
+    EventNotifier *e = &hdev->vqs[VHOST_QUEUE_NUM_CONFIG_INR].masked_config_notifier;
+
+    /* should only be called after backend is connected */
+    if (!hdev->vhost_ops) {
+        error_report("Missing vhost_ops! Operation not permitted!\n");
+        return -EPERM;
+    }
+
+    vdev->vhost_started = true;
+    hdev->started = true;
+    hdev->vdev = vdev;
+
+    if (vhost_dev_has_iommu(hdev)) {
+        memory_listener_register(&hdev->iommu_listener, vdev->dma_as);
+    }
+
+    r = hdev->vhost_ops->vhost_set_mem_table(hdev, hdev->mem);
+    if (r < 0) {
+        VHOST_OPS_DEBUG(r, "vhost_set_mem_table failed");
+        goto fail_mem;
+    }
+    for (i = 0; i < hdev->nvqs; ++i) {
+        r = vhost_virtqueue_start(hdev,
+                                  vdev,
+                                  hdev->vqs + i,
+                                  hdev->vq_index + i);
+        if (r < 0) {
+            goto fail_vq;
+        }
+    }
+
+    r = event_notifier_init(e, 0);
+    if (r < 0) {
+        return r;
+    }
+    event_notifier_test_and_clear(e);
+    if (!vdev->use_guest_notifier_mask) {
+        vhost_config_mask(hdev, vdev, true);
+    }
+    if (vrings) {
+        r = vhost_dev_set_vring_enable(hdev, true);
+        if (r) {
+            goto fail_vq;
+        }
+    }
+    if (hdev->vhost_ops->vhost_dev_resume) {
+        r = hdev->vhost_ops->vhost_dev_resume(hdev);
+        if (r) {
+            goto fail_start;
+        }
+    }
+    if (vhost_dev_has_iommu(hdev)) {
+        hdev->vhost_ops->vhost_set_iotlb_callback(hdev, true);
+
+        /*
+         * Update used ring information for IOTLB to work correctly,
+         * vhost-kernel code requires for this.
+         */
+        for (i = 0; i < hdev->nvqs; ++i) {
+            struct vhost_virtqueue *vq = hdev->vqs + i;
+            vhost_device_iotlb_miss(hdev, vq->used_phys, true);
+        }
+    }
+    vhost_start_config_intr(hdev);
+    return 0;
+fail_start:
+    if (vrings) {
+        vhost_dev_set_vring_enable(hdev, false);
+    }
+fail_vq:
+    while (--i >= 0) {
+        vhost_virtqueue_stop(hdev,
+                             vdev,
+                             hdev->vqs + i,
+                             hdev->vq_index + i);
+    }
+
+fail_mem:
+    vdev->vhost_started = false;
+    hdev->started = false;
+    return r;
+}
+
+int vhost_dev_suspend(struct vhost_dev *hdev, VirtIODevice *vdev, bool vrings)
+{
+    int i;
+    int ret = 0;
+    EventNotifier *e = &hdev->vqs[VHOST_QUEUE_NUM_CONFIG_INR].masked_config_notifier;
+
+    /* should only be called after backend is connected */
+    if (!hdev->vhost_ops) {
+        error_report("Missing vhost_ops! Operation not permitted!\n");
+        return -EPERM;
+    }
+
+    event_notifier_test_and_clear(e);
+    event_notifier_test_and_clear(&vdev->config_notifier);
+
+    if (hdev->vhost_ops->vhost_dev_suspend) {
+        ret = hdev->vhost_ops->vhost_dev_suspend(hdev);
+        if (ret) {
+            goto fail_suspend;
+        }
+    }
+    if (vrings) {
+        ret = vhost_dev_set_vring_enable(hdev, false);
+        if (ret) {
+            goto fail_suspend;
+        }
+    }
+    for (i = 0; i < hdev->nvqs; ++i) {
+        vhost_virtqueue_stop(hdev,
+                             vdev,
+                             hdev->vqs + i,
+                             hdev->vq_index + i);
+    }
+
+    if (vhost_dev_has_iommu(hdev)) {
+        hdev->vhost_ops->vhost_set_iotlb_callback(hdev, false);
+        memory_listener_unregister(&hdev->iommu_listener);
+    }
+    vhost_stop_config_intr(hdev);
+    vhost_log_put(hdev, true);
+    hdev->started = false;
+    vdev->vhost_started = false;
+    hdev->vdev = NULL;
+
+    return ret;
+
+fail_suspend:
+    event_notifier_test_and_clear(e);
+
+    return ret;
+}
