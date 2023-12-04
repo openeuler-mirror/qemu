@@ -19,9 +19,11 @@
 #include "qemu/atomic.h"
 #include "qemu/range.h"
 #include "qemu/error-report.h"
+#include "cpu.h"
 #include "qemu/memfd.h"
 #include "qemu/log.h"
 #include "standard-headers/linux/vhost_types.h"
+#include "exec/ram_addr.h"
 #include "hw/virtio/virtio-bus.h"
 #include "hw/virtio/virtio-access.h"
 #include "migration/blocker.h"
@@ -30,6 +32,7 @@
 #include "sysemu/dma.h"
 #include "sysemu/tcg.h"
 #include "trace.h"
+#include "qapi/qapi-commands-migration.h"
 
 /* enabled until disconnected backend stabilizes */
 #define _VHOST_DEBUG 1
@@ -44,6 +47,11 @@
 #define VHOST_OPS_DEBUG(retval, fmt, ...) \
     do { } while (0)
 #endif
+
+static inline bool vhost_bytemap_log_support(struct vhost_dev *dev)
+{
+    return (dev->backend_cap & BIT_ULL(VHOST_BACKEND_F_BYTEMAPLOG));
+}
 
 static struct vhost_log *vhost_log;
 static struct vhost_log *vhost_log_shm;
@@ -213,12 +221,93 @@ static int vhost_sync_dirty_bitmap(struct vhost_dev *dev,
     return 0;
 }
 
+#define BYTES_PER_LONG           (sizeof(unsigned long))
+#define BYTE_WORD(nr)            ((nr) / BYTES_PER_LONG)
+#define BYTES_TO_LONGS(nr)       DIV_ROUND_UP(nr, BYTES_PER_LONG)
+
+static inline int64_t _set_dirty_bytemap_atomic(unsigned long *bytemap, unsigned long cur_pfn)
+{
+    char *byte_of_long = (char *)bytemap;
+    int i;
+    int64_t dirty_num = 0;
+
+    for (i = 0; i < BYTES_PER_LONG; i++) {
+        if (byte_of_long[i]) {
+            cpu_physical_memory_set_dirty_range((cur_pfn + i) << TARGET_PAGE_BITS,
+                                                TARGET_PAGE_SIZE,
+                                                1 << DIRTY_MEMORY_MIGRATION);
+            /* Per byte ops, no need to atomic_xchg */
+            byte_of_long[i] = 0;
+            dirty_num++;
+        }
+    }
+
+    return dirty_num;
+}
+
+static inline int64_t cpu_physical_memory_set_dirty_bytemap(unsigned long *bytemap,
+                                      ram_addr_t start,
+                                      ram_addr_t pages)
+{
+    unsigned long i;
+    unsigned long len = BYTES_TO_LONGS(pages);
+    unsigned long pfn = (start >> TARGET_PAGE_BITS) /
+                         BYTES_PER_LONG * BYTES_PER_LONG;
+    int64_t dirty_mig_bits = 0;
+
+    for (i = 0; i < len; i++) {
+        if (bytemap[i]) {
+            dirty_mig_bits += _set_dirty_bytemap_atomic(&bytemap[i],
+                                                        pfn + BYTES_PER_LONG * i);
+        }
+    }
+
+    return dirty_mig_bits;
+}
+
+static int vhost_sync_dirty_bytemap(struct vhost_dev *dev,
+                                    MemoryRegionSection *section)
+{
+    struct vhost_log *log = dev->log;
+
+    ram_addr_t start = section->offset_within_region +
+                       memory_region_get_ram_addr(section->mr);
+    ram_addr_t pages = int128_get64(section->size) >> TARGET_PAGE_BITS;
+
+    hwaddr idx = BYTE_WORD(
+        section->offset_within_address_space >> TARGET_PAGE_BITS);
+
+    return cpu_physical_memory_set_dirty_bytemap((unsigned long *)log->log + idx,
+                                                 start, pages);
+}
+
 static void vhost_log_sync(MemoryListener *listener,
                           MemoryRegionSection *section)
 {
     struct vhost_dev *dev = container_of(listener, struct vhost_dev,
                                          memory_listener);
-    vhost_sync_dirty_bitmap(dev, section, 0x0, ~0x0ULL);
+    MigrationState *ms = migrate_get_current();
+
+    if (!dev->log_enabled || !dev->started) {
+        return;
+    }
+
+    if (dev->vhost_ops->vhost_log_sync) {
+        int r = dev->vhost_ops->vhost_log_sync(dev);
+        if (r < 0) {
+            error_report("Failed to sync dirty log: 0x%x\n", r);
+            if (migration_is_running(ms->state)) {
+                qmp_migrate_cancel(NULL);
+            }
+            return;
+        }
+    }
+
+    if (vhost_bytemap_log_support(dev)) {
+        vhost_sync_dirty_bytemap(dev, section);
+    } else {
+        vhost_sync_dirty_bitmap(dev, section, 0x0, ~0x0ULL);
+    }
 }
 
 static void vhost_log_sync_range(struct vhost_dev *dev,
@@ -228,7 +317,11 @@ static void vhost_log_sync_range(struct vhost_dev *dev,
     /* FIXME: this is N^2 in number of sections */
     for (i = 0; i < dev->n_mem_sections; ++i) {
         MemoryRegionSection *section = &dev->mem_sections[i];
-        vhost_sync_dirty_bitmap(dev, section, first, last);
+        if (vhost_bytemap_log_support(dev)) {
+            vhost_sync_dirty_bytemap(dev, section);
+        } else {
+            vhost_sync_dirty_bitmap(dev, section, first, last);
+        }
     }
 }
 
@@ -236,11 +329,19 @@ static uint64_t vhost_get_log_size(struct vhost_dev *dev)
 {
     uint64_t log_size = 0;
     int i;
+    uint64_t vhost_log_chunk_size;
+
+    if (vhost_bytemap_log_support(dev)) {
+        vhost_log_chunk_size = VHOST_LOG_CHUNK_BYTES;
+    } else {
+        vhost_log_chunk_size = VHOST_LOG_CHUNK;
+    }
+
     for (i = 0; i < dev->mem->nregions; ++i) {
         struct vhost_memory_region *reg = dev->mem->regions + i;
         uint64_t last = range_get_last(reg->guest_phys_addr,
                                        reg->memory_size);
-        log_size = MAX(log_size, last / VHOST_LOG_CHUNK + 1);
+        log_size = MAX(log_size, last / vhost_log_chunk_size + 1);
     }
     return log_size;
 }
@@ -358,11 +459,20 @@ static bool vhost_dev_log_is_shared(struct vhost_dev *dev)
            dev->vhost_ops->vhost_requires_shm_log(dev);
 }
 
-static inline void vhost_dev_log_resize(struct vhost_dev *dev, uint64_t size)
+static inline int vhost_dev_log_resize(struct vhost_dev *dev, uint64_t size)
 {
     struct vhost_log *log = vhost_log_get(size, vhost_dev_log_is_shared(dev));
-    uint64_t log_base = (uintptr_t)log->log;
+    uint64_t log_base;
+    int log_fd;
     int r;
+
+    if (!log) {
+        r = -ENOMEM;
+        goto out;
+    }
+
+    log_base = (uint64_t)log->log;
+    log_fd = log_fd;
 
     /* inform backend of log switching, this must be done before
        releasing the current log, to ensure no logging is lost */
@@ -371,9 +481,19 @@ static inline void vhost_dev_log_resize(struct vhost_dev *dev, uint64_t size)
         VHOST_OPS_DEBUG(r, "vhost_set_log_base failed");
     }
 
+    if (dev->vhost_ops->vhost_set_log_size) {
+        r = dev->vhost_ops->vhost_set_log_size(dev, size, dev->log);
+        if (r < 0) {
+            VHOST_OPS_DEBUG(r, "vhost_set_log_size failed");
+        }
+    }
+
     vhost_log_put(dev, true);
     dev->log = log;
     dev->log_size = size;
+
+out:
+    return r;
 }
 
 static void *vhost_memory_map(struct vhost_dev *dev, hwaddr addr,
@@ -990,7 +1110,11 @@ static int vhost_migration_log(MemoryListener *listener, bool enable)
         }
         vhost_log_put(dev, false);
     } else {
-        vhost_dev_log_resize(dev, vhost_get_log_size(dev));
+        r = vhost_dev_log_resize(dev, vhost_get_log_size(dev));
+        if ( r < 0 ) {
+            return r;
+        }
+
         r = vhost_dev_set_log(dev, true);
         if (r < 0) {
             goto check_dev_state;
@@ -1966,6 +2090,14 @@ int vhost_dev_start(struct vhost_dev *hdev, VirtIODevice *vdev, bool vrings)
         if (r < 0) {
             VHOST_OPS_DEBUG(r, "vhost_set_log_base failed");
             goto fail_log;
+        }
+
+        if (hdev->vhost_ops->vhost_set_log_size) {
+            r = hdev->vhost_ops->vhost_set_log_size(hdev, hdev->log_size, hdev->log);
+            if (r < 0) {
+                VHOST_OPS_DEBUG(r, "vhost_set_log_size failed");
+                goto fail_log;
+            }
         }
     }
     if (vrings) {
