@@ -21,9 +21,21 @@
 #include "hw/virtio/vhost.h"
 #include "hw/virtio/vdpa-dev.h"
 #include "hw/virtio/virtio-bus.h"
+#include "migration/register.h"
 #include "migration/migration.h"
 #include "qemu/error-report.h"
 #include "hw/virtio/vdpa-dev-mig.h"
+#include "migration/qemu-file-types.h"
+
+/*
+ * Flags used as delimiter:
+ * 0xffffffff => MSB 32-bit all 1s
+ * 0xef10     => emulated (virtual) function IO
+ * 0x0000     => 16-bits reserved for flags
+ */
+#define VDPA_MIG_FLAG_END_OF_STATE      (0xffffffffef100001ULL)
+#define VDPA_MIG_FLAG_DEV_CONFIG_STATE  (0xffffffffef100002ULL)
+#define VDPA_MIG_FLAG_DEV_SETUP_STATE   (0xffffffffef100003ULL)
 
 static int vhost_vdpa_call(struct vhost_dev *dev, unsigned long int request,
                            void *arg)
@@ -37,6 +49,80 @@ static int vhost_vdpa_call(struct vhost_dev *dev, unsigned long int request,
     }
 
     return ioctl(fd, request, arg);
+}
+
+static int vhost_vdpa_set_mig_state(struct vhost_dev *dev, uint8_t state)
+{
+    return vhost_vdpa_call(dev, VHOST_VDPA_SET_MIG_STATE, &state);
+}
+
+static int vhost_vdpa_dev_buffer_size(struct vhost_dev *dev, uint32_t *size)
+{
+    return vhost_vdpa_call(dev, VHOST_GET_DEV_BUFFER_SIZE, size);
+}
+
+static int vhost_vdpa_dev_buffer_save(struct vhost_dev *dev, QEMUFile *f)
+{
+    struct vhost_vdpa_config *config;
+    unsigned long config_size = offsetof(struct vhost_vdpa_config, buf);
+    uint32_t buffer_size = 0;
+    int ret;
+
+    ret = vhost_vdpa_dev_buffer_size(dev, &buffer_size);
+    if (ret) {
+        error_report("get dev buffer size failed: %d\n", ret);
+        return ret;
+    }
+
+    qemu_put_be32(f, buffer_size);
+
+    config = g_malloc(buffer_size + config_size);
+    config->off = 0;
+    config->len = buffer_size;
+
+    ret = vhost_vdpa_call(dev, VHOST_GET_DEV_BUFFER, config);
+    if (ret) {
+        error_report("get dev buffer failed: %d\n", ret);
+        goto free;
+    }
+
+    qemu_put_buffer(f, config->buf, buffer_size);
+free:
+    g_free(config);
+
+    return ret;
+}
+
+static int vhost_vdpa_dev_buffer_load(struct vhost_dev *dev, QEMUFile *f)
+{
+    struct vhost_vdpa_config *config;
+    unsigned long config_size = offsetof(struct vhost_vdpa_config, buf);
+    uint32_t buffer_size, recv_size;
+    int ret;
+
+    buffer_size = qemu_get_be32(f);
+
+    config = g_malloc(buffer_size + config_size);
+    config->off = 0;
+    config->len = buffer_size;
+
+    recv_size = qemu_get_buffer(f, config->buf, buffer_size);
+    if (recv_size != buffer_size) {
+        error_report("read dev mig buffer failed, buffer_size: %u, "
+                     "recv_size: %u\n", buffer_size, recv_size);
+        ret = -EINVAL;
+        goto free;
+    }
+
+    ret = vhost_vdpa_call(dev, VHOST_SET_DEV_BUFFER, config);
+    if (ret) {
+        error_report("set dev buffer failed: %d\n", ret);
+    }
+
+free:
+    g_free(config);
+
+    return ret;
 }
 
 static int vhost_vdpa_device_suspend(VhostVdpaDevice *vdpa)
@@ -165,14 +251,103 @@ static void vdpa_dev_vmstate_change(void *opaque, bool running, RunState state)
     }
 }
 
+static int vdpa_save_setup(QEMUFile *f, void *opaque)
+{
+    qemu_put_be64(f, VDPA_MIG_FLAG_DEV_SETUP_STATE);
+    qemu_put_be64(f, VDPA_MIG_FLAG_END_OF_STATE);
+
+    return qemu_file_get_error(f);
+}
+
+static int vdpa_save_complete_precopy(QEMUFile *f, void *opaque)
+{
+    VhostVdpaDevice *vdev = VHOST_VDPA_DEVICE(opaque);
+    struct vhost_dev *hdev = &vdev->dev;
+    int ret;
+
+    qemu_put_be64(f, VDPA_MIG_FLAG_DEV_CONFIG_STATE);
+    ret = vhost_vdpa_dev_buffer_save(hdev, f);
+    if (ret) {
+        error_report("Save vdpa device buffer failed: %d\n", ret);
+        return ret;
+    }
+    qemu_put_be64(f, VDPA_MIG_FLAG_END_OF_STATE);
+
+    return qemu_file_get_error(f);
+}
+
+static int vdpa_load_state(QEMUFile *f, void *opaque, int version_id)
+{
+    VhostVdpaDevice *vdev = VHOST_VDPA_DEVICE(opaque);
+    struct vhost_dev *hdev = &vdev->dev;
+
+    int ret;
+    uint64_t data;
+
+    data = qemu_get_be64(f);
+    while (data != VDPA_MIG_FLAG_END_OF_STATE) {
+        if (data == VDPA_MIG_FLAG_DEV_SETUP_STATE) {
+            data = qemu_get_be64(f);
+            if (data == VDPA_MIG_FLAG_END_OF_STATE) {
+                return 0;
+            } else {
+                error_report("SETUP STATE: EOS not found 0x%lx\n", data);
+                return -EINVAL;
+            }
+        } else if (data == VDPA_MIG_FLAG_DEV_CONFIG_STATE) {
+            ret = vhost_vdpa_dev_buffer_load(hdev, f);
+            if (ret) {
+                error_report("fail to restore device buffer.\n");
+                return ret;
+            }
+        }
+
+        ret = qemu_file_get_error(f);
+        if (ret) {
+            error_report("qemu file error: %d\n", ret);
+            return ret;
+        }
+        data = qemu_get_be64(f);
+    }
+
+    return 0;
+}
+
+static int vdpa_load_setup(QEMUFile *f, void *opaque)
+{
+    VhostVdpaDevice *v = VHOST_VDPA_DEVICE(opaque);
+    struct vhost_dev *hdev = &v->dev;
+    int ret = 0;
+
+    ret = vhost_vdpa_set_mig_state(hdev, VDPA_DEVICE_PRE_START);
+    if (ret) {
+        error_report("pre start device failed: %d\n", ret);
+        goto out;
+    }
+
+    return qemu_file_get_error(f);
+out:
+    return ret;
+}
+
+static SaveVMHandlers savevm_vdpa_handlers = {
+    .save_setup = vdpa_save_setup,
+    .save_live_complete_precopy = vdpa_save_complete_precopy,
+    .load_state = vdpa_load_state,
+    .load_setup = vdpa_load_setup,
+};
+
 void vdpa_migration_register(VhostVdpaDevice *vdev)
 {
     vdev->vmstate = qdev_add_vm_change_state_handler(DEVICE(vdev),
                                                      vdpa_dev_vmstate_change,
                                                      DEVICE(vdev));
+    register_savevm_live("vdpa", -1, 1,
+                         &savevm_vdpa_handlers, DEVICE(vdev));
 }
 
 void vdpa_migration_unregister(VhostVdpaDevice *vdev)
 {
+    unregister_savevm(VMSTATE_IF(&vdev->parent_obj.parent_obj), "vdpa", DEVICE(vdev));
     qemu_del_vm_change_state_handler(vdev->vmstate);
 }

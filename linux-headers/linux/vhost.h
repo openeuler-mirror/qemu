@@ -231,4 +231,13 @@
  */
 #define VHOST_VDPA_GET_VRING_DESC_GROUP	_IOWR(VHOST_VIRTIO, 0x7F,	\
 					      struct vhost_vring_state)
+
+/* set and get device buffer */
+#define VHOST_GET_DEV_BUFFER _IOR(VHOST_VIRTIO, 0xb0, struct vhost_vdpa_config)
+#define VHOST_SET_DEV_BUFFER _IOW(VHOST_VIRTIO, 0xb1, struct vhost_vdpa_config)
+#define VHOST_GET_DEV_BUFFER_SIZE _IOR(VHOST_VIRTIO, 0xb3, __u32)
+
+/* set device migtration state */
+#define VHOST_VDPA_SET_MIG_STATE _IOW(VHOST_VIRTIO, 0xb2, __u8)
+
 #endif
