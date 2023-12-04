@@ -829,10 +829,11 @@ static int vhost_vdpa_set_features(struct vhost_dev *dev,
 static int vhost_vdpa_set_backend_cap(struct vhost_dev *dev)
 {
     uint64_t features;
-    uint64_t f = 0x1ULL << VHOST_BACKEND_F_IOTLB_MSG_V2 |
-        0x1ULL << VHOST_BACKEND_F_IOTLB_BATCH |
-        0x1ULL << VHOST_BACKEND_F_IOTLB_ASID |
-        0x1ULL << VHOST_BACKEND_F_SUSPEND;
+    uint64_t f = BIT_ULL(VHOST_BACKEND_F_IOTLB_MSG_V2) |
+                 BIT_ULL(VHOST_BACKEND_F_IOTLB_BATCH) |
+                 BIT_ULL(VHOST_BACKEND_F_IOTLB_ASID) |
+                 BIT_ULL(VHOST_BACKEND_F_SUSPEND) |
+                 BIT_ULL(VHOST_BACKEND_F_BYTEMAPLOG);
     int r;
 
     if (vhost_vdpa_call(dev, VHOST_GET_BACKEND_FEATURES, &features)) {
