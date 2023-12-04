@@ -28,6 +28,8 @@
 #include "hw/virtio/vdpa-dev.h"
 #include "sysemu/sysemu.h"
 #include "sysemu/runstate.h"
+#include "hw/virtio/vdpa-dev-mig.h"
+#include "migration/migration.h"
 
 static void
 vhost_vdpa_device_dummy_handle_output(VirtIODevice *vdev, VirtQueue *vq)
@@ -154,6 +156,8 @@ static void vhost_vdpa_device_realize(DeviceState *dev, Error **errp)
                                         vhost_vdpa_device_dummy_handle_output);
     }
 
+    vdpa_migration_register(v);
+
     return;
 
 free_config:
@@ -173,6 +177,7 @@ static void vhost_vdpa_device_unrealize(DeviceState *dev)
     VhostVdpaDevice *s = VHOST_VDPA_DEVICE(vdev);
     int i;
 
+    vdpa_migration_unregister(s);
     virtio_set_status(vdev, 0);
 
     for (i = 0; i < s->num_queues; i++) {
@@ -308,6 +313,7 @@ static void vhost_vdpa_device_stop(VirtIODevice *vdev)
 static void vhost_vdpa_device_set_status(VirtIODevice *vdev, uint8_t status)
 {
     VhostVdpaDevice *s = VHOST_VDPA_DEVICE(vdev);
+    MigrationState *ms = migrate_get_current();
     bool should_start = virtio_device_started(vdev, status);
     Error *local_err = NULL;
     int ret;
@@ -317,6 +323,11 @@ static void vhost_vdpa_device_set_status(VirtIODevice *vdev, uint8_t status)
     }
 
     if (s->started == should_start) {
+        return;
+    }
+
+    if (ms->state == RUN_STATE_PAUSED ||
+        ms->state == RUN_STATE_RESTORE_VM) {
         return;
     }
 
@@ -338,7 +349,7 @@ static Property vhost_vdpa_device_properties[] = {
 
 static const VMStateDescription vmstate_vhost_vdpa_device = {
     .name = "vhost-vdpa-device",
-    .unmigratable = 1,
+    .unmigratable = 0,
     .minimum_version_id = 1,
     .version_id = 1,
     .fields = (VMStateField[]) {
