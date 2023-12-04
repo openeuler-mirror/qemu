@@ -1146,6 +1146,30 @@ static int vhost_vdpa_set_log_base(struct vhost_dev *dev, uint64_t base,
     return vhost_vdpa_call(dev, VHOST_SET_LOG_BASE, &base);
 }
 
+static int vhost_vdpa_set_log_fd(struct vhost_dev *dev, int fd,
+                                 struct vhost_log *log)
+{
+    struct vhost_vdpa *v = dev->opaque;
+    if (v->shadow_vqs_enabled || !vhost_vdpa_first_dev(dev)) {
+        return 0;
+    }
+
+    return vhost_vdpa_call(dev, VHOST_SET_LOG_FD, &fd);
+}
+
+static int vhost_vdpa_set_log_size(struct vhost_dev *dev, uint64_t size,
+                                   struct vhost_log *log)
+{
+    struct vhost_vdpa *v = dev->opaque;
+    uint64_t logsize = size * sizeof(*(log->log));
+
+    if (v->shadow_vqs_enabled || !vhost_vdpa_first_dev(dev)) {
+        return 0;
+    }
+
+    return vhost_vdpa_call(dev, VHOST_SET_LOG_SIZE, &logsize);
+}
+
 static int vhost_vdpa_set_vring_addr(struct vhost_dev *dev,
                                        struct vhost_vring_addr *addr)
 {
@@ -1294,11 +1318,23 @@ static unsigned int vhost_vdpa_get_used_memslots(void)
     return vhost_vdpa_used_memslots;
 }
 
+static int vhost_vdpa_log_sync(struct vhost_dev *dev)
+{
+    struct vhost_vdpa *v = dev->opaque;
+    if (v->shadow_vqs_enabled || !vhost_vdpa_first_dev(dev)) {
+        return 0;
+    }
+
+    return vhost_vdpa_call(dev, VHOST_LOG_SYNC, NULL);
+}
+
 const VhostOps vdpa_ops = {
         .backend_type = VHOST_BACKEND_TYPE_VDPA,
         .vhost_backend_init = vhost_vdpa_init,
         .vhost_backend_cleanup = vhost_vdpa_cleanup,
         .vhost_set_log_base = vhost_vdpa_set_log_base,
+        .vhost_set_log_size = vhost_vdpa_set_log_size,
+        .vhost_set_log_fd = vhost_vdpa_set_log_fd,
         .vhost_set_vring_addr = vhost_vdpa_set_vring_addr,
         .vhost_set_vring_num = vhost_vdpa_set_vring_num,
         .vhost_set_vring_base = vhost_vdpa_set_vring_base,
@@ -1326,6 +1362,7 @@ const VhostOps vdpa_ops = {
         .vhost_get_device_id = vhost_vdpa_get_device_id,
         .vhost_vq_get_addr = vhost_vdpa_vq_get_addr,
         .vhost_force_iommu = vhost_vdpa_force_iommu,
+        .vhost_log_sync = vhost_vdpa_log_sync,
         .vhost_set_config_call = vhost_vdpa_set_config_call,
 	.vhost_set_used_memslots = vhost_vdpa_set_used_memslots,
 	.vhost_get_used_memslots = vhost_vdpa_get_used_memslots,
