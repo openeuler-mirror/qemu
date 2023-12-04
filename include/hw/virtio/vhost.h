@@ -466,4 +466,7 @@ int vhost_save_backend_state(struct vhost_dev *dev, QEMUFile *f, Error **errp);
  */
 int vhost_load_backend_state(struct vhost_dev *dev, QEMUFile *f, Error **errp);
 
+int vhost_dev_resume(struct vhost_dev *hdev, VirtIODevice *vdev, bool vrings);
+int vhost_dev_suspend(struct vhost_dev *hdev, VirtIODevice *vdev, bool vrings);
+
 #endif
