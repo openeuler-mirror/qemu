@@ -58,6 +58,10 @@ bool vhost_has_free_slot(void)
     struct vhost_dev *hdev;
 
     QLIST_FOREACH(hdev, &vhost_devices, entry) {
+        if (!hdev->vhost_ops->vhost_get_used_memslots ||
+            !hdev->vhost_ops->vhost_backend_memslots_limit) {
+            continue;
+        }
         if (hdev->vhost_ops->vhost_get_used_memslots() >=
             hdev->vhost_ops->vhost_backend_memslots_limit(hdev)) {
 	    return false;
@@ -748,7 +752,9 @@ static void vhost_region_add_section(struct vhost_dev *dev,
         dev->tmp_sections[dev->n_tmp_sections - 1].fv = NULL;
         memory_region_ref(section->mr);
     }
-    dev->vhost_ops->vhost_set_used_memslots(dev);
+    if (dev->vhost_ops->vhost_set_used_memslots) {
+        dev->vhost_ops->vhost_set_used_memslots(dev);
+    }
 }
 
 /* Used for both add and nop callbacks */
@@ -772,7 +778,9 @@ static void vhost_region_del(MemoryListener *listener,
     if (!vhost_section(dev, section)) {
         return;
     }
-    dev->vhost_ops->vhost_set_used_memslots(dev);
+    if (dev->vhost_ops->vhost_set_used_memslots) {
+        dev->vhost_ops->vhost_set_used_memslots(dev);
+    }
 }
 
 static void vhost_iommu_unmap_notify(IOMMUNotifier *n, IOMMUTLBEntry *iotlb)
@@ -1367,6 +1375,11 @@ static void vhost_virtqueue_cleanup(struct vhost_virtqueue *vq)
 
 static bool vhost_dev_used_memslots_is_exceeded(struct vhost_dev *hdev)
 {
+    if (!hdev->vhost_ops->vhost_get_used_memslots ||
+        !hdev->vhost_ops->vhost_backend_memslots_limit) {
+        goto out;
+    }
+
     if (hdev->vhost_ops->vhost_get_used_memslots() >
         hdev->vhost_ops->vhost_backend_memslots_limit(hdev)) {
         error_report("vhost backend memory slots limit is less"
@@ -1375,6 +1388,7 @@ static bool vhost_dev_used_memslots_is_exceeded(struct vhost_dev *hdev)
         return true;
     }
 
+out:
     used_memslots_exceeded = false;
     return false;
 }
