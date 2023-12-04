@@ -155,6 +155,9 @@ typedef int (*vhost_set_device_state_fd_op)(struct vhost_dev *dev,
                                             Error **errp);
 typedef int (*vhost_check_device_state_op)(struct vhost_dev *dev, Error **errp);
 
+typedef int (*vhost_dev_suspend_op)(struct vhost_dev *dev);
+typedef int (*vhost_dev_resume_op)(struct vhost_dev *dev);
+
 typedef struct VhostOps {
     VhostBackendType backend_type;
     vhost_backend_init vhost_backend_init;
@@ -208,6 +211,8 @@ typedef struct VhostOps {
     vhost_supports_device_state_op vhost_supports_device_state;
     vhost_set_device_state_fd_op vhost_set_device_state_fd;
     vhost_check_device_state_op vhost_check_device_state;
+    vhost_dev_suspend_op vhost_dev_suspend;
+    vhost_dev_resume_op vhost_dev_resume;
 } VhostOps;
 
 int vhost_backend_update_device_iotlb(struct vhost_dev *dev,
