@@ -344,6 +344,31 @@ static SaveVMHandlers savevm_vdpa_handlers = {
     .load_setup = vdpa_load_setup,
 };
 
+static void vdpa_migration_state_notifier(Notifier *notifier, void *data)
+{
+    MigrationState *s = data;
+    VhostVdpaDevice *vdev = container_of(notifier,
+                                         VhostVdpaDevice,
+                                         migration_state);
+    struct vhost_dev *hdev = &vdev->dev;
+    int ret;
+
+    switch (s->state) {
+    case MIGRATION_STATUS_CANCELLING:
+    case MIGRATION_STATUS_CANCELLED:
+    case MIGRATION_STATUS_FAILED:
+        ret = vhost_vdpa_set_mig_state(hdev, VDPA_DEVICE_CANCEL);
+        if (ret) {
+            error_report("Failed to set state CANCEL\n");
+        }
+
+        break;
+    case MIGRATION_STATUS_COMPLETED:
+    default:
+        break;
+    }
+}
+
 void vdpa_migration_register(VhostVdpaDevice *vdev)
 {
     vdev->vmstate = qdev_add_vm_change_state_handler(DEVICE(vdev),
@@ -351,10 +376,13 @@ void vdpa_migration_register(VhostVdpaDevice *vdev)
                                                      DEVICE(vdev));
     register_savevm_live("vdpa", -1, 1,
                          &savevm_vdpa_handlers, DEVICE(vdev));
+    vdev->migration_state.notify = vdpa_migration_state_notifier;
+    add_migration_state_change_notifier(&vdev->migration_state);
 }
 
 void vdpa_migration_unregister(VhostVdpaDevice *vdev)
 {
+    remove_migration_state_change_notifier(&vdev->migration_state);
     unregister_savevm(VMSTATE_IF(&vdev->parent_obj.parent_obj), "vdpa", DEVICE(vdev));
     qemu_del_vm_change_state_handler(vdev->vmstate);
 }
