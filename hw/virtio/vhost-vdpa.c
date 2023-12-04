@@ -1318,6 +1318,43 @@ static unsigned int vhost_vdpa_get_used_memslots(void)
     return vhost_vdpa_used_memslots;
 }
 
+static int vhost_vdpa_suspend_device(struct vhost_dev *dev)
+{
+    struct vhost_vdpa *v = dev->opaque;
+    int ret;
+
+    vhost_vdpa_svqs_stop(dev);
+    vhost_vdpa_host_notifiers_uninit(dev, dev->nvqs);
+
+    if (dev->vq_index + dev->nvqs != dev->vq_index_end) {
+        return 0;
+    }
+
+    ret = vhost_vdpa_call(dev, VHOST_VDPA_SUSPEND, NULL);
+    memory_listener_unregister(&v->listener);
+    return ret;
+}
+
+static int vhost_vdpa_resume_device(struct vhost_dev *dev)
+{
+    struct vhost_vdpa *v = dev->opaque;
+    bool ok;
+
+    vhost_vdpa_host_notifiers_init(dev);
+    ok = vhost_vdpa_svqs_start(dev);
+    if (unlikely(!ok)) {
+        return -1;
+    }
+    vhost_vdpa_set_vring_ready(dev);
+
+    if (dev->vq_index + dev->nvqs != dev->vq_index_end) {
+        return 0;
+    }
+
+    memory_listener_register(&v->listener, &address_space_memory);
+    return vhost_vdpa_call(dev, VHOST_VDPA_RESUME, NULL);
+}
+
 static int vhost_vdpa_log_sync(struct vhost_dev *dev)
 {
     struct vhost_vdpa *v = dev->opaque;
@@ -1364,6 +1401,9 @@ const VhostOps vdpa_ops = {
         .vhost_force_iommu = vhost_vdpa_force_iommu,
         .vhost_log_sync = vhost_vdpa_log_sync,
         .vhost_set_config_call = vhost_vdpa_set_config_call,
-	.vhost_set_used_memslots = vhost_vdpa_set_used_memslots,
-	.vhost_get_used_memslots = vhost_vdpa_get_used_memslots,
+        .vhost_set_used_memslots = vhost_vdpa_set_used_memslots,
+        .vhost_get_used_memslots = vhost_vdpa_get_used_memslots,
+        .vhost_dev_suspend = vhost_vdpa_suspend_device,
+        .vhost_dev_resume = vhost_vdpa_resume_device,
+
 };
