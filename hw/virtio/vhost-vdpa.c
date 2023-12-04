@@ -1320,8 +1320,6 @@ static int vhost_vdpa_dev_start(struct vhost_dev *dev, bool started)
                          "IOMMU and try again");
             return -1;
         }
-        memory_listener_register(&v->listener, dev->vdev->dma_as);
-
         return vhost_vdpa_add_status(dev, VIRTIO_CONFIG_S_DRIVER_OK);
     }
 
@@ -1515,7 +1513,6 @@ static bool  vhost_vdpa_force_iommu(struct vhost_dev *dev)
 
 static int vhost_vdpa_suspend_device(struct vhost_dev *dev)
 {
-    struct vhost_vdpa *v = dev->opaque;
     int ret;
 
     vhost_vdpa_svqs_stop(dev);
@@ -1526,7 +1523,6 @@ static int vhost_vdpa_suspend_device(struct vhost_dev *dev)
     }
 
     ret = vhost_vdpa_call(dev, VHOST_VDPA_SUSPEND, NULL);
-    memory_listener_unregister(&v->listener);
     return ret;
 }
 
@@ -1548,7 +1544,6 @@ static int vhost_vdpa_resume_device(struct vhost_dev *dev)
         return 0;
     }
 
-    memory_listener_register(&v->listener, &address_space_memory);
     return vhost_vdpa_call(dev, VHOST_VDPA_RESUME, NULL);
 }
 

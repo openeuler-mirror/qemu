@@ -30,6 +30,7 @@
 #include "sysemu/runstate.h"
 #include "hw/virtio/vdpa-dev-mig.h"
 #include "migration/migration.h"
+#include "exec/address-spaces.h"
 
 static void
 vhost_vdpa_device_dummy_handle_output(VirtIODevice *vdev, VirtQueue *vq)
@@ -125,6 +126,7 @@ static void vhost_vdpa_device_realize(DeviceState *dev, Error **errp)
         goto free_vqs;
     }
 
+    memory_listener_register(&v->vdpa.listener, &address_space_memory);
     v->config_size = vhost_vdpa_device_get_u32(v->vhostfd,
                                                VHOST_VDPA_GET_CONFIG_SIZE,
                                                errp);
@@ -163,6 +165,7 @@ static void vhost_vdpa_device_realize(DeviceState *dev, Error **errp)
 free_config:
     g_free(v->config);
 vhost_cleanup:
+    memory_listener_unregister(&v->vdpa.listener);
     vhost_dev_cleanup(&v->dev);
 free_vqs:
     g_free(vqs);
@@ -188,6 +191,7 @@ static void vhost_vdpa_device_unrealize(DeviceState *dev)
 
     g_free(s->config);
     g_free(s->dev.vqs);
+    memory_listener_unregister(&s->vdpa.listener);
     vhost_dev_cleanup(&s->dev);
     qemu_close(s->vhostfd);
     s->vhostfd = -1;
