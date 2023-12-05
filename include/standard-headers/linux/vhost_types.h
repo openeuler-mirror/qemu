@@ -157,5 +157,7 @@ struct vhost_vdpa_iova_range {
  * message
  */
 #define VHOST_BACKEND_F_IOTLB_ASID  0x3
+/* device can use bytemap log */
+#define VHOST_BACKEND_F_BYTEMAPLOG  0x3f
 
 #endif

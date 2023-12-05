@@ -178,7 +178,6 @@ static bool migration_object_check(MigrationState *ms, Error **errp);
 static int migration_maybe_pause(MigrationState *s,
                                  int *current_active_state,
                                  int new_state);
-static void migrate_fd_cancel(MigrationState *s);
 
 static gint page_request_addr_cmp(gconstpointer ap, gconstpointer bp)
 {
@@ -1920,7 +1919,7 @@ void migrate_fd_error(MigrationState *s, const Error *error)
     migrate_set_error(s, error);
 }
 
-static void migrate_fd_cancel(MigrationState *s)
+void migrate_fd_cancel(MigrationState *s)
 {
     int old_state ;
     QEMUFile *f = migrate_get_current()->to_dst_file;

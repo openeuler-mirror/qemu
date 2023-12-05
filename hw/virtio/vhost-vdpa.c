@@ -660,9 +660,10 @@ static int vhost_vdpa_set_features(struct vhost_dev *dev,
 static int vhost_vdpa_set_backend_cap(struct vhost_dev *dev)
 {
     uint64_t features;
-    uint64_t f = 0x1ULL << VHOST_BACKEND_F_IOTLB_MSG_V2 |
-        0x1ULL << VHOST_BACKEND_F_IOTLB_BATCH |
-        0x1ULL << VHOST_BACKEND_F_IOTLB_ASID;
+    uint64_t f = BIT_ULL(VHOST_BACKEND_F_IOTLB_MSG_V2) |
+                 BIT_ULL(VHOST_BACKEND_F_IOTLB_BATCH) |
+                 BIT_ULL(VHOST_BACKEND_F_IOTLB_ASID) |
+                 BIT_ULL(VHOST_BACKEND_F_BYTEMAPLOG);
     int r;
 
     if (vhost_vdpa_call(dev, VHOST_GET_BACKEND_FEATURES, &features)) {
@@ -1099,7 +1100,6 @@ static void vhost_vdpa_svqs_stop(struct vhost_dev *dev)
 
 static int vhost_vdpa_dev_start(struct vhost_dev *dev, bool started)
 {
-    struct vhost_vdpa *v = dev->opaque;
     bool ok;
     trace_vhost_vdpa_dev_start(dev, started);
 
@@ -1120,14 +1120,11 @@ static int vhost_vdpa_dev_start(struct vhost_dev *dev, bool started)
     }
 
     if (started) {
-        memory_listener_register(&v->listener, &address_space_memory);
         return vhost_vdpa_add_status(dev, VIRTIO_CONFIG_S_DRIVER_OK);
     } else {
         vhost_vdpa_reset_device(dev);
         vhost_vdpa_add_status(dev, VIRTIO_CONFIG_S_ACKNOWLEDGE |
                                    VIRTIO_CONFIG_S_DRIVER);
-        memory_listener_unregister(&v->listener);
-
         return 0;
     }
 }
@@ -1143,6 +1140,30 @@ static int vhost_vdpa_set_log_base(struct vhost_dev *dev, uint64_t base,
     trace_vhost_vdpa_set_log_base(dev, base, log->size, log->refcnt, log->fd,
                                   log->log);
     return vhost_vdpa_call(dev, VHOST_SET_LOG_BASE, &base);
+}
+
+static int vhost_vdpa_set_log_fd(struct vhost_dev *dev, int fd,
+                                 struct vhost_log *log)
+{
+    struct vhost_vdpa *v = dev->opaque;
+    if (v->shadow_vqs_enabled || !vhost_vdpa_first_dev(dev)) {
+        return 0;
+    }
+
+    return vhost_vdpa_call(dev, VHOST_SET_LOG_FD, &fd);
+}
+
+static int vhost_vdpa_set_log_size(struct vhost_dev *dev, uint64_t size,
+                                   struct vhost_log *log)
+{
+    struct vhost_vdpa *v = dev->opaque;
+    uint64_t logsize = size * sizeof(*(log->log));
+
+    if (v->shadow_vqs_enabled || !vhost_vdpa_first_dev(dev)) {
+        return 0;
+    }
+
+    return vhost_vdpa_call(dev, VHOST_SET_LOG_SIZE, &logsize);
 }
 
 static int vhost_vdpa_set_vring_addr(struct vhost_dev *dev,
@@ -1293,11 +1314,56 @@ static unsigned int vhost_vdpa_get_used_memslots(void)
     return vhost_vdpa_used_memslots;
 }
 
+static int vhost_vdpa_suspend_device(struct vhost_dev *dev)
+{
+    int ret;
+
+    vhost_vdpa_svqs_stop(dev);
+    vhost_vdpa_host_notifiers_uninit(dev, dev->nvqs);
+
+    if (dev->vq_index + dev->nvqs != dev->vq_index_end) {
+        return 0;
+    }
+
+    ret = vhost_vdpa_call(dev, VHOST_VDPA_SUSPEND, NULL);
+    return ret;
+}
+
+static int vhost_vdpa_resume_device(struct vhost_dev *dev)
+{
+    bool ok;
+
+    vhost_vdpa_host_notifiers_init(dev);
+    ok = vhost_vdpa_svqs_start(dev);
+    if (unlikely(!ok)) {
+        return -1;
+    }
+    vhost_vdpa_set_vring_ready(dev);
+
+    if (dev->vq_index + dev->nvqs != dev->vq_index_end) {
+        return 0;
+    }
+
+    return vhost_vdpa_call(dev, VHOST_VDPA_RESUME, NULL);
+}
+
+static int vhost_vdpa_log_sync(struct vhost_dev *dev)
+{
+    struct vhost_vdpa *v = dev->opaque;
+    if (v->shadow_vqs_enabled || !vhost_vdpa_first_dev(dev)) {
+        return 0;
+    }
+
+    return vhost_vdpa_call(dev, VHOST_LOG_SYNC, NULL);
+}
+
 const VhostOps vdpa_ops = {
         .backend_type = VHOST_BACKEND_TYPE_VDPA,
         .vhost_backend_init = vhost_vdpa_init,
         .vhost_backend_cleanup = vhost_vdpa_cleanup,
         .vhost_set_log_base = vhost_vdpa_set_log_base,
+        .vhost_set_log_size = vhost_vdpa_set_log_size,
+        .vhost_set_log_fd = vhost_vdpa_set_log_fd,
         .vhost_set_vring_addr = vhost_vdpa_set_vring_addr,
         .vhost_set_vring_num = vhost_vdpa_set_vring_num,
         .vhost_set_vring_base = vhost_vdpa_set_vring_base,
@@ -1325,7 +1391,11 @@ const VhostOps vdpa_ops = {
         .vhost_get_device_id = vhost_vdpa_get_device_id,
         .vhost_vq_get_addr = vhost_vdpa_vq_get_addr,
         .vhost_force_iommu = vhost_vdpa_force_iommu,
+        .vhost_log_sync = vhost_vdpa_log_sync,
         .vhost_set_config_call = vhost_vdpa_set_config_call,
-	.vhost_set_used_memslots = vhost_vdpa_set_used_memslots,
-	.vhost_get_used_memslots = vhost_vdpa_get_used_memslots,
+        .vhost_set_used_memslots = vhost_vdpa_set_used_memslots,
+        .vhost_get_used_memslots = vhost_vdpa_get_used_memslots,
+        .vhost_dev_suspend = vhost_vdpa_suspend_device,
+        .vhost_dev_resume = vhost_vdpa_resume_device,
+
 };

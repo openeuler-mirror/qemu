@@ -53,6 +53,11 @@ typedef int (*vhost_scsi_get_abi_version_op)(struct vhost_dev *dev,
                                              int *version);
 typedef int (*vhost_set_log_base_op)(struct vhost_dev *dev, uint64_t base,
                                      struct vhost_log *log);
+typedef int (*vhost_set_log_size_op)(struct vhost_dev *dev, uint64_t size,
+                                     struct vhost_log *log);
+typedef int (*vhost_set_log_fd_op)(struct vhost_dev *dev, int fd,
+                                   struct vhost_log *log);
+typedef int (*vhost_log_sync_op)(struct vhost_dev *dev);
 typedef int (*vhost_set_mem_table_op)(struct vhost_dev *dev,
                                       struct vhost_memory *mem);
 typedef int (*vhost_set_vring_addr_op)(struct vhost_dev *dev,
@@ -130,6 +135,9 @@ typedef int (*vhost_set_config_call_op)(struct vhost_dev *dev,
 typedef void (*vhost_set_used_memslots_op)(struct vhost_dev *dev);
 typedef unsigned int (*vhost_get_used_memslots_op)(void);
 
+typedef int (*vhost_dev_suspend_op)(struct vhost_dev *dev);
+typedef int (*vhost_dev_resume_op)(struct vhost_dev *dev);
+
 typedef struct VhostOps {
     VhostBackendType backend_type;
     vhost_backend_init vhost_backend_init;
@@ -141,6 +149,9 @@ typedef struct VhostOps {
     vhost_scsi_clear_endpoint_op vhost_scsi_clear_endpoint;
     vhost_scsi_get_abi_version_op vhost_scsi_get_abi_version;
     vhost_set_log_base_op vhost_set_log_base;
+    vhost_set_log_size_op vhost_set_log_size;
+    vhost_set_log_fd_op vhost_set_log_fd;
+    vhost_log_sync_op vhost_log_sync;
     vhost_set_mem_table_op vhost_set_mem_table;
     vhost_set_vring_addr_op vhost_set_vring_addr;
     vhost_set_vring_endian_op vhost_set_vring_endian;
@@ -178,6 +189,8 @@ typedef struct VhostOps {
     vhost_set_config_call_op vhost_set_config_call;
     vhost_set_used_memslots_op vhost_set_used_memslots;
     vhost_get_used_memslots_op vhost_get_used_memslots;
+    vhost_dev_suspend_op vhost_dev_suspend;
+    vhost_dev_resume_op vhost_dev_resume;
 } VhostOps;
 
 int vhost_backend_update_device_iotlb(struct vhost_dev *dev,

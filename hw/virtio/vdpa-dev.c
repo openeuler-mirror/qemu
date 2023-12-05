@@ -29,6 +29,9 @@
 #include "hw/virtio/vdpa-dev.h"
 #include "sysemu/sysemu.h"
 #include "sysemu/runstate.h"
+#include "hw/virtio/vdpa-dev-mig.h"
+#include "migration/migration.h"
+#include "exec/address-spaces.h"
 
 static void
 vhost_vdpa_device_dummy_handle_output(VirtIODevice *vdev, VirtQueue *vq)
@@ -124,6 +127,7 @@ static void vhost_vdpa_device_realize(DeviceState *dev, Error **errp)
         goto free_vqs;
     }
 
+    memory_listener_register(&v->vdpa.listener, &address_space_memory);
     v->config_size = vhost_vdpa_device_get_u32(v->vhostfd,
                                                VHOST_VDPA_GET_CONFIG_SIZE,
                                                errp);
@@ -155,11 +159,14 @@ static void vhost_vdpa_device_realize(DeviceState *dev, Error **errp)
                                         vhost_vdpa_device_dummy_handle_output);
     }
 
+    vdpa_migration_register(v);
+
     return;
 
 free_config:
     g_free(v->config);
 vhost_cleanup:
+    memory_listener_unregister(&v->vdpa.listener);
     vhost_dev_cleanup(&v->dev);
 free_vqs:
     g_free(vqs);
@@ -174,6 +181,7 @@ static void vhost_vdpa_device_unrealize(DeviceState *dev)
     VhostVdpaDevice *s = VHOST_VDPA_DEVICE(vdev);
     int i;
 
+    vdpa_migration_unregister(s);
     virtio_set_status(vdev, 0);
 
     for (i = 0; i < s->num_queues; i++) {
@@ -184,6 +192,7 @@ static void vhost_vdpa_device_unrealize(DeviceState *dev)
 
     g_free(s->config);
     g_free(s->dev.vqs);
+    memory_listener_unregister(&s->vdpa.listener);
     vhost_dev_cleanup(&s->dev);
     qemu_close(s->vhostfd);
     s->vhostfd = -1;
@@ -306,6 +315,7 @@ static void vhost_vdpa_device_stop(VirtIODevice *vdev)
 static void vhost_vdpa_device_set_status(VirtIODevice *vdev, uint8_t status)
 {
     VhostVdpaDevice *s = VHOST_VDPA_DEVICE(vdev);
+    MigrationState *ms = migrate_get_current();
     bool should_start = virtio_device_started(vdev, status);
     Error *local_err = NULL;
     int ret;
@@ -315,6 +325,11 @@ static void vhost_vdpa_device_set_status(VirtIODevice *vdev, uint8_t status)
     }
 
     if (s->started == should_start) {
+        return;
+    }
+
+    if (ms->state == RUN_STATE_PAUSED ||
+        ms->state == RUN_STATE_RESTORE_VM) {
         return;
     }
 
@@ -336,7 +351,7 @@ static Property vhost_vdpa_device_properties[] = {
 
 static const VMStateDescription vmstate_vhost_vdpa_device = {
     .name = "vhost-vdpa-device",
-    .unmigratable = 1,
+    .unmigratable = 0,
     .minimum_version_id = 1,
     .version_id = 1,
     .fields = (VMStateField[]) {
