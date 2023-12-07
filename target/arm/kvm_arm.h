@@ -19,6 +19,7 @@
 #define KVM_ARM_VGIC_V3   (1 << 1)
 
 #define KVM_REG_ARM_ID_AA64DFR0_EL1     ARM64_SYS_REG(3, 0, 0, 5, 0)
+#define KVM_REG_ARM_PMCR_EL0            ARM64_SYS_REG(3, 3, 9, 12, 0)
 
 /**
  * kvm_arm_init_debug() - initialize guest debug capabilities
