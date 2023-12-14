@@ -890,6 +890,11 @@ int vhost_vdpa_set_vring_ready(struct vhost_vdpa *v, unsigned idx)
         .index = idx,
         .num = 1,
     };
+    hwaddr addr = virtio_queue_get_desc_addr(dev->vdev, idx);
+    if (addr == 0) {
+        return 0;
+    }
+
     int r = vhost_vdpa_call(dev, VHOST_VDPA_SET_VRING_ENABLE, &state);
 
     trace_vhost_vdpa_set_vring_ready(dev, idx, r);
