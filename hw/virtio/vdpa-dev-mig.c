@@ -404,6 +404,6 @@ void vdpa_migration_register(VhostVdpaDevice *vdev)
 void vdpa_migration_unregister(VhostVdpaDevice *vdev)
 {
     migration_remove_notifier(&vdev->migration_state);
-    unregister_savevm(VMSTATE_IF(&vdev->parent_obj.parent_obj), "vdpa", DEVICE(vdev));
+    unregister_savevm(NULL, "vdpa", DEVICE(vdev));
     qemu_del_vm_change_state_handler(vdev->vmstate);
 }
