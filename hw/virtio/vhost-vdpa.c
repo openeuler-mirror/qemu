@@ -714,8 +714,17 @@ static int vhost_vdpa_get_vq_index(struct vhost_dev *dev, int idx)
 static int vhost_vdpa_set_vring_ready(struct vhost_dev *dev)
 {
     int i;
+    int idx;
+    hwaddr addr;
+
     trace_vhost_vdpa_set_vring_ready(dev);
     for (i = 0; i < dev->nvqs; ++i) {
+        idx = vhost_vdpa_get_vq_index(dev, dev->vq_index + i);
+        addr = virtio_queue_get_desc_addr(dev->vdev, idx);
+        if (addr == 0) {
+            continue;
+        }
+
         struct vhost_vring_state state = {
             .index = dev->vq_index + i,
             .num = 1,
