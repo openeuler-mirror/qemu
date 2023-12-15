@@ -27,6 +27,8 @@
 #include "trace.h"
 #include "internals.h"
 #include "hw/pci/pci.h"
+#include "hw/pci/msi.h"
+#include "hw/pci/msix.h"
 #include "exec/memattrs.h"
 #include "exec/address-spaces.h"
 #include "hw/boards.h"
@@ -1073,6 +1075,51 @@ int kvm_arch_fixup_msi_route(struct kvm_irq_routing_entry *route,
     trace_kvm_arm_fixup_msi_route(address, doorbell_gpa);
 
     return 0;
+}
+
+int kvm_create_shadow_device(PCIDevice *dev)
+{
+    KVMState *s = kvm_state;
+    struct kvm_master_dev_info *mdi;
+    MSIMessage msg;
+    uint32_t vector, nvectors = msix_nr_vectors_allocated(dev);
+    uint32_t request_id;
+    int ret;
+
+    if (!kvm_vm_check_extension(s, KVM_CAP_ARM_VIRT_MSI_BYPASS) || !nvectors) {
+        return 0;
+    }
+
+    mdi = g_malloc0(sizeof(uint32_t) + sizeof(struct kvm_msi) * nvectors);
+    mdi->nvectors = nvectors;
+    request_id = pci_requester_id(dev);
+
+    for (vector = 0; vector < nvectors; vector++) {
+        msg = msix_get_message(dev, vector);
+        mdi->msi[vector].address_lo = extract64(msg.address, 0, 32);
+        mdi->msi[vector].address_hi = extract64(msg.address, 32, 32);
+        mdi->msi[vector].data = le32_to_cpu(msg.data);
+        mdi->msi[vector].flags = KVM_MSI_VALID_DEVID;
+        mdi->msi[vector].devid = request_id;
+        memset(mdi->msi[vector].pad, 0, sizeof(mdi->msi[vector].pad));
+    }
+
+    ret = kvm_vm_ioctl(s, KVM_CREATE_SHADOW_DEV, mdi);
+    g_free(mdi);
+    return ret;
+}
+
+int kvm_delete_shadow_device(PCIDevice *dev)
+{
+    KVMState *s = kvm_state;
+    uint32_t request_id, nvectors = msix_nr_vectors_allocated(dev);
+
+    if (!kvm_vm_check_extension(s, KVM_CAP_ARM_VIRT_MSI_BYPASS) || !nvectors) {
+        return 0;
+    }
+
+    request_id = pci_requester_id(dev);
+    return kvm_vm_ioctl(s, KVM_DEL_SHADOW_DEV, &request_id);
 }
 
 int kvm_arch_add_msi_route_post(struct kvm_irq_routing_entry *route,

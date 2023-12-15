@@ -553,4 +553,9 @@ bool kvm_arch_cpu_check_are_resettable(void);
 bool kvm_dirty_ring_enabled(void);
 
 uint32_t kvm_dirty_ring_size(void);
+
+#ifdef __aarch64__
+int kvm_create_shadow_device(PCIDevice *dev);
+int kvm_delete_shadow_device(PCIDevice *dev);
+#endif
 #endif
