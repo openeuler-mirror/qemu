@@ -163,6 +163,9 @@ for arch in $ARCHLIST; do
         cp "$hdrdir/include/asm/kvm_para.h" "$output/linux-headers/asm-loongarch/"
         cp "$hdrdir/include/asm/unistd_64.h" "$output/linux-headers/asm-loongarch/"
     fi
+    if [ $arch = riscv ]; then
+        cp "$tmpdir/include/asm/ptrace.h" "$output/linux-headers/asm-riscv/"
+    fi
 done
 arch=
 
