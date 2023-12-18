@@ -127,7 +127,7 @@ static void gen_stve##name(DisasContext *ctx)                           \
     }
 
 GEN_VR_LDX(lvx, 0x07, 0x03);
-/* As we don't emulate the cache, lvxl is stricly equivalent to lvx */
+/* As we don't emulate the cache, lvxl is strictly equivalent to lvx */
 GEN_VR_LDX(lvxl, 0x07, 0x0B);
 
 GEN_VR_LVE(bx, 0x07, 0x00, 1);
@@ -135,7 +135,7 @@ GEN_VR_LVE(hx, 0x07, 0x01, 2);
 GEN_VR_LVE(wx, 0x07, 0x02, 4);
 
 GEN_VR_STX(svx, 0x07, 0x07);
-/* As we don't emulate the cache, stvxl is stricly equivalent to stvx */
+/* As we don't emulate the cache, stvxl is strictly equivalent to stvx */
 GEN_VR_STX(svxl, 0x07, 0x0F);
 
 GEN_VR_STVE(bx, 0x07, 0x04, 1);
