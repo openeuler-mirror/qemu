@@ -143,6 +143,7 @@ static int vhost_vdpa_device_suspend(VhostVdpaDevice *vdpa)
     }
 
     vdpa->started = false;
+    vdpa->suspended = true;
 
     ret = vhost_dev_suspend(&vdpa->dev, vdev, false);
     if (ret) {
@@ -165,6 +166,7 @@ set_guest_notifiers_fail:
     }
 
 suspend_fail:
+    vdpa->suspended = false;
     vdpa->started = true;
     return ret;
 }
@@ -201,6 +203,7 @@ static int vhost_vdpa_device_resume(VhostVdpaDevice *vdpa)
         goto err_guest_notifiers;
     }
     vdpa->started = true;
+    vdpa->suspended = false;
 
     /*
      * guest_notifier_mask/pending not used yet, so just unmask
@@ -241,7 +244,7 @@ static void vdpa_dev_vmstate_change(void *opaque, bool running, RunState state)
     MigrationIncomingState *mis = migration_incoming_get_current();
 
     if (!running) {
-        if (ms->state == RUN_STATE_PAUSED) {
+        if (ms->state == MIGRATION_STATUS_ACTIVE || state == RUN_STATE_PAUSED) {
             ret = vhost_vdpa_device_suspend(vdpa);
             if (ret) {
                 error_report("suspend vdpa device failed: %d\n", ret);
@@ -251,16 +254,19 @@ static void vdpa_dev_vmstate_change(void *opaque, bool running, RunState state)
             }
         }
     } else {
-        if (ms->state == RUN_STATE_RESTORE_VM) {
+        if (vdpa->suspended) {
             ret = vhost_vdpa_device_resume(vdpa);
             if (ret) {
-                error_report("migration dest resume device failed, abort!\n");
-                exit(EXIT_FAILURE);
+                error_report("vhost vdpa device resume failed: %d\n", ret);
             }
         }
 
         if (mis->state == RUN_STATE_RESTORE_VM) {
-            vhost_vdpa_call(hdev, VHOST_VDPA_RESUME, NULL);
+            ret = vhost_vdpa_call(hdev, VHOST_VDPA_RESUME, NULL);
+            if (ret) {
+                error_report("migration dest resume device failed: %d\n", ret);
+                exit(EXIT_FAILURE);
+            }
             /* post resume */
             mis->bh = qemu_bh_new(vdpa_dev_migration_handle_incoming_bh,
                                   hdev);
