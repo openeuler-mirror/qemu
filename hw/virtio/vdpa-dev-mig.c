@@ -296,10 +296,13 @@ static int vdpa_save_complete_precopy(QEMUFile *f, void *opaque)
     int ret;
 
     qemu_put_be64(f, VDPA_MIG_FLAG_DEV_CONFIG_STATE);
-    ret = vhost_vdpa_dev_buffer_save(hdev, f);
-    if (ret) {
-        error_report("Save vdpa device buffer failed: %d\n", ret);
-        return ret;
+    qemu_put_be16(f, (uint16_t)vdev->suspended);
+    if (vdev->suspended) {
+        ret = vhost_vdpa_dev_buffer_save(hdev, f);
+        if (ret) {
+            error_report("Save vdpa device buffer failed: %d\n", ret);
+            return ret;
+        }
     }
     qemu_put_be64(f, VDPA_MIG_FLAG_END_OF_STATE);
 
@@ -313,6 +316,7 @@ static int vdpa_load_state(QEMUFile *f, void *opaque, int version_id)
 
     int ret;
     uint64_t data;
+    uint16_t suspended;
 
     data = qemu_get_be64(f);
     while (data != VDPA_MIG_FLAG_END_OF_STATE) {
@@ -325,10 +329,13 @@ static int vdpa_load_state(QEMUFile *f, void *opaque, int version_id)
                 return -EINVAL;
             }
         } else if (data == VDPA_MIG_FLAG_DEV_CONFIG_STATE) {
-            ret = vhost_vdpa_dev_buffer_load(hdev, f);
-            if (ret) {
-                error_report("fail to restore device buffer.\n");
-                return ret;
+            suspended = qemu_get_be16(f);
+            if (suspended) {
+                ret = vhost_vdpa_dev_buffer_load(hdev, f);
+                if (ret) {
+                    error_report("fail to restore device buffer.\n");
+                    return ret;
+                }
             }
         }
 
