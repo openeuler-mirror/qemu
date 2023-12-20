@@ -315,7 +315,6 @@ static void vhost_vdpa_device_stop(VirtIODevice *vdev)
 static void vhost_vdpa_device_set_status(VirtIODevice *vdev, uint8_t status)
 {
     VhostVdpaDevice *s = VHOST_VDPA_DEVICE(vdev);
-    MigrationState *ms = migrate_get_current();
     bool should_start = virtio_device_started(vdev, status);
     Error *local_err = NULL;
     int ret;
@@ -324,12 +323,7 @@ static void vhost_vdpa_device_set_status(VirtIODevice *vdev, uint8_t status)
         should_start = false;
     }
 
-    if (s->started == should_start) {
-        return;
-    }
-
-    if (ms->state == RUN_STATE_PAUSED ||
-        ms->state == RUN_STATE_RESTORE_VM) {
+    if (s->started == should_start || s->suspended) {
         return;
     }
 

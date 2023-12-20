@@ -149,6 +149,7 @@ static int vhost_vdpa_device_suspend(VhostVdpaDevice *vdpa)
     }
 
     vdpa->started = false;
+    vdpa->suspended = true;
 
     ret = vhost_dev_suspend(&vdpa->dev, vdev, false);
     if (ret) {
@@ -171,6 +172,7 @@ set_guest_notifiers_fail:
     }
 
 suspend_fail:
+    vdpa->suspended = false;
     vdpa->started = true;
     return ret;
 }
@@ -207,6 +209,7 @@ static int vhost_vdpa_device_resume(VhostVdpaDevice *vdpa)
         goto err_guest_notifiers;
     }
     vdpa->started = true;
+    vdpa->suspended = false;
 
     /*
      * guest_notifier_mask/pending not used yet, so just unmask
@@ -247,7 +250,7 @@ static void vdpa_dev_vmstate_change(void *opaque, bool running, RunState state)
     MigrationIncomingState *mis = migration_incoming_get_current();
 
     if (!running) {
-        if (ms->state == RUN_STATE_PAUSED) {
+        if (ms->state == MIGRATION_STATUS_ACTIVE || state == RUN_STATE_PAUSED) {
             ret = vhost_vdpa_device_suspend(vdpa);
             if (ret) {
                 error_report("suspend vdpa device failed: %d\n", ret);
@@ -257,16 +260,19 @@ static void vdpa_dev_vmstate_change(void *opaque, bool running, RunState state)
             }
         }
     } else {
-        if (ms->state == RUN_STATE_RESTORE_VM) {
+        if (vdpa->suspended) {
             ret = vhost_vdpa_device_resume(vdpa);
             if (ret) {
-                error_report("migration dest resume device failed, abort!\n");
-                exit(EXIT_FAILURE);
+                error_report("vhost vdpa device resume failed: %d\n", ret);
             }
         }
 
         if (mis->state == RUN_STATE_RESTORE_VM) {
-            vhost_vdpa_call(hdev, VHOST_VDPA_RESUME, NULL);
+            ret = vhost_vdpa_call(hdev, VHOST_VDPA_RESUME, NULL);
+            if (ret) {
+                error_report("migration dest resume device failed: %d\n", ret);
+                exit(EXIT_FAILURE);
+            }
             /* post resume */
             mis->bh = qemu_bh_new(vdpa_dev_migration_handle_incoming_bh,
                                   hdev);
@@ -290,10 +296,13 @@ static int vdpa_save_complete_precopy(QEMUFile *f, void *opaque)
     int ret;
 
     qemu_put_be64(f, VDPA_MIG_FLAG_DEV_CONFIG_STATE);
-    ret = vhost_vdpa_dev_buffer_save(hdev, f);
-    if (ret) {
-        error_report("Save vdpa device buffer failed: %d\n", ret);
-        return ret;
+    qemu_put_be16(f, (uint16_t)vdev->suspended);
+    if (vdev->suspended) {
+        ret = vhost_vdpa_dev_buffer_save(hdev, f);
+        if (ret) {
+            error_report("Save vdpa device buffer failed: %d\n", ret);
+            return ret;
+        }
     }
     qemu_put_be64(f, VDPA_MIG_FLAG_END_OF_STATE);
 
@@ -307,6 +316,7 @@ static int vdpa_load_state(QEMUFile *f, void *opaque, int version_id)
 
     int ret;
     uint64_t data;
+    uint16_t suspended;
 
     data = qemu_get_be64(f);
     while (data != VDPA_MIG_FLAG_END_OF_STATE) {
@@ -319,10 +329,13 @@ static int vdpa_load_state(QEMUFile *f, void *opaque, int version_id)
                 return -EINVAL;
             }
         } else if (data == VDPA_MIG_FLAG_DEV_CONFIG_STATE) {
-            ret = vhost_vdpa_dev_buffer_load(hdev, f);
-            if (ret) {
-                error_report("fail to restore device buffer.\n");
-                return ret;
+            suspended = qemu_get_be16(f);
+            if (suspended) {
+                ret = vhost_vdpa_dev_buffer_load(hdev, f);
+                if (ret) {
+                    error_report("fail to restore device buffer.\n");
+                    return ret;
+                }
             }
         }
 
@@ -400,6 +413,6 @@ void vdpa_migration_register(VhostVdpaDevice *vdev)
 void vdpa_migration_unregister(VhostVdpaDevice *vdev)
 {
     remove_migration_state_change_notifier(&vdev->migration_state);
-    unregister_savevm(VMSTATE_IF(&vdev->parent_obj.parent_obj), "vdpa", DEVICE(vdev));
+    unregister_savevm(NULL, "vdpa", DEVICE(vdev));
     qemu_del_vm_change_state_handler(vdev->vmstate);
 }
