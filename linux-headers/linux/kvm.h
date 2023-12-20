@@ -1127,6 +1127,8 @@ struct kvm_ppc_resize_hpt {
 
 #define KVM_CAP_ARM_CPU_FEATURE 555
 
+#define KVM_CAP_ARM_VIRT_MSI_BYPASS 799
+
 #ifdef KVM_CAP_IRQ_ROUTING
 
 struct kvm_irq_routing_irqchip {
@@ -1431,6 +1433,17 @@ struct kvm_s390_ucas_mapping {
 #define KVM_XEN_HVM_CONFIG        _IOW(KVMIO,  0x7a, struct kvm_xen_hvm_config)
 #define KVM_SET_CLOCK             _IOW(KVMIO,  0x7b, struct kvm_clock_data)
 #define KVM_GET_CLOCK             _IOR(KVMIO,  0x7c, struct kvm_clock_data)
+
+#ifdef __aarch64__
+struct kvm_master_dev_info
+{
+    __u32 nvectors;    /* number of msi vectors */
+    struct kvm_msi msi[0];
+};
+#define KVM_CREATE_SHADOW_DEV     _IOW(KVMIO,  0xf0, struct kvm_master_dev_info)
+#define KVM_DEL_SHADOW_DEV        _IOW(KVMIO,  0xf1, __u32)
+#endif
+
 /* Available with KVM_CAP_PIT_STATE2 */
 #define KVM_GET_PIT2              _IOR(KVMIO,  0x9f, struct kvm_pit_state2)
 #define KVM_SET_PIT2              _IOW(KVMIO,  0xa0, struct kvm_pit_state2)
