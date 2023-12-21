@@ -30,7 +30,6 @@ static void iommufd_backend_init(Object *obj)
     be->fd = -1;
     be->users = 0;
     be->owned = true;
-    qemu_mutex_init(&be->lock);
 }
 
 static void iommufd_backend_finalize(Object *obj)
@@ -53,10 +52,8 @@ static void iommufd_backend_set_fd(Object *obj, const char *str, Error **errp)
         error_prepend(errp, "Could not parse remote object fd %s:", str);
         return;
     }
-    qemu_mutex_lock(&be->lock);
     be->fd = fd;
     be->owned = false;
-    qemu_mutex_unlock(&be->lock);
     trace_iommu_backend_set_fd(be->fd);
 }
 
@@ -80,7 +77,6 @@ int iommufd_backend_connect(IOMMUFDBackend *be, Error **errp)
 {
     int fd, ret = 0;
 
-    qemu_mutex_lock(&be->lock);
     if (be->owned && !be->users) {
         fd = qemu_open_old("/dev/iommu", O_RDWR);
         if (fd < 0) {
@@ -94,13 +90,11 @@ int iommufd_backend_connect(IOMMUFDBackend *be, Error **errp)
 out:
     trace_iommufd_backend_connect(be->fd, be->owned,
                                   be->users, ret);
-    qemu_mutex_unlock(&be->lock);
     return ret;
 }
 
 void iommufd_backend_disconnect(IOMMUFDBackend *be)
 {
-    qemu_mutex_lock(&be->lock);
     if (!be->users) {
         goto out;
     }
@@ -111,7 +105,6 @@ void iommufd_backend_disconnect(IOMMUFDBackend *be)
     }
 out:
     trace_iommufd_backend_disconnect(be->fd, be->users);
-    qemu_mutex_unlock(&be->lock);
 }
 
 int iommufd_backend_alloc_ioas(IOMMUFDBackend *be, uint32_t *ioas_id,
