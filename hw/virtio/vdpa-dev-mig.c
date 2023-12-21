@@ -134,8 +134,8 @@ static int vhost_vdpa_device_suspend(VhostVdpaDevice *vdpa)
     VirtioBusClass *k = VIRTIO_BUS_GET_CLASS(qbus);
     int ret;
 
-    if (!vdpa->started) {
-        return -EFAULT;
+    if (!vdpa->started || vdpa->suspended) {
+        return 0;
     }
 
     if (!k->set_guest_notifiers) {
@@ -177,6 +177,10 @@ static int vhost_vdpa_device_resume(VhostVdpaDevice *vdpa)
     BusState *qbus = BUS(qdev_get_parent_bus(DEVICE(vdev)));
     VirtioBusClass *k = VIRTIO_BUS_GET_CLASS(qbus);
     int i, ret;
+
+    if (vdpa->started || !vdpa->suspended) {
+        return 0;
+    }
 
     if (!k->set_guest_notifiers) {
         error_report("binding does not support guest notifiers\n");
