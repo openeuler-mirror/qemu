@@ -999,7 +999,7 @@ static int hct_migrate_precopy_notifier(NotifierWithReturn *notifier, void *data
     if (pnd->reason != PRECOPY_NOTIFY_SETUP)
         return 0;
 
-    qemu_mutex_unlock_iothread();
+    bql_unlock();
 
     /* [0]:magic [1]:version [2]:op [3]:sync_state */
     msg[0] = HCT_MIG_MSG_MAGIC;
@@ -1076,7 +1076,7 @@ static int hct_migrate_precopy_notifier(NotifierWithReturn *notifier, void *data
     ret = 0;
 
 exit:
-    qemu_mutex_lock_iothread();
+    bql_lock();
     return ret;
 }
 

@@ -1169,7 +1169,7 @@ void memory_region_commit(void)
 void memory_region_transaction_commit(void)
 {
     assert(memory_region_transaction_depth);
-    assert(qemu_mutex_iothread_locked());
+    assert(bql_locked());
 
     --memory_region_transaction_depth;
     if (!memory_region_transaction_depth) {

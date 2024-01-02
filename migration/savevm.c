@@ -2936,7 +2936,7 @@ int qemu_loadvm_state_main(QEMUFile *f, MigrationIncomingState *mis)
     uint8_t section_type;
     int ret = 0;
 
-    if (!virtcca_cvm_enabled() && qemu_mutex_iothread_locked()) {
+    if (!virtcca_cvm_enabled() && bql_locked()) {
         memory_region_transaction_begin();
     }
 
@@ -2991,7 +2991,7 @@ retry:
     }
 
 out:
-    if (!virtcca_cvm_enabled() && qemu_mutex_iothread_locked()) {
+    if (!virtcca_cvm_enabled() && bql_locked()) {
         memory_region_transaction_commit();
     }
     if (ret < 0) {

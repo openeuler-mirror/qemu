@@ -899,7 +899,7 @@ static void kvm_dirty_ring_flush(void)
      * should always be with BQL held, serialization is guaranteed.
      * However, let's be sure of it.
      */
-    assert(qemu_mutex_iothread_locked());
+    assert(bql_locked());
     /*
      * First make sure to flush the hardware buffers by kicking all
      * vcpus out in a synchronous way.
@@ -1542,9 +1542,9 @@ static void *kvm_dirty_ring_reaper_thread(void *data)
         trace_kvm_dirty_ring_reaper("wakeup");
         r->reaper_state = KVM_DIRTY_RING_REAPER_REAPING;
 
-        qemu_mutex_lock_iothread();
+        bql_lock();
         kvm_dirty_ring_reap(s, NULL);
-        qemu_mutex_unlock_iothread();
+        bql_unlock();
 
         r->reaper_iteration++;
     }
@@ -3182,7 +3182,7 @@ int kvm_cpu_exec(CPUState *cpu)
         return EXCP_HLT;
     }
 
-    qemu_mutex_unlock_iothread();
+    bql_unlock();
     cpu_exec_start(cpu);
 
     do {
@@ -3227,11 +3227,11 @@ int kvm_cpu_exec(CPUState *cpu)
 
 #ifdef KVM_HAVE_MCE_INJECTION
         if (unlikely(have_sigbus_pending)) {
-            qemu_mutex_lock_iothread();
+            bql_lock();
             kvm_arch_on_sigbus_vcpu(cpu, pending_sigbus_code,
                                     pending_sigbus_addr);
             have_sigbus_pending = false;
-            qemu_mutex_unlock_iothread();
+            bql_unlock();
         }
 #endif
 
@@ -3303,7 +3303,7 @@ int kvm_cpu_exec(CPUState *cpu)
              * still full.  Got kicked by KVM_RESET_DIRTY_RINGS.
              */
             trace_kvm_dirty_ring_full(cpu->cpu_index);
-            qemu_mutex_lock_iothread();
+            bql_lock();
             /*
              * We throttle vCPU by making it sleep once it exit from kernel
              * due to dirty ring full. In the dirtylimit scenario, reaping
@@ -3315,7 +3315,7 @@ int kvm_cpu_exec(CPUState *cpu)
             } else {
                 kvm_dirty_ring_reap(kvm_state, NULL);
             }
-            qemu_mutex_unlock_iothread();
+            bql_unlock();
             dirtylimit_vcpu_execute(cpu);
             ret = 0;
             break;
@@ -3331,9 +3331,9 @@ int kvm_cpu_exec(CPUState *cpu)
                 break;
             case KVM_SYSTEM_EVENT_CRASH:
                 kvm_cpu_synchronize_state(cpu);
-                qemu_mutex_lock_iothread();
+                bql_lock();
                 qemu_system_guest_panicked(cpu_get_crash_info(cpu));
-                qemu_mutex_unlock_iothread();
+                bql_unlock();
                 ret = 0;
                 break;
             default:
@@ -3363,7 +3363,7 @@ int kvm_cpu_exec(CPUState *cpu)
     } while (ret == 0);
 
     cpu_exec_end(cpu);
-    qemu_mutex_lock_iothread();
+    bql_lock();
 
     if (ret < 0) {
         cpu_dump_state(cpu, stderr, CPU_DUMP_CODE);
