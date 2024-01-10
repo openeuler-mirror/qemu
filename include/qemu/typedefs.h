@@ -132,6 +132,7 @@ typedef struct ReservedRegion ReservedRegion;
 typedef struct SHPCDevice SHPCDevice;
 typedef struct SSIBus SSIBus;
 typedef struct TCGHelperInfo TCGHelperInfo;
+typedef struct TaskState TaskState;
 typedef struct TranslationBlock TranslationBlock;
 typedef struct VirtIODevice VirtIODevice;
 typedef struct Visitor Visitor;

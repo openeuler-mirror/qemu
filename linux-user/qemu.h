@@ -98,7 +98,7 @@ struct emulated_sigtable {
     target_siginfo_t info;
 };
 
-typedef struct TaskState {
+struct TaskState {
     pid_t ts_tid;     /* tid (or pid) of this task */
 #ifdef TARGET_ARM
 # ifdef TARGET_ABI32
@@ -161,7 +161,7 @@ typedef struct TaskState {
 
     /* Start time of task after system boot in clock ticks */
     uint64_t start_boottime;
-} TaskState;
+};
 
 abi_long do_brk(abi_ulong new_brk);
 int do_guest_openat(CPUArchState *cpu_env, int dirfd, const char *pathname,
