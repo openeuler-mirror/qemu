@@ -674,7 +674,8 @@ static int interface_get_command(QXLInstance *sin, struct QXLCommandExt *ext)
              *
              * https://cgit.freedesktop.org/spice/win32/qxl-wddm-dod/commit/?id=f6e099db39e7d0787f294d5fd0dce328b5210faa
              */
-            void *msg = qxl_phys2virt(qxl, ext->cmd.data, ext->group_id);
+	    void *msg = qxl_phys2virt(qxl, ext->cmd.data, ext->group_id,
+                    	              sizeof(void));
             if (msg != NULL && (
                     msg < (void *)qxl->vga.vram_ptr ||
                     msg > ((void *)qxl->vga.vram_ptr + qxl->vga.vram_size))) {
