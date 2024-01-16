@@ -929,12 +929,10 @@ int multifd_save_setup(Error **errp)
 
     for (i = 0; i < thread_count; i++) {
         MultiFDSendParams *p = &multifd_send_state->params[i];
-        Error *local_err = NULL;
         int ret;
 
-        ret = multifd_send_state->ops->send_setup(p, &local_err);
+        ret = multifd_send_state->ops->send_setup(p, errp);
         if (ret) {
-            error_propagate(errp, local_err);
             return ret;
         }
     }
@@ -1167,12 +1165,10 @@ int multifd_load_setup(Error **errp)
 
     for (i = 0; i < thread_count; i++) {
         MultiFDRecvParams *p = &multifd_recv_state->params[i];
-        Error *local_err = NULL;
         int ret;
 
-        ret = multifd_recv_state->ops->recv_setup(p, &local_err);
+        ret = multifd_recv_state->ops->recv_setup(p, errp);
         if (ret) {
-            error_propagate(errp, local_err);
             return ret;
         }
     }
