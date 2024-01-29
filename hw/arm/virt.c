@@ -3052,7 +3052,7 @@ static void machvirt_init(MachineState *machine)
              *    after GIC and machine has been fully initialized during
              *    machine_init_done() phase.
              */
-             cpu_slot->cpu = OBJECT(cs);
+             cpu_slot->cpu = cs;
         }
     }
     fdt_add_timer_nodes(vms);
@@ -3871,7 +3871,7 @@ static void virt_cpu_plug(HotplugHandler *hotplug_dev, DeviceState *dev,
 
     /* insert the cold/hot-plugged vcpu in the slot */
     cpu_slot = virt_find_cpu_slot(ms, cs->cpu_index);
-    cpu_slot->cpu = OBJECT(dev);
+    cpu_slot->cpu = CPU(dev);
 
     /*
      * Update the ACPI Hotplug state both for vCPUs being {hot,cold}-plugged.
