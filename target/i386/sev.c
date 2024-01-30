@@ -1492,7 +1492,7 @@ sev_send_get_packet_len(int *fw_err)
     ret = sev_ioctl(sev_guest->sev_fd, KVM_SEV_SEND_UPDATE_DATA,
                     &update, fw_err);
     if (*fw_err != SEV_RET_INVALID_LEN) {
-        ret = -1;
+        ret = 0;
         error_report("%s: failed to get session length ret=%d fw_error=%d '%s'",
                     __func__, ret, *fw_err, fw_error_to_str(*fw_err));
         goto err;
