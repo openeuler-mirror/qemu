@@ -618,6 +618,12 @@ bool kvm_dirty_ring_enabled(void);
 
 uint32_t kvm_dirty_ring_size(void);
 
+
+/**
+ * kvm_hwpoisoned_mem - indicate if there is any hwpoisoned page
+ * reported for the VM.
+ */
+bool kvm_hwpoisoned_mem(void);
 int kvm_load_user_data(hwaddr loader_start, hwaddr image_end, hwaddr initrd_start, hwaddr dtb_end, hwaddr ram_size,
                        struct kvm_numa_info *numa_info);
 
