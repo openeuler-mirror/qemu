@@ -55,7 +55,7 @@ _supported_os Linux
 _unsupported_imgopts 'refcount_bits=\([^1]\|.\([^6]\|$\)\)' data_file
 
 # This test either needs sudo -n losetup or FUSE exports to work
-if sudo -n losetup &>/dev/null; then
+if test -c "/dev/loop-control" && sudo -n losetup &>/dev/null; then
     loopdev=true
 else
     loopdev=false
