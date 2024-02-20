@@ -1109,6 +1109,12 @@ static void multifd_recv_terminate_threads(Error *err)
         MultiFDRecvParams *p = &multifd_recv_state->params[i];
 
         /*
+         * multifd_recv_thread may hung at MULTIFD_FLAG_SYNC handle code,
+         * however try to wakeup it without harm in cleanup phase.
+         */
+        qemu_sem_post(&p->sem_sync);
+
+        /*
          * We could arrive here for two reasons:
          *  - normal quit, i.e. everything went fine, just finished
          *  - error quit: We close the channels so the channel threads
@@ -1165,12 +1171,6 @@ void multifd_recv_cleanup(void)
     multifd_recv_terminate_threads(NULL);
     for (i = 0; i < migrate_multifd_channels(); i++) {
         MultiFDRecvParams *p = &multifd_recv_state->params[i];
-
-        /*
-         * multifd_recv_thread may hung at MULTIFD_FLAG_SYNC handle code,
-         * however try to wakeup it without harm in cleanup phase.
-         */
-        qemu_sem_post(&p->sem_sync);
 
         if (p->thread_created) {
             qemu_thread_join(&p->thread);
