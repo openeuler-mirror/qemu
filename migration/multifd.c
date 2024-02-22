@@ -947,9 +947,7 @@ static bool multifd_tls_channel_connect(MultiFDSendParams *p,
     return true;
 }
 
-static bool multifd_channel_connect(MultiFDSendParams *p,
-                                    QIOChannel *ioc,
-                                    Error **errp)
+static void multifd_channel_connect(MultiFDSendParams *p, QIOChannel *ioc)
 {
     qio_channel_set_delay(ioc, false);
 
@@ -960,7 +958,6 @@ static bool multifd_channel_connect(MultiFDSendParams *p,
     p->thread_created = true;
     qemu_thread_create(&p->thread, p->name, multifd_send_thread, p,
                        QEMU_THREAD_JOINABLE);
-    return true;
 }
 
 /*
@@ -992,7 +989,8 @@ static void multifd_new_send_channel_async(QIOTask *task, gpointer opaque)
             return;
         }
     } else {
-        ret = multifd_channel_connect(p, ioc, &local_err);
+        multifd_channel_connect(p, ioc);
+        ret = true;
     }
 
 out:
