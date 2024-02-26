@@ -5,6 +5,7 @@
 #include "qapi/qapi-types-net.h"
 #include "net/queue.h"
 #include "migration/vmstate.h"
+#include "hw/qdev-core.h"
 
 #define MAC_FMT "%02X:%02X:%02X:%02X:%02X:%02X"
 #define MAC_ARG(x) ((uint8_t *)(x))[0], ((uint8_t *)(x))[1], \
@@ -105,6 +106,7 @@ struct NetClientState {
 typedef struct NICState {
     NetClientState *ncs;
     NICConf *conf;
+    MemReentrancyGuard *reentrancy_guard;
     void *opaque;
     bool peer_deleted;
 } NICState;
@@ -134,6 +136,7 @@ NICState *qemu_new_nic(NetClientInfo *info,
                        NICConf *conf,
                        const char *model,
                        const char *name,
+                       MemReentrancyGuard *reentrancy_guard,
                        void *opaque);
 void qemu_del_nic(NICState *nic);
 NetClientState *qemu_get_subqueue(NICState *nic, int queue_index);

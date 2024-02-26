@@ -400,7 +400,8 @@ static void mv88w8618_eth_realize(DeviceState *dev, Error **errp)
     mv88w8618_eth_state *s = MV88W8618_ETH(dev);
 
     s->nic = qemu_new_nic(&net_mv88w8618_info, &s->conf,
-                          object_get_typename(OBJECT(dev)), dev->id, s);
+                          object_get_typename(OBJECT(dev)), dev->id,
+                          &dev->mem_reentrancy_guard, s);
 }
 
 static const VMStateDescription mv88w8618_eth_vmsd = {
