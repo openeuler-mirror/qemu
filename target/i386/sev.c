@@ -486,83 +486,6 @@ static void sev_guest_set_kernel_hashes(Object *obj, bool value, Error **errp)
     sev->kernel_hashes = value;
 }
 
-static void
-sev_guest_class_init(ObjectClass *oc, void *data)
-{
-    object_class_property_add_str(oc, "sev-device",
-                                  sev_guest_get_sev_device,
-                                  sev_guest_set_sev_device);
-    object_class_property_set_description(oc, "sev-device",
-            "SEV device to use");
-    object_class_property_add_str(oc, "dh-cert-file",
-                                  sev_guest_get_dh_cert_file,
-                                  sev_guest_set_dh_cert_file);
-    object_class_property_set_description(oc, "dh-cert-file",
-            "guest owners DH certificate (encoded with base64)");
-    object_class_property_add_str(oc, "session-file",
-                                  sev_guest_get_session_file,
-                                  sev_guest_set_session_file);
-    object_class_property_set_description(oc, "session-file",
-            "guest owners session parameters (encoded with base64)");
-    object_class_property_add_bool(oc, "kernel-hashes",
-                                   sev_guest_get_kernel_hashes,
-                                   sev_guest_set_kernel_hashes);
-    object_class_property_set_description(oc, "kernel-hashes",
-            "add kernel hashes to guest firmware for measured Linux boot");
-    object_class_property_add_str(oc, "user-id",
-                                  sev_guest_get_user_id,
-                                  sev_guest_set_user_id);
-    object_class_property_set_description(oc, "user-id",
-            "user id of the guest owner");
-    object_class_property_add_str(oc, "secret-header-file",
-                                  sev_guest_get_secret_header_file,
-                                  sev_guest_set_secret_header_file);
-    object_class_property_set_description(oc, "secret-header-file",
-            "header file of the guest owner's secret");
-    object_class_property_add_str(oc, "secret-file",
-                                  sev_guest_get_secret_file,
-                                  sev_guest_set_secret_file);
-    object_class_property_set_description(oc, "secret-file",
-            "file of the guest owner's secret");
-    object_class_property_add_str(oc, "host-data",
-                                  sev_guest_get_host_data,
-                                  sev_guest_set_host_data);
-    object_class_property_set_description(oc, "host-data",
-            "base64-encoded host supplied data");
-}
-
-static void
-sev_guest_instance_init(Object *obj)
-{
-    SevGuestState *sev = SEV_GUEST(obj);
-
-    sev->sev_device = g_strdup(DEFAULT_SEV_DEVICE);
-    sev->policy = DEFAULT_GUEST_POLICY;
-    object_property_add_uint32_ptr(obj, "policy", &sev->policy,
-                                   OBJ_PROP_FLAG_READWRITE);
-    object_property_add_uint32_ptr(obj, "handle", &sev->handle,
-                                   OBJ_PROP_FLAG_READWRITE);
-    object_property_add_uint32_ptr(obj, "cbitpos", &sev->cbitpos,
-                                   OBJ_PROP_FLAG_READWRITE);
-    object_property_add_uint32_ptr(obj, "reduced-phys-bits",
-                                   &sev->reduced_phys_bits,
-                                   OBJ_PROP_FLAG_READWRITE);
-}
-
-/* sev guest info */
-static const TypeInfo sev_guest_info = {
-    .parent = TYPE_CONFIDENTIAL_GUEST_SUPPORT,
-    .name = TYPE_SEV_GUEST,
-    .instance_size = sizeof(SevGuestState),
-    .instance_finalize = sev_guest_finalize,
-    .class_init = sev_guest_class_init,
-    .instance_init = sev_guest_instance_init,
-    .interfaces = (InterfaceInfo[]) {
-        { TYPE_USER_CREATABLE },
-        { }
-    }
-};
-
 bool
 sev_enabled(void)
 {
@@ -1209,19 +1132,14 @@ sev_migration_state_notifier(Notifier *notifier, void *data)
 
 static Notifier sev_migration_state;
 
-int sev_kvm_init(ConfidentialGuestSupport *cgs, Error **errp)
+static int sev_kvm_init(ConfidentialGuestSupport *cgs, Error **errp)
 {
-    SevGuestState *sev
-        = (SevGuestState *)object_dynamic_cast(OBJECT(cgs), TYPE_SEV_GUEST);
+    SevGuestState *sev = SEV_GUEST(cgs);
     char *devname;
     int ret, fw_error, cmd;
     uint32_t ebx;
     uint32_t host_cbitpos;
     struct sev_user_data_status status = {};
-
-    if (!sev) {
-        return 0;
-    }
 
     ConfidentialGuestSupportClass *cgs_class =
         (ConfidentialGuestSupportClass *) object_get_class(OBJECT(cgs));
@@ -2843,6 +2761,87 @@ struct sev_ops sev_ops = {
     .fw_error_to_str = fw_error_to_str,
     .sev_send_start = _sev_send_start,
     .sev_receive_start = _sev_receive_start,
+};
+
+static void
+sev_guest_class_init(ObjectClass *oc, void *data)
+{
+    ConfidentialGuestSupportClass *klass = CONFIDENTIAL_GUEST_SUPPORT_CLASS(oc);
+
+    klass->kvm_init = sev_kvm_init;
+
+    object_class_property_add_str(oc, "sev-device",
+                                  sev_guest_get_sev_device,
+                                  sev_guest_set_sev_device);
+    object_class_property_set_description(oc, "sev-device",
+            "SEV device to use");
+    object_class_property_add_str(oc, "dh-cert-file",
+                                  sev_guest_get_dh_cert_file,
+                                  sev_guest_set_dh_cert_file);
+    object_class_property_set_description(oc, "dh-cert-file",
+            "guest owners DH certificate (encoded with base64)");
+    object_class_property_add_str(oc, "session-file",
+                                  sev_guest_get_session_file,
+                                  sev_guest_set_session_file);
+    object_class_property_set_description(oc, "session-file",
+            "guest owners session parameters (encoded with base64)");
+    object_class_property_add_bool(oc, "kernel-hashes",
+                                   sev_guest_get_kernel_hashes,
+                                   sev_guest_set_kernel_hashes);
+    object_class_property_set_description(oc, "kernel-hashes",
+            "add kernel hashes to guest firmware for measured Linux boot");
+    object_class_property_add_str(oc, "user-id",
+                                  sev_guest_get_user_id,
+                                  sev_guest_set_user_id);
+    object_class_property_set_description(oc, "user-id",
+            "user id of the guest owner");
+    object_class_property_add_str(oc, "secret-header-file",
+                                  sev_guest_get_secret_header_file,
+                                  sev_guest_set_secret_header_file);
+    object_class_property_set_description(oc, "secret-header-file",
+            "header file of the guest owner's secret");
+    object_class_property_add_str(oc, "secret-file",
+                                  sev_guest_get_secret_file,
+                                  sev_guest_set_secret_file);
+    object_class_property_set_description(oc, "secret-file",
+            "file of the guest owner's secret");
+    object_class_property_add_str(oc, "host-data",
+                                  sev_guest_get_host_data,
+                                  sev_guest_set_host_data);
+    object_class_property_set_description(oc, "host-data",
+            "base64-encoded host supplied data");
+}
+
+static void
+sev_guest_instance_init(Object *obj)
+{
+    SevGuestState *sev = SEV_GUEST(obj);
+
+    sev->sev_device = g_strdup(DEFAULT_SEV_DEVICE);
+    sev->policy = DEFAULT_GUEST_POLICY;
+    object_property_add_uint32_ptr(obj, "policy", &sev->policy,
+                                   OBJ_PROP_FLAG_READWRITE);
+    object_property_add_uint32_ptr(obj, "handle", &sev->handle,
+                                   OBJ_PROP_FLAG_READWRITE);
+    object_property_add_uint32_ptr(obj, "cbitpos", &sev->cbitpos,
+                                   OBJ_PROP_FLAG_READWRITE);
+    object_property_add_uint32_ptr(obj, "reduced-phys-bits",
+                                   &sev->reduced_phys_bits,
+                                   OBJ_PROP_FLAG_READWRITE);
+}
+
+/* sev guest info */
+static const TypeInfo sev_guest_info = {
+    .parent = TYPE_CONFIDENTIAL_GUEST_SUPPORT,
+    .name = TYPE_SEV_GUEST,
+    .instance_size = sizeof(SevGuestState),
+    .instance_finalize = sev_guest_finalize,
+    .class_init = sev_guest_class_init,
+    .instance_init = sev_guest_instance_init,
+    .interfaces = (InterfaceInfo[]) {
+        { TYPE_USER_CREATABLE },
+        { }
+    }
 };
 
 static void

@@ -76,8 +76,6 @@ int sev_load_incoming_shared_regions_list(QEMUFile *f);
 bool sev_is_gfn_in_unshared_region(unsigned long gfn);
 void sev_del_migrate_blocker(void);
 
-int sev_kvm_init(ConfidentialGuestSupport *cgs, Error **errp);
-
 extern bool sev_kvm_has_msr_ghcb;
 
 struct sev_ops {
