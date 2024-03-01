@@ -589,7 +589,8 @@ static int sev_get_cpu0_id(int fd, guchar **id, size_t *id_len, Error **errp)
 
     /* query the ID length */
     r = sev_platform_ioctl(fd, SEV_GET_ID2, &get_id2, &err);
-    if (r < 0 && err != SEV_RET_INVALID_LEN) {
+    if (r < 0 && err != SEV_RET_INVALID_LEN &&
+        !(is_hygon_cpu() && err == SEV_RET_INVALID_PARAM)) {
         error_setg(errp, "SEV: Failed to get ID ret=%d fw_err=%d (%s)",
                    r, err, fw_error_to_str(err));
         return 1;
