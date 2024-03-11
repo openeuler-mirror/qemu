@@ -572,6 +572,7 @@ int bdrv_all_delete_snapshot(const char *name,
                              bool has_devices, strList *devices,
                              Error **errp)
 {
+    ERRP_GUARD();
     g_autoptr(GList) bdrvs = NULL;
     GList *iterbdrvs;
 
@@ -614,6 +615,7 @@ int bdrv_all_goto_snapshot(const char *name,
                            bool has_devices, strList *devices,
                            Error **errp)
 {
+    ERRP_GUARD();
     g_autoptr(GList) bdrvs = NULL;
     GList *iterbdrvs;
     int ret;
