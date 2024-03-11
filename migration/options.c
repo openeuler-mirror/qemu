@@ -183,6 +183,9 @@ Property migration_properties[] = {
     DEFINE_PROP_MIG_MODE("mode", MigrationState,
                       parameters.mode,
                       MIG_MODE_NORMAL),
+    DEFINE_PROP_ZERO_PAGE_DETECTION("zero-page-detection", MigrationState,
+                       parameters.zero_page_detection,
+                       ZERO_PAGE_DETECTION_LEGACY),
     DEFINE_PROP_STRING("sev-pdh", MigrationState, parameters.sev_pdh),
     DEFINE_PROP_STRING("sev-plat-cert", MigrationState, parameters.sev_plat_cert),
     DEFINE_PROP_STRING("sev-amd-cert", MigrationState, parameters.sev_amd_cert),
@@ -927,6 +930,13 @@ uint64_t migrate_xbzrle_cache_size(void)
     return s->parameters.xbzrle_cache_size;
 }
 
+ZeroPageDetection migrate_zero_page_detection(void)
+{
+    MigrationState *s = migrate_get_current();
+
+    return s->parameters.zero_page_detection;
+}
+
 /* parameter setters */
 
 void migrate_set_block_incremental(bool value)
@@ -1042,6 +1052,8 @@ MigrationParameters *qmp_query_migrate_parameters(Error **errp)
     params->vcpu_dirty_limit = s->parameters.vcpu_dirty_limit;
     params->has_mode = true;
     params->mode = s->parameters.mode;
+    params->has_zero_page_detection = true;
+    params->zero_page_detection = s->parameters.zero_page_detection;
     params->has_hdbss_buffer_size = true;
     params->hdbss_buffer_size = s->parameters.hdbss_buffer_size;
 
@@ -1081,6 +1093,7 @@ void migrate_params_init(MigrationParameters *params)
     params->has_x_vcpu_dirty_limit_period = true;
     params->has_vcpu_dirty_limit = true;
     params->has_mode = true;
+    params->has_zero_page_detection = true;
     params->has_hdbss_buffer_size = true;
 
     params->sev_pdh = g_strdup("");
@@ -1422,6 +1435,10 @@ static void migrate_params_test_apply(MigrateSetParameters *params,
         dest->mode = params->mode;
     }
 
+    if (params->has_zero_page_detection) {
+        dest->zero_page_detection = params->zero_page_detection;
+    }
+
     if (params->sev_pdh) {
         assert(params->sev_pdh->type == QTYPE_QSTRING);
         dest->sev_pdh = params->sev_pdh->u.s;
@@ -1591,6 +1608,10 @@ static void migrate_params_apply(MigrateSetParameters *params, Error **errp)
 
     if (params->has_mode) {
         s->parameters.mode = params->mode;
+    }
+
+    if (params->has_zero_page_detection) {
+        s->parameters.zero_page_detection = params->zero_page_detection;
     }
 
     if (params->sev_pdh) {
