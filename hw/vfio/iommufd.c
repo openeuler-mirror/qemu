@@ -185,6 +185,7 @@ static int iommufd_query_dirty_bitmap(const VFIOContainerBase *bcontainer,
 
 static int iommufd_cdev_getfd(const char *sysfs_path, Error **errp)
 {
+    ERRP_GUARD();
     long int ret = -ENOTTY;
     char *path, *vfio_dev_path = NULL, *vfio_path = NULL;
     DIR *dir = NULL;
