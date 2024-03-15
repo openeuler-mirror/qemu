@@ -67,7 +67,7 @@ void ppc_set_irq(PowerPCCPU *cpu, int n_IRQ, int level)
 
     if (old_pending != env->pending_interrupts) {
         if (kvm_enabled()) {
-            kvmppc_set_interrupt(cpu, irq, level);
+            kvmppc_set_interrupt(cpu, n_IRQ, level);
         }    
     }
 
