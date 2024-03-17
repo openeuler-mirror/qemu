@@ -25,6 +25,7 @@
 
 #include "qemu/osdep.h"
 #include "qemu/queue.h"
+#include "qemu/log.h"
 #include "sysemu/reset.h"
 
 /* reset/shutdown handler */
@@ -75,6 +76,7 @@ void qemu_devices_reset(ShutdownCause reason)
 {
     QEMUResetEntry *re, *nre;
 
+    qemu_log("reset all devices\n");
     /* reset all devices */
     QTAILQ_FOREACH_SAFE(re, &reset_handlers, entry, nre) {
         if (reason == SHUTDOWN_CAUSE_SNAPSHOT_LOAD &&
