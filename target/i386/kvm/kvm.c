@@ -5828,14 +5828,6 @@ bool kvm_has_waitpkg(void)
     return has_msr_umwait;
 }
 
-bool kvm_arch_cpu_check_are_resettable(void)
-{
-    if (is_hygon_cpu())
-        return !csv_kvm_cpu_reset_inhibit;
-
-    return !sev_es_enabled();
-}
-
 #define ARCH_REQ_XCOMP_GUEST_PERM       0x1025
 
 void kvm_request_xsave_components(X86CPU *cpu, uint64_t mask)

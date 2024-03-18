@@ -83,7 +83,11 @@ static bool kvm_vcpu_thread_is_idle(CPUState *cpu)
 
 static bool kvm_cpus_are_resettable(void)
 {
-    return !kvm_enabled() || kvm_cpu_check_are_resettable();
+#if defined(TARGET_ARM) || defined(TARGET_AARCH64)
+    return !kvm_enabled() || kvm_arch_cpu_check_are_resettable();
+#else
+    return !kvm_enabled() || !kvm_state->guest_state_protected;
+#endif
 }
 
 #ifdef KVM_CAP_SET_GUEST_DEBUG
