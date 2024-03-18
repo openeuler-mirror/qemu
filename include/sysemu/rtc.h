@@ -54,5 +54,7 @@ void qemu_get_timedate(struct tm *tm, time_t offset);
  * then this function will return 3600.
  */
 time_t qemu_timedate_diff(struct tm *tm);
-
+time_t get_rtc_date_diff(void);
+void set_rtc_date_diff(time_t diff);
+int64_t qmp_query_rtc_date_diff(Error **errp);
 #endif

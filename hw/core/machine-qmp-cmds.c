@@ -8,6 +8,7 @@
  */
 
 #include "qemu/osdep.h"
+#include "sysemu/rtc.h"
 #include "hw/acpi/vmgenid.h"
 #include "hw/boards.h"
 #include "hw/intc/intc.h"
@@ -371,6 +372,11 @@ HumanReadableText *qmp_x_query_irq(Error **errp)
                                    qmp_x_query_irq_foreach, buf);
 
     return human_readable_text_from_str(buf);
+}
+
+int64_t qmp_query_rtc_date_diff(Error **errp)
+{
+    return get_rtc_date_diff();
 }
 
 GuidInfo *qmp_query_vm_generation_id(Error **errp)

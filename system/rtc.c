@@ -44,6 +44,7 @@ static time_t rtc_ref_start_datetime;
 static int rtc_realtime_clock_offset; /* used only with QEMU_CLOCK_REALTIME */
 static int rtc_host_datetime_offset = -1; /* valid & used only with
                                              RTC_BASE_DATETIME */
+static time_t rtc_date_diff = 0;
 QEMUClockType rtc_clock;
 /***********************************************************/
 /* RTC reference time/date access */
@@ -106,6 +107,16 @@ time_t qemu_timedate_diff(struct tm *tm)
     }
 
     return seconds - qemu_ref_timedate(QEMU_CLOCK_HOST);
+}
+
+time_t get_rtc_date_diff(void)
+{
+    return rtc_date_diff;
+}
+
+void set_rtc_date_diff(time_t diff)
+{
+    rtc_date_diff = diff;
 }
 
 static void configure_rtc_base_datetime(const char *startdate)
