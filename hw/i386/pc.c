@@ -83,7 +83,10 @@ GlobalProperty pc_compat_8_1[] = {
     { TYPE_X86_CPU, "x-pdcm-on-even-without-pmu", "true" },
 };
 
-GlobalProperty pc_compat_9_0[] = {};
+GlobalProperty pc_compat_9_0[] = {
+    { TYPE_X86_CPU, "guest-phys-bits", "0" },
+};
+
 const size_t pc_compat_9_0_len = G_N_ELEMENTS(pc_compat_9_0);
 
 GlobalProperty pc_compat_8_2[] = {};
