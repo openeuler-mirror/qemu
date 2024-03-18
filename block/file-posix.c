@@ -158,6 +158,7 @@ typedef struct BDRVRawState {
 
     bool has_discard:1;
     bool has_write_zeroes:1;
+    bool discard_zeroes:1;
     bool use_linux_aio:1;
     bool use_linux_io_uring:1;
     int page_cache_inconsistent; /* errno from fdatasync failure */
@@ -765,6 +766,7 @@ static int raw_open_common(BlockDriverState *bs, QDict *options,
             ret = -EINVAL;
             goto fail;
         } else {
+            s->discard_zeroes = true;
             s->has_fallocate = true;
         }
     } else {
@@ -790,12 +792,19 @@ static int raw_open_common(BlockDriverState *bs, QDict *options,
 #endif
 
     if (S_ISBLK(st.st_mode)) {
+#ifdef BLKDISCARDZEROES
+        unsigned int arg;
+        if (ioctl(s->fd, BLKDISCARDZEROES, &arg) == 0 && arg) {
+            s->discard_zeroes = true;
+        }
+#endif
 #ifdef __linux__
         /* On Linux 3.10, BLKDISCARD leaves stale data in the page cache.  Do
          * not rely on the contents of discarded blocks unless using O_DIRECT.
          * Same for BLKZEROOUT.
          */
         if (!(bs->open_flags & BDRV_O_NOCACHE)) {
+            s->discard_zeroes = false;
             s->has_write_zeroes = false;
         }
 #endif
