@@ -3783,7 +3783,7 @@ SRST
     default device is ``vc`` in graphical mode and ``stdio`` in non
     graphical mode.
 
-    This option can be used several times to simulate up to 4 serial
+    This option can be used several times to simulate multiple serial
     ports.
 
     Use ``-serial none`` to disable all serial ports.
