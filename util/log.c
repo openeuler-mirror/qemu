@@ -143,6 +143,12 @@ void qemu_log_unlock(FILE *logfile)
     }
 }
 
+#ifdef CONFIG_DISABLE_QEMU_LOG
+void qemu_log(const char *fmt, ...)
+{
+    return;
+}
+#else
 void qemu_log(const char *fmt, ...)
 {
     FILE *f = qemu_log_trylock();
@@ -155,6 +161,7 @@ void qemu_log(const char *fmt, ...)
         qemu_log_unlock(f);
     }
 }
+#endif
 
 static void __attribute__((__constructor__)) startup(void)
 {
