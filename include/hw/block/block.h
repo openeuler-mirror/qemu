@@ -34,6 +34,8 @@ typedef struct BlockConf {
     OnOffAuto account_invalid, account_failed;
     BlockdevOnError rerror;
     BlockdevOnError werror;
+    int64_t retry_interval;
+    int64_t retry_timeout;
 } BlockConf;
 
 static inline unsigned int get_physical_block_exp(BlockConf *conf)
@@ -84,7 +86,11 @@ static inline unsigned int get_physical_block_exp(BlockConf *conf)
     DEFINE_PROP_BLOCKDEV_ON_ERROR("rerror", _state, _conf.rerror,       \
                                   BLOCKDEV_ON_ERROR_AUTO),              \
     DEFINE_PROP_BLOCKDEV_ON_ERROR("werror", _state, _conf.werror,       \
-                                  BLOCKDEV_ON_ERROR_AUTO)
+                                  BLOCKDEV_ON_ERROR_AUTO),              \
+    DEFINE_PROP_BLOCKDEV_RETRY_INTERVAL("retry_interval", _state,       \
+                                        _conf.retry_interval, 1000),    \
+    DEFINE_PROP_BLOCKDEV_RETRY_TIMEOUT("retry_timeout", _state,         \
+                                       _conf.retry_timeout, 0)
 
 /* Backend access helpers */
 

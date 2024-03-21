@@ -16,6 +16,9 @@
 #include "qemu/iov.h"
 #include "block/throttle-groups.h"
 
+/* block backend default retry interval */
+#define BLOCK_BACKEND_DEFAULT_RETRY_INTERVAL   1000
+
 /*
  * TODO Have to include block/block.h for a bunch of block layer
  * types.  Unfortunately, this pulls in the whole BlockDriverState
@@ -71,6 +74,10 @@ typedef struct BlockDevOps {
      * Is the device still busy?
      */
     bool (*drained_poll)(void *opaque);
+    /*
+     * Runs when retrying failed requests.
+     */
+    void (*retry_request_cb)(void *opaque);
 
     /*
      * I/O API functions. These functions are thread-safe.

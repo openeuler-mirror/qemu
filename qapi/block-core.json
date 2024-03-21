@@ -1286,10 +1286,12 @@
 #
 # @auto: inherit the error handling policy of the backend (since: 2.7)
 #
+# @retry: retrying IO with errors
+#
 # Since: 1.3
 ##
 { 'enum': 'BlockdevOnError',
-  'data': ['report', 'ignore', 'enospc', 'stop', 'auto'] }
+  'data': ['report', 'ignore', 'enospc', 'stop', 'auto', 'retry'] }
 
 ##
 # @MirrorSyncMode:
@@ -5480,10 +5482,12 @@
 #
 # @stop: error caused VM to be stopped
 #
+# @retry: retry IO with errors
+#
 # Since: 2.1
 ##
 { 'enum': 'BlockErrorAction',
-  'data': [ 'ignore', 'report', 'stop' ] }
+  'data': [ 'ignore', 'report', 'stop', 'retry' ] }
 
 ##
 # @BLOCK_IMAGE_CORRUPTED:

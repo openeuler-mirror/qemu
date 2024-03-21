@@ -239,6 +239,16 @@ bool blkconf_apply_backend_options(BlockConf *conf, bool readonly,
     blk_set_enable_write_cache(blk, wce);
     blk_set_on_error(blk, rerror, werror);
 
+    if (rerror == BLOCKDEV_ON_ERROR_RETRY ||
+        werror == BLOCKDEV_ON_ERROR_RETRY) {
+        if (conf->retry_interval >= 0) {
+            blk_set_on_error_retry_interval(blk, conf->retry_interval);
+        }
+        if (conf->retry_timeout >= 0) {
+            blk_set_on_error_retry_timeout(blk, conf->retry_timeout);
+        }
+    }
+
     block_acct_setup(blk_get_stats(blk), conf->account_invalid,
                      conf->account_failed);
     return true;
