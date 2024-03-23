@@ -1,6 +1,10 @@
 #ifndef QEMU_MMAP_ALLOC_H
 #define QEMU_MMAP_ALLOC_H
 
+#define HUGETLBFS_MAGIC       0x958458f6
+
+size_t qemu_fd_getfiletype(int fd);
+
 typedef enum {
     QEMU_FS_TYPE_UNKNOWN = 0,
     QEMU_FS_TYPE_TMPFS,
