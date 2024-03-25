@@ -1329,7 +1329,14 @@ static int file_ram_open(const char *path,
             /* @path names a file that doesn't exist, create it */
             fd = open(path, O_RDWR | O_CREAT | O_EXCL, 0644);
             if (fd >= 0) {
-                *created = true;
+                info_report("open %s success \n", path);
+                /* if fd file type is HUGETLBFS_MAGIC, unlink it, */
+                /* in case to prevent residue after qemu killed */
+                if (qemu_fd_getfiletype(fd) == HUGETLBFS_MAGIC) {
+                    unlink(path);
+                } else {
+                    *created = true;
+                }
                 break;
             }
         } else if (errno == EISDIR) {
