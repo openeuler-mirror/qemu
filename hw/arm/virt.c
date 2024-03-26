@@ -3179,16 +3179,6 @@ static void virt_cpu_pre_plug(HotplugHandler *hotplug_dev, DeviceState *dev,
     CPUState *cs = CPU(dev);
     CPUArchId *cpu_slot;
 
-    if (dev->hotplugged && !vms->acpi_dev) {
-        error_setg(errp, "GED acpi device does not exists");
-        return;
-    }
-
-    if (dev->hotplugged && !mc->has_hotpluggable_cpus) {
-        error_setg(errp, "CPU hotplug not supported on this machine");
-        return;
-    }
-
     /* sanity check the cpu */
     if (!object_dynamic_cast(OBJECT(cpu), ms->cpu_type)) {
         error_setg(errp, "Invalid CPU type, expected cpu type: '%s'",
@@ -3221,6 +3211,17 @@ static void virt_cpu_pre_plug(HotplugHandler *hotplug_dev, DeviceState *dev,
     }
 
     cs->cpu_index = virt_get_cpu_id_from_cpu_topo(ms, dev);
+
+    /* Except for cold-booted vCPUs, this should check presence of ACPI GED */
+    if (cs->cpu_index >= ms->smp.cpus && !vms->acpi_dev) {
+        error_setg(errp, "GED acpi device does not exists");
+        return;
+    }
+
+    if (cs->cpu_index >= ms->smp.cpus && !mc->has_hotpluggable_cpus) {
+        error_setg(errp, "CPU [cold|hot]plug not supported on this machine");
+        return;
+    }
 
     cpu_slot = virt_find_cpu_slot(ms, cs->cpu_index);
     if (qemu_present_cpu(CPU(cpu_slot->cpu))) {
