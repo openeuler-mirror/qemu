@@ -2323,7 +2323,10 @@ static void virt_cpu_set_properties(Object *cpuobj, const CPUArchId *cpu_slot,
      */
     if (vms->psci_conduit != QEMU_PSCI_CONDUIT_DISABLED) {
         object_property_set_int(cpuobj, "psci-conduit", vms->psci_conduit,
-                                NULL);
+                                &local_err);
+        if (local_err) {
+            goto out;
+        }
 
         /* Secondary CPUs start in PSCI powered-down state */
         if (CPU(cpuobj)->cpu_index > 0) {
