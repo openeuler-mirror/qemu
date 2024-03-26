@@ -113,6 +113,10 @@ CPUState *qemu_get_possible_cpu(int index)
     MachineState *ms = MACHINE(qdev_get_machine());
     const CPUArchIdList *possible_cpus = ms->possible_cpus;
 
+    if (possible_cpus == NULL) {
+        return qemu_get_cpu(index);
+    }
+
     assert((index >= 0) && (index < possible_cpus->len));
 
     return CPU(possible_cpus->cpus[index].cpu);

@@ -25,6 +25,7 @@
 #include "qapi/error.h"
 #include "qemu/module.h"
 #include "qemu/error-report.h"
+#include "hw/boards.h"
 #include "hw/core/cpu.h"
 #include "hw/intc/arm_gicv3_common.h"
 #include "hw/qdev-properties.h"
@@ -446,7 +447,7 @@ static void arm_gicv3_common_realize(DeviceState *dev, Error **errp)
     s->cpu = g_new0(GICv3CPUState, s->num_cpu);
 
     for (i = 0; i < s->num_cpu; i++) {
-        CPUState *cpu = qemu_get_possible_cpu(i);
+        CPUState *cpu = qemu_get_possible_cpu(i) ? : qemu_get_cpu(i);
         uint64_t cpu_affid;
 
         if (qemu_enabled_cpu(cpu)) {
@@ -506,8 +507,12 @@ static void arm_gicv3_common_realize(DeviceState *dev, Error **errp)
 static void arm_gicv3_finalize(Object *obj)
 {
     GICv3State *s = ARM_GICV3_COMMON(obj);
+    Object *ms = qdev_get_machine();
+    MachineClass *mc = MACHINE_GET_CLASS(ms);
 
-    notifier_remove(&s->cpu_update_notifier);
+    if (mc->has_hotpluggable_cpus) {
+        notifier_remove(&s->cpu_update_notifier);
+    }
     g_free(s->redist_region_count);
 }
 
