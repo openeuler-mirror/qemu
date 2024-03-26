@@ -1003,6 +1003,7 @@ static void
 build_dsdt(GArray *table_data, BIOSLinker *linker, VirtMachineState *vms)
 {
     VirtMachineClass *vmc = VIRT_MACHINE_GET_CLASS(vms);
+    MachineClass *mc = MACHINE_GET_CLASS(vms);
     Aml *scope, *dsdt;
     MachineState *ms = MACHINE(vms);
     const MemMapEntry *memmap = vms->memmap;
@@ -1020,7 +1021,7 @@ build_dsdt(GArray *table_data, BIOSLinker *linker, VirtMachineState *vms)
      */
     scope = aml_scope("\\_SB");
     /* if GED is enabled then cpus AML shall be added as part build_cpus_aml */
-    if (vms->acpi_dev) {
+    if (mc->has_hotpluggable_cpus) {
         CPUHotplugFeatures opts = {
              .acpi_1_compatible = false,
              .has_legacy_cphp = false
