@@ -2357,6 +2357,7 @@ static void machvirt_init(MachineState *machine)
     bool has_ged = !vmc->no_ged;
     unsigned int smp_cpus = machine->smp.cpus;
     unsigned int max_cpus = machine->smp.max_cpus;
+    ObjectClass *cpu_class;
 
     if (!cpu_type_valid(machine->cpu_type)) {
         error_report("mach-virt: CPU type %s not supported", machine->cpu_type);
@@ -2364,14 +2365,6 @@ static void machvirt_init(MachineState *machine)
     }
 
     finalize_gic_version(vms);
-    if (tcg_enabled() || hvf_enabled() || qtest_enabled() ||
-        (vms->gic_version < VIRT_GIC_VERSION_3)) {
-        mc->has_hotpluggable_cpus = false;
-    }
-    if (!mc->has_hotpluggable_cpus) {
-        machine->smp.max_cpus = smp_cpus;
-        warn_report("cpu hotplug feature has been disabled");
-    }
 
     possible_cpus = mc->possible_cpu_arch_ids(machine);
 
@@ -2501,6 +2494,21 @@ static void machvirt_init(MachineState *machine)
     create_fdt(vms);
     qemu_log("cpu init start\n");
 
+    cpu_class = object_class_by_name(machine->cpu_type);
+    has_ged = has_ged && firmware_loaded &&
+        virt_is_acpi_enabled(vms) &&
+        !!object_class_dynamic_cast(cpu_class, TYPE_AARCH64_CPU);
+    if (tcg_enabled() || hvf_enabled() || qtest_enabled() ||
+        (vms->gic_version < VIRT_GIC_VERSION_3) || !has_ged) {
+        mc->has_hotpluggable_cpus = false;
+    }
+    if (!mc->has_hotpluggable_cpus) {
+        if (machine->smp.max_cpus > smp_cpus) {
+            warn_report("cpu hotplug feature has been disabled");
+        }
+        machine->smp.max_cpus = smp_cpus;
+    }
+
     notifier_list_init(&vms->cpuhp_notifiers);
     possible_cpus = mc->possible_cpu_arch_ids(machine);
     assert(possible_cpus->len == max_cpus);
@@ -2581,8 +2589,6 @@ static void machvirt_init(MachineState *machine)
 
     create_gic(vms, sysmem);
 
-    has_ged = has_ged && aarch64 && firmware_loaded &&
-              virt_is_acpi_enabled(vms);
     if (has_ged) {
         vms->acpi_dev = create_acpi_ged(vms);
     }
