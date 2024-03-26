@@ -2366,8 +2366,10 @@ static void machvirt_init(MachineState *machine)
     finalize_gic_version(vms);
     if (tcg_enabled() || hvf_enabled() || qtest_enabled() ||
         (vms->gic_version < VIRT_GIC_VERSION_3)) {
-        machine->smp.max_cpus = smp_cpus;
         mc->has_hotpluggable_cpus = false;
+    }
+    if (!mc->has_hotpluggable_cpus) {
+        machine->smp.max_cpus = smp_cpus;
         warn_report("cpu hotplug feature has been disabled");
     }
 

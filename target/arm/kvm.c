@@ -259,6 +259,7 @@ int kvm_arch_get_default_type(MachineState *ms)
 
 int kvm_arch_init(MachineState *ms, KVMState *s)
 {
+    MachineClass *mc = MACHINE_GET_CLASS(ms);
     int ret = 0;
 
     /* For ARM interrupt delivery is always asynchronous,
@@ -316,15 +317,17 @@ int kvm_arch_init(MachineState *ms, KVMState *s)
      * filter in the Host KVM. This is required to support features like
      * virtual CPU Hotplug on ARM platforms.
      */
-    if (kvm_arm_set_smccc_filter(PSCI_0_2_FN64_CPU_ON,
-                                 KVM_SMCCC_FILTER_FWD_TO_USER)) {
-        error_report("CPU On PSCI-to-user-space fwd filter install failed");
-        abort();
-    }
-    if (kvm_arm_set_smccc_filter(PSCI_0_2_FN_CPU_OFF,
-                                 KVM_SMCCC_FILTER_FWD_TO_USER)) {
-        error_report("CPU Off PSCI-to-user-space fwd filter install failed");
-        abort();
+    if (mc->has_hotpluggable_cpus && ms->smp.max_cpus > ms->smp.cpus) {
+        if (kvm_arm_set_smccc_filter(PSCI_0_2_FN64_CPU_ON,
+                                    KVM_SMCCC_FILTER_FWD_TO_USER)) {
+            error_report("CPU On PSCI-to-user-space fwd filter install failed");
+            mc->has_hotpluggable_cpus = false;
+        }
+        if (kvm_arm_set_smccc_filter(PSCI_0_2_FN_CPU_OFF,
+                                    KVM_SMCCC_FILTER_FWD_TO_USER)) {
+            error_report("CPU Off PSCI-to-user-space fwd filter install failed");
+            mc->has_hotpluggable_cpus = false;
+        }
     }
 
     kvm_arm_init_debug(s);
