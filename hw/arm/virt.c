@@ -3170,8 +3170,6 @@ static void virt_cpu_pre_plug(HotplugHandler *hotplug_dev, DeviceState *dev,
     ARMCPU *cpu = ARM_CPU(dev);
     CPUState *cs = CPU(dev);
     CPUArchId *cpu_slot;
-    int32_t min_cpuid = 0;
-    int32_t max_cpuid;
 
     if (dev->hotplugged && !vms->acpi_dev) {
         error_setg(errp, "GED acpi device does not exists");
@@ -3196,15 +3194,9 @@ static void virt_cpu_pre_plug(HotplugHandler *hotplug_dev, DeviceState *dev,
         return;
     }
 
-    max_cpuid = ms->possible_cpus->len - 1;
-    if (!dev->hotplugged) {
-        min_cpuid = vms->acpi_dev ? ms->smp.cpus : 0;
-        max_cpuid = vms->acpi_dev ? max_cpuid : ms->smp.cpus - 1;
-    }
-
-    if ((cpu->core_id < min_cpuid) || (cpu->core_id > max_cpuid)) {
-        error_setg(errp, "Invalid core-id %d specified, correct range %d:%d",
-                   cpu->core_id, min_cpuid, max_cpuid);
+    if ((cpu->core_id < 0) || (cpu->core_id >= ms->smp.cores)) {
+        error_setg(errp, "Invalid core-id %d specified, correct range 0:%u",
+                   cpu->core_id, ms->smp.cores - 1);
         return;
     }
 
