@@ -788,8 +788,8 @@ void cpu_address_space_destroy(CPUState *cpu, int asidx)
         memory_listener_unregister(&cpuas->tcg_as_listener);
     }
 
+    cpuas->as->free_in_rcu = true;
     address_space_destroy(cpuas->as);
-    g_free_rcu(cpuas->as, rcu);
 
     if (cpu->cpu_ases_ref_count == 1) {
         g_free(cpu->cpu_ases);
