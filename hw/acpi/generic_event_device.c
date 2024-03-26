@@ -403,6 +403,7 @@ static void acpi_ged_initfn(Object *obj)
     AcpiGedState *s = ACPI_GED(dev);
     SysBusDevice *sbd = SYS_BUS_DEVICE(obj);
     GEDState *ged_st = &s->ged_state;
+    MachineClass *mc;
 
     memory_region_init_io(&ged_st->evt, obj, &ged_evt_ops, ged_st,
                           TYPE_ACPI_GED, ACPI_GED_EVT_SEL_LEN);
@@ -427,12 +428,15 @@ static void acpi_ged_initfn(Object *obj)
                           TYPE_ACPI_GED "-regs", ACPI_GED_REG_COUNT);
     sysbus_init_mmio(sbd, &ged_st->regs);
 
-    s->cpuhp.device = OBJECT(s);
-    memory_region_init(&s->container_cpuhp, OBJECT(dev), "cpuhp container",
-                       ACPI_CPU_HOTPLUG_REG_LEN);
-    sysbus_init_mmio(SYS_BUS_DEVICE(dev), &s->container_cpuhp);
-    cpu_hotplug_hw_init(&s->container_cpuhp, OBJECT(dev),
-                        &s->cpuhp_state, 0);
+    mc = MACHINE_GET_CLASS(qdev_get_machine());
+    if (mc->possible_cpu_arch_ids) {
+        s->cpuhp.device = OBJECT(s);
+        memory_region_init(&s->container_cpuhp, OBJECT(dev), "cpuhp container",
+                        ACPI_CPU_HOTPLUG_REG_LEN);
+        sysbus_init_mmio(SYS_BUS_DEVICE(dev), &s->container_cpuhp);
+        cpu_hotplug_hw_init(&s->container_cpuhp, OBJECT(dev),
+                            &s->cpuhp_state, 0);
+    }
 }
 
 static void acpi_ged_class_init(ObjectClass *class, void *data)
