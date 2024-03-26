@@ -327,11 +327,10 @@ err:
 
 void kvm_park_vcpu(CPUState *cpu)
 {
-    unsigned long vcpu_id = cpu->cpu_index;
     struct KVMParkedVcpu *vcpu;
 
     vcpu = g_malloc0(sizeof(*vcpu));
-    vcpu->vcpu_id = vcpu_id;
+    vcpu->vcpu_id = kvm_arch_vcpu_id(cpu);
     vcpu->kvm_fd = cpu->kvm_fd;
     QLIST_INSERT_HEAD(&kvm_state->kvm_parked_vcpus, vcpu, node);
 }
