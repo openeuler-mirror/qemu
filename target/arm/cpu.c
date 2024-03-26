@@ -2418,6 +2418,7 @@ static void arm_cpu_unrealizefn(DeviceState *dev)
     CPUState *cs = CPU(dev);
     bool has_secure;
 
+#ifndef CONFIG_USER_ONLY
     has_secure = cpu->has_el3 || arm_feature(env, ARM_FEATURE_M_SECURITY);
 
     /* rock 'n' un-roll, whatever happened in the arm_cpu_realizefn cleanly */
@@ -2433,10 +2434,17 @@ static void arm_cpu_unrealizefn(DeviceState *dev)
     if (has_secure) {
         cpu_address_space_destroy(cs, ARMASIdx_S);
     }
+#endif
 
     destroy_cpreg_list(cpu);
     arm_cpu_unregister_gdb_regs(cpu);
     unregister_cp_regs_for_features(cpu);
+
+#ifndef CONFIG_USER_ONLY
+    if (tcg_enabled() && cpu_isar_feature(aa64_rme, cpu)) {
+        arm_unregister_el_change_hooks(cpu);
+    }
+#endif
 
     if (cpu->sau_sregion && arm_feature(env, ARM_FEATURE_M_SECURITY)) {
         g_free(env->sau.rbar);
@@ -2444,19 +2452,20 @@ static void arm_cpu_unrealizefn(DeviceState *dev)
     }
 
     if (arm_feature(env, ARM_FEATURE_PMSA) &&
-        arm_feature(env, ARM_FEATURE_V7) &&
-        cpu->pmsav7_dregion) {
-        if (arm_feature(env, ARM_FEATURE_V8)) {
-            g_free(env->pmsav8.rbar[M_REG_NS]);
-            g_free(env->pmsav8.rlar[M_REG_NS]);
-            if (arm_feature(env, ARM_FEATURE_M_SECURITY)) {
-                g_free(env->pmsav8.rbar[M_REG_S]);
-                g_free(env->pmsav8.rlar[M_REG_S]);
+        arm_feature(env, ARM_FEATURE_V7)) {
+        if (cpu->pmsav7_dregion) {
+            if (arm_feature(env, ARM_FEATURE_V8)) {
+                g_free(env->pmsav8.rbar[M_REG_NS]);
+                g_free(env->pmsav8.rlar[M_REG_NS]);
+                if (arm_feature(env, ARM_FEATURE_M_SECURITY)) {
+                    g_free(env->pmsav8.rbar[M_REG_S]);
+                    g_free(env->pmsav8.rlar[M_REG_S]);
+                }
+            } else {
+                g_free(env->pmsav7.drbar);
+                g_free(env->pmsav7.drsr);
+                g_free(env->pmsav7.dracr);
             }
-        } else {
-            g_free(env->pmsav7.drbar);
-            g_free(env->pmsav7.drsr);
-            g_free(env->pmsav7.dracr);
         }
         if (cpu->pmsav8r_hdregion) {
             g_free(env->pmsav8.hprbar);
