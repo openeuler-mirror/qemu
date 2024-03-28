@@ -709,6 +709,20 @@
   } }
 
 ##
+# @CompressMethod:
+#
+# An enumeration of multi-thread compression methods.
+#
+# @zlib: use zlib compression method.
+# @zstd: use zstd compression method.
+#
+# Since: 5.0
+#
+##
+{ 'enum': 'CompressMethod',
+  'data': [ 'zlib', { 'name': 'zstd', 'if': 'CONFIG_ZSTD' } ] }
+
+##
 # @MigrationParameter:
 #
 # Migration parameters enumeration
@@ -745,6 +759,9 @@
 #     between 1 and 255. Usually, decompression is at least 4 times as
 #     fast as compression, so set the decompress-threads to the number
 #     about 1/4 of compress-threads is adequate.
+#
+# @compress-method: Which multi-thread compression method to use.
+#                   Defaults to none. (Since 5.0)
 #
 # @throttle-trigger-threshold: The ratio of bytes_dirty_period and
 #     bytes_xfer_period to trigger throttling.  It is expressed as
@@ -892,6 +909,7 @@
            { 'name': 'compress-level', 'features': [ 'deprecated' ] },
            { 'name': 'compress-threads', 'features': [ 'deprecated' ] },
            { 'name': 'decompress-threads', 'features': [ 'deprecated' ] },
+           { 'name': 'compress-method', 'features': [ 'deprecated' ] },
            { 'name': 'compress-wait-thread', 'features': [ 'deprecated' ] },
            'throttle-trigger-threshold',
            'cpu-throttle-initial', 'cpu-throttle-increment',
@@ -934,6 +952,9 @@
 #     uncompressed.  (Since 3.1)
 #
 # @decompress-threads: decompression thread count
+#
+# @compress-method: Set compression method to use in multi-thread compression.
+#                   Defaults to none. (Since 5.0)
 #
 # @throttle-trigger-threshold: The ratio of bytes_dirty_period and
 #     bytes_xfer_period to trigger throttling.  It is expressed as
@@ -1066,8 +1087,9 @@
 #
 # @deprecated: Member @block-incremental is deprecated.  Use
 #     blockdev-mirror with NBD instead.  Members @compress-level,
-#     @compress-threads, @decompress-threads and @compress-wait-thread
-#     are deprecated because @compression is deprecated.
+#     @compress-threads, @decompress-threads, @compress-method
+#     and @compress-wait-thread are deprecated because
+#     @compression is deprecated.
 #
 # @unstable: Members @x-checkpoint-delay and @x-vcpu-dirty-limit-period
 #     are experimental.
@@ -1090,6 +1112,8 @@
                                         'features': [ 'deprecated' ] },
             '*decompress-threads':  { 'type': 'uint8',
                                       'features': [ 'deprecated' ] },
+            '*compress-method': { 'type': 'CompressMethod',
+                                  'features': [ 'deprecated' ] },
             '*throttle-trigger-threshold': 'uint8',
             '*cpu-throttle-initial': 'uint8',
             '*cpu-throttle-increment': 'uint8',
@@ -1160,6 +1184,9 @@
 #     uncompressed.  (Since 3.1)
 #
 # @decompress-threads: decompression thread count
+#
+# @compress-method: Which multi-thread compression method to use.
+#                   Defaults to none. (Since 5.0)
 #
 # @throttle-trigger-threshold: The ratio of bytes_dirty_period and
 #     bytes_xfer_period to trigger throttling.  It is expressed as
@@ -1315,6 +1342,8 @@
                                        'features': [ 'deprecated' ] },
             '*decompress-threads': { 'type': 'uint8',
                                      'features': [ 'deprecated' ] },
+            '*compress-method': { 'type': 'CompressMethod',
+                                  'features': [ 'deprecated' ] },
             '*throttle-trigger-threshold': 'uint8',
             '*cpu-throttle-initial': 'uint8',
             '*cpu-throttle-increment': 'uint8',
@@ -1417,6 +1446,30 @@
 ##
 { 'event': 'MIGRATION_PASS',
   'data': { 'pass': 'int' } }
+
+##
+# @MIGRATION_MULTIFD_PID:
+#
+# Emitted when multifd thread appear
+#
+# @pid: pid of multifd thread
+#
+# Since: EulerOS Virtual
+##
+{ 'event': 'MIGRATION_MULTIFD_PID',
+  'data': { 'pid': 'int' } }
+
+##
+# @MIGRATION_PID:
+#
+# Emitted when migration thread appear
+#
+# @pid: pid of migration thread
+#
+# Since: EulerOS Virtual
+##
+{ 'event': 'MIGRATION_PID',
+  'data': { 'pid': 'int' } }
 
 ##
 # @COLOMessage:

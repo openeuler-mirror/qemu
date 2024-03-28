@@ -28,7 +28,6 @@
 
 #include "qemu/osdep.h"
 #include "qemu/cutils.h"
-
 #include "ram-compress.h"
 
 #include "qemu/error-report.h"
@@ -40,6 +39,7 @@
 #include "exec/ramblock.h"
 #include "ram.h"
 #include "migration-stats.h"
+#include "exec/ram_addr.h"
 
 static struct {
     int64_t pages;
@@ -65,46 +65,293 @@ static QemuThread *compress_threads;
 static QemuMutex comp_done_lock;
 static QemuCond comp_done_cond;
 
-struct DecompressParam {
-    bool done;
-    bool quit;
-    QemuMutex mutex;
-    QemuCond cond;
-    void *des;
-    uint8_t *compbuf;
-    int len;
-    z_stream stream;
-};
-typedef struct DecompressParam DecompressParam;
-
 static QEMUFile *decomp_file;
 static DecompressParam *decomp_param;
 static QemuThread *decompress_threads;
+MigrationCompressOps *compress_ops;
+MigrationDecompressOps *decompress_ops;
 static QemuMutex decomp_done_lock;
 static QemuCond decomp_done_cond;
 
-static CompressResult do_compress_ram_page(QEMUFile *f, z_stream *stream,
-                                           RAMBlock *block, ram_addr_t offset,
-                                           uint8_t *source_buf);
+static CompressResult do_compress_ram_page(CompressParam *param, RAMBlock *block);
+
+static int zlib_save_setup(CompressParam *param)
+{
+    if (deflateInit(&param->stream,
+                    migrate_compress_level()) != Z_OK) {
+        return -1;
+    }
+
+    return 0;
+}
+
+static ssize_t zlib_compress_data(CompressParam *param, size_t size)
+{
+    int err;
+    uint8_t *dest = NULL;
+    z_stream *stream = &param->stream;
+    uint8_t *p = param->originbuf;
+    QEMUFile *f = f = param->file;
+    ssize_t blen = qemu_put_compress_start(f, &dest);
+
+    if (blen < compressBound(size)) {
+       return -1;
+    }
+
+    err = deflateReset(stream);
+    if (err != Z_OK) {
+        return -1;
+    }
+
+    stream->avail_in = size;
+    stream->next_in = p;
+    stream->avail_out = blen;
+    stream->next_out = dest;
+
+    err = deflate(stream, Z_FINISH);
+    if (err != Z_STREAM_END) {
+        return -1;
+    }
+
+    blen = stream->next_out - dest;
+    if (blen < 0) {
+        return -1;
+    }
+
+    qemu_put_compress_end(f, blen);
+    return blen + sizeof(int32_t);
+}
+
+static void zlib_save_cleanup(CompressParam *param)
+{
+    deflateEnd(&param->stream);
+}
+
+static int zlib_load_setup(DecompressParam *param)
+{
+    if (inflateInit(&param->stream) != Z_OK) {
+        return -1;
+    }
+
+    return 0;
+}
+
+static int
+zlib_decompress_data(DecompressParam *param, uint8_t *dest, size_t size)
+{
+    int err;
+
+    z_stream *stream = &param->stream;
+
+    err = inflateReset(stream);
+    if (err != Z_OK) {
+        return -1;
+    }
+
+    stream->avail_in = param->len;
+    stream->next_in = param->compbuf;
+    stream->avail_out = size;
+    stream->next_out = dest;
+
+    err = inflate(stream, Z_NO_FLUSH);
+    if (err != Z_STREAM_END) {
+        return -1;
+    }
+
+    return stream->total_out;
+}
+
+static void zlib_load_cleanup(DecompressParam *param)
+{
+    inflateEnd(&param->stream);
+}
+
+static int zlib_check_len(int len)
+{
+    return len < 0 || len > compressBound(TARGET_PAGE_SIZE);
+}
+
+#ifdef CONFIG_ZSTD
+static int zstd_save_setup(CompressParam *param)
+{
+    int res;
+    param->zstd_cs = ZSTD_createCStream();
+    if (!param->zstd_cs) {
+        return -1;
+    }
+    res = ZSTD_initCStream(param->zstd_cs, migrate_compress_level());
+    if (ZSTD_isError(res)) {
+        return -1;
+    }
+    return 0;
+}
+static void zstd_save_cleanup(CompressParam *param)
+{
+    ZSTD_freeCStream(param->zstd_cs);
+    param->zstd_cs = NULL;
+}
+static ssize_t zstd_compress_data(CompressParam *param, size_t size)
+{
+    int ret;
+    uint8_t *dest = NULL;
+    uint8_t *p = param->originbuf;
+    QEMUFile *f = f = param->file;
+    ssize_t blen = qemu_put_compress_start(f, &dest);
+    if (blen < ZSTD_compressBound(size)) {
+        return -1;
+    }
+    param->out.dst = dest;
+    param->out.size = blen;
+    param->out.pos = 0;
+    param->in.src = p;
+    param->in.size = size;
+    param->in.pos = 0;
+    do {
+        ret = ZSTD_compressStream2(param->zstd_cs, &param->out,
+                                   &param->in, ZSTD_e_end);
+    } while (ret > 0 && (param->in.size - param->in.pos > 0)
+            && (param->out.size - param->out.pos > 0));
+    if (ret > 0 && (param->in.size - param->in.pos > 0)) {
+        return -1;
+    }
+    if (ZSTD_isError(ret)) {
+        return -1;
+    }
+    blen = param->out.pos;
+    qemu_put_compress_end(f, blen);
+    return blen + sizeof(int32_t);
+}
+
+static int zstd_load_setup(DecompressParam *param)
+{
+    int ret;
+    param->zstd_ds = ZSTD_createDStream();
+    if (!param->zstd_ds) {
+        return -1;
+    }
+    ret = ZSTD_initDStream(param->zstd_ds);
+    if (ZSTD_isError(ret)) {
+        return -1;
+    }
+    return 0;
+}
+static void zstd_load_cleanup(DecompressParam *param)
+{
+    ZSTD_freeDStream(param->zstd_ds);
+    param->zstd_ds = NULL;
+}
+static int
+zstd_decompress_data(DecompressParam *param, uint8_t *dest, size_t size)
+{
+    int ret;
+    param->out.dst = dest;
+    param->out.size = size;
+    param->out.pos = 0;
+    param->in.src = param->compbuf;
+    param->in.size = param->len;
+    param->in.pos = 0;
+    do {
+        ret = ZSTD_decompressStream(param->zstd_ds, &param->out, &param->in);
+    } while (ret > 0 && (param->in.size - param->in.pos > 0)
+                    && (param->out.size - param->out.pos > 0));
+    if (ret > 0 && (param->in.size - param->in.pos > 0)) {
+        return -1;
+    }
+    if (ZSTD_isError(ret)) {
+        return -1;
+    }
+    return ret;
+}
+static int zstd_check_len(int len)
+{
+    return len < 0 || len > ZSTD_compressBound(TARGET_PAGE_SIZE);
+}
+#endif
+
+static int set_compress_ops(void)
+{
+   compress_ops = g_new0(MigrationCompressOps, 1);
+
+    switch (migrate_compress_method()) {
+    case COMPRESS_METHOD_ZLIB:
+        compress_ops->save_setup = zlib_save_setup;
+        compress_ops->save_cleanup = zlib_save_cleanup;
+        compress_ops->compress_data = zlib_compress_data;
+        break;
+#ifdef CONFIG_ZSTD
+    case COMPRESS_METHOD_ZSTD:
+        compress_ops->save_setup = zstd_save_setup;
+        compress_ops->save_cleanup = zstd_save_cleanup;
+        compress_ops->compress_data = zstd_compress_data;
+        break;
+#endif
+    default:
+        return -1;
+    }
+
+    return 0;
+}
+
+static int set_decompress_ops(void)
+{
+   decompress_ops = g_new0(MigrationDecompressOps, 1);
+
+    switch (migrate_compress_method()) {
+    case COMPRESS_METHOD_ZLIB:
+        decompress_ops->load_setup = zlib_load_setup;
+        decompress_ops->load_cleanup = zlib_load_cleanup;
+        decompress_ops->decompress_data = zlib_decompress_data;
+        decompress_ops->check_len = zlib_check_len;
+        break;
+#ifdef CONFIG_ZSTD
+    case COMPRESS_METHOD_ZSTD:
+        decompress_ops->load_setup = zstd_load_setup;
+        decompress_ops->load_cleanup = zstd_load_cleanup;
+        decompress_ops->decompress_data = zstd_decompress_data;
+        decompress_ops->check_len = zstd_check_len;
+        break;
+#endif
+    default:
+        return -1;
+   }
+
+   return 0;
+}
+
+static void clean_compress_ops(void)
+{
+    compress_ops->save_setup = NULL;
+    compress_ops->save_cleanup = NULL;
+    compress_ops->compress_data = NULL;
+
+    g_free(compress_ops);
+    compress_ops = NULL;
+}
+
+static void clean_decompress_ops(void)
+{
+    decompress_ops->load_setup = NULL;
+    decompress_ops->load_cleanup = NULL;
+    decompress_ops->decompress_data = NULL;
+
+    g_free(decompress_ops);
+    decompress_ops = NULL;
+}
 
 static void *do_data_compress(void *opaque)
 {
     CompressParam *param = opaque;
     RAMBlock *block;
-    ram_addr_t offset;
     CompressResult result;
 
     qemu_mutex_lock(&param->mutex);
     while (!param->quit) {
         if (param->trigger) {
             block = param->block;
-            offset = param->offset;
             param->trigger = false;
             qemu_mutex_unlock(&param->mutex);
 
-            result = do_compress_ram_page(param->file, &param->stream,
-                                          block, offset, param->originbuf);
-
+            result = do_compress_ram_page(param, block);
             qemu_mutex_lock(&comp_done_lock);
             param->done = true;
             param->result = result;
@@ -147,7 +394,7 @@ void compress_threads_save_cleanup(void)
         qemu_thread_join(compress_threads + i);
         qemu_mutex_destroy(&comp_param[i].mutex);
         qemu_cond_destroy(&comp_param[i].cond);
-        deflateEnd(&comp_param[i].stream);
+        compress_ops->save_cleanup(&comp_param[i]);
         g_free(comp_param[i].originbuf);
         qemu_fclose(comp_param[i].file);
         comp_param[i].file = NULL;
@@ -158,6 +405,7 @@ void compress_threads_save_cleanup(void)
     g_free(comp_param);
     compress_threads = NULL;
     comp_param = NULL;
+    clean_compress_ops();
 }
 
 int compress_threads_save_setup(void)
@@ -167,6 +415,12 @@ int compress_threads_save_setup(void)
     if (!migrate_compress()) {
         return 0;
     }
+
+    if (set_compress_ops() < 0) {
+        clean_compress_ops();
+        return -1;
+    }
+
     thread_count = migrate_compress_threads();
     compress_threads = g_new0(QemuThread, thread_count);
     comp_param = g_new0(CompressParam, thread_count);
@@ -178,8 +432,7 @@ int compress_threads_save_setup(void)
             goto exit;
         }
 
-        if (deflateInit(&comp_param[i].stream,
-                        migrate_compress_level()) != Z_OK) {
+        if (compress_ops->save_setup(&comp_param[i]) < 0) {
             g_free(comp_param[i].originbuf);
             goto exit;
         }
@@ -204,15 +457,13 @@ exit:
     return -1;
 }
 
-static CompressResult do_compress_ram_page(QEMUFile *f, z_stream *stream,
-                                           RAMBlock *block, ram_addr_t offset,
-                                           uint8_t *source_buf)
+static CompressResult do_compress_ram_page(CompressParam *param, RAMBlock *block)
 {
-    uint8_t *p = block->host + offset;
+    uint8_t *p = block->host + (param->offset & TARGET_PAGE_MASK);
     size_t page_size = qemu_target_page_size();
     int ret;
 
-    assert(qemu_file_buffer_empty(f));
+    assert(qemu_file_buffer_empty(param->file));
 
     if (buffer_is_zero(p, page_size)) {
         return RES_ZEROPAGE;
@@ -223,12 +474,12 @@ static CompressResult do_compress_ram_page(QEMUFile *f, z_stream *stream,
      * so that we can catch up the error during compression and
      * decompression
      */
-    memcpy(source_buf, p, page_size);
-    ret = qemu_put_compression_data(f, stream, source_buf, page_size);
+    memcpy(param->originbuf, p, page_size);
+    ret = compress_ops->compress_data(param, page_size);
     if (ret < 0) {
         qemu_file_set_error(migrate_get_current()->to_dst_file, ret);
         error_report("compressed data failed!");
-        qemu_fflush(f);
+        qemu_fflush(param->file);
         return RES_NONE;
     }
     return RES_COMPRESS;
@@ -320,50 +571,23 @@ bool compress_page_with_multi_thread(RAMBlock *block, ram_addr_t offset,
     }
 }
 
-/* return the size after decompression, or negative value on error */
-static int
-qemu_uncompress_data(z_stream *stream, uint8_t *dest, size_t dest_len,
-                     const uint8_t *source, size_t source_len)
-{
-    int err;
-
-    err = inflateReset(stream);
-    if (err != Z_OK) {
-        return -1;
-    }
-
-    stream->avail_in = source_len;
-    stream->next_in = (uint8_t *)source;
-    stream->avail_out = dest_len;
-    stream->next_out = dest;
-
-    err = inflate(stream, Z_NO_FLUSH);
-    if (err != Z_STREAM_END) {
-        return -1;
-    }
-
-    return stream->total_out;
-}
-
 static void *do_data_decompress(void *opaque)
 {
     DecompressParam *param = opaque;
     unsigned long pagesize;
     uint8_t *des;
-    int len, ret;
+    int ret;
 
     qemu_mutex_lock(&param->mutex);
     while (!param->quit) {
         if (param->des) {
             des = param->des;
-            len = param->len;
             param->des = 0;
             qemu_mutex_unlock(&param->mutex);
 
             pagesize = qemu_target_page_size();
 
-            ret = qemu_uncompress_data(&param->stream, des, pagesize,
-                                       param->compbuf, len);
+            ret = decompress_ops->decompress_data(param, des, pagesize);
             if (ret < 0 && migrate_get_current()->decompress_error_check) {
                 error_report("decompress data failed");
                 qemu_file_set_error(decomp_file, ret);
@@ -431,7 +655,7 @@ void compress_threads_load_cleanup(void)
         qemu_thread_join(decompress_threads + i);
         qemu_mutex_destroy(&decomp_param[i].mutex);
         qemu_cond_destroy(&decomp_param[i].cond);
-        inflateEnd(&decomp_param[i].stream);
+        decompress_ops->load_cleanup(&decomp_param[i]);
         g_free(decomp_param[i].compbuf);
         decomp_param[i].compbuf = NULL;
     }
@@ -440,6 +664,7 @@ void compress_threads_load_cleanup(void)
     decompress_threads = NULL;
     decomp_param = NULL;
     decomp_file = NULL;
+    clean_decompress_ops();
 }
 
 int compress_threads_load_setup(QEMUFile *f)
@@ -448,6 +673,11 @@ int compress_threads_load_setup(QEMUFile *f)
 
     if (!migrate_compress()) {
         return 0;
+    }
+
+    if (set_decompress_ops() < 0) {
+        clean_decompress_ops();
+        return -1;
     }
 
     /*
@@ -462,7 +692,7 @@ int compress_threads_load_setup(QEMUFile *f)
     qemu_cond_init(&decomp_done_cond);
     decomp_file = f;
     for (i = 0; i < thread_count; i++) {
-        if (inflateInit(&decomp_param[i].stream) != Z_OK) {
+        if (decompress_ops->load_setup(&decomp_param[i]) < 0) {
             goto exit;
         }
 

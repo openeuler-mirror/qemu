@@ -29,6 +29,10 @@
 #ifndef QEMU_MIGRATION_COMPRESS_H
 #define QEMU_MIGRATION_COMPRESS_H
 
+#ifdef CONFIG_ZSTD
+#include <zstd.h>
+#include <zstd_errors.h>
+#endif
 #include "qemu-file.h"
 #include "qapi/qapi-types-migration.h"
 
@@ -38,6 +42,25 @@ enum CompressResult {
     RES_COMPRESS = 2
 };
 typedef enum CompressResult CompressResult;
+
+struct DecompressParam {
+    bool done;
+    bool quit;
+    QemuMutex mutex;
+    QemuCond cond;
+    void *des;
+    uint8_t *compbuf;
+    int len;
+
+    /* for zlib compression */
+    z_stream stream;
+#ifdef CONFIG_ZSTD
+    ZSTD_DStream *zstd_ds;
+    ZSTD_inBuffer in;
+    ZSTD_outBuffer out;
+#endif
+};
+typedef struct DecompressParam DecompressParam;
 
 struct CompressParam {
     bool done;
@@ -51,10 +74,31 @@ struct CompressParam {
     ram_addr_t offset;
 
     /* internally used fields */
-    z_stream stream;
     uint8_t *originbuf;
+
+    /* for zlib compression */
+    z_stream stream;
+
+#ifdef CONFIG_ZSTD
+    ZSTD_CStream *zstd_cs;
+    ZSTD_inBuffer in;
+    ZSTD_outBuffer out;
+#endif
 };
 typedef struct CompressParam CompressParam;
+
+typedef struct {
+    int (*save_setup)(CompressParam *param);
+    void (*save_cleanup)(CompressParam *param);
+    ssize_t (*compress_data)(CompressParam *param, size_t size);
+} MigrationCompressOps;
+
+typedef struct {
+    int (*load_setup)(DecompressParam *param);
+    void (*load_cleanup)(DecompressParam *param);
+    int (*decompress_data)(DecompressParam *param, uint8_t *dest, size_t size);
+    int (*check_len)(int len);
+} MigrationDecompressOps;
 
 void compress_threads_save_cleanup(void);
 int compress_threads_save_setup(void);
