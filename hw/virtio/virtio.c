@@ -2797,6 +2797,35 @@ static const VMStateDescription vmstate_virtio = {
     }
 };
 
+static void check_vring_avail_num(VirtIODevice *vdev, int index)
+{
+    uint16_t nheads;
+    VRingMemoryRegionCaches *caches;
+
+    rcu_read_lock();
+    caches = qatomic_rcu_read(&vdev->vq[index].vring.caches);
+    if (caches == NULL) {
+        /*
+         * caches may be NULL if virtio_reset is called at the same time,
+         * such as when the virtual machine starts.
+         */
+        rcu_read_unlock();
+        return;
+    }
+
+    /* Check it isn't doing strange things with descriptor numbers. */
+    nheads = vring_avail_idx(&vdev->vq[index]) - vdev->vq[index].last_avail_idx;
+    if (nheads > vdev->vq[index].vring.num) {
+        qemu_log("VQ %d size 0x%x Guest index 0x%x "
+                 "inconsistent with Host index 0x%x: "
+                 "delta 0x%x\n",
+                 index, vdev->vq[index].vring.num,
+                 vring_avail_idx(&vdev->vq[index]),
+                 vdev->vq[index].last_avail_idx, nheads);
+    }
+    rcu_read_unlock();
+}
+
 int virtio_save(VirtIODevice *vdev, QEMUFile *f)
 {
     BusState *qbus = qdev_get_parent_bus(DEVICE(vdev));
@@ -2826,6 +2855,8 @@ int virtio_save(VirtIODevice *vdev, QEMUFile *f)
     for (i = 0; i < VIRTIO_QUEUE_MAX; i++) {
         if (vdev->vq[i].vring.num == 0)
             break;
+
+        check_vring_avail_num(vdev, i);
 
         qemu_put_be32(f, vdev->vq[i].vring.num);
         if (k->has_variable_vring_alignment) {
@@ -2885,6 +2916,13 @@ static int virtio_set_features_nocheck(VirtIODevice *vdev, uint64_t val)
 {
     VirtioDeviceClass *k = VIRTIO_DEVICE_GET_CLASS(vdev);
     bool bad = (val & ~(vdev->host_features)) != 0;
+    uint64_t feat = val & ~(vdev->host_features);
+
+    if (bad && k->print_features) {
+        qemu_log("error: Please check host config, "\
+                 "because host does not support required feature bits 0x%" PRIx64 "\n", feat);
+        k->print_features(feat);
+    }
 
     val &= vdev->host_features;
     if (k->set_features) {
