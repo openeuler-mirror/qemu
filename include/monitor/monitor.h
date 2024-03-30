@@ -63,4 +63,6 @@ void monitor_register_hmp_info_hrt(const char *name,
 int error_vprintf_unless_qmp(const char *fmt, va_list ap) G_GNUC_PRINTF(1, 0);
 int error_printf_unless_qmp(const char *fmt, ...) G_GNUC_PRINTF(1, 2);
 
+void monitor_qapi_event_discard_io_error(void);
+
 #endif /* MONITOR_H */

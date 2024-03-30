@@ -2196,12 +2196,17 @@ void virtio_queue_set_rings(VirtIODevice *vdev, int n, hwaddr desc,
 
 void virtio_queue_set_num(VirtIODevice *vdev, int n, int num)
 {
+    int vq_max_size = VIRTQUEUE_MAX_SIZE;
+
+    if (!strcmp(vdev->name, "virtio-net")) {
+        vq_max_size = VIRTIO_NET_VQ_MAX_SIZE;
+    }
+
     /* Don't allow guest to flip queue between existent and
      * nonexistent states, or to set it to an invalid size.
      */
     if (!!num != !!vdev->vq[n].vring.num ||
-        num > VIRTQUEUE_MAX_SIZE ||
-        num < 0) {
+        num > vq_max_size || num < 0) {
         return;
     }
     vdev->vq[n].vring.num = num;
@@ -2333,7 +2338,7 @@ VirtQueue *virtio_add_queue(VirtIODevice *vdev, int queue_size,
             break;
     }
 
-    if (i == VIRTIO_QUEUE_MAX || queue_size > VIRTQUEUE_MAX_SIZE) {
+    if (i == VIRTIO_QUEUE_MAX) {
         qemu_log("unacceptable queue_size (%d) or num (%d)\n",
                  queue_size, i);
         abort();

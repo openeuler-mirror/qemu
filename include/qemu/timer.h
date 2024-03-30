@@ -91,6 +91,34 @@ struct QEMUTimer {
     int scale;
 };
 
+#define QEMU_USB_NORMAL_FREQ       1000
+#define QEMU_USB_LAZY_FREQ         10
+#define MAX_USB_CONTROLLER_TYPES   4
+#define QEMU_USB_CONTROLLER_OHCI   0
+#define QEMU_USB_CONTROLLER_UHCI   1
+#define QEMU_USB_CONTROLLER_EHCI   2
+#define QEMU_USB_CONTROLLER_XHCI   3
+
+typedef void (*QEMUSetFreqHandler) (int freq);
+
+typedef struct qemu_usb_controller {
+    const char *name;
+    QEMUSetFreqHandler qemu_set_freq;
+} qemu_usb_controller;
+
+typedef qemu_usb_controller* qemu_usb_controller_ptr;
+
+enum qemu_timer_mode {
+    QEMU_TIMER_USB_NORMAL_MODE = 1 << 0, /* Set when VNC connect or
+                                          * with usb dev passthrough
+                                          */
+    QEMU_TIMER_USB_LAZY_MODE   = 1 << 1, /* Set when VNC disconnect */
+};
+
+int qemu_register_usb_controller(qemu_usb_controller_ptr controller,
+                                 unsigned int type);
+int qemu_timer_set_mode(enum qemu_timer_mode mode, unsigned int type);
+
 extern QEMUTimerListGroup main_loop_tlg;
 
 /*
