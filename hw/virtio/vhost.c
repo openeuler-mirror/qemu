@@ -29,6 +29,7 @@
 #include "migration/migration.h"
 #include "sysemu/dma.h"
 #include "trace.h"
+#include "qapi/qapi-commands-migration.h"
 
 /* enabled until disconnected backend stabilizes */
 #define _VHOST_DEBUG 1
@@ -43,6 +44,11 @@
 #define VHOST_OPS_DEBUG(retval, fmt, ...) \
     do { } while (0)
 #endif
+
+static inline bool vhost_bytemap_log_support(struct vhost_dev *dev)
+{
+    return (dev->backend_cap & BIT_ULL(VHOST_BACKEND_F_BYTEMAPLOG));
+}
 
 static struct vhost_log *vhost_log;
 static struct vhost_log *vhost_log_shm;
@@ -232,12 +238,40 @@ static int vhost_sync_dirty_bitmap(struct vhost_dev *dev,
     return 0;
 }
 
+static int vhost_sync_dirty_bytemap(struct vhost_dev *dev,
+                                    MemoryRegionSection *section)
+{
+    unsigned long *bytemap = dev->log->log;
+    return memory_section_set_dirty_bytemap(section, bytemap);
+}
+
 static void vhost_log_sync(MemoryListener *listener,
                           MemoryRegionSection *section)
 {
     struct vhost_dev *dev = container_of(listener, struct vhost_dev,
                                          memory_listener);
-    vhost_sync_dirty_bitmap(dev, section, 0x0, ~0x0ULL);
+    MigrationState *ms = migrate_get_current();
+
+    if (!dev->log_enabled || !dev->started) {
+        return;
+    }
+
+    if (dev->vhost_ops->vhost_log_sync) {
+        int r = dev->vhost_ops->vhost_log_sync(dev);
+        if (r < 0) {
+            error_report("Failed to sync dirty log: 0x%x\n", r);
+            if (migration_is_running(ms->state)) {
+                qmp_migrate_cancel(NULL);
+            }
+            return;
+        }
+    }
+
+    if (vhost_bytemap_log_support(dev)) {
+        vhost_sync_dirty_bytemap(dev, section);
+    } else {
+        vhost_sync_dirty_bitmap(dev, section, 0x0, ~0x0ULL);
+    }
 }
 
 static void vhost_log_sync_range(struct vhost_dev *dev,
@@ -247,7 +281,11 @@ static void vhost_log_sync_range(struct vhost_dev *dev,
     /* FIXME: this is N^2 in number of sections */
     for (i = 0; i < dev->n_mem_sections; ++i) {
         MemoryRegionSection *section = &dev->mem_sections[i];
-        vhost_sync_dirty_bitmap(dev, section, first, last);
+        if (vhost_bytemap_log_support(dev)) {
+            vhost_sync_dirty_bytemap(dev, section);
+        } else {
+            vhost_sync_dirty_bitmap(dev, section, first, last);
+        }
     }
 }
 
@@ -255,11 +293,19 @@ static uint64_t vhost_get_log_size(struct vhost_dev *dev)
 {
     uint64_t log_size = 0;
     int i;
+    uint64_t vhost_log_chunk_size;
+
+    if (vhost_bytemap_log_support(dev)) {
+        vhost_log_chunk_size = VHOST_LOG_CHUNK_BYTES;
+    } else {
+        vhost_log_chunk_size = VHOST_LOG_CHUNK;
+    }
+
     for (i = 0; i < dev->mem->nregions; ++i) {
         struct vhost_memory_region *reg = dev->mem->regions + i;
         uint64_t last = range_get_last(reg->guest_phys_addr,
                                        reg->memory_size);
-        log_size = MAX(log_size, last / VHOST_LOG_CHUNK + 1);
+        log_size = MAX(log_size, last / vhost_log_chunk_size + 1);
     }
     return log_size;
 }
@@ -377,11 +423,20 @@ static bool vhost_dev_log_is_shared(struct vhost_dev *dev)
            dev->vhost_ops->vhost_requires_shm_log(dev);
 }
 
-static inline void vhost_dev_log_resize(struct vhost_dev *dev, uint64_t size)
+static inline int vhost_dev_log_resize(struct vhost_dev *dev, uint64_t size)
 {
     struct vhost_log *log = vhost_log_get(size, vhost_dev_log_is_shared(dev));
-    uint64_t log_base = (uintptr_t)log->log;
+    uint64_t log_base;
+    int log_fd;
     int r;
+
+    if (!log) {
+        r = -ENOMEM;
+        goto out;
+    }
+
+    log_base = (uint64_t)log->log;
+    log_fd = log_fd;
 
     /* inform backend of log switching, this must be done before
        releasing the current log, to ensure no logging is lost */
@@ -390,9 +445,19 @@ static inline void vhost_dev_log_resize(struct vhost_dev *dev, uint64_t size)
         VHOST_OPS_DEBUG(r, "vhost_set_log_base failed");
     }
 
+    if (dev->vhost_ops->vhost_set_log_size) {
+        r = dev->vhost_ops->vhost_set_log_size(dev, size, dev->log);
+        if (r < 0) {
+            VHOST_OPS_DEBUG(r, "vhost_set_log_size failed");
+        }
+    }
+
     vhost_log_put(dev, true);
     dev->log = log;
     dev->log_size = size;
+
+out:
+    return r;
 }
 
 static void *vhost_memory_map(struct vhost_dev *dev, hwaddr addr,
@@ -1018,7 +1083,11 @@ static int vhost_migration_log(MemoryListener *listener, bool enable)
         }
         vhost_log_put(dev, false);
     } else {
-        vhost_dev_log_resize(dev, vhost_get_log_size(dev));
+        r = vhost_dev_log_resize(dev, vhost_get_log_size(dev));
+        if ( r < 0 ) {
+            return r;
+        }
+
         r = vhost_dev_set_log(dev, true);
         if (r < 0) {
             goto check_dev_state;
@@ -2057,6 +2126,14 @@ int vhost_dev_start(struct vhost_dev *hdev, VirtIODevice *vdev, bool vrings)
             VHOST_OPS_DEBUG(r, "vhost_set_log_base failed");
             goto fail_log;
         }
+
+        if (hdev->vhost_ops->vhost_set_log_size) {
+            r = hdev->vhost_ops->vhost_set_log_size(hdev, hdev->log_size, hdev->log);
+            if (r < 0) {
+                VHOST_OPS_DEBUG(r, "vhost_set_log_size failed");
+                goto fail_log;
+            }
+        }
     }
     if (vrings) {
         r = vhost_dev_set_vring_enable(hdev, true);
@@ -2414,4 +2491,142 @@ fail:
 bool used_memslots_is_exceeded(void)
 {
     return used_memslots_exceeded;
+}
+
+int vhost_dev_resume(struct vhost_dev *hdev, VirtIODevice *vdev, bool vrings)
+{
+    int i, r;
+    EventNotifier *e = &hdev->vqs[VHOST_QUEUE_NUM_CONFIG_INR].masked_config_notifier;
+
+    /* should only be called after backend is connected */
+    if (!hdev->vhost_ops) {
+        error_report("Missing vhost_ops! Operation not permitted!\n");
+        return -EPERM;
+    }
+
+    vdev->vhost_started = true;
+    hdev->started = true;
+    hdev->vdev = vdev;
+
+    if (vhost_dev_has_iommu(hdev)) {
+        memory_listener_register(&hdev->iommu_listener, vdev->dma_as);
+    }
+
+    r = hdev->vhost_ops->vhost_set_mem_table(hdev, hdev->mem);
+    if (r < 0) {
+        VHOST_OPS_DEBUG(r, "vhost_set_mem_table failed");
+        goto fail_mem;
+    }
+    for (i = 0; i < hdev->nvqs; ++i) {
+        r = vhost_virtqueue_start(hdev,
+                                  vdev,
+                                  hdev->vqs + i,
+                                  hdev->vq_index + i);
+        if (r < 0) {
+            goto fail_vq;
+        }
+    }
+
+    r = event_notifier_init(e, 0);
+    if (r < 0) {
+        return r;
+    }
+    event_notifier_test_and_clear(e);
+    if (!vdev->use_guest_notifier_mask) {
+        vhost_config_mask(hdev, vdev, true);
+    }
+    if (vrings) {
+        r = vhost_dev_set_vring_enable(hdev, true);
+        if (r) {
+            goto fail_vq;
+        }
+    }
+    if (hdev->vhost_ops->vhost_dev_resume) {
+        r = hdev->vhost_ops->vhost_dev_resume(hdev);
+        if (r) {
+            goto fail_start;
+        }
+    }
+    if (vhost_dev_has_iommu(hdev)) {
+        hdev->vhost_ops->vhost_set_iotlb_callback(hdev, true);
+
+        /*
+         * Update used ring information for IOTLB to work correctly,
+         * vhost-kernel code requires for this.
+         */
+        for (i = 0; i < hdev->nvqs; ++i) {
+            struct vhost_virtqueue *vq = hdev->vqs + i;
+            vhost_device_iotlb_miss(hdev, vq->used_phys, true);
+        }
+    }
+    vhost_start_config_intr(hdev);
+    return 0;
+fail_start:
+    if (vrings) {
+        vhost_dev_set_vring_enable(hdev, false);
+    }
+fail_vq:
+    while (--i >= 0) {
+        vhost_virtqueue_stop(hdev,
+                             vdev,
+                             hdev->vqs + i,
+                             hdev->vq_index + i);
+    }
+
+fail_mem:
+    vdev->vhost_started = false;
+    hdev->started = false;
+    return r;
+}
+
+int vhost_dev_suspend(struct vhost_dev *hdev, VirtIODevice *vdev, bool vrings)
+{
+    int i;
+    int ret = 0;
+    EventNotifier *e = &hdev->vqs[VHOST_QUEUE_NUM_CONFIG_INR].masked_config_notifier;
+
+    /* should only be called after backend is connected */
+    if (!hdev->vhost_ops) {
+        error_report("Missing vhost_ops! Operation not permitted!\n");
+        return -EPERM;
+    }
+
+    event_notifier_test_and_clear(e);
+    event_notifier_test_and_clear(&vdev->config_notifier);
+
+    if (hdev->vhost_ops->vhost_dev_suspend) {
+        ret = hdev->vhost_ops->vhost_dev_suspend(hdev);
+        if (ret) {
+            goto fail_suspend;
+        }
+    }
+    if (vrings) {
+        ret = vhost_dev_set_vring_enable(hdev, false);
+        if (ret) {
+            goto fail_suspend;
+        }
+    }
+    for (i = 0; i < hdev->nvqs; ++i) {
+        vhost_virtqueue_stop(hdev,
+                             vdev,
+                             hdev->vqs + i,
+                             hdev->vq_index + i);
+    }
+
+    if (vhost_dev_has_iommu(hdev)) {
+        hdev->vhost_ops->vhost_set_iotlb_callback(hdev, false);
+        memory_listener_unregister(&hdev->iommu_listener);
+    }
+    vhost_stop_config_intr(hdev);
+    vhost_log_put(hdev, true);
+    hdev->started = false;
+    vdev->vhost_started = false;
+    hdev->vdev = NULL;
+
+    return ret;
+
+fail_suspend:
+    event_notifier_test_and_clear(e);
+
+    return ret;
 }

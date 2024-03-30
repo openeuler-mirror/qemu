@@ -99,7 +99,6 @@ static bool migration_object_check(MigrationState *ms, Error **errp);
 static int migration_maybe_pause(MigrationState *s,
                                  int *current_active_state,
                                  int new_state);
-static void migrate_fd_cancel(MigrationState *s);
 static bool close_return_path_on_source(MigrationState *s);
 
 static void migration_downtime_start(MigrationState *s)
@@ -1386,7 +1385,7 @@ void migrate_fd_error(MigrationState *s, const Error *error)
     migrate_set_error(s, error);
 }
 
-static void migrate_fd_cancel(MigrationState *s)
+void migrate_fd_cancel(MigrationState *s)
 {
     int old_state ;
 

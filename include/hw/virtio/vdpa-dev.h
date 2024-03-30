@@ -37,7 +37,10 @@ struct VhostVdpaDevice {
     int config_size;
     uint16_t queue_size;
     bool started;
+    bool suspended;
     int (*post_init)(VhostVdpaDevice *v, Error **errp);
+    VMChangeStateEntry *vmstate;
+    Notifier migration_state;
 };
 
 #endif

@@ -2595,6 +2595,15 @@ MemTxResult memory_region_dispatch_write(MemoryRegion *mr,
                                          MemTxAttrs attrs);
 
 /**
+ * memory_section_set_dirty_bytemap: Mark a range of bytes as dirty for a memory section
+ * using a bytemap
+ *
+ * @section: the memory section being dirtied.
+ * @bytemap: bytemap that stores dirty page range information.
+ */
+int64_t memory_section_set_dirty_bytemap(MemoryRegionSection *section, unsigned long *bytemap);
+
+/**
  * address_space_init: initializes an address space
  *
  * @as: an uninitialized #AddressSpace

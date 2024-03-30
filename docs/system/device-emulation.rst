@@ -98,3 +98,4 @@ Emulated Devices
    devices/canokey.rst
    devices/usb-u2f.rst
    devices/igb.rst
+   devices/vhost-vdpa-generic-device.rst
