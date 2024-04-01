@@ -551,6 +551,15 @@
  'allow-preconfig': true}
 
 ##
+# @query-rtc-date-diff:
+#
+# get vm's time offset
+#
+# Since: 2.8
+##
+{ 'command': 'query-rtc-date-diff', 'returns': 'int64' }
+
+##
 # @RTC_CHANGE:
 #
 # Emitted when the guest changes the RTC time.

@@ -80,6 +80,14 @@ typedef struct VFIOAddressSpace {
 
 struct VFIOGroup;
 
+typedef struct VFIODMARange {
+    QLIST_ENTRY(VFIODMARange) next;
+    hwaddr iova;
+    size_t size;
+    void *vaddr; /* unused */
+    unsigned long *bitmap; /* dirty bitmap cache for this range */
+} VFIODMARange;
+
 typedef struct VFIOContainer {
     VFIOAddressSpace *space;
     int fd; /* /dev/vfio/vfio, empowered by the attached groups */
@@ -89,6 +97,7 @@ typedef struct VFIOContainer {
     Error *error;
     bool initialized;
     bool dirty_pages_supported;
+    bool dirty_log_manual_clear;
     uint64_t dirty_pgsizes;
     uint64_t max_dirty_bitmap_size;
     unsigned long pgsizes;
@@ -97,6 +106,7 @@ typedef struct VFIOContainer {
     QLIST_HEAD(, VFIOHostDMAWindow) hostwin_list;
     QLIST_HEAD(, VFIOGroup) group_list;
     QLIST_HEAD(, VFIORamDiscardListener) vrdl_list;
+    QLIST_HEAD(, VFIODMARange) dma_list;
     QLIST_ENTRY(VFIOContainer) next;
     QLIST_HEAD(, VFIODevice) device_list;
     GList *iova_ranges;
@@ -212,6 +222,9 @@ void vfio_put_address_space(VFIOAddressSpace *space);
 bool vfio_devices_all_running_and_saving(VFIOContainer *container);
 
 /* container->fd */
+VFIODMARange *vfio_lookup_match_range(VFIOContainer *container,
+		hwaddr start_addr, hwaddr size);
+void vfio_dma_range_init_dirty_bitmap(VFIODMARange *qrange);
 int vfio_dma_unmap(VFIOContainer *container, hwaddr iova,
                    ram_addr_t size, IOMMUTLBEntry *iotlb);
 int vfio_dma_map(VFIOContainer *container, hwaddr iova,

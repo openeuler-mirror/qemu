@@ -32,6 +32,7 @@
 #include "qemu/datadir.h"
 #include "qemu/units.h"
 #include "qemu/option.h"
+#include "qemu/log.h"
 #include "monitor/qdev.h"
 #include "hw/sysbus.h"
 #include "hw/arm/boot.h"
@@ -157,6 +158,7 @@ static const MemMapEntry base_memmap[] = {
     [VIRT_PVTIME] =             { 0x090a0000, 0x00010000 },
     [VIRT_SECURE_GPIO] =        { 0x090b0000, 0x00001000 },
     [VIRT_MMIO] =               { 0x0a000000, 0x00000200 },
+    [VIRT_CPUFREQ] =            { 0x0b000000, 0x00010000 },
     /* ...repeating for a total of NUM_VIRTIO_TRANSPORTS, each of that size */
     [VIRT_PLATFORM_BUS] =       { 0x0c000000, 0x02000000 },
     [VIRT_SECURE_MEM] =         { 0x0e000000, 0x01000000 },
@@ -220,6 +222,7 @@ static const char *valid_cpus[] = {
 #endif
     ARM_CPU_TYPE_NAME("cortex-a53"),
     ARM_CPU_TYPE_NAME("cortex-a57"),
+    ARM_CPU_TYPE_NAME("Kunpeng-920"),
     ARM_CPU_TYPE_NAME("host"),
     ARM_CPU_TYPE_NAME("max"),
 };
@@ -378,6 +381,72 @@ static void fdt_add_timer_nodes(const VirtMachineState *vms)
                            INTID_TO_PPI(ARCH_TIMER_NS_EL2_IRQ), irqflags);
 }
 
+static void fdt_add_l3cache_nodes(const VirtMachineState *vms)
+{
+    int i;
+    const MachineState *ms = MACHINE(vms);
+    int cpus_per_socket = ms->smp.clusters * ms->smp.cores * ms->smp.threads;
+    int sockets = (ms->smp.cpus + cpus_per_socket - 1) / cpus_per_socket;
+
+    for (i = 0; i < sockets; i++) {
+        char *nodename = g_strdup_printf("/cpus/l3-cache%d", i);
+
+        qemu_fdt_add_subnode(ms->fdt, nodename);
+        qemu_fdt_setprop_string(ms->fdt, nodename, "compatible", "cache");
+        qemu_fdt_setprop_string(ms->fdt, nodename, "cache-unified", "true");
+        qemu_fdt_setprop_cell(ms->fdt, nodename, "cache-level", 3);
+        qemu_fdt_setprop_cell(ms->fdt, nodename, "cache-size", 0x2000000);
+        qemu_fdt_setprop_cell(ms->fdt, nodename, "cache-line-size", 128);
+        qemu_fdt_setprop_cell(ms->fdt, nodename, "cache-sets", 2048);
+        qemu_fdt_setprop_cell(ms->fdt, nodename, "phandle",
+                              qemu_fdt_alloc_phandle(ms->fdt));
+        g_free(nodename);
+    }
+}
+
+static void fdt_add_l2cache_nodes(const VirtMachineState *vms)
+{
+    const MachineState *ms = MACHINE(vms);
+    int cpus_per_socket = ms->smp.clusters * ms->smp.cores * ms->smp.threads;
+    int cpu;
+
+    for (cpu = 0; cpu < ms->smp.cpus; cpu++) {
+        char *next_path = g_strdup_printf("/cpus/l3-cache%d",
+                                          cpu / cpus_per_socket);
+        char *nodename = g_strdup_printf("/cpus/l2-cache%d", cpu);
+
+        qemu_fdt_add_subnode(ms->fdt, nodename);
+        qemu_fdt_setprop_string(ms->fdt, nodename, "compatible", "cache");
+        qemu_fdt_setprop_cell(ms->fdt, nodename, "cache-size", 0x80000);
+        qemu_fdt_setprop_cell(ms->fdt, nodename, "cache-line-size", 64);
+        qemu_fdt_setprop_cell(ms->fdt, nodename, "cache-sets", 1024);
+        qemu_fdt_setprop_phandle(ms->fdt, nodename, "next-level-cache",
+                                 next_path);
+        qemu_fdt_setprop_cell(ms->fdt, nodename, "phandle",
+                              qemu_fdt_alloc_phandle(ms->fdt));
+
+        g_free(next_path);
+        g_free(nodename);
+    }
+}
+
+static void fdt_add_l1cache_prop(const VirtMachineState *vms,
+                                 char *nodename, int cpu)
+{
+        const MachineState *ms = MACHINE(vms);
+        char *cachename = g_strdup_printf("/cpus/l2-cache%d", cpu);
+
+        qemu_fdt_setprop_cell(ms->fdt, nodename, "d-cache-size", 0x10000);
+        qemu_fdt_setprop_cell(ms->fdt, nodename, "d-cache-line-size", 64);
+        qemu_fdt_setprop_cell(ms->fdt, nodename, "d-cache-sets", 256);
+        qemu_fdt_setprop_cell(ms->fdt, nodename, "i-cache-size", 0x10000);
+        qemu_fdt_setprop_cell(ms->fdt, nodename, "i-cache-line-size", 64);
+        qemu_fdt_setprop_cell(ms->fdt, nodename, "i-cache-sets", 256);
+        qemu_fdt_setprop_phandle(ms->fdt, nodename, "next-level-cache",
+                                 cachename);
+        g_free(cachename);
+}
+
 static void fdt_add_cpu_nodes(const VirtMachineState *vms)
 {
     int cpu;
@@ -412,6 +481,11 @@ static void fdt_add_cpu_nodes(const VirtMachineState *vms)
     qemu_fdt_setprop_cell(ms->fdt, "/cpus", "#address-cells", addr_cells);
     qemu_fdt_setprop_cell(ms->fdt, "/cpus", "#size-cells", 0x0);
 
+    if (!vmc->no_cpu_topology) {
+        fdt_add_l3cache_nodes(vms);
+        fdt_add_l2cache_nodes(vms);
+    }
+
     for (cpu = smp_cpus - 1; cpu >= 0; cpu--) {
         char *nodename = g_strdup_printf("/cpus/cpu@%d", cpu);
         ARMCPU *armcpu = ARM_CPU(qemu_get_cpu(cpu));
@@ -441,6 +515,7 @@ static void fdt_add_cpu_nodes(const VirtMachineState *vms)
         }
 
         if (!vmc->no_cpu_topology) {
+            fdt_add_l1cache_prop(vms, nodename, cpu);
             qemu_fdt_setprop_cell(ms->fdt, nodename, "phandle",
                                   qemu_fdt_alloc_phandle(ms->fdt));
         }
@@ -907,6 +982,16 @@ static void create_uart(const VirtMachineState *vms, int uart,
     g_free(nodename);
 }
 
+static void create_cpufreq(const VirtMachineState *vms, MemoryRegion *mem)
+{
+    hwaddr base = vms->memmap[VIRT_CPUFREQ].base;
+    DeviceState *dev = qdev_new("cpufreq");
+    SysBusDevice *s = SYS_BUS_DEVICE(dev);
+
+    sysbus_realize_and_unref(s, &error_fatal);
+    memory_region_add_subregion(mem, base, sysbus_mmio_get_region(s, 0));
+}
+
 static void create_rtc(const VirtMachineState *vms)
 {
     char *nodename;
@@ -936,6 +1021,7 @@ static void virt_powerdown_req(Notifier *n, void *opaque)
 {
     VirtMachineState *s = container_of(n, VirtMachineState, powerdown_notifier);
 
+    qemu_log("send powerdown to vm.\n");
     if (s->acpi_dev) {
         acpi_send_event(s->acpi_dev, ACPI_POWER_DOWN_STATUS);
     } else {
@@ -2156,6 +2242,7 @@ static void machvirt_init(MachineState *machine)
     }
 
     create_fdt(vms);
+    qemu_log("cpu init start\n");
 
     assert(possible_cpus->len == max_cpus);
     for (n = 0; n < possible_cpus->len; n++) {
@@ -2272,6 +2359,8 @@ static void machvirt_init(MachineState *machine)
     fdt_add_pmu_nodes(vms);
 
     create_uart(vms, VIRT_UART, sysmem, serial_hd(0));
+
+    create_cpufreq(vms, sysmem);
 
     if (vms->secure) {
         create_secure_ram(vms, secure_sysmem, secure_tag_sysmem);

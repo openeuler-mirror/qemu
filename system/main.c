@@ -23,6 +23,7 @@
  */
 
 #include "qemu/osdep.h"
+#include "qemu/log.h"
 #include "qemu-main.h"
 #include "sysemu/sysemu.h"
 
@@ -34,6 +35,7 @@ int qemu_default_main(void)
 {
     int status;
 
+    qemu_log("qemu enter main_loop\n");
     status = qemu_main_loop();
     qemu_cleanup(status);
 

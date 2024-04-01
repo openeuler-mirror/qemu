@@ -20,6 +20,7 @@
 #include "qemu/module.h"
 #include "hw/virtio/virtio-pci.h"
 #include "qom/object.h"
+#include "qemu/log.h"
 
 typedef struct VirtIOSCSIPCI VirtIOSCSIPCI;
 
@@ -51,6 +52,8 @@ static void virtio_scsi_pci_realize(VirtIOPCIProxy *vpci_dev, Error **errp)
     VirtIOSCSIConf *conf = &dev->vdev.parent_obj.conf;
     char *bus_name;
 
+    qemu_log("virtio scsi HBA %s begin to initialize.\n",
+             !proxy->id ? "NULL" : proxy->id);
     if (conf->num_queues == VIRTIO_SCSI_AUTO_NUM_QUEUES) {
         conf->num_queues =
             virtio_pci_optimal_num_queues(VIRTIO_SCSI_VQ_NUM_FIXED);

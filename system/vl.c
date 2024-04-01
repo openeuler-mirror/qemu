@@ -26,6 +26,7 @@
 #include "qemu/help-texts.h"
 #include "qemu/datadir.h"
 #include "qemu/units.h"
+#include "qemu/log.h"
 #include "exec/cpu-common.h"
 #include "exec/page-vary.h"
 #include "hw/qdev-properties.h"
@@ -2633,6 +2634,7 @@ static void qemu_create_cli_devices(void)
     }
 
     /* init generic devices */
+    qemu_log("device init start\n");
     rom_set_order_override(FW_CFG_ORDER_OVERRIDE_DEVICE);
     qemu_opts_foreach(qemu_find_opts("device"),
                       device_init_func, NULL, &error_fatal);
@@ -2778,6 +2780,7 @@ void qemu_init(int argc, char **argv)
 
     qemu_init_subsystems();
 
+    qemu_log("qemu pid is %d, options parsing start\n", getpid());
     /* first pass of option parsing */
     optind = 1;
     while (optind < argc) {
@@ -2997,6 +3000,7 @@ void qemu_init(int argc, char **argv)
                 exit(0);
                 break;
             case QEMU_OPTION_m:
+                qemu_log("memory options parse start\n");
                 opts = qemu_opts_parse_noisily(qemu_find_opts("memory"), optarg, true);
                 if (opts == NULL) {
                     exit(1);
@@ -3714,6 +3718,7 @@ void qemu_init(int argc, char **argv)
      */
 
     machine_class = MACHINE_GET_CLASS(current_machine);
+    qemu_log("configure accelerator %s start\n", machine_class->name);
     if (!qtest_enabled() && machine_class->deprecation_reason) {
         warn_report("Machine type '%s' is deprecated: %s",
                      machine_class->name, machine_class->deprecation_reason);
@@ -3732,6 +3737,7 @@ void qemu_init(int argc, char **argv)
      */
     migration_object_init();
 
+    qemu_log("machine init start\n");
     /* parse features once if machine provides default cpu_type */
     current_machine->cpu_type = machine_class->default_cpu_type;
     if (cpu_option) {

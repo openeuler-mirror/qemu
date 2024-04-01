@@ -32,6 +32,7 @@
 #include "hw/mem/memory-device.h"
 #include "hw/intc/intc.h"
 #include "hw/rdma/rdma.h"
+#include "qemu/log.h"
 
 NameInfo *qmp_query_name(Error **errp)
 {
@@ -110,8 +111,10 @@ void qmp_cont(Error **errp)
     }
 
     if (runstate_check(RUN_STATE_INMIGRATE)) {
+	qemu_log("qmp cont is received in migration\n");
         autostart = 1;
     } else {
+	qemu_log("qmp cont is received and vm is started\n");
         vm_start();
     }
 }

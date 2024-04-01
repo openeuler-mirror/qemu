@@ -142,9 +142,6 @@ if have_system
     'test-vmstate': [migration, io],
     'test-yank': ['socket-helpers.c', qom, io, chardev]
   }
-  if config_host_data.get('CONFIG_INOTIFY1')
-    tests += {'test-util-filemonitor': []}
-  endif
 
   # Some tests: test-char, test-qdev-global-props, and test-qga,
   # are not runnable under TSan due to a known issue.

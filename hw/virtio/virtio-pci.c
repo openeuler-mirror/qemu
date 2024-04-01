@@ -922,11 +922,30 @@ undo:
     }
     return ret;
 }
+
+#ifdef __aarch64__
+int __attribute__((weak)) kvm_create_shadow_device(PCIDevice *dev)
+{
+    return 0;
+}
+
+int __attribute__((weak)) kvm_delete_shadow_device(PCIDevice *dev)
+{
+    return 0;
+}
+#endif
+
 static int kvm_virtio_pci_vector_vq_use(VirtIOPCIProxy *proxy, int nvqs)
 {
     int queue_no;
     int ret = 0;
     VirtIODevice *vdev = virtio_bus_get_device(&proxy->bus);
+
+#ifdef __aarch64__
+    if (!strcmp(vdev->name, "virtio-net")) {
+        kvm_create_shadow_device(&proxy->pci_dev);
+    }
+#endif
 
     for (queue_no = 0; queue_no < nvqs; queue_no++) {
         if (!virtio_queue_get_num(vdev, queue_no)) {
@@ -934,6 +953,13 @@ static int kvm_virtio_pci_vector_vq_use(VirtIOPCIProxy *proxy, int nvqs)
         }
         ret = kvm_virtio_pci_vector_use_one(proxy, queue_no);
     }
+
+#ifdef __aarch64__
+    if (!strcmp(vdev->name, "virtio-net") && ret != 0) {
+        kvm_delete_shadow_device(&proxy->pci_dev);
+    }
+#endif
+
     return ret;
 }
 
@@ -976,6 +1002,12 @@ static void kvm_virtio_pci_vector_vq_release(VirtIOPCIProxy *proxy, int nvqs)
         }
         kvm_virtio_pci_vector_release_one(proxy, queue_no);
     }
+
+#ifdef __aarch64__
+    if (!strcmp(vdev->name, "virtio-net")) {
+        kvm_delete_shadow_device(&proxy->pci_dev);
+    }
+#endif
 }
 
 static void kvm_virtio_pci_vector_config_release(VirtIOPCIProxy *proxy)
