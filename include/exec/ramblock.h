@@ -44,7 +44,7 @@ struct RAMBlock {
     size_t page_size;
     /* dirty bitmap used during migration */
     unsigned long *bmap;
-    /* bitmap of already received pages in postcopy */
+    /* Bitmap of already received pages.  Only used on destination side. */
     unsigned long *receivedmap;
 
     /*
