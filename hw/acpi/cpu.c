@@ -342,7 +342,9 @@ const VMStateDescription vmstate_cpu_hotplug = {
 #define CPU_FW_EJECT_EVENT "CEJF"
 
 void build_cpus_aml(Aml *table, MachineState *machine, CPUHotplugFeatures opts,
-                    build_madt_cpu_fn build_madt_cpu, hwaddr base_addr,
+                    build_madt_cpu_fn build_madt_cpu,
+                    build_cpu_cppc_fn build_cpu_cppc,
+                    hwaddr base_addr,
                     const char *res_root,
                     const char *event_handler_method,
                     AmlRegionSpace rs)
@@ -666,6 +668,10 @@ void build_cpus_aml(Aml *table, MachineState *machine, CPUHotplugFeatures opts,
                 dev = aml_device(CPU_NAME_FMT, i);
                 aml_append(dev, aml_name_decl("_HID", aml_string("ACPI0007")));
                 aml_append(dev, aml_name_decl("_UID", uid));
+            }
+
+            if (build_cpu_cppc) {
+                build_cpu_cppc(i, arch_ids->len, dev);
             }
 
             method = aml_method("_STA", 0, AML_SERIALIZED);

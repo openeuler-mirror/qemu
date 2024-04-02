@@ -59,8 +59,12 @@ typedef struct CPUHotplugFeatures {
 typedef void (*build_madt_cpu_fn)(int uid, const CPUArchIdList *apic_ids,
                                   GArray *entry, bool force_enabled);
 
+typedef void (*build_cpu_cppc_fn)(int uid, int num_cpu, Aml *dev);
+
 void build_cpus_aml(Aml *table, MachineState *machine, CPUHotplugFeatures opts,
-                    build_madt_cpu_fn build_madt_cpu, hwaddr base_addr,
+                    build_madt_cpu_fn build_madt_cpu,
+                    build_cpu_cppc_fn build_cpu_cppc,
+                    hwaddr base_addr,
                     const char *res_root,
                     const char *event_handler_method,
                     AmlRegionSpace rs);
