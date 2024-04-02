@@ -1114,6 +1114,7 @@ struct AddressSpace {
     struct rcu_head rcu;
     char *name;
     MemoryRegion *root;
+    bool free_in_rcu;
 
     /* Accessed via RCU.  */
     struct FlatView *current_map;

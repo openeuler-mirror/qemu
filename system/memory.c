@@ -3130,6 +3130,9 @@ static void do_address_space_destroy(AddressSpace *as)
     g_free(as->name);
     g_free(as->ioeventfds);
     memory_region_unref(as->root);
+    if (as->free_in_rcu) {
+        g_free(as);
+    }
 }
 
 void address_space_destroy(AddressSpace *as)

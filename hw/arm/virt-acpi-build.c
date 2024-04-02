@@ -123,8 +123,23 @@ static void acpi_dsdt_add_cppc(Aml *dev, uint64_t cpu_base, int *regs_offset)
     aml_append(dev, aml_name_decl("_CPC", cpc));
 }
 
-static void acpi_dsdt_add_cpus(Aml *scope, VirtMachineState *vms,
-			       const MemMapEntry *cppc_memmap)
+static void virt_acpi_dsdt_cpu_cppc(int ncpu, int num_cpu, Aml *dev) {
+    VirtMachineState *vms = VIRT_MACHINE(qdev_get_machine());
+    const MemMapEntry *cppc_memmap = &vms->memmap[VIRT_CPUFREQ];
+
+    /*
+     * Append _CPC and _PSD to support CPU frequence show
+     * Check CPPC available by DESIRED_PERF register
+     */
+    if (cppc_regs_offset[DESIRED_PERF] != -1) {
+        acpi_dsdt_add_cppc(dev,
+                           cppc_memmap->base + ncpu * CPPC_REG_PER_CPU_STRIDE,
+                           cppc_regs_offset);
+        acpi_dsdt_add_psd(dev, num_cpu);
+    }
+}
+
+static void acpi_dsdt_add_cpus(Aml *scope, VirtMachineState *vms)
 {
     MachineState *ms = MACHINE(vms);
     uint16_t i;
@@ -134,18 +149,9 @@ static void acpi_dsdt_add_cpus(Aml *scope, VirtMachineState *vms,
         aml_append(dev, aml_name_decl("_HID", aml_string("ACPI0007")));
         aml_append(dev, aml_name_decl("_UID", aml_int(i)));
 
-	/*
-         * Append _CPC and _PSD to support CPU frequence show
-         * Check CPPC available by DESIRED_PERF register
-         */
-        if (cppc_regs_offset[DESIRED_PERF] != -1) {
-            acpi_dsdt_add_cppc(dev,
-                               cppc_memmap->base + i * CPPC_REG_PER_CPU_STRIDE,
-                               cppc_regs_offset);
-            acpi_dsdt_add_psd(dev, ms->smp.cpus);
-        }
+        virt_acpi_dsdt_cpu_cppc(i, ms->smp.cpus, dev);
 
-	aml_append(scope, dev);
+        aml_append(scope, dev);
     }
 }
 
@@ -773,6 +779,38 @@ static void build_append_gicr(GArray *table_data, uint64_t base, uint32_t size)
     build_append_int_noprefix(table_data, size, 4); /* Discovery Range Length */
 }
 
+static uint32_t virt_acpi_get_gicc_flags(CPUState *cpu)
+{
+    MachineClass *mc = MACHINE_GET_CLASS(qdev_get_machine());
+
+    /* can only exist in 'enabled' state */
+    if (!mc->has_hotpluggable_cpus) {
+        return 1;
+    }
+
+    /*
+     * ARM GIC CPU Interface can be 'online-capable' or 'enabled' at boot. We
+     * MUST set 'online-capable' bit for all hotpluggable CPUs.
+     * Change Link: https://bugzilla.tianocore.org/show_bug.cgi?id=3706
+     *
+     *   UEFI ACPI Specification 6.5
+     *   Section: 5.2.12.14. GIC CPU Interface (GICC) Structure
+     *   Table:   5.37 GICC CPU Interface Flags
+     *   Link: https://uefi.org/specs/ACPI/6.5
+     *
+     * Cold-booted CPUs, except for the first/boot CPU, SHOULD be allowed to be
+     * hot(un)plug as well but for this to happen these MUST have
+     * 'online-capable' bit set. Later creates compatibility problem with legacy
+     * OS as it might ignore online-capable' bits during boot time and hence
+     * some CPUs might not get detected. To fix this MADT GIC CPU interface flag
+     * should be allowed to have both bits set i.e. 'online-capable' and
+     * 'Enabled' bits together. This change will require UEFI ACPI standard
+     * change. Till this happens exposing all cold-booted CPUs as 'enabled' only
+     *
+     */
+    return cpu && cpu->cold_booted ? 1 : (1 << 3);
+}
+
 static void
 build_madt(GArray *table_data, BIOSLinker *linker, VirtMachineState *vms)
 {
@@ -799,12 +837,13 @@ build_madt(GArray *table_data, BIOSLinker *linker, VirtMachineState *vms)
     build_append_int_noprefix(table_data, vms->gic_version, 1);
     build_append_int_noprefix(table_data, 0, 3);   /* Reserved */
 
-    for (i = 0; i < MACHINE(vms)->smp.cpus; i++) {
-        ARMCPU *armcpu = ARM_CPU(qemu_get_cpu(i));
+    for (i = 0; i < MACHINE(vms)->smp.max_cpus; i++) {
+        CPUState *cpu = qemu_get_possible_cpu(i);
         uint64_t physical_base_address = 0, gich = 0, gicv = 0;
         uint32_t vgic_interrupt = vms->virt ? ARCH_GIC_MAINT_IRQ : 0;
-        uint32_t pmu_interrupt = arm_feature(&armcpu->env, ARM_FEATURE_PMU) ?
-                                             VIRTUAL_PMU_IRQ : 0;
+        uint32_t pmu_interrupt = vms->pmu ? VIRTUAL_PMU_IRQ : 0;
+        uint32_t flags = virt_acpi_get_gicc_flags(cpu);
+        uint64_t mpidr = qemu_get_cpu_archid(i);
 
         if (vms->gic_version == VIRT_GIC_VERSION_2) {
             physical_base_address = memmap[VIRT_GIC_CPU].base;
@@ -819,7 +858,7 @@ build_madt(GArray *table_data, BIOSLinker *linker, VirtMachineState *vms)
         build_append_int_noprefix(table_data, i, 4);    /* GIC ID */
         build_append_int_noprefix(table_data, i, 4);    /* ACPI Processor UID */
         /* Flags */
-        build_append_int_noprefix(table_data, 1, 4);    /* Enabled */
+        build_append_int_noprefix(table_data, flags, 4);
         /* Parking Protocol Version */
         build_append_int_noprefix(table_data, 0, 4);
         /* Performance Interrupt GSIV */
@@ -833,7 +872,7 @@ build_madt(GArray *table_data, BIOSLinker *linker, VirtMachineState *vms)
         build_append_int_noprefix(table_data, vgic_interrupt, 4);
         build_append_int_noprefix(table_data, 0, 8);    /* GICR Base Address*/
         /* MPIDR */
-        build_append_int_noprefix(table_data, armcpu->mp_affinity, 8);
+        build_append_int_noprefix(table_data, mpidr, 8);
         /* Processor Power Efficiency Class */
         build_append_int_noprefix(table_data, 0, 1);
         /* Reserved */
@@ -910,11 +949,61 @@ static void build_fadt_rev6(GArray *table_data, BIOSLinker *linker,
     build_fadt(table_data, linker, &fadt, vms->oem_id, vms->oem_table_id);
 }
 
+static void build_virt_osc_method(Aml *scope, VirtMachineState *vms)
+{
+    Aml *if_uuid, *else_uuid, *if_rev, *if_caps_masked, *method;
+    Aml *a_cdw1 = aml_name("CDW1");
+    Aml *a_cdw2 = aml_local(0);
+
+    method = aml_method("_OSC", 4, AML_NOTSERIALIZED);
+    aml_append(method, aml_create_dword_field(aml_arg(3), aml_int(0), "CDW1"));
+
+    /* match UUID */
+    if_uuid = aml_if(aml_equal(
+        aml_arg(0), aml_touuid("0811B06E-4A27-44F9-8D60-3CBBC22E7B48")));
+
+    aml_append(if_uuid, aml_create_dword_field(aml_arg(3), aml_int(4), "CDW2"));
+    aml_append(if_uuid, aml_store(aml_name("CDW2"), a_cdw2));
+
+    /* check unknown revision in arg(1) */
+    if_rev = aml_if(aml_lnot(aml_equal(aml_arg(1), aml_int(1))));
+    /* set revision error bits,  DWORD1 Bit[3] */
+    aml_append(if_rev, aml_or(a_cdw1, aml_int(0x08), a_cdw1));
+    aml_append(if_uuid, if_rev);
+
+    /*
+     * check support for vCPU hotplug type(=enabled) platform-wide capability
+     * in DWORD2 as sepcified in the below ACPI Specification ECR,
+     *  # https://bugzilla.tianocore.org/show_bug.cgi?id=4481
+     */
+    if (vms->acpi_dev) {
+        aml_append(if_uuid, aml_and(a_cdw2, aml_int(0x800000), a_cdw2));
+        /* check if OSPM specified hotplug capability bits were masked */
+        if_caps_masked = aml_if(aml_lnot(aml_equal(aml_name("CDW2"), a_cdw2)));
+        aml_append(if_caps_masked, aml_or(a_cdw1, aml_int(0x10), a_cdw1));
+        aml_append(if_uuid, if_caps_masked);
+    }
+    aml_append(if_uuid, aml_store(a_cdw2, aml_name("CDW2")));
+
+    aml_append(method, if_uuid);
+    else_uuid = aml_else();
+
+    /* set unrecognized UUID error bits, DWORD1 Bit[2] */
+    aml_append(else_uuid, aml_or(a_cdw1, aml_int(4), a_cdw1));
+    aml_append(method, else_uuid);
+
+    aml_append(method, aml_return(aml_arg(3)));
+    aml_append(scope, method);
+
+    return;
+}
+
 /* DSDT */
 static void
 build_dsdt(GArray *table_data, BIOSLinker *linker, VirtMachineState *vms)
 {
     VirtMachineClass *vmc = VIRT_MACHINE_GET_CLASS(vms);
+    MachineClass *mc = MACHINE_GET_CLASS(vms);
     Aml *scope, *dsdt;
     MachineState *ms = MACHINE(vms);
     const MemMapEntry *memmap = vms->memmap;
@@ -931,7 +1020,22 @@ build_dsdt(GArray *table_data, BIOSLinker *linker, VirtMachineState *vms)
      * the RTC ACPI device at all when using UEFI.
      */
     scope = aml_scope("\\_SB");
-    acpi_dsdt_add_cpus(scope, vms, &memmap[VIRT_CPUFREQ]);
+    /* if GED is enabled then cpus AML shall be added as part build_cpus_aml */
+    if (mc->has_hotpluggable_cpus) {
+        CPUHotplugFeatures opts = {
+             .acpi_1_compatible = false,
+             .has_legacy_cphp = false
+        };
+
+        build_cpus_aml(scope, ms, opts, NULL, virt_acpi_dsdt_cpu_cppc,
+                       memmap[VIRT_CPUHP_ACPI].base,
+                       "\\_SB", NULL, AML_SYSTEM_MEMORY);
+    } else {
+        acpi_dsdt_add_cpus(scope, vms);
+    }
+
+    build_virt_osc_method(scope, vms);
+
     acpi_dsdt_add_uart(scope, &memmap[VIRT_UART],
                        (irqmap[VIRT_UART] + ARM_SPI_BASE));
     if (vmc->acpi_expose_flash) {
