@@ -89,6 +89,8 @@ Coroutine *qemu_coroutine_create(CoroutineEntry *entry, void *opaque)
         co = qemu_coroutine_new();
     }
 
+    qemu_coroutine_info_add(co);
+
     co->entry = entry;
     co->entry_arg = opaque;
     QSIMPLEQ_INIT(&co->co_queue_wakeup);
@@ -98,6 +100,8 @@ Coroutine *qemu_coroutine_create(CoroutineEntry *entry, void *opaque)
 static void coroutine_delete(Coroutine *co)
 {
     co->caller = NULL;
+
+    qemu_coroutine_info_delete(co);
 
     if (IS_ENABLED(CONFIG_COROUTINE_POOL)) {
         if (release_pool_size < qatomic_read(&pool_max_size) * 2) {
