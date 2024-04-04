@@ -940,8 +940,7 @@ static void virtser_port_device_realize(DeviceState *dev, Error **errp)
     Error *err = NULL;
 
     port->vser = bus->vser;
-    port->bh = qemu_bh_new_guarded(flush_queued_data_bh, port,
-                                   &dev->mem_reentrancy_guard);
+    port->bh = virtio_bh_new_guarded(dev, flush_queued_data_bh, port);
 
     assert(vsc->have_data);
 
