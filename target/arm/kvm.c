@@ -321,12 +321,11 @@ int kvm_arch_init(MachineState *ms, KVMState *s)
         if (kvm_arm_set_smccc_filter(PSCI_0_2_FN64_CPU_ON,
                                     KVM_SMCCC_FILTER_FWD_TO_USER)) {
             error_report("CPU On PSCI-to-user-space fwd filter install failed");
-            mc->has_hotpluggable_cpus = false;
-        }
-        if (kvm_arm_set_smccc_filter(PSCI_0_2_FN_CPU_OFF,
+        } else if (kvm_arm_set_smccc_filter(PSCI_0_2_FN_CPU_OFF,
                                     KVM_SMCCC_FILTER_FWD_TO_USER)) {
             error_report("CPU Off PSCI-to-user-space fwd filter install failed");
-            mc->has_hotpluggable_cpus = false;
+        } else {
+            s->kvm_smccc_filter_enabled = true;
         }
     }
 

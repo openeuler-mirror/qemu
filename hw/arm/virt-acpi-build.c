@@ -779,12 +779,10 @@ static void build_append_gicr(GArray *table_data, uint64_t base, uint32_t size)
     build_append_int_noprefix(table_data, size, 4); /* Discovery Range Length */
 }
 
-static uint32_t virt_acpi_get_gicc_flags(CPUState *cpu)
+static uint32_t virt_acpi_get_gicc_flags(CPUState *cpu, VirtMachineState *vms)
 {
-    MachineClass *mc = MACHINE_GET_CLASS(qdev_get_machine());
-
     /* can only exist in 'enabled' state */
-    if (!mc->has_hotpluggable_cpus) {
+    if (!vms->cpu_hotplug_enabled) {
         return 1;
     }
 
@@ -842,7 +840,7 @@ build_madt(GArray *table_data, BIOSLinker *linker, VirtMachineState *vms)
         uint64_t physical_base_address = 0, gich = 0, gicv = 0;
         uint32_t vgic_interrupt = vms->virt ? ARCH_GIC_MAINT_IRQ : 0;
         uint32_t pmu_interrupt = vms->pmu ? VIRTUAL_PMU_IRQ : 0;
-        uint32_t flags = virt_acpi_get_gicc_flags(cpu);
+        uint32_t flags = virt_acpi_get_gicc_flags(cpu, vms);
         uint64_t mpidr = qemu_get_cpu_archid(i);
 
         if (vms->gic_version == VIRT_GIC_VERSION_2) {
@@ -1003,7 +1001,6 @@ static void
 build_dsdt(GArray *table_data, BIOSLinker *linker, VirtMachineState *vms)
 {
     VirtMachineClass *vmc = VIRT_MACHINE_GET_CLASS(vms);
-    MachineClass *mc = MACHINE_GET_CLASS(vms);
     Aml *scope, *dsdt;
     MachineState *ms = MACHINE(vms);
     const MemMapEntry *memmap = vms->memmap;
@@ -1020,8 +1017,8 @@ build_dsdt(GArray *table_data, BIOSLinker *linker, VirtMachineState *vms)
      * the RTC ACPI device at all when using UEFI.
      */
     scope = aml_scope("\\_SB");
-    /* if GED is enabled then cpus AML shall be added as part build_cpus_aml */
-    if (mc->has_hotpluggable_cpus) {
+
+    if (vms->cpu_hotplug_enabled) {
         CPUHotplugFeatures opts = {
              .acpi_1_compatible = false,
              .has_legacy_cphp = false
