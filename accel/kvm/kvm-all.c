@@ -3603,6 +3603,11 @@ bool kvm_kernel_irqchip_split(void)
     return kvm_state->kernel_irqchip_split == ON_OFF_AUTO_ON;
 }
 
+bool kvm_smccc_filter_enabled(void)
+{
+    return kvm_state->kvm_smccc_filter_enabled;
+}
+
 static void kvm_get_dirty_ring_size(Object *obj, Visitor *v,
                                     const char *name, void *opaque,
                                     Error **errp)
@@ -3648,6 +3653,7 @@ static void kvm_accel_instance_init(Object *obj)
     /* KVM dirty ring is by default off */
     s->kvm_dirty_ring_size = 0;
     s->kvm_dirty_ring_with_bitmap = false;
+    s->kvm_smccc_filter_enabled = false;
     s->kvm_eager_split_size = 0;
     s->notify_vmexit = NOTIFY_VMEXIT_OPTION_RUN;
     s->notify_window = 0;

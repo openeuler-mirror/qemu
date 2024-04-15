@@ -756,7 +756,7 @@ static void virt_add_gic_cpuhp_notifier(VirtMachineState *vms)
 {
     MachineClass *mc = MACHINE_GET_CLASS(vms);
 
-    if (mc->has_hotpluggable_cpus) {
+    if (mc->has_hotpluggable_cpus && vms->gic_version >= VIRT_GIC_VERSION_3) {
         Notifier *cpuhp_notifier = gicv3_cpuhp_notifier(vms->gic);
         notifier_list_add(&vms->cpuhp_notifiers, cpuhp_notifier);
     }
@@ -2498,11 +2498,16 @@ static void machvirt_init(MachineState *machine)
     has_ged = has_ged && firmware_loaded &&
         virt_is_acpi_enabled(vms) &&
         !!object_class_dynamic_cast(cpu_class, TYPE_AARCH64_CPU);
+
     if (tcg_enabled() || hvf_enabled() || qtest_enabled() ||
+        (kvm_enabled() && !kvm_smccc_filter_enabled()) ||
         (vms->gic_version < VIRT_GIC_VERSION_3) || !has_ged) {
-        mc->has_hotpluggable_cpus = false;
+        vms->cpu_hotplug_enabled = false;
+    } else {
+        vms->cpu_hotplug_enabled = true;
     }
-    if (!mc->has_hotpluggable_cpus) {
+
+    if (!vms->cpu_hotplug_enabled) {
         if (machine->smp.max_cpus > smp_cpus) {
             warn_report("cpu hotplug feature has been disabled");
         }
@@ -3174,7 +3179,6 @@ static void virt_cpu_pre_plug(HotplugHandler *hotplug_dev, DeviceState *dev,
 {
     VirtMachineState *vms = VIRT_MACHINE(hotplug_dev);
     MachineState *ms = MACHINE(hotplug_dev);
-    MachineClass *mc = MACHINE_GET_CLASS(ms);
     ARMCPU *cpu = ARM_CPU(dev);
     CPUState *cs = CPU(dev);
     CPUArchId *cpu_slot;
@@ -3218,7 +3222,7 @@ static void virt_cpu_pre_plug(HotplugHandler *hotplug_dev, DeviceState *dev,
         return;
     }
 
-    if (cs->cpu_index >= ms->smp.cpus && !mc->has_hotpluggable_cpus) {
+    if (cs->cpu_index >= ms->smp.cpus && !vms->cpu_hotplug_enabled) {
         error_setg(errp, "CPU [cold|hot]plug not supported on this machine");
         return;
     }
@@ -3304,7 +3308,6 @@ fail:
 static void virt_cpu_unplug_request(HotplugHandler *hotplug_dev,
                                     DeviceState *dev, Error **errp)
 {
-    MachineClass *mc = MACHINE_GET_CLASS(qdev_get_machine());
     VirtMachineState *vms = VIRT_MACHINE(hotplug_dev);
     HotplugHandlerClass *hhc;
     ARMCPU *cpu = ARM_CPU(dev);
@@ -3316,7 +3319,7 @@ static void virt_cpu_unplug_request(HotplugHandler *hotplug_dev,
         return;
     }
 
-    if (!mc->has_hotpluggable_cpus) {
+    if (!vms->cpu_hotplug_enabled) {
         error_setg(errp, "CPU hot(un)plug not supported on this machine");
         return;
     }
@@ -3779,6 +3782,9 @@ static void virt_instance_init(Object *obj)
 
     /* EL2 is also disabled by default, for similar reasons */
     vms->virt = false;
+
+    /* CPU hotplug is enabled by default */
+    vms->cpu_hotplug_enabled = true;
 
     /* High memory is enabled by default */
     vms->highmem = true;
