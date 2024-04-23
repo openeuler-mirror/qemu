@@ -268,4 +268,10 @@
 /* set device migtration state */
 #define VHOST_VDPA_SET_MIG_STATE _IOW(VHOST_VIRTIO, 0xb2, __u8)
 
+/* Get the queue size of a specific virtqueue.
+ * userspace set the vring index in vhost_vring_state.index
+ * kernel set the queue size in vhost_vring_state.num
+ */
+#define VHOST_VDPA_GET_VRING_SIZE	_IOWR(VHOST_VIRTIO, 0x80,	\
+					      struct vhost_vring_state)
 #endif
