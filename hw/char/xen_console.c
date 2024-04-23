@@ -25,6 +25,7 @@
 
 #include "qapi/error.h"
 #include "hw/hw.h"
+#include "sysemu/sysemu.h"
 #include "chardev/char-fe.h"
 #include "hw/xen/xen-legacy-backend.h"
 
