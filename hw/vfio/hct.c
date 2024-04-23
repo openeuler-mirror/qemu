@@ -28,7 +28,7 @@
 #include "qapi/error.h"
 #include "hw/qdev-properties.h"
 
-#define MAX_CCP_CNT                  16
+#define MAX_CCP_CNT                  48
 #define PAGE_SIZE                    4096
 #define HCT_SHARED_MEMORY_SIZE       (PAGE_SIZE * MAX_CCP_CNT)
 #define CCP_INDEX_BYTES              4
@@ -43,7 +43,7 @@
 
 #define HCT_SHARE_DEV                "/dev/hct_share"
 
-#define HCT_VERSION_STRING           "0.2"
+#define HCT_VERSION_STRING           "0.5"
 #define DEF_VERSION_STRING           "0.1"
 #define VERSION_SIZE                 16
 
@@ -281,15 +281,14 @@ static int hct_api_version_check(void)
     memcpy(ctrl.version, DEF_VERSION_STRING, sizeof(DEF_VERSION_STRING));
     ret = ioctl(hct_data.hct_fd, HCT_SHARE_OP, &ctrl);
     if (ret < 0) {
-        error_report("ret %d, errno %d: fail to get hct.ko version, please "
-                     "update hct.ko to version 0.2.\n",
-                     ret, errno);
+        error_report("ret %d, errno %d: fail to get hct.ko version.\n", ret,
+                     errno);
         return -1;
     } else if (memcmp(ctrl.version, HCT_VERSION_STRING,
                       sizeof(HCT_VERSION_STRING)) < 0) {
-        error_report("The API version %s is larger than hct.ko version %s, "
-                     "please update hct.ko to version 0.2\n",
-                     HCT_VERSION_STRING, ctrl.version);
+        error_report("The hct.ko version is %s, please upgrade to version %s "
+                     "or higher.\n",
+                     ctrl.version, HCT_VERSION_STRING);
         return -1;
     }
 
