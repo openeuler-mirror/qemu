@@ -25,6 +25,7 @@
 #include "kvm/hyperv-proto.h"
 #include "exec/cpu-defs.h"
 #include "exec/cpu-common.h"
+#include "hw/i386/topology.h"
 #include "qapi/qapi-types-common.h"
 #include "qemu/cpu-float.h"
 #include "qemu/timer.h"
@@ -1972,6 +1973,9 @@ typedef struct CPUArchState {
 
     /* GHCB guest physical address info */
     uint64_t ghcb_gpa;
+
+    /* Bitmap of available CPU topology levels for this CPU. */
+    DECLARE_BITMAP(avail_cpu_topo, CPU_TOPO_LEVEL_MAX);
 } CPUX86State;
 
 struct kvm_msrs;
