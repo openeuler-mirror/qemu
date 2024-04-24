@@ -365,6 +365,9 @@ typedef struct CPUArchState {
     /* Store ipistate to access from this struct */
     DeviceState *ipistate;
 #endif
+    struct {
+        uint64_t guest_addr;
+    } st;
 } CPULoongArchState;
 
 /**

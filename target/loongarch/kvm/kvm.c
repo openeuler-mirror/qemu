@@ -649,6 +649,56 @@ static int kvm_loongarch_put_cpucfg(CPUState *cs)
     return ret;
 }
 
+int kvm_loongarch_put_pvtime(LoongArchCPU *cpu)
+{
+    CPULoongArchState *env = &cpu->env;
+    int err;
+    struct kvm_device_attr attr = {
+        .group = KVM_LOONGARCH_VCPU_PVTIME_CTRL,
+        .attr = KVM_LOONGARCH_VCPU_PVTIME_GPA,
+        .addr = (uint64_t)&env->st.guest_addr,
+    };
+
+    err = kvm_vcpu_ioctl(CPU(cpu), KVM_HAS_DEVICE_ATTR, attr);
+    if (err != 0) {
+        /* It's ok even though kvm has not such attr */
+        return 0;
+    }
+
+    err = kvm_vcpu_ioctl(CPU(cpu), KVM_SET_DEVICE_ATTR, attr);
+    if (err != 0) {
+        error_report("PVTIME IPA: KVM_SET_DEVICE_ATTR: %s", strerror(-err));
+        return err;
+    }
+
+    return 0;
+}
+
+int kvm_loongarch_get_pvtime(LoongArchCPU *cpu)
+{
+    CPULoongArchState *env = &cpu->env;
+    int err;
+    struct kvm_device_attr attr = {
+        .group = KVM_LOONGARCH_VCPU_PVTIME_CTRL,
+        .attr = KVM_LOONGARCH_VCPU_PVTIME_GPA,
+        .addr = (uint64_t)&env->st.guest_addr,
+    };
+
+    err = kvm_vcpu_ioctl(CPU(cpu), KVM_HAS_DEVICE_ATTR, attr);
+    if (err != 0) {
+        /* It's ok even though kvm has not such attr */
+        return 0;
+    }
+
+    err = kvm_vcpu_ioctl(CPU(cpu), KVM_GET_DEVICE_ATTR, attr);
+    if (err != 0) {
+        error_report("PVTIME IPA: KVM_GET_DEVICE_ATTR: %s", strerror(-err));
+        return err;
+    }
+
+    return 0;
+}
+
 int kvm_arch_get_registers(CPUState *cs)
 {
     int ret;

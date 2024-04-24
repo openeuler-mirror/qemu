@@ -12,5 +12,7 @@
 
 int  kvm_loongarch_set_interrupt(LoongArchCPU *cpu, int irq, int level);
 void kvm_arch_reset_vcpu(CPULoongArchState *env);
+int kvm_loongarch_put_pvtime(LoongArchCPU *cpu);
+int kvm_loongarch_get_pvtime(LoongArchCPU *cpu);
 
 #endif
