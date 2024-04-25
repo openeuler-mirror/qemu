@@ -89,6 +89,7 @@ static BlockDriverState *bdrv_open_inherit(const char *filename,
                                            BlockDriverState *parent,
                                            const BdrvChildClass *child_class,
                                            BdrvChildRole child_role,
+                                           bool parse_filename,
                                            Error **errp);
 
 static bool bdrv_recurse_has_child(BlockDriverState *bs,
@@ -2050,7 +2051,8 @@ static void parse_json_protocol(QDict *options, const char **pfilename,
  * block driver has been specified explicitly.
  */
 static int bdrv_fill_options(QDict **options, const char *filename,
-                             int *flags, Error **errp)
+                             int *flags, bool allow_parse_filename,
+                             Error **errp)
 {
     const char *drvname;
     bool protocol = *flags & BDRV_O_PROTOCOL;
@@ -2092,7 +2094,7 @@ static int bdrv_fill_options(QDict **options, const char *filename,
     if (protocol && filename) {
         if (!qdict_haskey(*options, "filename")) {
             qdict_put_str(*options, "filename", filename);
-            parse_filename = true;
+            parse_filename = allow_parse_filename;
         } else {
             error_setg(errp, "Can't specify 'file' and 'filename' options at "
                              "the same time");
@@ -3678,7 +3680,8 @@ int bdrv_open_backing_file(BlockDriverState *bs, QDict *parent_options,
     }
 
     backing_hd = bdrv_open_inherit(backing_filename, reference, options, 0, bs,
-                                   &child_of_bds, bdrv_backing_role(bs), errp);
+                                   &child_of_bds, bdrv_backing_role(bs), true,
+                                   errp);
     if (!backing_hd) {
         bs->open_flags |= BDRV_O_NO_BACKING;
         error_prepend(errp, "Could not open backing file: ");
@@ -3715,7 +3718,8 @@ free_exit:
 static BlockDriverState *
 bdrv_open_child_bs(const char *filename, QDict *options, const char *bdref_key,
                    BlockDriverState *parent, const BdrvChildClass *child_class,
-                   BdrvChildRole child_role, bool allow_none, Error **errp)
+                   BdrvChildRole child_role, bool allow_none,
+                   bool parse_filename, Error **errp)
 {
     BlockDriverState *bs = NULL;
     QDict *image_options;
@@ -3746,7 +3750,8 @@ bdrv_open_child_bs(const char *filename, QDict *options, const char *bdref_key,
     }
 
     bs = bdrv_open_inherit(filename, reference, image_options, 0,
-                           parent, child_class, child_role, errp);
+                           parent, child_class, child_role, parse_filename,
+                           errp);
     if (!bs) {
         goto done;
     }
@@ -3754,6 +3759,37 @@ bdrv_open_child_bs(const char *filename, QDict *options, const char *bdref_key,
 done:
     qdict_del(options, bdref_key);
     return bs;
+}
+
+static BdrvChild *bdrv_open_child_common(const char *filename,
+                                         QDict *options, const char *bdref_key,
+                                         BlockDriverState *parent,
+                                         const BdrvChildClass *child_class,
+                                         BdrvChildRole child_role,
+                                         bool allow_none, bool parse_filename,
+                                         Error **errp)
+{
+    BlockDriverState *bs;
+    BdrvChild *child;
+    AioContext *ctx;
+
+    GLOBAL_STATE_CODE();
+
+    bs = bdrv_open_child_bs(filename, options, bdref_key, parent, child_class,
+                            child_role, allow_none, parse_filename, errp);
+    if (bs == NULL) {
+        return NULL;
+    }
+
+    bdrv_graph_wrlock(NULL);
+    ctx = bdrv_get_aio_context(bs);
+    aio_context_acquire(ctx);
+    child = bdrv_attach_child(parent, bs, bdref_key, child_class, child_role,
+                              errp);
+    aio_context_release(ctx);
+    bdrv_graph_wrunlock(NULL);
+
+    return child;
 }
 
 /*
@@ -3781,31 +3817,15 @@ BdrvChild *bdrv_open_child(const char *filename,
                            BdrvChildRole child_role,
                            bool allow_none, Error **errp)
 {
-    BlockDriverState *bs;
-    BdrvChild *child;
-    AioContext *ctx;
-
-    GLOBAL_STATE_CODE();
-
-    bs = bdrv_open_child_bs(filename, options, bdref_key, parent, child_class,
-                            child_role, allow_none, errp);
-    if (bs == NULL) {
-        return NULL;
-    }
-
-    bdrv_graph_wrlock(NULL);
-    ctx = bdrv_get_aio_context(bs);
-    aio_context_acquire(ctx);
-    child = bdrv_attach_child(parent, bs, bdref_key, child_class, child_role,
-                              errp);
-    aio_context_release(ctx);
-    bdrv_graph_wrunlock(NULL);
-
-    return child;
+    return bdrv_open_child_common(filename, options, bdref_key, parent,
+                                  child_class, child_role, allow_none, false,
+                                  errp);
 }
 
 /*
- * Wrapper on bdrv_open_child() for most popular case: open primary child of bs.
+ * This does mostly the same as bdrv_open_child(), but for opening the primary
+ * child of a node. A notable difference from bdrv_open_child() is that it
+ * enables filename parsing for protocol names (including json:).
  *
  * The caller must hold the lock of the main AioContext and no other AioContext.
  * @parent can move to a different AioContext in this function. Callers must
@@ -3822,8 +3842,8 @@ int bdrv_open_file_child(const char *filename,
     role = parent->drv->is_filter ?
         (BDRV_CHILD_FILTERED | BDRV_CHILD_PRIMARY) : BDRV_CHILD_IMAGE;
 
-    if (!bdrv_open_child(filename, options, bdref_key, parent,
-                         &child_of_bds, role, false, errp))
+    if (!bdrv_open_child_common(filename, options, bdref_key, parent,
+                                &child_of_bds, role, false, true, errp))
     {
         return -EINVAL;
     }
@@ -3868,7 +3888,8 @@ BlockDriverState *bdrv_open_blockdev_ref(BlockdevRef *ref, Error **errp)
 
     }
 
-    bs = bdrv_open_inherit(NULL, reference, qdict, 0, NULL, NULL, 0, errp);
+    bs = bdrv_open_inherit(NULL, reference, qdict, 0, NULL, NULL, 0, false,
+                           errp);
     obj = NULL;
     qobject_unref(obj);
     visit_free(v);
@@ -3965,7 +3986,7 @@ static BlockDriverState * no_coroutine_fn
 bdrv_open_inherit(const char *filename, const char *reference, QDict *options,
                   int flags, BlockDriverState *parent,
                   const BdrvChildClass *child_class, BdrvChildRole child_role,
-                  Error **errp)
+                  bool parse_filename, Error **errp)
 {
     int ret;
     BlockBackend *file = NULL;
@@ -4014,9 +4035,11 @@ bdrv_open_inherit(const char *filename, const char *reference, QDict *options,
     }
 
     /* json: syntax counts as explicit options, as if in the QDict */
-    parse_json_protocol(options, &filename, &local_err);
-    if (local_err) {
-        goto fail;
+    if (parse_filename) {
+        parse_json_protocol(options, &filename, &local_err);
+        if (local_err) {
+            goto fail;
+        }
     }
 
     bs->explicit_options = qdict_clone_shallow(options);
@@ -4041,7 +4064,8 @@ bdrv_open_inherit(const char *filename, const char *reference, QDict *options,
                                      parent->open_flags, parent->options);
     }
 
-    ret = bdrv_fill_options(&options, filename, &flags, &local_err);
+    ret = bdrv_fill_options(&options, filename, &flags, parse_filename,
+                            &local_err);
     if (ret < 0) {
         goto fail;
     }
@@ -4110,7 +4134,7 @@ bdrv_open_inherit(const char *filename, const char *reference, QDict *options,
 
         file_bs = bdrv_open_child_bs(filename, options, "file", bs,
                                      &child_of_bds, BDRV_CHILD_IMAGE,
-                                     true, &local_err);
+                                     true, true, &local_err);
         if (local_err) {
             goto fail;
         }
@@ -4273,7 +4297,7 @@ BlockDriverState *bdrv_open(const char *filename, const char *reference,
     GLOBAL_STATE_CODE();
 
     return bdrv_open_inherit(filename, reference, options, flags, NULL,
-                             NULL, 0, errp);
+                             NULL, 0, true, errp);
 }
 
 /* Return true if the NULL-terminated @list contains @str */
