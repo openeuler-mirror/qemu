@@ -37,6 +37,7 @@ extern char **environ;
 #include "target.h"
 #include "exec/gdbstub.h"
 #include "qemu/clang-tsa.h"
+#include "accel/tcg/vcpu-state.h"
 
 #include "qemu-os.h"
 /*
