@@ -138,6 +138,12 @@ struct arm_boot_info {
     hwaddr firmware_base;
     hwaddr firmware_max_size;
     /*
+     * Instead of starting in a small bootloader that jumps to the kernel,
+     * immediately start in the kernel.
+     */
+    bool skip_bootloader;
+
+    /*
      * Confidential guest boot loads everything into RAM so it can be measured.
      */
     bool confidential;
