@@ -231,11 +231,7 @@ void cpu_hotplug_hw_init(MemoryRegion *as, Object *owner,
         if (qemu_present_cpu(cpu)) {
             state->devs[i].is_present = true;
         } else {
-            if (qemu_persistent_cpu(cpu)) {
-                state->devs[i].is_present = true;
-            } else {
-                state->devs[i].is_present = false;
-            }
+            state->devs[i].is_present = false;
         }
 
         if (qemu_enabled_cpu(cpu)) {
