@@ -704,6 +704,7 @@ void kvm_arm_create_host_vcpu(ARMCPU *cpu)
      * later while setting device attributes of the GICR during GICv3
      * reset
      */
+    arm_cpu_finalize_features(cpu, &error_abort);
     ret = kvm_arch_init_vcpu(cs);
     if (ret < 0) {
         error_report("Failed to initialize host vcpu %ld", vcpu_id);
