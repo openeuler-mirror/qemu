@@ -3282,6 +3282,11 @@ static void virt_cpu_pre_plug(HotplugHandler *hotplug_dev, DeviceState *dev,
     if (!dev->hotplugged) {
         cs->cold_booted = true;
     }
+#ifdef CONFIG_KVM
+    if (cs->cpu_index >= ms->smp.cpus) {
+        cpu->kvm_sve_finalized = true;
+    }
+#endif
 }
 
 static void virt_cpu_plug(HotplugHandler *hotplug_dev, DeviceState *dev,
