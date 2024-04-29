@@ -83,6 +83,7 @@ typedef struct CpuhzState {
     uint32_t PerformanceLimited;
     uint32_t LowestFreq;
     uint32_t NominalFreq;
+    uint32_t num_cpu;
     uint32_t reg_size;
 } CpuhzState;
 
@@ -93,10 +94,7 @@ static uint64_t cpufreq_read(void *opaque, hwaddr offset, unsigned size)
     uint64_t r;
     uint64_t n;
 
-    MachineState *ms = MACHINE(qdev_get_machine());
-    unsigned int smp_cpus = ms->smp.cpus;
-
-    if (offset >= smp_cpus * CPPC_REG_PER_CPU_STRIDE) {
+    if (offset >= s->num_cpu * CPPC_REG_PER_CPU_STRIDE) {
         warn_report("cpufreq_read: offset 0x%lx out of range", offset);
         return 0;
     }
@@ -163,11 +161,10 @@ static uint64_t cpufreq_read(void *opaque, hwaddr offset, unsigned size)
 static void cpufreq_write(void *opaque, hwaddr offset,
                            uint64_t value, unsigned size)
 {
+    CpuhzState *s = CPUFREQ(opaque);
     uint64_t n;
-    MachineState *ms = MACHINE(qdev_get_machine());
-    unsigned int smp_cpus = ms->smp.cpus;
 
-    if (offset >= smp_cpus * CPPC_REG_PER_CPU_STRIDE) {
+    if (offset >= s->num_cpu * CPPC_REG_PER_CPU_STRIDE) {
         error_printf("cpufreq_write: offset 0x%lx out of range", offset);
         return;
     }
@@ -248,9 +245,9 @@ static void cpufreq_init(Object *obj)
     CpuhzState *s = CPUFREQ(obj);
 
     MachineState *ms = MACHINE(qdev_get_machine());
-    unsigned int smp_cpus = ms->smp.cpus;
+    s->num_cpu = ms->smp.max_cpus;
 
-    s->reg_size = smp_cpus * CPPC_REG_PER_CPU_STRIDE;
+    s->reg_size = s->num_cpu * CPPC_REG_PER_CPU_STRIDE;
     if (s->reg_size > MAX_SUPPORT_SPACE) {
         error_report("Required space 0x%x excesses the max support 0x%x",
                  s->reg_size, MAX_SUPPORT_SPACE);

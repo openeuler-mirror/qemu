@@ -647,7 +647,7 @@ int kvm_arch_init_vcpu(CPUState *cs)
         return ret;
     }
 
-    if (cpu_isar_feature(aa64_sve, cpu)) {
+    if (cpu_isar_feature(aa64_sve, cpu) && !DEVICE(cpu)->hotplugged) {
         ret = kvm_arm_sve_set_vls(cs);
         if (ret) {
             return ret;

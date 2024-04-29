@@ -831,6 +831,10 @@ static void unwire_gic_cpu_irqs(VirtMachineState *vms, CPUState *cs)
     int type = vms->gic_version;
     int irq;
 
+    if (!vms->cpu_hotplug_enabled) {
+        max_cpus = ms->smp.cpus;
+    }
+
     for (irq = 0; irq < ARRAY_SIZE(timer_irq); irq++) {
         qdev_disconnect_gpio_out_named(cpudev, NULL, irq);
     }
@@ -870,6 +874,10 @@ static void wire_gic_cpu_irqs(VirtMachineState *vms, CPUState *cs)
     SysBusDevice *gicbusdev;
     int intidbase;
     int irq;
+
+    if (!vms->cpu_hotplug_enabled) {
+        max_cpus = ms->smp.cpus;
+    }
 
     intidbase = NUM_IRQS + cpu * GIC_INTERNAL;
 
@@ -914,6 +922,10 @@ static void create_gic(VirtMachineState *vms, MemoryRegion *mem)
     unsigned int max_cpus = ms->smp.max_cpus;
     uint32_t nb_redist_regions = 0;
     int revision;
+
+    if (!vms->cpu_hotplug_enabled) {
+        max_cpus = ms->smp.cpus;
+    }
 
     if (vms->gic_version == VIRT_GIC_VERSION_2) {
         gictype = gic_class_name();
@@ -2165,6 +2177,9 @@ static void virt_cpu_post_init(VirtMachineState *vms, MemoryRegion *sysmem)
 
         for (n = 0; n < possible_cpus->len; n++) {
             cpu = qemu_get_possible_cpu(n);
+            if (!qemu_present_cpu(cpu)) {
+                continue;
+            }
 
             if (vms->pmu) {
                 assert(arm_feature(&ARM_CPU(cpu)->env, ARM_FEATURE_PMU));
@@ -2195,6 +2210,9 @@ static void virt_cpu_post_init(VirtMachineState *vms, MemoryRegion *sysmem)
     if (kvm_enabled() || tcg_enabled()) {
         for (n = 0; n < possible_cpus->len; n++) {
             cpu = qemu_get_possible_cpu(n);
+            if (!qemu_present_cpu(cpu)) {
+                continue;
+            }
 
             /*
              * Now, GIC has been sized with possible CPUs and we dont require
@@ -2511,15 +2529,17 @@ static void machvirt_init(MachineState *machine)
         if (machine->smp.max_cpus > smp_cpus) {
             warn_report("cpu hotplug feature has been disabled");
         }
-        machine->smp.max_cpus = smp_cpus;
     }
 
     notifier_list_init(&vms->cpuhp_notifiers);
-    possible_cpus = mc->possible_cpu_arch_ids(machine);
     assert(possible_cpus->len == max_cpus);
     for (n = 0; n < possible_cpus->len; n++) {
         Object *cpuobj;
         CPUState *cs;
+
+        if (!vms->cpu_hotplug_enabled && n >= smp_cpus) {
+            break;
+        }
 
         cpuobj = object_new(possible_cpus->cpus[n].type);
         cs = CPU(cpuobj);

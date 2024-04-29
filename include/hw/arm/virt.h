@@ -210,10 +210,16 @@ static uint32_t virt_redist_capacity(VirtMachineState *vms, int region)
 static inline int virt_gicv3_redist_region_count(VirtMachineState *vms)
 {
     uint32_t redist0_capacity = virt_redist_capacity(vms, VIRT_GIC_REDIST);
+    MachineState *ms = MACHINE(vms);
+    unsigned int max_cpus = ms->smp.max_cpus;
+
+    if (!vms->cpu_hotplug_enabled) {
+        max_cpus = ms->smp.cpus;
+    }
 
     assert(vms->gic_version != VIRT_GIC_VERSION_2);
 
-    return (MACHINE(vms)->smp.max_cpus > redist0_capacity &&
+    return (max_cpus > redist0_capacity &&
             vms->highmem_redists) ? 2 : 1;
 }
 
