@@ -971,6 +971,9 @@ struct ArchCPU {
 
     /* KVM steal time */
     OnOffAuto kvm_steal_time;
+
+    /* KVM SVE has been finalized for this CPU */
+    bool kvm_sve_finalized;
 #endif /* CONFIG_KVM */
 
     /* Uniprocessor system with MP extensions */
