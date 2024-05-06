@@ -8,6 +8,7 @@
 #include "qemu/osdep.h"
 #include "cpu.h"
 #include "migration/cpu.h"
+#include "sysemu/tcg.h"
 #include "vec.h"
 #include "kvm/kvm_loongarch.h"
 #include "sysemu/kvm.h"
@@ -111,19 +112,6 @@ static const VMStateDescription vmstate_lasx = {
     },
 };
 
-/* TLB state */
-const VMStateDescription vmstate_tlb = {
-    .name = "cpu/tlb",
-    .version_id = 0,
-    .minimum_version_id = 0,
-    .fields = (VMStateField[]) {
-        VMSTATE_UINT64(tlb_misc, LoongArchTLB),
-        VMSTATE_UINT64(tlb_entry0, LoongArchTLB),
-        VMSTATE_UINT64(tlb_entry1, LoongArchTLB),
-        VMSTATE_END_OF_LIST()
-    }
-};
-
 static int cpu_post_load(void *opaque, int version_id)
 {
 #ifdef CONFIG_KVM
@@ -141,6 +129,38 @@ static int cpu_pre_save(void *opaque)
 #endif
     return 0;
 }
+
+#if defined(CONFIG_TCG) && !defined(CONFIG_USER_ONLY)
+static bool tlb_needed(void *opaque)
+{
+    return tcg_enabled();
+}
+
+/* TLB state */
+static const VMStateDescription vmstate_tlb_entry = {
+    .name = "cpu/tlb_entry",
+    .version_id = 0,
+    .minimum_version_id = 0,
+    .fields = (VMStateField[]) {
+        VMSTATE_UINT64(tlb_misc, LoongArchTLB),
+        VMSTATE_UINT64(tlb_entry0, LoongArchTLB),
+        VMSTATE_UINT64(tlb_entry1, LoongArchTLB),
+        VMSTATE_END_OF_LIST()
+    }
+};
+
+static const VMStateDescription vmstate_tlb = {
+    .name = "cpu/tlb",
+    .version_id = 0,
+    .minimum_version_id = 0,
+    .needed = tlb_needed,
+    .fields = (const VMStateField[]) {
+        VMSTATE_STRUCT_ARRAY(env.tlb, LoongArchCPU, LOONGARCH_TLB_MAX,
+                             0, vmstate_tlb_entry, LoongArchTLB),
+        VMSTATE_END_OF_LIST()
+    }
+};
+#endif
 
 /* LoongArch CPU state */
 const VMStateDescription vmstate_loongarch_cpu = {
@@ -212,9 +232,6 @@ const VMStateDescription vmstate_loongarch_cpu = {
         VMSTATE_UINT64(env.CSR_DBG, LoongArchCPU),
         VMSTATE_UINT64(env.CSR_DERA, LoongArchCPU),
         VMSTATE_UINT64(env.CSR_DSAVE, LoongArchCPU),
-        /* TLB */
-        VMSTATE_STRUCT_ARRAY(env.tlb, LoongArchCPU, LOONGARCH_TLB_MAX,
-                             0, vmstate_tlb, LoongArchTLB),
 
         VMSTATE_UINT64(kvm_state_counter, LoongArchCPU),
 
@@ -224,6 +241,9 @@ const VMStateDescription vmstate_loongarch_cpu = {
         &vmstate_fpu,
         &vmstate_lsx,
         &vmstate_lasx,
+#if defined(CONFIG_TCG) && !defined(CONFIG_USER_ONLY)
+        &vmstate_tlb,
+#endif
         NULL
     }
 };
