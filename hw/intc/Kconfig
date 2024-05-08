@@ -90,7 +90,7 @@ config M68K_IRQC
 config NIOS2_VIC
     bool
 
-config LOONGARCH_IPI
+config LOONGSON_IPI
     bool
 
 config LOONGARCH_IPI_KVM

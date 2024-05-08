@@ -24,7 +24,7 @@
 #include "net/net.h"
 #include "hw/loader.h"
 #include "elf.h"
-#include "hw/intc/loongarch_ipi.h"
+#include "hw/intc/loongson_ipi.h"
 #include "hw/intc/loongarch_extioi.h"
 #include "hw/intc/loongarch_pch_pic.h"
 #include "hw/intc/loongarch_pch_msi.h"
@@ -839,7 +839,7 @@ static void virt_irq_init(LoongArchVirtMachineState *lvms)
         qdev_prop_set_int32(ipi, "num-cpu", ms->smp.max_cpus);
         sysbus_realize_and_unref(SYS_BUS_DEVICE(ipi), &error_fatal);
     } else {
-        ipi = qdev_new(TYPE_LOONGARCH_IPI);
+        ipi = qdev_new(TYPE_LOONGSON_IPI);
         qdev_prop_set_uint32(ipi, "num-cpu", ms->smp.max_cpus);
         sysbus_realize_and_unref(SYS_BUS_DEVICE(ipi), &error_fatal);
 
