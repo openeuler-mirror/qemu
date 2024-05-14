@@ -10,6 +10,7 @@
 #include "qapi/error.h"
 #include "hw/boards.h"
 #include "hw/char/serial.h"
+#include "sysemu/kvm.h"
 #include "sysemu/sysemu.h"
 #include "sysemu/qtest.h"
 #include "sysemu/runstate.h"
@@ -914,12 +915,11 @@ static MemTxResult loongarch_qemu_read(void *opaque, hwaddr addr,
         ret = 0x11ULL;
         break;
     case FEATURE_REG:
-        ret = 1ULL << IOCSRF_MSI | 1ULL << IOCSRF_EXTIOI |
-              1ULL << IOCSRF_CSRIPI;
+        ret = BIT(IOCSRF_MSI) | BIT(IOCSRF_EXTIOI) | BIT(IOCSRF_CSRIPI);
         if (kvm_enabled()) {
-            ret |= 1ULL << IOCSRF_VM;
+            ret |= BIT(IOCSRF_VM);
         }
-        break;
+        return ret;
     case VENDOR_REG:
         ret = 0x6e6f73676e6f6f4cULL; /* "Loongson" */
         break;
