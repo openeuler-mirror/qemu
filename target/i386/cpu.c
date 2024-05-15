@@ -4793,6 +4793,20 @@ static const X86CPUDefinition builtin_x86_defs[] = {
                   { /* end of list */ }
               },
             },
+            { .version = 3,
+              .props = (PropValue[]) {
+                  { "xsaves", "off" },
+                  { "perfctr-core", "on" },
+                  { "clzero", "on" },
+                  { "xsaveerptr", "on" },
+                  { "aes", "on" },
+                  { "pclmulqdq", "on" },
+                  { "sha-ni", "on" },
+                  { "model-id",
+                      "Hygon Dhyana-v3 processor" },
+                  { /* end of list */ }
+              },
+            },
             { /* end of list */ }
         }
     },
