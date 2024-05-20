@@ -124,6 +124,7 @@ int csv3_load_data(uint64_t gpa, uint8_t *ptr, uint64_t len, Error **errp);
 
 int csv3_shared_region_dma_map(uint64_t start, uint64_t end);
 void csv3_shared_region_dma_unmap(uint64_t start, uint64_t end);
+void csv3_shared_region_release(uint64_t gpa, uint32_t num_pages);
 int csv3_load_incoming_page(QEMUFile *f, uint8_t *ptr);
 int csv3_load_incoming_context(QEMUFile *f);
 int csv3_queue_outgoing_page(uint8_t *ptr, uint32_t sz, uint64_t addr);

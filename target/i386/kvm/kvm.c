@@ -5099,6 +5099,7 @@ static int kvm_handle_exit_hypercall(X86CPU *cpu, struct kvm_run *run)
         if (enc) {
             sev_remove_shared_regions_list(gfn_start, gfn_end);
             csv3_shared_region_dma_unmap(gpa, gfn_end << TARGET_PAGE_BITS);
+            csv3_shared_region_release(gpa, npages);
          } else {
             sev_add_shared_regions_list(gfn_start, gfn_end);
             csv3_shared_region_dma_map(gpa, gfn_end << TARGET_PAGE_BITS);
