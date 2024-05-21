@@ -36,6 +36,7 @@
 #define CPUNAME_REG             0x20
 #define MISC_FUNC_REG           0x420
 #define IOCSRM_EXTIOI_EN        48
+#define IOCSRM_EXTIOI_INT_ENCODE  49
 
 #define IOCSR_MEM_SIZE          0x428
 
@@ -184,6 +185,8 @@ FIELD(CPUCFG6, PMVER, 1, 3)
 FIELD(CPUCFG6, PMNUM, 4, 4)
 FIELD(CPUCFG6, PMBITS, 8, 6)
 FIELD(CPUCFG6, UPM, 14, 1)
+
+#define PMNUM_MAX 16
 
 /* cpucfg[16] bits */
 FIELD(CPUCFG16, L1_IUPRE, 0, 1)
@@ -362,6 +365,9 @@ typedef struct CPUArchState {
     /* Store ipistate to access from this struct */
     DeviceState *ipistate;
 #endif
+    struct {
+        uint64_t guest_addr;
+    } st;
 } CPULoongArchState;
 
 /**

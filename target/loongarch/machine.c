@@ -9,6 +9,8 @@
 #include "cpu.h"
 #include "migration/cpu.h"
 #include "vec.h"
+#include "kvm/kvm_loongarch.h"
+#include "sysemu/kvm.h"
 
 static const VMStateDescription vmstate_fpu_reg = {
     .name = "fpu_reg",
@@ -122,14 +124,37 @@ const VMStateDescription vmstate_tlb = {
     }
 };
 
+static int cpu_post_load(void *opaque, int version_id)
+{
+#ifdef CONFIG_KVM
+    LoongArchCPU *cpu = opaque;
+    kvm_loongarch_put_pvtime(cpu);
+#endif
+    return 0;
+}
+
+static int cpu_pre_save(void *opaque)
+{
+#ifdef CONFIG_KVM
+    LoongArchCPU *cpu = opaque;
+    kvm_loongarch_get_pvtime(cpu);
+#endif
+    return 0;
+}
+
 /* LoongArch CPU state */
 const VMStateDescription vmstate_loongarch_cpu = {
     .name = "cpu",
     .version_id = 1,
     .minimum_version_id = 1,
+    .post_load = cpu_post_load,
+    .pre_save = cpu_pre_save,
     .fields = (VMStateField[]) {
         VMSTATE_UINTTL_ARRAY(env.gpr, LoongArchCPU, 32),
         VMSTATE_UINTTL(env.pc, LoongArchCPU),
+
+        /* PV time */
+        VMSTATE_UINT64(env.st.guest_addr, LoongArchCPU),
 
         /* Remaining CSRs */
         VMSTATE_UINT64(env.CSR_CRMD, LoongArchCPU),
@@ -190,6 +215,8 @@ const VMStateDescription vmstate_loongarch_cpu = {
         /* TLB */
         VMSTATE_STRUCT_ARRAY(env.tlb, LoongArchCPU, LOONGARCH_TLB_MAX,
                              0, vmstate_tlb, LoongArchTLB),
+
+        VMSTATE_UINT64(kvm_state_counter, LoongArchCPU),
 
         VMSTATE_END_OF_LIST()
     },

@@ -29,6 +29,7 @@
 #include "trace.h"
 
 static bool cap_has_mp_state;
+static unsigned int brk_insn;
 const KVMCapabilityInfo kvm_arch_required_capabilities[] = {
     KVM_CAP_LAST_INFO
 };
@@ -572,6 +573,53 @@ static int kvm_check_cpucfg2(CPUState *cs)
     return ret;
 }
 
+static int kvm_check_cpucfg6(CPUState *cs)
+{
+    int ret;
+    uint64_t val;
+    struct kvm_device_attr attr = {
+        .group = KVM_LOONGARCH_VCPU_CPUCFG,
+        .attr = 6,
+        .addr = (uint64_t)&val,
+    };
+    LoongArchCPU *cpu = LOONGARCH_CPU(cs);
+    CPULoongArchState *env = &cpu->env;
+
+    ret = kvm_vcpu_ioctl(cs, KVM_HAS_DEVICE_ATTR, &attr);
+    if (!ret) {
+        kvm_vcpu_ioctl(cs, KVM_GET_DEVICE_ATTR, &attr);
+
+        if (FIELD_EX32(env->cpucfg[6], CPUCFG6, PMP)) {
+             /* Check PMP */
+             if (!FIELD_EX32(val, CPUCFG6, PMP)) {
+                 error_report("'pmu' feature not supported by KVM on this host"
+                              " Please disable 'pmu' with "
+                              "'... -cpu XXX,pmu=off ...'\n");
+                 exit(EXIT_FAILURE);
+             }
+             /* Check PMNUM */
+             int guest_pmnum = FIELD_EX32(env->cpucfg[6], CPUCFG6, PMNUM);
+             int host_pmnum = FIELD_EX32(val, CPUCFG6, PMNUM);
+             if (guest_pmnum > host_pmnum){
+                 warn_report("The guest pmnum %d larger than KVM support %d\n",
+                              guest_pmnum, host_pmnum);
+                 env->cpucfg[6] = FIELD_DP32(env->cpucfg[6], CPUCFG6,
+                                             PMNUM, host_pmnum);
+             }
+             /* Check PMBITS */
+             int guest_pmbits = FIELD_EX32(env->cpucfg[6], CPUCFG6, PMBITS);
+             int host_pmbits = FIELD_EX32(val, CPUCFG6, PMBITS);
+             if (guest_pmbits != host_pmbits) {
+                 warn_report("The host not support PMBITS %d\n", guest_pmbits);
+                 env->cpucfg[6] = FIELD_DP32(env->cpucfg[6], CPUCFG6,
+                                             PMBITS, host_pmbits);
+             }
+        }
+    }
+
+    return ret;
+}
+
 static int kvm_loongarch_put_cpucfg(CPUState *cs)
 {
     int i, ret = 0;
@@ -585,7 +633,13 @@ static int kvm_loongarch_put_cpucfg(CPUState *cs)
             if (ret) {
                 return ret;
             }
-	}
+        }
+        if (i == 6) {
+            ret = kvm_check_cpucfg6(cs);
+            if (ret) {
+                return ret;
+            }
+        }
         val = env->cpucfg[i];
         ret = kvm_set_one_reg(cs, KVM_IOC_CPUCFG(i), &val);
         if (ret < 0) {
@@ -593,6 +647,56 @@ static int kvm_loongarch_put_cpucfg(CPUState *cs)
         }
     }
     return ret;
+}
+
+int kvm_loongarch_put_pvtime(LoongArchCPU *cpu)
+{
+    CPULoongArchState *env = &cpu->env;
+    int err;
+    struct kvm_device_attr attr = {
+        .group = KVM_LOONGARCH_VCPU_PVTIME_CTRL,
+        .attr = KVM_LOONGARCH_VCPU_PVTIME_GPA,
+        .addr = (uint64_t)&env->st.guest_addr,
+    };
+
+    err = kvm_vcpu_ioctl(CPU(cpu), KVM_HAS_DEVICE_ATTR, attr);
+    if (err != 0) {
+        /* It's ok even though kvm has not such attr */
+        return 0;
+    }
+
+    err = kvm_vcpu_ioctl(CPU(cpu), KVM_SET_DEVICE_ATTR, attr);
+    if (err != 0) {
+        error_report("PVTIME IPA: KVM_SET_DEVICE_ATTR: %s", strerror(-err));
+        return err;
+    }
+
+    return 0;
+}
+
+int kvm_loongarch_get_pvtime(LoongArchCPU *cpu)
+{
+    CPULoongArchState *env = &cpu->env;
+    int err;
+    struct kvm_device_attr attr = {
+        .group = KVM_LOONGARCH_VCPU_PVTIME_CTRL,
+        .attr = KVM_LOONGARCH_VCPU_PVTIME_GPA,
+        .addr = (uint64_t)&env->st.guest_addr,
+    };
+
+    err = kvm_vcpu_ioctl(CPU(cpu), KVM_HAS_DEVICE_ATTR, attr);
+    if (err != 0) {
+        /* It's ok even though kvm has not such attr */
+        return 0;
+    }
+
+    err = kvm_vcpu_ioctl(CPU(cpu), KVM_GET_DEVICE_ATTR, attr);
+    if (err != 0) {
+        error_report("PVTIME IPA: KVM_GET_DEVICE_ATTR: %s", strerror(-err));
+        return err;
+    }
+
+    return 0;
 }
 
 int kvm_arch_get_registers(CPUState *cs)
@@ -675,7 +779,14 @@ static void kvm_loongarch_vm_stage_change(void *opaque, bool running,
 
 int kvm_arch_init_vcpu(CPUState *cs)
 {
+    uint64_t val;
+
     qemu_add_vm_change_state_handler(kvm_loongarch_vm_stage_change, cs);
+
+    if (!kvm_get_one_reg(cs, KVM_REG_LOONGARCH_DEBUG_INST, &val)) {
+        brk_insn = val;
+    }
+
     return 0;
 }
 
@@ -755,6 +866,68 @@ bool kvm_arch_cpu_check_are_resettable(void)
     return true;
 }
 
+
+void kvm_arch_update_guest_debug(CPUState *cpu, struct kvm_guest_debug *dbg)
+{
+    if (kvm_sw_breakpoints_active(cpu)) {
+        dbg->control |= KVM_GUESTDBG_ENABLE | KVM_GUESTDBG_USE_SW_BP;
+    }
+}
+
+int kvm_arch_insert_sw_breakpoint(CPUState *cs, struct kvm_sw_breakpoint *bp)
+{
+    if (cpu_memory_rw_debug(cs, bp->pc, (uint8_t *)&bp->saved_insn, 4, 0) ||
+        cpu_memory_rw_debug(cs, bp->pc, (uint8_t *)&brk_insn, 4, 1)) {
+        error_report("%s failed", __func__);
+        return -EINVAL;
+    }
+    return 0;
+}
+
+int kvm_arch_remove_sw_breakpoint(CPUState *cs, struct kvm_sw_breakpoint *bp)
+{
+    static uint32_t brk;
+
+    if (cpu_memory_rw_debug(cs, bp->pc, (uint8_t *)&brk, 4, 0) ||
+        brk != brk_insn ||
+        cpu_memory_rw_debug(cs, bp->pc, (uint8_t *)&bp->saved_insn, 4, 1)) {
+        error_report("%s failed", __func__);
+        return -EINVAL;
+    }
+    return 0;
+}
+
+int kvm_arch_insert_hw_breakpoint(vaddr addr, vaddr len, int type)
+{
+    return -ENOSYS;
+}
+
+int kvm_arch_remove_hw_breakpoint(vaddr addr, vaddr len, int type)
+{
+    return -ENOSYS;
+}
+
+void kvm_arch_remove_all_hw_breakpoints(void)
+{
+}
+
+static bool kvm_loongarch_handle_debug(CPUState *cs, struct kvm_run *run)
+{
+    LoongArchCPU *cpu = LOONGARCH_CPU(cs);
+    CPULoongArchState *env = &cpu->env;
+
+    kvm_cpu_synchronize_state(cs);
+    if (cs->singlestep_enabled) {
+        return true;
+    }
+
+    if (kvm_find_sw_breakpoint(cs, env->pc)) {
+        return true;
+    }
+
+    return false;
+}
+
 int kvm_arch_handle_exit(CPUState *cs, struct kvm_run *run)
 {
     int ret = 0;
@@ -774,6 +947,13 @@ int kvm_arch_handle_exit(CPUState *cs, struct kvm_run *run)
                          run->iocsr_io.len,
                          run->iocsr_io.is_write);
         break;
+
+    case KVM_EXIT_DEBUG:
+        if (kvm_loongarch_handle_debug(cs, run)) {
+            ret = EXCP_DEBUG;
+        }
+        break;
+
     default:
         ret = -1;
         warn_report("KVM: unknown exit reason %d", run->exit_reason);
