@@ -5845,6 +5845,18 @@ SRST
             (qemu) qom-set /objects/iothread1 poll-max-ns 100000
 ERST
 
+DEF("mem2", HAS_ARG, QEMU_OPTION_mem2,
+    "-mem2 base=addr[G],size=n[MG]\n"
+    "                Map guest memory using host hugepages\n"
+    "                base: starting position of guest physical address\n"
+    "                size: the size of mmaped memory\n"
+    "NOTE: Both `base` and `size` need to be aligned according to 2MB\n",
+    QEMU_ARCH_I386)
+SRST
+``-mem2 base=addr[G],size=n[MG]``
+    Map the host's large page memory at the specified guest address
+    so that some devices can use larger contiguous physical memory.
+ERST
 
 HXCOMM This is the last statement. Insert new options before this line!
 
