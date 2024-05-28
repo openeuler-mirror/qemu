@@ -915,8 +915,8 @@ static void virt_firmware_init(LoongArchVirtMachineState *lvms)
 }
 
 
-static MemTxResult loongarch_qemu_write(void *opaque, hwaddr addr, uint64_t val,
-                                        unsigned size, MemTxAttrs attrs)
+static MemTxResult virt_iocsr_misc_write(void *opaque, hwaddr addr, uint64_t val,
+                                         unsigned size, MemTxAttrs attrs)
 {
     LoongArchVirtMachineState *lvms = LOONGARCH_VIRT_MACHINE(opaque);
     uint64_t features;
@@ -945,9 +945,9 @@ static MemTxResult loongarch_qemu_write(void *opaque, hwaddr addr, uint64_t val,
     return MEMTX_OK;
 }
 
-static MemTxResult loongarch_qemu_read(void *opaque, hwaddr addr,
-                                       uint64_t *data,
-                                       unsigned size, MemTxAttrs attrs)
+static MemTxResult virt_iocsr_misc_read(void *opaque, hwaddr addr,
+                                        uint64_t *data,
+                                        unsigned size, MemTxAttrs attrs)
 {
     LoongArchVirtMachineState *lvms = LOONGARCH_VIRT_MACHINE(opaque);
     uint64_t ret = 0;
@@ -962,7 +962,7 @@ static MemTxResult loongarch_qemu_read(void *opaque, hwaddr addr,
         if (kvm_enabled()) {
             ret |= BIT(IOCSRF_VM);
         }
-        return ret;
+        break;
     case VENDOR_REG:
         ret = 0x6e6f73676e6f6f4cULL; /* "Loongson" */
         break;
@@ -986,6 +986,8 @@ static MemTxResult loongarch_qemu_read(void *opaque, hwaddr addr,
             ret |= BIT_ULL(IOCSRM_EXTIOI_INT_ENCODE);
         }
         break;
+    default:
+        g_assert_not_reached();
     }
 
     *data = ret;
@@ -993,8 +995,8 @@ static MemTxResult loongarch_qemu_read(void *opaque, hwaddr addr,
 }
 
 static const MemoryRegionOps virt_iocsr_misc_ops = {
-    .read_with_attrs  = loongarch_qemu_read,
-    .write_with_attrs = loongarch_qemu_write,
+    .read_with_attrs  = virt_iocsr_misc_read,
+    .write_with_attrs = virt_iocsr_misc_write,
     .endianness = DEVICE_LITTLE_ENDIAN,
     .valid = {
         .min_access_size = 4,
