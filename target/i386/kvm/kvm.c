@@ -2265,7 +2265,7 @@ int kvm_arch_init_vcpu(CPUState *cs)
         c->eax = MAX(c->eax, KVM_CPUID_SIGNATURE | 0x10);
     }
 
-    if (sev_enabled()) {
+    if (!sev_snp_enabled() && sev_enabled()) {
         c = cpuid_find_entry(&cpuid_data.cpuid,
                              KVM_CPUID_FEATURES | kvm_base, 0);
         if (c) {
@@ -2343,7 +2343,7 @@ void kvm_arch_reset_vcpu(X86CPU *cpu)
         env->mp_state = KVM_MP_STATE_RUNNABLE;
     }
 
-    if (cpu_is_bsp(cpu) &&
+    if (!sev_snp_enabled() && cpu_is_bsp(cpu) &&
         sev_enabled() && has_map_gpa_range) {
         sev_remove_shared_regions_list(0, -1);
     }
@@ -2714,14 +2714,16 @@ int kvm_arch_init(MachineState *ms, KVMState *s)
 #endif
     }
 
-    has_map_gpa_range = kvm_check_extension(s, KVM_CAP_EXIT_HYPERCALL);
-    if (has_map_gpa_range) {
-        ret = kvm_vm_enable_cap(s, KVM_CAP_EXIT_HYPERCALL, 0,
-                                KVM_EXIT_HYPERCALL_VALID_MASK);
-        if (ret < 0) {
-            error_report("kvm: Failed to enable MAP_GPA_RANGE cap: %s",
-                         strerror(-ret));
-            return ret;
+    if (!sev_snp_enabled()){
+        has_map_gpa_range = kvm_check_extension(s, KVM_CAP_EXIT_HYPERCALL);
+        if (has_map_gpa_range) {
+            ret = kvm_vm_enable_cap(s, KVM_CAP_EXIT_HYPERCALL, 0,
+                                     KVM_EXIT_HYPERCALL_VALID_MASK);
+            if (ret < 0) {
+                error_report("kvm: Failed to enable MAP_GPA_RANGE cap: %s",
+                             strerror(-ret));
+                return ret;
+            }
         }
     }
 
