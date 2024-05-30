@@ -79,6 +79,7 @@ struct SevCommonStateClass {
 
     /* public */
     int (*launch_start)(SevCommonState *sev_common);
+    void (*launch_finish)(SevCommonState *sev_common);
 };
 
 /**
@@ -952,19 +953,21 @@ static Notifier sev_machine_done_notify = {
 };
 
 static void
-sev_launch_finish(SevGuestState *sev_guest)
+sev_launch_finish(SevCommonState *sev_common)
 {
     int ret, error;
 
-    if (csv3_enabled() &&
-        sev_guest->host_data &&
-        (kvm_hygon_coco_ext_inuse & KVM_CAP_HYGON_COCO_EXT_CSV3_LFINISH_EX)) {
-         csv3_launch_finish_ex(sev_guest->host_data);
-         goto common_finish;
+    if (csv3_enabled()) {
+        SevGuestState *sev_guest = SEV_GUEST(sev_common);
+        if (sev_guest->host_data &&
+           (kvm_hygon_coco_ext_inuse & KVM_CAP_HYGON_COCO_EXT_CSV3_LFINISH_EX)) {
+            csv3_launch_finish_ex(sev_guest->host_data);
+            goto common_finish;
+        }
     }
 
     trace_kvm_sev_launch_finish();
-    ret = sev_ioctl(SEV_COMMON(sev_guest)->sev_fd, KVM_SEV_LAUNCH_FINISH, 0,
+    ret = sev_ioctl(sev_common->sev_fd, KVM_SEV_LAUNCH_FINISH, 0,
                     &error);
     if (ret) {
         error_report("%s: LAUNCH_FINISH ret=%d fw_error=%d '%s'",
@@ -973,7 +976,7 @@ sev_launch_finish(SevGuestState *sev_guest)
     }
 
 common_finish:
-    sev_set_guest_state(SEV_COMMON(sev_guest), SEV_STATE_RUNNING);
+    sev_set_guest_state(sev_common, SEV_STATE_RUNNING);
 
     /* add migration blocker */
     error_setg(&sev_mig_blocker,
@@ -1009,12 +1012,13 @@ static void
 sev_vm_state_change(void *opaque, bool running, RunState state)
 {
     SevCommonState *sev_common = opaque;
+    SevCommonStateClass *klass = SEV_COMMON_GET_CLASS(opaque);
 
     if (running) {
         if (sev_check_state(sev_common, SEV_STATE_RECEIVE_UPDATE)) {
             sev_receive_finish(sev_common);
         } else if (!sev_check_state(sev_common, SEV_STATE_RUNNING)) {
-            sev_launch_finish(SEV_GUEST(sev_common));
+            klass->launch_finish(sev_common);
         }
     }
 }
@@ -2915,6 +2919,7 @@ sev_guest_class_init(ObjectClass *oc, void *data)
     SevCommonStateClass *klass = SEV_COMMON_CLASS(oc);
 
     klass->launch_start = sev_launch_start;
+    klass->launch_finish = sev_launch_finish;
 
     object_class_property_add_str(oc, "dh-cert-file",
                                   sev_guest_get_dh_cert_file,
