@@ -1863,7 +1863,7 @@ static int sev_snp_kvm_init(ConfidentialGuestSupport *cgs, Error **errp)
 }
 
 int
-sev_encrypt_flash(uint8_t *ptr, uint64_t len, Error **errp)
+sev_encrypt_flash(hwaddr gpa, uint8_t *ptr, uint64_t len, Error **errp)
 {
     SevCommonState *sev_common = SEV_COMMON(MACHINE(qdev_get_machine())->cgs);
 
@@ -3296,7 +3296,8 @@ bool sev_add_kernel_loader_hashes(SevKernelLoaderContext *ctx, Error **errp)
             error_report("%s: CSV3 load kernel hashes unsupported!", __func__);
             ret = false;
         }
-    } else if (sev_encrypt_flash((uint8_t *)padded_ht, sizeof(*padded_ht), errp) < 0) {
+    } else if (sev_encrypt_flash(area->base, (uint8_t *)padded_ht,
+                                 sizeof(*padded_ht), errp) < 0) {
         ret = false;
     }
 
