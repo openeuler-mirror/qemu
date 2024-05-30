@@ -96,4 +96,6 @@ struct sev_ops {
 
 extern struct sev_ops sev_ops;
 
+void pc_system_parse_sev_metadata(uint8_t *flash_ptr, size_t flash_size);
+
 #endif
