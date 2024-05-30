@@ -77,6 +77,8 @@ struct SevCommonState {
 struct SevCommonStateClass {
     X86ConfidentialGuestClass parent_class;
 
+    /* public */
+    int (*launch_start)(SevCommonState *sev_common);
 };
 
 /**
@@ -767,16 +769,16 @@ sev_read_file_base64(const char *filename, guchar **data, gsize *len)
 }
 
 static int
-sev_launch_start(SevGuestState *sev_guest)
+sev_launch_start(SevCommonState *sev_common)
 {
     gsize sz;
     int ret = 1;
     int fw_error, rc;
+    SevGuestState *sev_guest = SEV_GUEST(sev_common);
     struct kvm_sev_launch_start start = {
         .handle = sev_guest->handle, .policy = sev_guest->policy
     };
     guchar *session = NULL, *dh_cert = NULL;
-    SevCommonState *sev_common = SEV_COMMON(sev_guest);
 
     if (sev_guest->session_file) {
         if (sev_read_file_base64(sev_guest->session_file, &session, &sz) < 0) {
@@ -1149,6 +1151,7 @@ static int sev_kvm_init(ConfidentialGuestSupport *cgs, Error **errp)
     uint32_t ebx;
     uint32_t host_cbitpos;
     struct sev_user_data_status status = {};
+    SevCommonStateClass *klass = SEV_COMMON_GET_CLASS(cgs);
 
     ConfidentialGuestSupportClass *cgs_class =
         (ConfidentialGuestSupportClass *) object_get_class(OBJECT(cgs));
@@ -1284,7 +1287,7 @@ static int sev_kvm_init(ConfidentialGuestSupport *cgs, Error **errp)
      * then RECEIVE context will be created after the connection is established.
      */
     if (!runstate_check(RUN_STATE_INMIGRATE)) {
-        ret = sev_launch_start(sev_guest);
+        ret = klass->launch_start(sev_common);
         if (ret) {
             error_setg(errp, "%s: failed to create encryption context", __func__);
             goto err;
@@ -2909,6 +2912,10 @@ static void sev_guest_set_legacy_vm_type(Object *obj, bool value, Error **errp)
 static void
 sev_guest_class_init(ObjectClass *oc, void *data)
 {
+    SevCommonStateClass *klass = SEV_COMMON_CLASS(oc);
+
+    klass->launch_start = sev_launch_start;
+
     object_class_property_add_str(oc, "dh-cert-file",
                                   sev_guest_get_dh_cert_file,
                                   sev_guest_set_dh_cert_file);
