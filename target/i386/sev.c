@@ -81,6 +81,7 @@ struct SevCommonStateClass {
     /* public */
     int (*launch_start)(SevCommonState *sev_common);
     void (*launch_finish)(SevCommonState *sev_common);
+    int (*kvm_init)(ConfidentialGuestSupport *cgs, Error **errp);
 };
 
 /**
@@ -1171,7 +1172,7 @@ out:
     return sev_common->kvm_type;
 }
 
-static int sev_kvm_init(ConfidentialGuestSupport *cgs, Error **errp)
+static int sev_common_kvm_init(ConfidentialGuestSupport *cgs, Error **errp)
 {
     SevCommonState *sev_common = SEV_COMMON(cgs);
     char *devname;
@@ -1183,12 +1184,6 @@ static int sev_kvm_init(ConfidentialGuestSupport *cgs, Error **errp)
 
     ConfidentialGuestSupportClass *cgs_class =
         (ConfidentialGuestSupportClass *) object_get_class(OBJECT(cgs));
-
-    ret = ram_block_discard_disable(true);
-    if (ret) {
-        error_report("%s: cannot disable RAM discard", __func__);
-        return -1;
-    }
 
     sev_common->state = SEV_STATE_UNINIT;
 
@@ -1203,7 +1198,7 @@ static int sev_kvm_init(ConfidentialGuestSupport *cgs, Error **errp)
     if (host_cbitpos != sev_common->cbitpos) {
         error_setg(errp, "%s: cbitpos check failed, host '%d' requested '%d'",
                    __func__, host_cbitpos, sev_common->cbitpos);
-        goto err;
+        return -1;
     }
 
     /*
@@ -1216,7 +1211,7 @@ static int sev_kvm_init(ConfidentialGuestSupport *cgs, Error **errp)
         error_setg(errp, "%s: reduced_phys_bits check failed,"
                    " it should be in the range of 1 to 63, requested '%d'",
                    __func__, sev_common->reduced_phys_bits);
-        goto err;
+        return -1;
     }
 
     devname = object_property_get_str(OBJECT(sev_common), "sev-device", NULL);
@@ -1225,7 +1220,7 @@ static int sev_kvm_init(ConfidentialGuestSupport *cgs, Error **errp)
         error_setg(errp, "%s: Failed to open %s '%s'", __func__,
                    devname, strerror(errno));
         g_free(devname);
-        goto err;
+        return -1;
     }
     g_free(devname);
 
@@ -1235,7 +1230,7 @@ static int sev_kvm_init(ConfidentialGuestSupport *cgs, Error **errp)
         error_setg(errp, "%s: failed to get platform status ret=%d "
                    "fw_error='%d: %s'", __func__, ret, fw_error,
                    fw_error_to_str(fw_error));
-        goto err;
+        return -1;
     }
     sev_common->build_id = status.build;
     sev_common->api_major = status.api_major;
@@ -1245,7 +1240,7 @@ static int sev_kvm_init(ConfidentialGuestSupport *cgs, Error **errp)
         if (!kvm_kernel_irqchip_allowed()) {
             error_setg(errp, "%s: SEV-ES guests require in-kernel irqchip"
                        "support", __func__);
-            goto err;
+            return -1;
         }
     }
 
@@ -1254,7 +1249,7 @@ static int sev_kvm_init(ConfidentialGuestSupport *cgs, Error **errp)
             error_setg(errp, "%s: guest policy requires SEV-ES, but "
                          "host SEV-ES support unavailable",
                          __func__);
-            goto err;
+            return -1;
         }
         cmd = KVM_SEV_ES_INIT;
     } else {
@@ -1262,25 +1257,25 @@ static int sev_kvm_init(ConfidentialGuestSupport *cgs, Error **errp)
     }
 
     trace_kvm_sev_init();
-
-    SevGuestState *sev_guest = SEV_GUEST(sev_common);
     /* Only support reuse asid for CSV/CSV2 guest */
-    if (is_hygon_cpu() &&
-        (sev_guest->policy & GUEST_POLICY_REUSE_ASID)) {
-        char *user_id = NULL;
-        struct kvm_csv_init *init_cmd_buf = NULL;
+    if (is_hygon_cpu()) {
+        SevGuestState *sev_guest = SEV_GUEST(sev_common);
+        if (sev_guest->policy & GUEST_POLICY_REUSE_ASID) {
+            char *user_id = NULL;
+            struct kvm_csv_init *init_cmd_buf = NULL;
 
-        user_id = object_property_get_str(OBJECT(sev_guest), "user-id", NULL);
-        if (user_id && strlen(user_id)) {
-            init_cmd_buf = g_new0(struct kvm_csv_init, 1);
-            init_cmd_buf->len = strlen(user_id);
-            init_cmd_buf->userid_addr = (__u64)user_id;
-        }
-        ret = sev_ioctl(sev_common->sev_fd, cmd, init_cmd_buf, &fw_error);
+            user_id = object_property_get_str(OBJECT(sev_guest), "user-id", NULL);
+            if (user_id && strlen(user_id)) {
+                init_cmd_buf = g_new0(struct kvm_csv_init, 1);
+                init_cmd_buf->len = strlen(user_id);
+                init_cmd_buf->userid_addr = (__u64)user_id;
+            }
+            ret = sev_ioctl(sev_common->sev_fd, cmd, init_cmd_buf, &fw_error);
 
-        if (user_id) {
-            g_free(user_id);
-            g_free(init_cmd_buf);
+            if (user_id) {
+                g_free(user_id);
+                g_free(init_cmd_buf);
+            }
         }
     } else {
     if (sev_kvm_type(X86_CONFIDENTIAL_GUEST(sev_common)) == KVM_X86_DEFAULT_VM) {
@@ -1297,71 +1292,121 @@ static int sev_kvm_init(ConfidentialGuestSupport *cgs, Error **errp)
     if (ret) {
         error_setg(errp, "%s: failed to initialize ret=%d fw_error=%d '%s'",
                    __func__, ret, fw_error, fw_error_to_str(fw_error));
-        goto err;
+        return -1;
     }
 
-    /* Support CSV3 */
-    if (!ret && cmd == KVM_SEV_ES_INIT) {
-        ret = csv3_init(sev_guest->policy, sev_common->sev_fd, (void *)&sev_common->state, &sev_ops);
-        if (ret) {
-            error_setg(errp, "%s: failed to init csv3 context", __func__);
-            goto err;
+    if (!sev_snp_enabled()) {
+        SevGuestState *sev_guest = SEV_GUEST(sev_common);
+        /* Support CSV3 */
+        if (!ret && cmd == KVM_SEV_ES_INIT) {
+            ret = csv3_init(sev_guest->policy, sev_common->sev_fd, (void *)&sev_common->state, &sev_ops);
+            if (ret) {
+                error_setg(errp, "%s: failed to init csv3 context", __func__);
+                return -1;
+            }
+            /* The CSV3 guest is not resettable */
+            if (csv3_enabled())
+                csv_kvm_cpu_reset_inhibit = true;
         }
-        /* The CSV3 guest is not resettable */
-        if (csv3_enabled())
-            csv_kvm_cpu_reset_inhibit = true;
-    }
 
-    /*
-     * The LAUNCH context is used for new guest, if its an incoming guest
-     * then RECEIVE context will be created after the connection is established.
-     */
-    if (!runstate_check(RUN_STATE_INMIGRATE)) {
+        /*
+         * The LAUNCH context is used for new guest, if its an incoming guest
+         * then RECEIVE context will be created after the connection is established.
+         */
+        if (!runstate_check(RUN_STATE_INMIGRATE)) {
+            ret = klass->launch_start(sev_common);
+            if (ret) {
+                error_setg(errp, "%s: failed to create encryption context", __func__);
+                return -1;
+            }
+            if (klass->kvm_init && klass->kvm_init(cgs, errp)) {
+                return -1;
+            }
+        } else {
+            /*
+             * The CSV2 guest is not resettable after migrated to target machine,
+             * set csv_kvm_cpu_reset_inhibit to true to indicate the CSV2 guest is
+             * not resettable.
+             */
+            if (is_hygon_cpu() && sev_es_enabled()) {
+                csv_kvm_cpu_reset_inhibit = true;
+            }
+        }
+    } else {
         ret = klass->launch_start(sev_common);
+
         if (ret) {
             error_setg(errp, "%s: failed to create encryption context", __func__);
-            goto err;
+            return -1;
         }
-    } else {
-        /*
-         * The CSV2 guest is not resettable after migrated to target machine,
-         * set csv_kvm_cpu_reset_inhibit to true to indicate the CSV2 guest is
-         * not resettable.
-         */
-        if (is_hygon_cpu() && sev_es_enabled()) {
-            csv_kvm_cpu_reset_inhibit = true;
+        if (klass->kvm_init && klass->kvm_init(cgs, errp)) {
+            return -1;
         }
     }
 
-    /* CSV3 guest do not need notifier to reg/unreg memory */
-    if (!csv3_enabled()) {
-        ram_block_notifier_add(&sev_ram_notifier);
-    }
-    qemu_add_machine_init_done_notifier(&sev_machine_done_notify);
     qemu_add_vm_change_state_handler(sev_vm_state_change, sev_common);
-    migration_add_notifier(&sev_migration_state, sev_migration_state_notifier);
 
-    if (csv3_enabled()) {
-        cgs_class->memory_encryption_ops = &csv3_memory_encryption_ops;
-    } else {
-        cgs_class->memory_encryption_ops = &sev_memory_encryption_ops;
-    }
-    QTAILQ_INIT(&sev_guest->shared_regions_list);
+    if (!sev_snp_enabled()) {
+        SevGuestState *sev_guest = SEV_GUEST(sev_common);
+        migration_add_notifier(&sev_migration_state, sev_migration_state_notifier);
 
-    /* Determine whether support MSR_AMD64_SEV_ES_GHCB */
-    if (sev_es_enabled()) {
-        sev_kvm_has_msr_ghcb =
-                kvm_vm_check_extension(kvm_state, KVM_CAP_SEV_ES_GHCB);
-    } else {
-        sev_kvm_has_msr_ghcb = false;
+        if (csv3_enabled()) {
+            cgs_class->memory_encryption_ops = &csv3_memory_encryption_ops;
+        } else {
+            cgs_class->memory_encryption_ops = &sev_memory_encryption_ops;
+        }
+        QTAILQ_INIT(&sev_guest->shared_regions_list);
+
+        /* Determine whether support MSR_AMD64_SEV_ES_GHCB */
+        if (sev_es_enabled()) {
+            sev_kvm_has_msr_ghcb =
+                   kvm_vm_check_extension(kvm_state, KVM_CAP_SEV_ES_GHCB);
+        } else {
+            sev_kvm_has_msr_ghcb = false;
+        }
     }
 
     cgs->ready = true;
 
     return 0;
-err:
-    ram_block_discard_disable(false);
-    return -1;
+}
+
+static int sev_kvm_init(ConfidentialGuestSupport *cgs, Error **errp)
+{
+     int ret;
+
+    /*
+     * SEV/SEV-ES rely on pinned memory to back guest RAM so discarding
+     * isn't actually possible. With SNP, only guest_memfd pages are used
+     * for private guest memory, so discarding of shared memory is still
+     * possible..
+     */
+    ret = ram_block_discard_disable(true);
+    if (ret) {
+        error_setg(errp, "%s: cannot disable RAM discard", __func__);
+        return -1;
+    }
+
+    /*
+     * SEV uses these notifiers to register/pin pages prior to guest use,
+     * but SNP relies on guest_memfd for private pages, which has its
+     * own internal mechanisms for registering/pinning private memory.
+     */
+    /* CSV3 guest do not need notifier to reg/unreg memory */
+    if (!csv3_enabled()) {
+        ram_block_notifier_add(&sev_ram_notifier);
+    }
+
+    /*
+     * The machine done notify event is used for SEV guests to get the
+     * measurement of the encrypted images. When SEV-SNP is enabled, the
+     * measurement is part of the guest attestation process where it can
+     * be collected without any reliance on the VMM. So skip registering
+     * the notifier for SNP in favor of using guest attestation instead.
+     */
+    qemu_add_machine_init_done_notifier(&sev_machine_done_notify);
+
+    return 0;
 }
 
 int
@@ -2857,7 +2902,7 @@ sev_common_class_init(ObjectClass *oc, void *data)
     ConfidentialGuestSupportClass *klass = CONFIDENTIAL_GUEST_SUPPORT_CLASS(oc);
     X86ConfidentialGuestClass *x86_klass = X86_CONFIDENTIAL_GUEST_CLASS(oc);
 
-    klass->kvm_init = sev_kvm_init;
+    klass->kvm_init = sev_common_kvm_init;
     x86_klass->kvm_type = sev_kvm_type;
 
     object_class_property_add_str(oc, "sev-device",
@@ -2946,6 +2991,7 @@ sev_guest_class_init(ObjectClass *oc, void *data)
 
     klass->launch_start = sev_launch_start;
     klass->launch_finish = sev_launch_finish;
+    klass->kvm_init = sev_kvm_init;
 
     object_class_property_add_str(oc, "dh-cert-file",
                                   sev_guest_get_dh_cert_file,
