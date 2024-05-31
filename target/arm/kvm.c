@@ -605,7 +605,9 @@ bool write_list_to_kvmstate(ARMCPU *cpu, int level)
         if (kvm_arm_cpreg_level(regidx) > level) {
             continue;
         }
-
+        if (virtcca_cvm_enabled() && regidx == KVM_REG_ARM_TIMER_CNT) {
+            continue;
+        }
         r.id = regidx;
         switch (regidx & KVM_REG_SIZE_MASK) {
         case KVM_REG_SIZE_U32:
@@ -1140,7 +1142,7 @@ int kvm_arch_msi_data_to_gsi(uint32_t data)
 
 bool kvm_arch_cpu_check_are_resettable(void)
 {
-    return true;
+    return !virtcca_cvm_enabled();
 }
 
 void kvm_arch_accel_class_init(ObjectClass *oc)

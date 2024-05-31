@@ -36,6 +36,7 @@ void armv7m_load_kernel(ARMCPU *cpu, const char *kernel_filename, int mem_size);
 /* arm_boot.c */
 struct arm_boot_info {
     uint64_t ram_size;
+    void *numa_info;
     const char *kernel_filename;
     const char *kernel_cmdline;
     const char *initrd_filename;

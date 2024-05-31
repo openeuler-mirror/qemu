@@ -377,6 +377,11 @@ void kvm_arm_pvtime_init(CPUState *cs, uint64_t ipa);
 
 int kvm_arm_set_irq(int cpu, int irqtype, int irq, int level);
 
+void tmm_add_ram_region(hwaddr base1, hwaddr len1, hwaddr base2, hwaddr len2, bool populate);
+
+int kvm_arm_tmm_init(ConfidentialGuestSupport *cgs, Error **errp);
+bool kvm_arm_tmm_enabled(void);
+
 int kvm_arm_get_one_reg(ARMCPU *cpu, uint64_t regidx, uint64_t *target);
 int kvm_arm_set_one_reg(ARMCPU *cpu, uint64_t regidx, uint64_t *source);
 
@@ -467,6 +472,11 @@ static inline int kvm_arm_get_one_reg(ARMCPU *cpu, uint64_t regidx,
 
 static inline int kvm_arm_set_one_reg(ARMCPU *cpu, uint64_t regidx,
                                       uint64_t *source)
+{
+    g_assert_not_reached();
+}
+
+static inline int kvm_arm_tmm_init(ConfidentialGuestSupport *cgs, Error **errp G_GNUC_UNUSED)
 {
     g_assert_not_reached();
 }
