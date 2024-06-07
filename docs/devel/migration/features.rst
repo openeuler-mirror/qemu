@@ -11,3 +11,4 @@ Migration has plenty of features to support different use cases.
    vfio
    virtio
    qpl-compression
+   uadk-compression
