@@ -49,6 +49,8 @@
 
 #include "hw/boards.h"
 
+#include "sysemu/kvm.h"
+
 /* This check must be after config-host.h is included */
 #ifdef CONFIG_EVENTFD
 #include <sys/eventfd.h>
@@ -79,6 +81,9 @@ struct KVMParkedVcpu {
 };
 
 KVMState *kvm_state;
+
+bool virtcca_cvm_allowed = false;
+
 bool kvm_kernel_irqchip;
 bool kvm_split_irqchip;
 bool kvm_async_interrupts_allowed;
@@ -2272,6 +2277,11 @@ uint32_t kvm_dirty_ring_size(void)
     return kvm_state->kvm_dirty_ring_size;
 }
 
+static inline bool kvm_is_virtcca_cvm_type(int type)
+{
+    return type & VIRTCCA_CVM_TYPE;
+}
+
 static int kvm_init(MachineState *ms)
 {
     MachineClass *mc = MACHINE_GET_CLASS(ms);
@@ -2354,6 +2364,10 @@ static int kvm_init(MachineState *ms)
         type = mc->kvm_type(ms, kvm_type);
     } else if (mc->kvm_type) {
         type = mc->kvm_type(ms, NULL);
+    }
+
+    if (kvm_is_virtcca_cvm_type(type)) {
+        virtcca_cvm_allowed = true;
     }
 
     do {
@@ -3453,6 +3467,28 @@ int kvm_get_one_reg(CPUState *cs, uint64_t id, void *target)
         trace_kvm_failed_reg_get(id, strerror(-r));
     }
     return r;
+}
+
+int kvm_load_user_data(hwaddr loader_start, hwaddr image_end, hwaddr initrd_start, hwaddr dtb_end, hwaddr ram_size,
+                       struct kvm_numa_info *numa_info)
+{
+    KVMState *state = kvm_state;
+    struct kvm_user_data data;
+    int ret;
+
+    data.loader_start = loader_start;
+    data.image_end = image_end;
+    data.initrd_start = initrd_start;
+    data.dtb_end = dtb_end;
+    data.ram_size = ram_size;
+    memcpy(&data.numa_info, numa_info, sizeof(struct kvm_numa_info));
+
+    ret = kvm_vm_ioctl(state, KVM_LOAD_USER_DATA, &data);
+    if (ret < 0) {
+        error_report("%s: KVM_LOAD_USER_DATA failed!\n", __func__);
+    }
+
+    return ret;
 }
 
 static bool kvm_accel_has_memory(MachineState *ms, AddressSpace *as,

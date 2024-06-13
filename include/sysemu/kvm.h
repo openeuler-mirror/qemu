@@ -19,6 +19,7 @@
 #include "exec/memattrs.h"
 #include "qemu/accel.h"
 #include "qom/object.h"
+#include "linux-headers/linux/kvm.h"
 
 #ifdef NEED_CPU_H
 # ifdef CONFIG_KVM
@@ -32,6 +33,7 @@
 #ifdef CONFIG_KVM_IS_POSSIBLE
 
 extern bool kvm_allowed;
+extern bool virtcca_cvm_allowed;
 extern bool kvm_kernel_irqchip;
 extern bool kvm_split_irqchip;
 extern bool kvm_async_interrupts_allowed;
@@ -48,6 +50,8 @@ extern bool kvm_ioeventfd_any_length_allowed;
 extern bool kvm_msi_use_devid;
 
 #define kvm_enabled()           (kvm_allowed)
+#define virtcca_cvm_enabled()           (virtcca_cvm_allowed)
+#define VIRTCCA_CVM_TYPE (1UL << 8)
 /**
  * kvm_irqchip_in_kernel:
  *
@@ -170,6 +174,7 @@ extern bool kvm_msi_use_devid;
 #else
 
 #define kvm_enabled()           (0)
+#define virtcca_cvm_enabled()           (0)
 #define kvm_irqchip_in_kernel() (false)
 #define kvm_irqchip_is_split() (false)
 #define kvm_async_interrupts_enabled() (false)
@@ -553,6 +558,9 @@ bool kvm_arch_cpu_check_are_resettable(void);
 bool kvm_dirty_ring_enabled(void);
 
 uint32_t kvm_dirty_ring_size(void);
+
+int kvm_load_user_data(hwaddr loader_start, hwaddr image_end, hwaddr initrd_start, hwaddr dtb_end, hwaddr ram_size,
+                       struct kvm_numa_info *numa_info);
 
 #ifdef __aarch64__
 int kvm_create_shadow_device(PCIDevice *dev);

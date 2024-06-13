@@ -786,6 +786,30 @@
             '*kernel-hashes': 'bool' } }
 
 ##
+# @TmmGuestMeasurementAlgo:
+#
+# Algorithm to use for cvm measurements
+#
+# Since: FIXME
+##
+{ 'enum': 'TmmGuestMeasurementAlgo',
+'data': ['default', 'sha256', 'sha512'] }
+
+##
+# @TmmGuestProperties:
+#
+# Properties for tmm-guest objects.
+#
+# @sve-vector-length: SVE vector length (default: 0, SVE disabled)
+#
+# Since: FIXME
+##
+{ 'struct': 'TmmGuestProperties',
+  'data': { '*sve-vector-length': 'uint32',
+            '*num-pmu-counters': 'uint32',
+            '*measurement-algo': 'TmmGuestMeasurementAlgo' } }
+
+##
 # @ObjectType:
 #
 # Features:
@@ -842,7 +866,8 @@
     'tls-creds-psk',
     'tls-creds-x509',
     'tls-cipher-suites',
-    { 'name': 'x-remote-object', 'features': [ 'unstable' ] }
+    { 'name': 'x-remote-object', 'features': [ 'unstable' ] },
+    'tmm-guest'
   ] }
 
 ##
@@ -905,7 +930,8 @@
       'tls-creds-psk':              'TlsCredsPskProperties',
       'tls-creds-x509':             'TlsCredsX509Properties',
       'tls-cipher-suites':          'TlsCredsProperties',
-      'x-remote-object':            'RemoteObjectProperties'
+      'x-remote-object':            'RemoteObjectProperties',
+      'tmm-guest':                  'TmmGuestProperties'
   } }
 
 ##
