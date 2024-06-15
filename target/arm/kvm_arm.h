@@ -481,6 +481,12 @@ static inline int kvm_arm_tmm_init(ConfidentialGuestSupport *cgs, Error **errp G
     g_assert_not_reached();
 }
 
+static inline void tmm_add_ram_region(hwaddr base1, hwaddr len1, hwaddr base2,
+                                      hwaddr len2, bool populate)
+{
+    g_assert_not_reached();
+}
+
 #endif
 
 static inline const char *gic_class_name(void)

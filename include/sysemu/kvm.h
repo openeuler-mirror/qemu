@@ -175,6 +175,7 @@ extern bool kvm_msi_use_devid;
 
 #define kvm_enabled()           (0)
 #define virtcca_cvm_enabled()           (0)
+#define VIRTCCA_CVM_TYPE        (0)
 #define kvm_irqchip_in_kernel() (false)
 #define kvm_irqchip_is_split() (false)
 #define kvm_async_interrupts_enabled() (false)
