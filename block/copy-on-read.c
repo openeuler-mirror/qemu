@@ -28,10 +28,10 @@
 static int cor_open(BlockDriverState *bs, QDict *options, int flags,
                     Error **errp)
 {
-    bs->file = bdrv_open_child(NULL, options, "file", bs, &child_file, false,
-                               errp);
-    if (!bs->file) {
-        return -EINVAL;
+    int ret;
+    ret = bdrv_open_file_child(NULL, options, "file", bs, errp);
+    if (ret < 0) {
+        return ret;
     }
 
     bs->supported_write_flags = BDRV_REQ_WRITE_UNCHANGED |

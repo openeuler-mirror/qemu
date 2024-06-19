@@ -2761,6 +2761,19 @@ BdrvChild *bdrv_open_child(const char *filename,
     return bdrv_attach_child(parent, bs, bdref_key, child_role, errp);
 }
 
+/*
+ * Wrapper on bdrv_open_child() for most popular case: open primary child of bs.
+ */
+int bdrv_open_file_child(const char *filename,
+                         QDict *options, const char *bdref_key,
+                         BlockDriverState *parent, Error **errp)
+{
+    parent->file = bdrv_open_child(filename, options, bdref_key, parent,
+                                   &child_file, false, errp);
+
+    return parent->file ? 0 : -EINVAL;
+}
+
 /* TODO Future callers may need to specify parent/child_role in order for
  * option inheritance to work. Existing callers use it for the root node. */
 BlockDriverState *bdrv_open_blockdev_ref(BlockdevRef *ref, Error **errp)
