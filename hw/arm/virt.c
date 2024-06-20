@@ -261,7 +261,13 @@ static void create_fdt(VirtMachineState *vms)
 
     /* /chosen must exist for load_dtb to fill in necessary properties later */
     qemu_fdt_add_subnode(fdt, "/chosen");
-    if (!virtcca_cvm_enabled()) {
+
+    g_autofree char *kvm_type = NULL;
+    if (object_property_find(OBJECT(current_machine), "kvm-type")) {
+        kvm_type = object_property_get_str(OBJECT(current_machine),
+                                           "kvm-type", &error_abort);
+    }
+    if (!(kvm_type && !strcmp(kvm_type, "cvm"))) {
         create_kaslr_seed(ms, "/chosen");
     }
 
