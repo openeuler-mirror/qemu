@@ -136,100 +136,33 @@ free:
 static int vhost_vdpa_device_suspend(VhostVdpaDevice *vdpa)
 {
     VirtIODevice *vdev = VIRTIO_DEVICE(vdpa);
-    BusState *qbus = BUS(qdev_get_parent_bus(DEVICE(vdev)));
-    VirtioBusClass *k = VIRTIO_BUS_GET_CLASS(qbus);
-    int ret;
 
-    if (!vdpa->started || vdpa->suspended) {
+    if (!vdev->vhost_started || vdpa->suspended) {
         return 0;
     }
 
-    if (!k->set_guest_notifiers) {
-        return -EFAULT;
-    }
-
-    vdpa->started = false;
     vdpa->suspended = true;
 
-    ret = vhost_dev_suspend(&vdpa->dev, vdev, false);
-    if (ret) {
-        goto suspend_fail;
-    }
-
-    ret = k->set_guest_notifiers(qbus->parent, vdpa->dev.nvqs, false);
-    if (ret < 0) {
-        error_report("vhost guest notifier cleanup failed: %d\n", ret);
-        goto set_guest_notifiers_fail;
-    }
-
-    vhost_dev_disable_notifiers(&vdpa->dev, vdev);
-    return ret;
-
-set_guest_notifiers_fail:
-    ret = k->set_guest_notifiers(qbus->parent, vdpa->dev.nvqs, true);
-    if (ret) {
-        error_report("vhost guest notifier restore failed: %d\n", ret);
-    }
-
-suspend_fail:
-    vdpa->suspended = false;
-    vdpa->started = true;
-    return ret;
+    return vhost_dev_suspend(&vdpa->dev, vdev, false);
 }
 
 static int vhost_vdpa_device_resume(VhostVdpaDevice *vdpa)
 {
     VirtIODevice *vdev = VIRTIO_DEVICE(vdpa);
-    BusState *qbus = BUS(qdev_get_parent_bus(DEVICE(vdev)));
-    VirtioBusClass *k = VIRTIO_BUS_GET_CLASS(qbus);
-    int i, ret;
+    MigrationIncomingState *mis = migration_incoming_get_current();
+    int ret;
 
-    if (vdpa->started || !vdpa->suspended) {
+    if (!vdev->vhost_started ||
+        (!vdpa->suspended && mis->state != RUN_STATE_RESTORE_VM)) {
         return 0;
     }
 
-    if (!k->set_guest_notifiers) {
-        error_report("binding does not support guest notifiers\n");
-        return -ENOSYS;
-    }
-
-    ret = vhost_dev_enable_notifiers(&vdpa->dev, vdev);
+    ret = vhost_dev_resume(&vdpa->dev, vdev, false);
     if (ret < 0) {
-        error_report("Error enabling host notifiers: %d\n", ret);
         return ret;
     }
 
-    ret = k->set_guest_notifiers(qbus->parent, vdpa->dev.nvqs, true);
-    if (ret < 0) {
-        error_report("Error binding guest notifier: %d\n", ret);
-        goto err_host_notifiers;
-    }
-
-    vdpa->dev.acked_features = vdev->guest_features;
-
-    ret = vhost_dev_resume(&vdpa->dev, vdev, false);
-    if (ret < 0) {
-        error_report("Error starting vhost: %d\n", ret);
-        goto err_guest_notifiers;
-    }
-    vdpa->started = true;
     vdpa->suspended = false;
-
-    /*
-     * guest_notifier_mask/pending not used yet, so just unmask
-     * everything here. virtio-pci will do the right thing by
-     * enabling/disabling irqfd.
-     */
-    for (i = 0; i < vdpa->dev.nvqs; i++) {
-        vhost_virtqueue_mask(&vdpa->dev, vdev, i, false);
-    }
-
-    return ret;
-
-err_guest_notifiers:
-    k->set_guest_notifiers(qbus->parent, vdpa->dev.nvqs, false);
-err_host_notifiers:
-    vhost_dev_disable_notifiers(&vdpa->dev, vdev);
     return ret;
 }
 
@@ -254,7 +187,7 @@ static void vdpa_dev_vmstate_change(void *opaque, bool running, RunState state)
     MigrationIncomingState *mis = migration_incoming_get_current();
 
     if (!running) {
-        if (ms->state == MIGRATION_STATUS_ACTIVE || state == RUN_STATE_PAUSED) {
+        if (state == RUN_STATE_FINISH_MIGRATE || state == RUN_STATE_PAUSED) {
             ret = vhost_vdpa_device_suspend(vdpa);
             if (ret) {
                 error_report("suspend vdpa device failed: %d\n", ret);
