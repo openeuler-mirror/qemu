@@ -137,7 +137,7 @@ static int vhost_vdpa_device_suspend(VhostVdpaDevice *vdpa)
 {
     VirtIODevice *vdev = VIRTIO_DEVICE(vdpa);
 
-    if (!vdev->vhost_started || vdpa->suspended) {
+    if (!vdpa->started || vdpa->suspended) {
         return 0;
     }
 
@@ -152,7 +152,7 @@ static int vhost_vdpa_device_resume(VhostVdpaDevice *vdpa)
     MigrationIncomingState *mis = migration_incoming_get_current();
     int ret;
 
-    if (!vdev->vhost_started ||
+    if (!vdpa->started ||
         (!vdpa->suspended && mis->state != RUN_STATE_RESTORE_VM)) {
         return 0;
     }
