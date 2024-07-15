@@ -12,29 +12,10 @@
 #include "hw/intc/loongson_ipi_common.h"
 #include "hw/sysbus.h"
 
-/* Mainy used by iocsr read and write */
-#define SMP_IPI_MAILBOX      0x1000ULL
-#define CORE_STATUS_OFF       0x0
-#define CORE_EN_OFF           0x4
-#define CORE_SET_OFF          0x8
-#define CORE_CLEAR_OFF        0xc
-#define CORE_BUF_20           0x20
-#define CORE_BUF_28           0x28
-#define CORE_BUF_30           0x30
-#define CORE_BUF_38           0x38
-#define IOCSR_IPI_SEND        0x40
-#define IOCSR_MAIL_SEND       0x48
-#define IOCSR_ANY_SEND        0x158
-
-#define MAIL_SEND_ADDR        (SMP_IPI_MAILBOX + IOCSR_MAIL_SEND)
-#define MAIL_SEND_OFFSET      0
-#define ANY_SEND_OFFSET       (IOCSR_ANY_SEND - IOCSR_MAIL_SEND)
-
 #define IPI_MBX_NUM           4
 
 #define TYPE_LOONGSON_IPI "loongson_ipi"
 OBJECT_DECLARE_TYPE(LoongsonIPIState, LoongsonIPIClass, LOONGSON_IPI)
-#define TYPE_KVM_LOONGARCH_IPI "loongarch-ipi-kvm"
 
 typedef struct IPICore {
     LoongsonIPIState *ipi;
@@ -63,27 +44,5 @@ struct LoongsonIPIState {
     uint32_t num_cpu;
     IPICore *cpu;
 };
-
-struct KVMLoongArchIPI {
-    SysBusDevice parent_obj;
-    uint32_t num_cpu;
-    IPICore *cpu;
-};
-typedef struct KVMLoongArchIPI KVMLoongArchIPI;
-DECLARE_INSTANCE_CHECKER(KVMLoongArchIPI, KVM_LOONGARCH_IPI,
-                         TYPE_KVM_LOONGARCH_IPI)
-
-struct KVMLoongArchIPIClass {
-    SysBusDeviceClass parent_class;
-    DeviceRealize parent_realize;
-
-    bool is_created;
-    int dev_fd;
-
-};
-typedef struct KVMLoongArchIPIClass KVMLoongArchIPIClass;
-DECLARE_CLASS_CHECKERS(KVMLoongArchIPIClass, KVM_LOONGARCH_IPI,
-                       TYPE_KVM_LOONGARCH_IPI)
-
 
 #endif
