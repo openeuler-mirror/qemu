@@ -10,7 +10,6 @@
 
 #include "hw/boards.h"
 #include "qemu/queue.h"
-#include "hw/intc/loonson_ipi.h"
 #include "hw/block/flash.h"
 #include "hw/loongarch/boot.h"
 
