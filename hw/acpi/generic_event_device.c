@@ -397,6 +397,42 @@ static const VMStateDescription vmstate_acpi_ged = {
     }
 };
 
+static void acpi_ged_realize(DeviceState *dev, Error **errp)
+{
+    SysBusDevice *sbd = SYS_BUS_DEVICE(dev);
+    AcpiGedState *s = ACPI_GED(dev);
+    uint32_t ged_events;
+    int i;
+
+    ged_events = ctpop32(s->ged_event_bitmap);
+
+    for (i = 0; i < ARRAY_SIZE(ged_supported_events) && ged_events; i++) {
+        uint32_t event = s->ged_event_bitmap & ged_supported_events[i];
+
+        if (!event) {
+            continue;
+        }
+
+        switch (event) {
+        case ACPI_GED_CPU_HOTPLUG_EVT:
+            /* initialize CPU Hotplug related regions */
+            memory_region_init(&s->container_cpuhp, OBJECT(dev),
+                                "cpuhp container",
+                                ACPI_CPU_HOTPLUG_REG_LEN);
+            sysbus_init_mmio(sbd, &s->container_cpuhp);
+            cpu_hotplug_hw_init(&s->container_cpuhp, OBJECT(dev),
+                                &s->cpuhp_state, 0);
+            break;
+        }
+        ged_events--;
+    }
+
+    if (ged_events) {
+        error_report("Unsupported events specified");
+        abort();
+    }
+}
+
 static void acpi_ged_initfn(Object *obj)
 {
     DeviceState *dev = DEVICE(obj);
@@ -447,6 +483,7 @@ static void acpi_ged_class_init(ObjectClass *class, void *data)
     dc->desc = "ACPI Generic Event Device";
     device_class_set_props(dc, acpi_ged_properties);
     dc->vmsd = &vmstate_acpi_ged;
+    dc->realize = acpi_ged_realize;
 
     hc->plug = acpi_ged_device_plug_cb;
     hc->unplug_request = acpi_ged_unplug_request_cb;
