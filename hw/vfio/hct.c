@@ -43,7 +43,7 @@
 
 #define HCT_SHARE_DEV                "/dev/hct_share"
 
-#define HCT_VERSION_STRING           "0.5"
+#define HCT_VERSION_STRING           "0.6"
 #define DEF_VERSION_STRING           "0.1"
 #define VERSION_SIZE                 16
 
@@ -64,6 +64,8 @@
 #define HCT_PASID_BAR_IDX            4
 
 #define PASID_OFFSET                 40
+#define HCT_PASID_MEM_GID_OFFSET     1024
+#define HCT_PASID_MEM_MDEV_OFFSET    2048
 
 static volatile struct hct_data {
     int init;
@@ -94,31 +96,91 @@ struct hct_dev_ctrl {
     unsigned char rsvd[3];
     union {
         unsigned char version[VERSION_SIZE];
+        unsigned int id;
+        unsigned int pasid;
         struct {
             unsigned long vaddr;
             unsigned long iova;
             unsigned long size;
         };
-        unsigned int id;
     };
 };
 
+
+static int hct_get_sysfs_value(const char *path, int *val)
+{
+    FILE *fp = NULL;
+    char buf[CCP_INDEX_BYTES];
+    unsigned long v;
+
+    fp = fopen(path, "r");
+    if (!fp) {
+        error_report("fail to open %s, errno %d.\n", path, errno);
+        return -EINVAL;
+    }
+
+    if (fgets(buf, sizeof(buf), fp) == NULL) {
+        fclose(fp);
+        return -EINVAL;
+    }
+
+    if (1 != sscanf(buf, "%lu", &v)) {
+        fclose(fp);
+        return -EINVAL;
+    }
+
+    *val = (int)v;
+
+    fclose(fp);
+    return 0;
+}
+
+/*
+ * the memory layout of pasid_memory is as follows:
+ * offset -- 0               1024            2048                            4096
+ * a page -- |pasid(8B) ---  |gid(8B) ---    |mdev_idx(8B) ---               |
+ */
 static int pasid_get_and_init(HCTDevState *state)
 {
+    void *base = (void *)hct_data.pasid_memory;
     struct hct_dev_ctrl ctrl;
+    unsigned long *gid = NULL;
+    unsigned long *mdev_idx = NULL;
+    char path[PATH_MAX];
+    int index;
     int ret;
 
     ctrl.op = HCT_SHARE_OP_GET_PASID;
-    ctrl.id = -1;
     ret = ioctl(hct_data.hct_fd, HCT_SHARE_OP, &ctrl);
     if (ret < 0) {
         ret = -errno;
-        error_report("GET_PASID fail: %d", -errno);
+        error_report("get pasid fail, errno: %d.", errno);
         goto out;
     }
 
-    *hct_data.pasid_memory = ctrl.id;
-    hct_data.pasid = ctrl.id;
+    hct_data.pasid = (unsigned long)ctrl.pasid;
+    *(unsigned long *)base = (unsigned long)ctrl.pasid;
+
+    ctrl.op = HCT_SHARE_OP_GET_ID;
+    ret = ioctl(hct_data.hct_fd, HCT_SHARE_OP, &ctrl);
+    if (ret < 0) {
+        ret = -errno;
+        error_report("get gid fail, errno: %d", errno);
+        goto out;
+    }
+
+    gid = (unsigned long *)((unsigned long)base + HCT_PASID_MEM_GID_OFFSET);
+    *(unsigned long *)gid = (unsigned long)ctrl.id;
+
+    snprintf(path, PATH_MAX, "%s/vendor/idx", state->vdev.sysfsdev);
+    if (hct_get_sysfs_value(path, &index)) {
+        ret = -EINVAL;
+        error_report("get %s sysfs value fail.\n", path);
+        goto out;
+    }
+
+    mdev_idx = (unsigned long *)((unsigned long)base + HCT_PASID_MEM_MDEV_OFFSET);
+    *(unsigned long *)mdev_idx = (unsigned long)index;
 
 out:
     return ret;
@@ -237,41 +299,20 @@ static int hct_check_duplicated_index(int index)
 
 static int hct_get_ccp_index(HCTDevState *state)
 {
-    char path[PATH_MAX] = {0};
-    char buf[CCP_INDEX_BYTES] = {0};
-    int fd;
-    int ret;
-    int ccp_index;
+    char path[PATH_MAX];
+    int index;
 
     snprintf(path, PATH_MAX, "%s/vendor/id", state->vdev.sysfsdev);
-    fd = qemu_open_old(path, O_RDONLY);
-    if (fd < 0) {
-        error_report("open %s fail\n", path);
-        return -errno;
+    if (hct_get_sysfs_value(path, &index)) {
+        error_report("get %s sysfs value fail.\n", path);
+        return -1;
     }
 
-    ret = read(fd, buf, sizeof(buf));
-    if (ret < 0) {
-        ret = -errno;
-        error_report("read %s fail\n", path);
-        goto out;
-    }
+    if (hct_check_duplicated_index(index))
+        return -1;
 
-    if (1 != sscanf(buf, "%d", &ccp_index)) {
-        ret = -errno;
-        error_report("format addr %s fail\n", buf);
-        goto out;
-    }
-
-    if (!hct_check_duplicated_index(ccp_index)) {
-        state->sdev.shared_memory_offset = ccp_index;
-    } else {
-        ret = -1;
-    }
-
-out:
-    qemu_close(fd);
-    return ret;
+    state->sdev.shared_memory_offset = index;
+    return 0;
 }
 
 static int hct_api_version_check(void)
