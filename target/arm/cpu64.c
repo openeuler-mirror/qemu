@@ -724,6 +724,40 @@ static void aarch64_max_tengyun_s2500_initfn(Object *obj)
     }
 }
 
+static void aarch64_tengyun_s5000c_initfn(Object *obj)
+{
+    ARMCPU *cpu = ARM_CPU(obj);
+
+    aarch64_a72_initfn(obj);
+
+    cpu->midr = 0x700f8620;
+    cpu->ctr = 0x9444c004;
+    cpu->isar.regs[ID_ISAR0] = 0x2101110;
+    cpu->isar.regs[ID_ISAR1] = 0x1311211;
+    cpu->isar.regs[ID_ISAR2] = 0x21232042;
+    cpu->isar.regs[ID_ISAR3] = 0x1112131;
+    cpu->isar.regs[ID_ISAR4] = 0x10142;
+    cpu->isar.regs[ID_ISAR5] = 0x1011121;
+    cpu->isar.regs[ID_MMFR0] = 0x10201105;
+    cpu->isar.regs[ID_MMFR1] = 0x40000000;
+    cpu->isar.regs[ID_MMFR2] = 0x1260000;
+    cpu->isar.regs[ID_MMFR3] = 0x2122211;
+    cpu->isar.regs[ID_MMFR4] = 0x21110;
+    cpu->isar.regs[MVFR0] = 0x10110222;
+    cpu->isar.regs[MVFR1] = 0x13211111;
+    cpu->isar.regs[MVFR2] = 0x43;
+    cpu->isar.regs[ID_DFR0] = 0x4010088;
+    cpu->isar.regs[ID_PFR0] = 0x10131;
+    cpu->isar.regs[ID_PFR1] = 0x10010000;
+    cpu->isar.regs[ID_AA64PFR0] = 0x1100000011111112;
+    cpu->isar.regs[ID_AA64DFR0] = 0x10305408;
+    cpu->isar.regs[ID_AA64ISAR0] = 0x111110212120;
+    cpu->isar.regs[ID_AA64ISAR1] = 0x100001;
+    cpu->isar.regs[ID_AA64MMFR0] = 0x101125;
+    cpu->isar.regs[ID_AA64MMFR1] = 0x10212122;
+    cpu->isar.regs[ID_AA64MMFR2] = 0x1011;
+}
+
 /* -cpu max: if KVM is enabled, like -cpu host (best possible with this host);
  * otherwise, a CPU with as many features enabled as our emulation supports.
  * The version of '-cpu max' for qemu-system-arm is defined in cpu.c;
@@ -964,6 +998,7 @@ static const ARMCPUInfo aarch64_cpus[] = {
     { .name = "Kunpeng-920",        .initfn = aarch64_kunpeng_920_initfn},
     { .name = "FT-2000+",           .initfn = aarch64_max_ft2000plus_initfn },
     { .name = "Tengyun-S2500",      .initfn = aarch64_max_tengyun_s2500_initfn },
+    { .name = "Tengyun-S5000C",     .initfn = aarch64_tengyun_s5000c_initfn },
     { .name = "a64fx",              .initfn = aarch64_a64fx_initfn },
     { .name = "max",                .initfn = aarch64_max_initfn },
 };
