@@ -29,6 +29,7 @@
 #include "hw/qdev-properties.h"
 
 #define MAX_CCP_CNT                  48
+#define DEF_CCP_CNT_MAX              16
 #define PAGE_SIZE                    4096
 #define HCT_SHARED_MEMORY_SIZE       (PAGE_SIZE * MAX_CCP_CNT)
 #define CCP_INDEX_BYTES              4
@@ -45,6 +46,8 @@
 
 #define HCT_VERSION_STRING           "0.6"
 #define DEF_VERSION_STRING           "0.1"
+#define HCT_VERSION_STR_02           "0.2"
+#define HCT_VERSION_STR_05           "0.5"
 #define VERSION_SIZE                 16
 
 #define HCT_SHARE_IOC_TYPE           'C'
@@ -71,6 +74,7 @@ static volatile struct hct_data {
     int init;
     int hct_fd;
     unsigned long pasid;
+    unsigned long hct_shared_size;
     uint8_t *pasid_memory;
     uint8_t *hct_shared_memory;
     uint8_t ccp_index[MAX_CCP_CNT];
@@ -324,16 +328,21 @@ static int hct_api_version_check(void)
     memcpy(ctrl.version, DEF_VERSION_STRING, sizeof(DEF_VERSION_STRING));
     ret = ioctl(hct_data.hct_fd, HCT_SHARE_OP, &ctrl);
     if (ret < 0) {
-        error_report("ret %d, errno %d: fail to get hct.ko version.\n", ret,
-                     errno);
+        error_report("ret %d, errno %d: fail to get hct.ko version.\n", ret, errno);
         return -1;
-    } else if (memcmp(ctrl.version, HCT_VERSION_STRING,
-                      sizeof(HCT_VERSION_STRING)) < 0) {
-        error_report("The hct.ko version is %s, please upgrade to version %s "
-                     "or higher.\n",
-                     ctrl.version, HCT_VERSION_STRING);
+    } else if (memcmp(ctrl.version,  HCT_VERSION_STR_02, sizeof(HCT_VERSION_STR_02)) < 0) {
+        error_report("The hct.ko version is %s, please upgrade to version %s or higher.\n",
+                      ctrl.version, HCT_VERSION_STR_02);
         return -1;
+    } else if (memcmp(ctrl.version,  HCT_VERSION_STRING, sizeof(HCT_VERSION_STRING)) != 0) {
+        info_report("The hct.ko version is %s, please upgrade to version %s.\n",
+                      ctrl.version, HCT_VERSION_STRING);
     }
+
+    if (memcmp(ctrl.version,  HCT_VERSION_STR_05, sizeof(HCT_VERSION_STR_05)) < 0)
+        hct_data.hct_shared_size = PAGE_SIZE * DEF_CCP_CNT_MAX;
+    else
+        hct_data.hct_shared_size = HCT_SHARED_MEMORY_SIZE;
 
     return 0;
 }
@@ -342,9 +351,9 @@ static int hct_shared_memory_init(void)
 {
     int ret = 0;
 
-    hct_data.hct_shared_memory =
-        mmap(NULL, HCT_SHARED_MEMORY_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED,
-             hct_data.hct_fd, 0);
+    hct_data.hct_shared_memory = mmap(NULL, hct_data.hct_shared_size,
+                                     PROT_READ | PROT_WRITE, MAP_SHARED,
+                                     hct_data.hct_fd, 0);
     if (hct_data.hct_shared_memory == MAP_FAILED) {
         ret = -errno;
         error_report("map hct shared memory fail\n");
@@ -444,7 +453,7 @@ static void hct_data_uninit(HCTDevState *state)
     }
 
     if (hct_data.hct_shared_memory) {
-        munmap((void *)hct_data.hct_shared_memory, HCT_SHARED_MEMORY_SIZE);
+        munmap((void *)hct_data.hct_shared_memory, hct_data.hct_shared_size);
         hct_data.hct_shared_memory = NULL;
     }
 
@@ -496,7 +505,7 @@ unmap_pasid_memory_exit:
     munmap(hct_data.pasid_memory, PAGE_SIZE);
 
 unmap_shared_memory_exit:
-    munmap((void *)hct_data.hct_shared_memory, HCT_SHARED_MEMORY_SIZE);
+    munmap((void *)hct_data.hct_shared_memory, hct_data.hct_shared_size);
 
 out:
     return ret;
