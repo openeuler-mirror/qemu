@@ -73,6 +73,8 @@ struct SevGuestState {
     uint32_t reduced_phys_bits;
     bool kernel_hashes;
     char *user_id;
+    char *secret_header_file;
+    char *secret_file;
 
     /* runtime state */
     uint32_t handle;
@@ -391,6 +393,38 @@ sev_guest_set_user_id(Object *obj, const char *value, Error **errp)
 }
 
 static char *
+sev_guest_get_secret_header_file(Object *obj, Error **errp)
+{
+    SevGuestState *s = SEV_GUEST(obj);
+
+    return g_strdup(s->secret_header_file);
+}
+
+static void
+sev_guest_set_secret_header_file(Object *obj, const char *value, Error **errp)
+{
+    SevGuestState *s = SEV_GUEST(obj);
+
+    s->secret_header_file = g_strdup(value);
+}
+
+static char *
+sev_guest_get_secret_file(Object *obj, Error **errp)
+{
+    SevGuestState *s = SEV_GUEST(obj);
+
+    return g_strdup(s->secret_file);
+}
+
+static void
+sev_guest_set_secret_file(Object *obj, const char *value, Error **errp)
+{
+    SevGuestState *s = SEV_GUEST(obj);
+
+    s->secret_file = g_strdup(value);
+}
+
+static char *
 sev_guest_get_sev_device(Object *obj, Error **errp)
 {
     SevGuestState *sev = SEV_GUEST(obj);
@@ -448,6 +482,16 @@ sev_guest_class_init(ObjectClass *oc, void *data)
                                   sev_guest_set_user_id);
     object_class_property_set_description(oc, "user-id",
             "user id of the guest owner");
+    object_class_property_add_str(oc, "secret-header-file",
+                                  sev_guest_get_secret_header_file,
+                                  sev_guest_set_secret_header_file);
+    object_class_property_set_description(oc, "secret-header-file",
+            "header file of the guest owner's secret");
+    object_class_property_add_str(oc, "secret-file",
+                                  sev_guest_get_secret_file,
+                                  sev_guest_set_secret_file);
+    object_class_property_set_description(oc, "secret-file",
+            "file of the guest owner's secret");
 }
 
 static void
@@ -867,6 +911,9 @@ sev_launch_update_vmsa(SevGuestState *sev)
     return ret;
 }
 
+static int
+csv_load_launch_secret(const char *secret_header_file, const char *secret_file);
+
 static void
 sev_launch_get_measure(Notifier *notifier, void *unused)
 {
@@ -917,6 +964,15 @@ sev_launch_get_measure(Notifier *notifier, void *unused)
     /* encode the measurement value and emit the event */
     sev->measurement = g_base64_encode(data, measurement.len);
     trace_kvm_sev_launch_measurement(sev->measurement);
+
+    /* Hygon CSV will auto load guest owner's secret */
+    if (is_hygon_cpu()) {
+        if (sev->secret_header_file &&
+            strlen(sev->secret_header_file) &&
+            sev->secret_file &&
+            strlen(sev->secret_file))
+            csv_load_launch_secret(sev->secret_header_file, sev->secret_file);
+    }
 }
 
 static char *sev_get_launch_measurement(void)
@@ -2523,6 +2579,50 @@ int csv_load_incoming_cpu_state(QEMUFile *f)
         status = qemu_get_be32(f);
     }
 
+    return ret;
+}
+
+static int
+csv_load_launch_secret(const char *secret_header_file, const char *secret_file)
+{
+    gsize secret_header_size, secret_size;
+    gchar *secret_header = NULL, *secret = NULL;
+    uint8_t *data;
+    struct sev_secret_area *area;
+    uint64_t gpa;
+    GError *error = NULL;
+    Error *local_err = NULL;
+    int ret = 0;
+
+    if (!g_file_get_contents(secret_header_file,
+                             &secret_header,
+                             &secret_header_size, &error)) {
+        error_report("CSV: Failed to read '%s' (%s)",
+                     secret_header_file, error->message);
+        g_error_free(error);
+        return -1;
+    }
+
+    if (!g_file_get_contents(secret_file, &secret, &secret_size, &error)) {
+        error_report("CSV: Failed to read '%s' (%s)", secret_file, error->message);
+        g_error_free(error);
+        return -1;
+    }
+
+    if (!pc_system_ovmf_table_find(SEV_SECRET_GUID, &data, NULL)) {
+        error_report("CSV: no secret area found in OVMF, gpa must be"
+                     " specified.");
+        return -1;
+    }
+    area = (struct sev_secret_area *)data;
+    gpa = area->base;
+
+    ret = sev_inject_launch_secret((char *)secret_header,
+                                   (char *)secret, gpa, &local_err);
+
+    if (local_err) {
+        error_report_err(local_err);
+    }
     return ret;
 }
 

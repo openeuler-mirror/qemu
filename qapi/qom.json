@@ -869,6 +869,11 @@
 # @user-id: the user id of the guest owner, only support on Hygon CPUs
 #     (since 8.2)
 #
+# @secret-header-file: the header file of guest owner's secret, only
+#                      support on Hygon CPUs (since 8.2)
+# @secret-file: the file guest owner's secret, only support on Hygon
+#               CPUs (since 8.2)
+#
 # Since: 2.12
 ##
 { 'struct': 'SevGuestProperties',
@@ -880,7 +885,9 @@
             '*cbitpos': 'uint32',
             'reduced-phys-bits': 'uint32',
             '*kernel-hashes': 'bool',
-            '*user-id': 'str' } }
+            '*user-id': 'str',
+            '*secret-header-file': 'str',
+            '*secret-file': 'str' } }
 
 ##
 # @ThreadContextProperties:
