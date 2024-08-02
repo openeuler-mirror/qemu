@@ -584,6 +584,11 @@ static int kvm_arm_sve_set_vls(CPUState *cs)
 
     assert(cpu->sve_max_vq <= KVM_ARM64_SVE_VQ_MAX);
 
+    if (virtcca_cvm_enabled()) {
+        /* Already set through tmm config */
+        return 0;
+    }
+
     return kvm_set_one_reg(cs, KVM_REG_ARM64_SVE_VLS, &vls[0]);
 }
 

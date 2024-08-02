@@ -25,6 +25,7 @@
 #include "qemu/osdep.h"
 #include "qemu/error-report.h"
 #include "qemu/module.h"
+#include "sysemu/kvm.h"
 #include "qapi/error.h"
 #include "hw/virtio/virtio-bus.h"
 #include "hw/virtio/virtio.h"
@@ -81,6 +82,11 @@ void virtio_bus_device_plugged(VirtIODevice *vdev, Error **errp)
     vdev->dma_as = &address_space_memory;
     if (has_iommu) {
         vdev_has_iommu = virtio_host_has_feature(vdev, VIRTIO_F_IOMMU_PLATFORM);
+
+        if (virtcca_cvm_enabled() && (strcmp(vdev->name, "vhost-user-fs") == 0)) {
+            vdev_has_iommu = true;
+        }
+
         /*
          * Present IOMMU_PLATFORM to the driver iff iommu_plattform=on and
          * device operational. If the driver does not accept IOMMU_PLATFORM
