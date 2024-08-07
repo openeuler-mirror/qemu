@@ -58,11 +58,13 @@
 #
 # @ripemd160: RIPEMD-160. (since 2.7)
 #
+# @sm3: SM3. (since 8.2.0)
+#
 # Since: 2.6
 ##
 { 'enum': 'QCryptoHashAlgorithm',
   'prefix': 'QCRYPTO_HASH_ALG',
-  'data': ['md5', 'sha1', 'sha224', 'sha256', 'sha384', 'sha512', 'ripemd160']}
+  'data': ['md5', 'sha1', 'sha224', 'sha256', 'sha384', 'sha512', 'ripemd160', 'sm3']}
 
 ##
 # @QCryptoCipherAlgorithm:
