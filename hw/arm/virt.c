@@ -285,8 +285,16 @@ static void create_fdt(VirtMachineState *vms)
 
     /* /chosen must exist for load_dtb to fill in necessary properties later */
     qemu_fdt_add_subnode(fdt, "/chosen");
+
+    g_autofree char *kvm_type = NULL;
+    if (object_property_find(OBJECT(current_machine), "kvm-type")) {
+        kvm_type = object_property_get_str(OBJECT(current_machine),
+                                           "kvm-type", &error_abort);
+    }
     if (vms->dtb_randomness) {
-        create_randomness(ms, "/chosen");
+        if (!(kvm_type && !strcmp(kvm_type, "cvm"))) {
+            create_randomness(ms, "/chosen");
+        }
     }
 
     if (vms->secure) {
@@ -1953,6 +1961,19 @@ static void virt_set_memmap(VirtMachineState *vms, int pa_bits)
         vms->memmap[i] = base_memmap[i];
     }
 
+    /* fix VIRT_MEM range */
+    if (object_property_find(OBJECT(current_machine), "kvm-type")) {
+        g_autofree char *kvm_type = object_property_get_str(OBJECT(current_machine),
+                                                            "kvm-type", &error_abort);
+
+        if (!strcmp(kvm_type, "cvm")) {
+            vms->memmap[VIRT_MEM].base = 3 * GiB;
+            vms->memmap[VIRT_MEM].size = ms->ram_size;
+            info_report("[qemu] fix VIRT_MEM range 0x%llx - 0x%llx\n", (unsigned long long)(vms->memmap[VIRT_MEM].base),
+                 (unsigned long long)(vms->memmap[VIRT_MEM].base + ms->ram_size));
+        }
+    }
+
     if (ms->ram_slots > ACPI_MAX_RAM_SLOTS) {
         error_report("unsupported number of memory slots: %"PRIu64,
                      ms->ram_slots);
@@ -2440,7 +2461,7 @@ static void machvirt_init(MachineState *machine)
      */
     if (vms->secure && firmware_loaded) {
         vms->psci_conduit = QEMU_PSCI_CONDUIT_DISABLED;
-    } else if (vms->virt) {
+    } else if (vms->virt || virtcca_cvm_enabled()) {
         vms->psci_conduit = QEMU_PSCI_CONDUIT_SMC;
     } else {
         vms->psci_conduit = QEMU_PSCI_CONDUIT_HVC;
@@ -2509,6 +2530,13 @@ static void machvirt_init(MachineState *machine)
         }
     }
 
+    if (virtcca_cvm_enabled()) {
+        int ret = kvm_arm_tmm_init(machine->cgs, &error_fatal);
+        if (ret != 0) {
+            error_report("fail to initialize TMM");
+            exit(1);
+        }
+    }
     create_fdt(vms);
     qemu_log("cpu init start\n");
 
@@ -3592,6 +3620,15 @@ static HotplugHandler *virt_machine_get_hotplug_handler(MachineState *machine,
 static int virt_kvm_type(MachineState *ms, const char *type_str)
 {
     VirtMachineState *vms = VIRT_MACHINE(ms);
+    int virtcca_cvm_type = 0;
+    if (object_property_find(OBJECT(current_machine), "kvm-type")) {
+        g_autofree char *kvm_type = object_property_get_str(OBJECT(current_machine),
+                                                            "kvm-type", &error_abort);
+
+        if (!strcmp(kvm_type, "cvm")) {
+            virtcca_cvm_type = VIRTCCA_CVM_TYPE;
+        }
+    }
     int max_vm_pa_size, requested_pa_size;
     bool fixed_ipa;
 
@@ -3621,7 +3658,9 @@ static int virt_kvm_type(MachineState *ms, const char *type_str)
      * the implicit legacy 40b IPA setting, in which case the kvm_type
      * must be 0.
      */
-    return fixed_ipa ? 0 : requested_pa_size;
+    return strcmp(type_str, "cvm") == 0 ?
+        ((fixed_ipa ? 0 : requested_pa_size) | virtcca_cvm_type) :
+        (fixed_ipa ? 0 : requested_pa_size);
 }
 
 static void virt_machine_class_init(ObjectClass *oc, void *data)
@@ -3793,6 +3832,19 @@ static void virt_machine_class_init(ObjectClass *oc, void *data)
 
 }
 
+static char *virt_get_kvm_type(Object *obj, Error **errp G_GNUC_UNUSED)
+{
+    VirtMachineState *vms = VIRT_MACHINE(obj);
+    return g_strdup(vms->kvm_type);
+}
+
+static void virt_set_kvm_type(Object *obj, const char *value, Error **errp G_GNUC_UNUSED)
+{
+    VirtMachineState *vms = VIRT_MACHINE(obj);
+    g_free(vms->kvm_type);
+    vms->kvm_type = g_strdup(value);
+}
+
 static void virt_instance_init(Object *obj)
 {
     VirtMachineState *vms = VIRT_MACHINE(obj);
@@ -3853,6 +3905,9 @@ static void virt_instance_init(Object *obj)
 
     vms->oem_id = g_strndup(ACPI_BUILD_APPNAME6, 6);
     vms->oem_table_id = g_strndup(ACPI_BUILD_APPNAME8, 8);
+
+    object_property_add_str(obj, "kvm-type", virt_get_kvm_type, virt_set_kvm_type);
+    object_property_set_description(obj, "kvm-type", "CVM or Normal VM");
 }
 
 static const TypeInfo virt_machine_info = {

@@ -899,6 +899,29 @@
   'data': { '*cpu-affinity': ['uint16'],
             '*node-affinity': ['uint16'] } }
 
+##
+# @TmmGuestMeasurementAlgo:
+#
+# Algorithm to use for cvm measurements
+#
+# Since: FIXME
+##
+{ 'enum': 'TmmGuestMeasurementAlgo',
+'data': ['default', 'sha256', 'sha512'] }
+
+##
+# @TmmGuestProperties:
+#
+# Properties for tmm-guest objects.
+#
+# @sve-vector-length: SVE vector length (default: 0, SVE disabled)
+#
+# Since: FIXME
+##
+{ 'struct': 'TmmGuestProperties',
+  'data': { '*sve-vector-length': 'uint32',
+            '*num-pmu-counters': 'uint32',
+            '*measurement-algo': 'TmmGuestMeasurementAlgo' } }
 
 ##
 # @ObjectType:
@@ -962,7 +985,8 @@
     'tls-creds-x509',
     'tls-cipher-suites',
     { 'name': 'x-remote-object', 'features': [ 'unstable' ] },
-    { 'name': 'x-vfio-user-server', 'features': [ 'unstable' ] }
+    { 'name': 'x-vfio-user-server', 'features': [ 'unstable' ] },
+    'tmm-guest'
   ] }
 
 ##
@@ -1029,7 +1053,8 @@
       'tls-creds-x509':             'TlsCredsX509Properties',
       'tls-cipher-suites':          'TlsCredsProperties',
       'x-remote-object':            'RemoteObjectProperties',
-      'x-vfio-user-server':         'VfioUserServerProperties'
+      'x-vfio-user-server':         'VfioUserServerProperties',
+      'tmm-guest':                  'TmmGuestProperties'
   } }
 
 ##

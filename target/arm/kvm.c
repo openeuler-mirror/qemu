@@ -613,6 +613,10 @@ bool write_list_to_kvmstate(ARMCPU *cpu, int level)
             continue;
         }
 
+        if (virtcca_cvm_enabled() && regidx == KVM_REG_ARM_TIMER_CNT) {
+            continue;
+        }
+
         switch (regidx & KVM_REG_SIZE_MASK) {
         case KVM_REG_SIZE_U32:
             v32 = cpu->cpreg_values[i];
@@ -1212,7 +1216,7 @@ int kvm_arch_msi_data_to_gsi(uint32_t data)
 
 bool kvm_arch_cpu_check_are_resettable(void)
 {
-    return true;
+    return !virtcca_cvm_enabled();
 }
 
 static void kvm_arch_get_eager_split_size(Object *obj, Visitor *v,

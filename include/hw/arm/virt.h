@@ -182,6 +182,7 @@ struct VirtMachineState {
     PCIBus *bus;
     char *oem_id;
     char *oem_table_id;
+    char *kvm_type;
     NotifierList cpuhp_notifiers;
 };
 

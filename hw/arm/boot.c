@@ -27,6 +27,7 @@
 #include "qemu/config-file.h"
 #include "qemu/option.h"
 #include "qemu/units.h"
+#include "kvm_arm.h"
 
 /* Kernel boot protocol is specified in the kernel docs
  * Documentation/arm/Booting and Documentation/arm64/booting.txt
@@ -1142,6 +1143,16 @@ static void arm_setup_direct_kernel_boot(ARMCPU *cpu,
     for (cs = first_cpu; cs; cs = CPU_NEXT(cs)) {
         ARM_CPU(cs)->env.boot_info = info;
     }
+
+    if (kvm_enabled() && virtcca_cvm_enabled()) {
+        if (info->dtb_limit == 0) {
+            info->dtb_limit = info->dtb_start + 0x200000;
+        }
+        kvm_load_user_data(info->loader_start, image_high_addr, info->initrd_start,
+                           info->dtb_limit, info->ram_size, (struct kvm_numa_info *)info->numa_info);
+        tmm_add_ram_region(info->loader_start, image_high_addr - info->loader_start,
+                           info->initrd_start, info->dtb_limit - info->initrd_start, true);
+    }
 }
 
 static void arm_setup_firmware_boot(ARMCPU *cpu, struct arm_boot_info *info)
@@ -1235,12 +1246,50 @@ void arm_load_kernel(ARMCPU *cpu, MachineState *ms, struct arm_boot_info *info)
     info->initrd_filename = ms->initrd_filename;
     info->dtb_filename = ms->dtb;
     info->dtb_limit = 0;
+    if (kvm_enabled() && virtcca_cvm_enabled()) {
+        info->ram_size = ms->ram_size;
+        info->numa_info = g_malloc(sizeof(struct kvm_numa_info));
+        struct kvm_numa_info *numa_info = (struct kvm_numa_info *) info->numa_info;
+        if (ms->numa_state != NULL && ms->numa_state->num_nodes > 0) {
+            numa_info->numa_cnt = ms->numa_state->num_nodes;
+            uint64_t mem_base = info->loader_start;
+            for (int64_t i = 0; i < ms->numa_state->num_nodes && i < MAX_NUMA_NODE; i++) {
+                uint64_t mem_len = ms->numa_state->nodes[i].node_mem;
+                numa_info->numa_nodes[i].numa_id = i;
+                numa_info->numa_nodes[i].ipa_start = mem_base;
+                numa_info->numa_nodes[i].ipa_size = mem_len;
+                memcpy(numa_info->numa_nodes[i].host_numa_nodes, ms->numa_state->nodes[i].node_memdev->host_nodes,
+                       MAX_NODES / BITS_PER_LONG * sizeof(uint64_t));
+                mem_base += mem_len;
+            }
+        } else {
+            numa_info->numa_cnt = 1;
+            numa_info->numa_nodes[0].numa_id = 0;
+            numa_info->numa_nodes[0].ipa_start = info->loader_start;
+            numa_info->numa_nodes[0].ipa_size = info->ram_size;
+            memset(numa_info->numa_nodes[0].host_numa_nodes, 0, MAX_NODES / BITS_PER_LONG * sizeof(uint64_t));
+        }
+
+        for (int cpu_idx = ms->smp.cpus - 1; cpu_idx >= 0; cpu_idx--) {
+            ARMCPU *armcpu = ARM_CPU(qemu_get_cpu(cpu_idx));
+            CPUState *local_cs = CPU(armcpu);
+            uint64_t node_id = 0;
+            if (ms->possible_cpus->cpus[local_cs->cpu_index].props.has_node_id)
+                node_id = ms->possible_cpus->cpus[local_cs->cpu_index].props.node_id;
+            bitmap_set((unsigned long *)numa_info->numa_nodes[node_id].cpu_id, cpu_idx, 1);
+        }
+    }
 
     /* Load the kernel.  */
     if (!info->kernel_filename || info->firmware_loaded) {
         arm_setup_firmware_boot(cpu, info);
     } else {
         arm_setup_direct_kernel_boot(cpu, info);
+    }
+
+    if (kvm_enabled() && virtcca_cvm_enabled()) {
+        g_free(info->numa_info);
+        info->numa_info = NULL;
     }
 
     /*
