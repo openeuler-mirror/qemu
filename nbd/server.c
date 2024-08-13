@@ -111,10 +111,12 @@ typedef struct NBDExportMetaContexts {
 struct NBDClient {
     int refcount;
     void (*close_fn)(NBDClient *client, bool negotiated);
+    void *owner;
 
     NBDExport *exp;
     QCryptoTLSCreds *tlscreds;
     char *tlsauthz;
+    uint32_t handshake_max_secs;
     QIOChannelSocket *sioc; /* The underlying data channel */
     QIOChannel *ioc; /* The current I/O channel which may differ (eg TLS) */
 
@@ -1583,7 +1585,7 @@ void nbd_export_close(NBDExport *exp)
 
     nbd_export_get(exp);
     /*
-     * TODO: Should we expand QMP NbdServerRemoveNode enum to allow a
+     * TODO: Should we expand QMP BlockExportRemoveMode enum to allow a
      * close mode that stops advertising the export to new clients but
      * still permits existing clients to run to completion? Because of
      * that possibility, nbd_export_close() can be called more than
@@ -2414,33 +2416,63 @@ static void nbd_client_receive_next_request(NBDClient *client)
     }
 }
 
+static void nbd_handshake_timer_cb(void *opaque)
+{
+    QIOChannel *ioc = opaque;
+
+    trace_nbd_handshake_timer_cb();
+    qio_channel_shutdown(ioc, QIO_CHANNEL_SHUTDOWN_BOTH, NULL);
+}
+
 static coroutine_fn void nbd_co_client_start(void *opaque)
 {
     NBDClient *client = opaque;
     Error *local_err = NULL;
+    QEMUTimer *handshake_timer = NULL;
 
     qemu_co_mutex_init(&client->send_lock);
+
+    /*
+     * Create a timer to bound the time spent in negotiation. If the
+     * timer expires, it is likely nbd_negotiate will fail because the
+     * socket was shutdown.
+     */
+    if (client->handshake_max_secs > 0) {
+        handshake_timer = aio_timer_new(qemu_get_aio_context(),
+                                        QEMU_CLOCK_REALTIME,
+                                        SCALE_NS,
+                                        nbd_handshake_timer_cb,
+                                        client->sioc);
+        timer_mod(handshake_timer,
+                  qemu_clock_get_ns(QEMU_CLOCK_REALTIME) +
+                  client->handshake_max_secs * NANOSECONDS_PER_SECOND);
+    }
 
     if (nbd_negotiate(client, &local_err)) {
         if (local_err) {
             error_report_err(local_err);
         }
+        timer_free(handshake_timer);
         client_close(client, false);
         return;
     }
 
+    timer_free(handshake_timer);
     nbd_client_receive_next_request(client);
 }
 
 /*
- * Create a new client listener using the given channel @sioc.
+ * Create a new client listener using the given channel @sioc and @owner.
  * Begin servicing it in a coroutine.  When the connection closes, call
- * @close_fn with an indication of whether the client completed negotiation.
+ * @close_fn with an indication of whether the client completed negotiation
+ * within @handshake_max_secs seconds (0 for unbounded).
  */
 void nbd_client_new(QIOChannelSocket *sioc,
+                    uint32_t handshake_max_secs,
                     QCryptoTLSCreds *tlscreds,
                     const char *tlsauthz,
-                    void (*close_fn)(NBDClient *, bool))
+                    void (*close_fn)(NBDClient *, bool),
+                    void *owner)
 {
     NBDClient *client;
     Coroutine *co;
@@ -2452,12 +2484,20 @@ void nbd_client_new(QIOChannelSocket *sioc,
         object_ref(OBJECT(client->tlscreds));
     }
     client->tlsauthz = g_strdup(tlsauthz);
+    client->handshake_max_secs = handshake_max_secs;
     client->sioc = sioc;
     object_ref(OBJECT(client->sioc));
     client->ioc = QIO_CHANNEL(sioc);
     object_ref(OBJECT(client->ioc));
     client->close_fn = close_fn;
+    client->owner = owner;
 
     co = qemu_coroutine_create(nbd_co_client_start, client);
     qemu_coroutine_enter(co);
+}
+
+void *
+nbd_client_owner(NBDClient *client)
+{
+    return client->owner;
 }
