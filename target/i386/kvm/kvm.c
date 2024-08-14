@@ -1791,10 +1791,6 @@ int kvm_arch_init_vcpu(CPUState *cs)
         case 0xb:
         case 0xd:
             for (j = 0; ; j++) {
-                if (i == 0xd && j == 64) {
-                    break;
-                }
-
                 c->function = i;
                 c->flags = KVM_CPUID_FLAG_SIGNIFCANT_INDEX;
                 c->index = j;
@@ -1810,7 +1806,12 @@ int kvm_arch_init_vcpu(CPUState *cs)
                     break;
                 }
                 if (i == 0xd && c->eax == 0) {
-                    continue;
+                    if (j < 63) {
+                        continue;
+                    } else {
+                        cpuid_i--;
+                        break;
+                    }
                 }
                 if (cpuid_i == KVM_MAX_CPUID_ENTRIES) {
                     fprintf(stderr, "cpuid_data is full, no space for "
