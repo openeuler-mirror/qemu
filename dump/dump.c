@@ -20,6 +20,7 @@
 #include "sysemu/dump.h"
 #include "sysemu/runstate.h"
 #include "sysemu/cpus.h"
+#include "sysemu/kvm.h"
 #include "qapi/error.h"
 #include "qapi/qapi-commands-dump.h"
 #include "qapi/qapi-events-dump.h"
@@ -2065,6 +2066,12 @@ void qmp_dump_guest_memory(bool paging, const char *protocol,
                            Error **errp)
 {
     ERRP_GUARD();
+
+    if (virtcca_cvm_enabled()) {
+        error_setg(errp, "The dump-guest-memory command is temporarily unsupported in cvm.");
+        return;
+    }
+
     const char *p;
     int fd;
     DumpState *s;

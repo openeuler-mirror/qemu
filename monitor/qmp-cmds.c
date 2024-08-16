@@ -23,6 +23,7 @@
 #include "sysemu/runstate.h"
 #include "sysemu/runstate-action.h"
 #include "sysemu/block-backend.h"
+#include "sysemu/kvm.h"
 #include "qapi/error.h"
 #include "qapi/qapi-init-commands.h"
 #include "qapi/qapi-commands-control.h"
@@ -50,6 +51,11 @@ void qmp_quit(Error **errp)
 
 void qmp_stop(Error **errp)
 {
+    if (virtcca_cvm_enabled()) {
+        error_setg(errp, "The stop command is temporarily unsupported in cvm.");
+        return;
+    }
+
     /* if there is a dump in background, we should wait until the dump
      * finished */
     if (qemu_system_dump_in_progress()) {
