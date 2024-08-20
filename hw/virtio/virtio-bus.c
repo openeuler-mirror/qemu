@@ -83,7 +83,7 @@ void virtio_bus_device_plugged(VirtIODevice *vdev, Error **errp)
     if (has_iommu) {
         vdev_has_iommu = virtio_host_has_feature(vdev, VIRTIO_F_IOMMU_PLATFORM);
 
-        if (virtcca_cvm_enabled() && (strcmp(vdev->name, "vhost-user-fs") == 0)) {
+        if (virtcca_cvm_enabled() && (strcmp(vdev->name, "virtio-user-fs") == 0)) {
             vdev_has_iommu = true;
         }
 
