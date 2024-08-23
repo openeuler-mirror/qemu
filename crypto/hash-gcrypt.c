@@ -33,6 +33,9 @@ static int qcrypto_hash_alg_map[QCRYPTO_HASH_ALG__MAX] = {
     [QCRYPTO_HASH_ALG_SHA384] = GCRY_MD_SHA384,
     [QCRYPTO_HASH_ALG_SHA512] = GCRY_MD_SHA512,
     [QCRYPTO_HASH_ALG_RIPEMD160] = GCRY_MD_RMD160,
+#ifdef CONFIG_CRYPTO_SM3
+    [QCRYPTO_HASH_ALG_SM3] = GCRY_MD_SM3,
+#endif
 };
 
 gboolean qcrypto_hash_supports(QCryptoHashAlgorithm alg)
