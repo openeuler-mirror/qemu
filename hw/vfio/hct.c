@@ -235,8 +235,8 @@ static int hct_check_duplicated_index(int index)
 
 static int hct_get_ccp_index(HCTDevState *state)
 {
-    char path[PATH_MAX];
-    char buf[CCP_INDEX_BYTES];
+    char path[PATH_MAX] = {0};
+    char buf[CCP_INDEX_BYTES] = {0};
     int fd;
     int ret;
     int ccp_index;
