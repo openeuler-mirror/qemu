@@ -114,7 +114,7 @@ struct hct_dev_ctrl {
 static int hct_get_sysfs_value(const char *path, int *val)
 {
     FILE *fp = NULL;
-    char buf[CCP_INDEX_BYTES];
+    char buf[CCP_INDEX_BYTES] = {0};
     unsigned long v;
 
     fp = fopen(path, "r");
@@ -303,7 +303,7 @@ static int hct_check_duplicated_index(int index)
 
 static int hct_get_ccp_index(HCTDevState *state)
 {
-    char path[PATH_MAX];
+    char path[PATH_MAX] = {0};
     int index;
 
     snprintf(path, PATH_MAX, "%s/vendor/id", state->vdev.sysfsdev);
