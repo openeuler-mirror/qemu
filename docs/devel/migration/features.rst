@@ -12,3 +12,4 @@ Migration has plenty of features to support different use cases.
    virtio
    qpl-compression
    uadk-compression
+   qatzip-compression
