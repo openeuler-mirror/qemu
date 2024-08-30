@@ -2810,6 +2810,16 @@ void kvm_cpu_synchronize_pre_loadvm(CPUState *cpu)
     run_on_cpu(cpu, do_kvm_cpu_synchronize_pre_loadvm, RUN_ON_CPU_NULL);
 }
 
+void kvm_cpus_control_pre_system_reset(void)
+{
+    kvm_vm_ioctl(kvm_state, KVM_CONTROL_VCPU_PRE_SYSTEM_RESET, NULL);
+}
+
+void kvm_cpus_control_post_system_reset(void)
+{
+    kvm_vm_ioctl(kvm_state, KVM_CONTROL_VCPU_POST_SYSTEM_RESET, NULL);
+}
+
 #ifdef KVM_HAVE_MCE_INJECTION
 static __thread void *pending_sigbus_addr;
 static __thread int pending_sigbus_code;

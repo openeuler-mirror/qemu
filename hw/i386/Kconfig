@@ -10,6 +10,15 @@ config SGX
     bool
     depends on KVM
 
+config CSV
+    bool
+    select HYGON_CSV_MIG_ACCEL
+    depends on SEV
+
+config HYGON_CSV_MIG_ACCEL
+    bool
+    depends on CSV
+
 config PC
     bool
     imply APPLESMC
@@ -26,6 +35,7 @@ config PC
     imply QXL
     imply SEV
     imply SGX
+    imply CSV
     imply TEST_DEVICES
     imply TPM_CRB
     imply TPM_TIS_ISA

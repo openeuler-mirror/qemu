@@ -27,10 +27,13 @@
 #include "crypto/hash.h"
 #include "sysemu/kvm.h"
 #include "sev.h"
+#include "csv.h"
 #include "sysemu/sysemu.h"
 #include "sysemu/runstate.h"
 #include "trace.h"
 #include "migration/blocker.h"
+#include "migration/qemu-file.h"
+#include "migration/misc.h"
 #include "qom/object.h"
 #include "monitor/monitor.h"
 #include "monitor/hmp-target.h"
@@ -41,6 +44,11 @@
 
 #define TYPE_SEV_GUEST "sev-guest"
 OBJECT_DECLARE_SIMPLE_TYPE(SevGuestState, SEV_GUEST)
+
+struct shared_region {
+    unsigned long gfn_start, gfn_end;
+    QTAILQ_ENTRY(shared_region) list;
+};
 
 
 /**
@@ -73,10 +81,27 @@ struct SevGuestState {
     int sev_fd;
     SevState state;
     gchar *measurement;
+    guchar *remote_pdh;
+    size_t remote_pdh_len;
+    guchar *remote_plat_cert;
+    size_t remote_plat_cert_len;
+    guchar *amd_cert;
+    size_t amd_cert_len;
+    gchar *send_packet_hdr;
+    size_t send_packet_hdr_len;
+
+    /* needed by live migration of HYGON CSV2 guest */
+    gchar *send_vmsa_packet_hdr;
+    size_t send_vmsa_packet_hdr_len;
 
     uint32_t reset_cs;
     uint32_t reset_ip;
     bool reset_data_valid;
+
+    QTAILQ_HEAD(, shared_region) shared_regions_list;
+
+    /* link list used for HYGON CSV */
+    CsvBatchCmdList *csv_batch_cmd_list;
 };
 
 #define DEFAULT_GUEST_POLICY    0x1 /* disable debug */
@@ -127,6 +152,8 @@ QEMU_BUILD_BUG_ON(sizeof(PaddedSevHashTable) % 16 != 0);
 static SevGuestState *sev_guest;
 static Error *sev_mig_blocker;
 
+bool sev_kvm_has_msr_ghcb;
+
 static const char *const sev_fw_errlist[] = {
     [SEV_RET_SUCCESS]                = "",
     [SEV_RET_INVALID_PLATFORM_STATE] = "Platform state is invalid",
@@ -156,6 +183,29 @@ static const char *const sev_fw_errlist[] = {
 };
 
 #define SEV_FW_MAX_ERROR      ARRAY_SIZE(sev_fw_errlist)
+
+#define SEV_FW_BLOB_MAX_SIZE            0x4000          /* 16KB */
+
+#define SHARED_REGION_LIST_CONT     0x1
+#define SHARED_REGION_LIST_END      0x2
+
+#define ENCRYPTED_CPU_STATE_CONT    0x1
+#define ENCRYPTED_CPU_STATE_END     0x2
+
+static struct ConfidentialGuestMemoryEncryptionOps sev_memory_encryption_ops = {
+    .save_setup = sev_save_setup,
+    .save_outgoing_page = sev_save_outgoing_page,
+    .load_incoming_page = sev_load_incoming_page,
+    .is_gfn_in_unshared_region = sev_is_gfn_in_unshared_region,
+    .save_outgoing_shared_regions_list = sev_save_outgoing_shared_regions_list,
+    .load_incoming_shared_regions_list = sev_load_incoming_shared_regions_list,
+    .queue_outgoing_page = csv_queue_outgoing_page,
+    .save_queued_outgoing_pages = csv_save_queued_outgoing_pages,
+    .queue_incoming_page = csv_queue_incoming_page,
+    .load_queued_incoming_pages = csv_load_queued_incoming_pages,
+    .save_outgoing_cpu_state = csv_save_outgoing_cpu_state,
+    .load_incoming_cpu_state = csv_load_incoming_cpu_state,
+};
 
 static int
 sev_ioctl(int fd, int cmd, void *data, int *error)
@@ -894,17 +944,141 @@ sev_launch_finish(SevGuestState *sev)
     migrate_add_blocker(&sev_mig_blocker, &error_fatal);
 }
 
+void
+sev_del_migrate_blocker(void)
+{
+    migrate_del_blocker(&sev_mig_blocker);
+}
+
+static int
+sev_receive_finish(SevGuestState *s)
+{
+    int error, ret = 1;
+
+    trace_kvm_sev_receive_finish();
+    ret = sev_ioctl(s->sev_fd, KVM_SEV_RECEIVE_FINISH, 0, &error);
+    if (ret) {
+        error_report("%s: RECEIVE_FINISH ret=%d fw_error=%d '%s'",
+                     __func__, ret, error, fw_error_to_str(error));
+        goto err;
+    }
+
+    sev_set_guest_state(s, SEV_STATE_RUNNING);
+err:
+    return ret;
+}
+
 static void
 sev_vm_state_change(void *opaque, bool running, RunState state)
 {
     SevGuestState *sev = opaque;
 
     if (running) {
-        if (!sev_check_state(sev, SEV_STATE_RUNNING)) {
+        if (sev_check_state(sev, SEV_STATE_RECEIVE_UPDATE)) {
+            sev_receive_finish(sev);
+        } else if (!sev_check_state(sev, SEV_STATE_RUNNING)) {
             sev_launch_finish(sev);
         }
     }
 }
+
+static inline bool check_blob_length(size_t value)
+{
+    if (value > SEV_FW_BLOB_MAX_SIZE) {
+        error_report("invalid length max=%d got=%ld",
+                     SEV_FW_BLOB_MAX_SIZE, value);
+        return false;
+    }
+
+    return true;
+}
+
+int sev_save_setup(const char *pdh, const char *plat_cert,
+                   const char *amd_cert)
+{
+    SevGuestState *s = sev_guest;
+
+    if (is_hygon_cpu()) {
+        if (sev_read_file_base64(pdh, &s->remote_pdh,
+                                 &s->remote_pdh_len) < 0) {
+            goto error;
+        }
+    } else {
+        s->remote_pdh = g_base64_decode(pdh, &s->remote_pdh_len);
+    }
+    if (!check_blob_length(s->remote_pdh_len)) {
+        goto error;
+    }
+
+    if (is_hygon_cpu()) {
+        if (sev_read_file_base64(plat_cert, &s->remote_plat_cert,
+                                 &s->remote_plat_cert_len) < 0) {
+            goto error;
+        }
+    } else {
+        s->remote_plat_cert = g_base64_decode(plat_cert,
+                                              &s->remote_plat_cert_len);
+    }
+    if (!check_blob_length(s->remote_plat_cert_len)) {
+        goto error;
+    }
+
+    if (is_hygon_cpu()) {
+        if (sev_read_file_base64(amd_cert, &s->amd_cert,
+                                 &s->amd_cert_len) < 0) {
+            goto error;
+        }
+    } else {
+        s->amd_cert = g_base64_decode(amd_cert, &s->amd_cert_len);
+    }
+    if (!check_blob_length(s->amd_cert_len)) {
+        goto error;
+    }
+
+    return 0;
+
+error:
+    g_free(s->remote_pdh);
+    g_free(s->remote_plat_cert);
+    g_free(s->amd_cert);
+
+    return 1;
+}
+
+static void
+sev_send_finish(void)
+{
+    int ret, error;
+
+    trace_kvm_sev_send_finish();
+    ret = sev_ioctl(sev_guest->sev_fd, KVM_SEV_SEND_FINISH, 0, &error);
+    if (ret) {
+        error_report("%s: SEND_FINISH ret=%d fw_error=%d '%s'",
+                     __func__, ret, error, fw_error_to_str(error));
+    }
+
+    g_free(sev_guest->send_packet_hdr);
+    if (sev_es_enabled() && is_hygon_cpu()) {
+        g_free(sev_guest->send_vmsa_packet_hdr);
+    }
+    sev_set_guest_state(sev_guest, SEV_STATE_RUNNING);
+}
+
+static void
+sev_migration_state_notifier(Notifier *notifier, void *data)
+{
+    MigrationState *s = data;
+
+    if (migration_has_finished(s) ||
+        migration_in_postcopy_after_devices(s) ||
+        migration_has_failed(s)) {
+        if (sev_check_state(sev_guest, SEV_STATE_SEND_UPDATE)) {
+            sev_send_finish();
+        }
+    }
+}
+
+static Notifier sev_migration_state;
 
 int sev_kvm_init(ConfidentialGuestSupport *cgs, Error **errp)
 {
@@ -919,6 +1093,9 @@ int sev_kvm_init(ConfidentialGuestSupport *cgs, Error **errp)
     if (!sev) {
         return 0;
     }
+
+    ConfidentialGuestSupportClass *cgs_class =
+        (ConfidentialGuestSupportClass *) object_get_class(OBJECT(cgs));
 
     ret = ram_block_discard_disable(true);
     if (ret) {
@@ -1003,15 +1180,42 @@ int sev_kvm_init(ConfidentialGuestSupport *cgs, Error **errp)
         goto err;
     }
 
-    ret = sev_launch_start(sev);
-    if (ret) {
-        error_setg(errp, "%s: failed to create encryption context", __func__);
-        goto err;
+    /*
+     * The LAUNCH context is used for new guest, if its an incoming guest
+     * then RECEIVE context will be created after the connection is established.
+     */
+    if (!runstate_check(RUN_STATE_INMIGRATE)) {
+        ret = sev_launch_start(sev);
+        if (ret) {
+            error_setg(errp, "%s: failed to create encryption context", __func__);
+            goto err;
+        }
+    } else {
+        /*
+         * The CSV2 guest is not resettable after migrated to target machine,
+         * set csv_kvm_cpu_reset_inhibit to true to indicate the CSV2 guest is
+         * not resettable.
+         */
+        if (is_hygon_cpu() && sev_es_enabled()) {
+            csv_kvm_cpu_reset_inhibit = true;
+        }
     }
 
     ram_block_notifier_add(&sev_ram_notifier);
     qemu_add_machine_init_done_notifier(&sev_machine_done_notify);
     qemu_add_vm_change_state_handler(sev_vm_state_change, sev);
+    migration_add_notifier(&sev_migration_state, sev_migration_state_notifier);
+
+    cgs_class->memory_encryption_ops = &sev_memory_encryption_ops;
+    QTAILQ_INIT(&sev->shared_regions_list);
+
+    /* Determine whether support MSR_AMD64_SEV_ES_GHCB */
+    if (sev_es_enabled()) {
+        sev_kvm_has_msr_ghcb =
+                kvm_vm_check_extension(kvm_state, KVM_CAP_SEV_ES_GHCB);
+    } else {
+        sev_kvm_has_msr_ghcb = false;
+    }
 
     cgs->ready = true;
 
@@ -1250,6 +1454,1008 @@ int sev_es_save_reset_vector(void *flash_ptr, uint64_t flash_size)
     }
 
     return 0;
+}
+
+static int
+sev_get_send_session_length(void)
+{
+    int ret, fw_err = 0;
+    struct kvm_sev_send_start start = {};
+
+    ret = sev_ioctl(sev_guest->sev_fd, KVM_SEV_SEND_START, &start, &fw_err);
+    if (fw_err != SEV_RET_INVALID_LEN) {
+        ret = -1;
+        error_report("%s: failed to get session length ret=%d fw_error=%d '%s'",
+                     __func__, ret, fw_err, fw_error_to_str(fw_err));
+        goto err;
+    }
+
+    ret = start.session_len;
+err:
+    return ret;
+}
+
+static int
+sev_send_start(SevGuestState *s, QEMUFile *f, uint64_t *bytes_sent)
+{
+    gsize pdh_len = 0, plat_cert_len;
+    int session_len, ret, fw_error;
+    struct kvm_sev_send_start start = { };
+    guchar *pdh = NULL, *plat_cert = NULL, *session = NULL;
+    Error *local_err = NULL;
+
+    if (!s->remote_pdh || !s->remote_plat_cert || !s->amd_cert_len) {
+        error_report("%s: missing remote PDH or PLAT_CERT", __func__);
+        return 1;
+    }
+
+   start.pdh_cert_uaddr = (uintptr_t) s->remote_pdh;
+   start.pdh_cert_len = s->remote_pdh_len;
+
+   start.plat_certs_uaddr = (uintptr_t)s->remote_plat_cert;
+   start.plat_certs_len = s->remote_plat_cert_len;
+
+   start.amd_certs_uaddr = (uintptr_t)s->amd_cert;
+   start.amd_certs_len = s->amd_cert_len;
+
+    /* get the session length */
+   session_len = sev_get_send_session_length();
+   if (session_len < 0) {
+       ret = 1;
+       goto err;
+   }
+
+   session = g_new0(guchar, session_len);
+   start.session_uaddr = (unsigned long)session;
+   start.session_len = session_len;
+
+   /* Get our PDH certificate */
+   ret = sev_get_pdh_info(s->sev_fd, &pdh, &pdh_len,
+                          &plat_cert, &plat_cert_len, &local_err);
+   if (ret) {
+       error_report("Failed to get our PDH cert");
+       goto err;
+   }
+
+   trace_kvm_sev_send_start(start.pdh_cert_uaddr, start.pdh_cert_len,
+                            start.plat_certs_uaddr, start.plat_certs_len,
+                            start.amd_certs_uaddr, start.amd_certs_len);
+
+   ret = sev_ioctl(s->sev_fd, KVM_SEV_SEND_START, &start, &fw_error);
+   if (ret < 0) {
+       error_report("%s: SEND_START ret=%d fw_error=%d '%s'",
+               __func__, ret, fw_error, fw_error_to_str(fw_error));
+       goto err;
+   }
+
+   qemu_put_be32(f, start.policy);
+   qemu_put_be32(f, pdh_len);
+   qemu_put_buffer(f, (uint8_t *)pdh, pdh_len);
+   qemu_put_be32(f, start.session_len);
+   qemu_put_buffer(f, (uint8_t *)start.session_uaddr, start.session_len);
+   *bytes_sent = 12 + pdh_len + start.session_len;
+
+   sev_set_guest_state(s, SEV_STATE_SEND_UPDATE);
+
+err:
+   g_free(pdh);
+   g_free(plat_cert);
+   return ret;
+}
+
+static int
+sev_send_get_packet_len(int *fw_err)
+{
+    int ret;
+    struct kvm_sev_send_update_data update = { 0, };
+
+    ret = sev_ioctl(sev_guest->sev_fd, KVM_SEV_SEND_UPDATE_DATA,
+                    &update, fw_err);
+    if (*fw_err != SEV_RET_INVALID_LEN) {
+        ret = 0;
+        error_report("%s: failed to get session length ret=%d fw_error=%d '%s'",
+                    __func__, ret, *fw_err, fw_error_to_str(*fw_err));
+        goto err;
+    }
+
+    ret = update.hdr_len;
+
+err:
+    return ret;
+}
+
+static int
+sev_send_update_data(SevGuestState *s, QEMUFile *f, uint8_t *ptr, uint32_t size,
+                     uint64_t *bytes_sent)
+{
+    int ret, fw_error;
+    guchar *trans;
+    struct kvm_sev_send_update_data update = { };
+
+    /*
+     * If this is first call then query the packet header bytes and allocate
+     * the packet buffer.
+     */
+    if (!s->send_packet_hdr) {
+        s->send_packet_hdr_len = sev_send_get_packet_len(&fw_error);
+        if (s->send_packet_hdr_len < 1) {
+            error_report("%s: SEND_UPDATE fw_error=%d '%s'",
+                         __func__, fw_error, fw_error_to_str(fw_error));
+            return 1;
+        }
+
+        s->send_packet_hdr = g_new(gchar, s->send_packet_hdr_len);
+    }
+
+    /* allocate transport buffer */
+    trans = g_new(guchar, size);
+
+    update.hdr_uaddr = (uintptr_t)s->send_packet_hdr;
+    update.hdr_len = s->send_packet_hdr_len;
+    update.guest_uaddr = (uintptr_t)ptr;
+    update.guest_len = size;
+    update.trans_uaddr = (uintptr_t)trans;
+    update.trans_len = size;
+
+    trace_kvm_sev_send_update_data(ptr, trans, size);
+
+    ret = sev_ioctl(s->sev_fd, KVM_SEV_SEND_UPDATE_DATA, &update, &fw_error);
+    if (ret) {
+        error_report("%s: SEND_UPDATE_DATA ret=%d fw_error=%d '%s'",
+                     __func__, ret, fw_error, fw_error_to_str(fw_error));
+        goto err;
+    }
+
+    qemu_put_be32(f, update.hdr_len);
+    qemu_put_buffer(f, (uint8_t *)update.hdr_uaddr, update.hdr_len);
+    *bytes_sent = 4 + update.hdr_len;
+
+    qemu_put_be32(f, update.trans_len);
+    qemu_put_buffer(f, (uint8_t *)update.trans_uaddr, update.trans_len);
+    *bytes_sent += (4 + update.trans_len);
+
+err:
+    g_free(trans);
+    return ret;
+}
+
+int sev_save_outgoing_page(QEMUFile *f, uint8_t *ptr,
+                           uint32_t sz, uint64_t *bytes_sent)
+{
+    SevGuestState *s = sev_guest;
+
+    /*
+     * If this is a first buffer then create outgoing encryption context
+     * and write our PDH, policy and session data.
+     */
+    if (!sev_check_state(s, SEV_STATE_SEND_UPDATE) &&
+        sev_send_start(s, f, bytes_sent)) {
+        error_report("Failed to create outgoing context");
+        return 1;
+    }
+
+    return sev_send_update_data(s, f, ptr, sz, bytes_sent);
+}
+
+static int
+sev_receive_start(SevGuestState *sev, QEMUFile *f)
+{
+    int ret = 1;
+    int fw_error;
+    struct kvm_sev_receive_start start = { };
+    gchar *session = NULL, *pdh_cert = NULL;
+
+    /* get SEV guest handle */
+    start.handle = object_property_get_int(OBJECT(sev), "handle",
+                                           &error_abort);
+
+    /* get the source policy */
+    start.policy = qemu_get_be32(f);
+
+    /* get source PDH key */
+    start.pdh_len = qemu_get_be32(f);
+    if (!check_blob_length(start.pdh_len)) {
+        return 1;
+    }
+
+    pdh_cert = g_new(gchar, start.pdh_len);
+    qemu_get_buffer(f, (uint8_t *)pdh_cert, start.pdh_len);
+    start.pdh_uaddr = (uintptr_t)pdh_cert;
+
+    /* get source session data */
+    start.session_len = qemu_get_be32(f);
+    if (!check_blob_length(start.session_len)) {
+        return 1;
+    }
+    session = g_new(gchar, start.session_len);
+    qemu_get_buffer(f, (uint8_t *)session, start.session_len);
+    start.session_uaddr = (uintptr_t)session;
+
+    trace_kvm_sev_receive_start(start.policy, session, pdh_cert);
+
+    ret = sev_ioctl(sev_guest->sev_fd, KVM_SEV_RECEIVE_START,
+                    &start, &fw_error);
+    if (ret < 0) {
+        error_report("Error RECEIVE_START ret=%d fw_error=%d '%s'",
+                      ret, fw_error, fw_error_to_str(fw_error));
+        goto err;
+    }
+
+    object_property_set_int(OBJECT(sev), "handle", start.handle, &error_abort);
+    sev_set_guest_state(sev, SEV_STATE_RECEIVE_UPDATE);
+err:
+    g_free(session);
+    g_free(pdh_cert);
+
+    return ret;
+}
+
+static int sev_receive_update_data(QEMUFile *f, uint8_t *ptr)
+{
+    int ret = 1, fw_error = 0;
+    gchar *hdr = NULL, *trans = NULL;
+    struct kvm_sev_receive_update_data update = {};
+
+    /* get packet header */
+    update.hdr_len = qemu_get_be32(f);
+    if (!check_blob_length(update.hdr_len)) {
+        return 1;
+    }
+
+    hdr = g_new(gchar, update.hdr_len);
+    qemu_get_buffer(f, (uint8_t *)hdr, update.hdr_len);
+    update.hdr_uaddr = (uintptr_t)hdr;
+
+    /* get transport buffer */
+    update.trans_len = qemu_get_be32(f);
+    if (!check_blob_length(update.trans_len)) {
+        goto err;
+    }
+
+    trans = g_new(gchar, update.trans_len);
+    update.trans_uaddr = (uintptr_t)trans;
+    qemu_get_buffer(f, (uint8_t *)update.trans_uaddr, update.trans_len);
+
+    update.guest_uaddr = (uintptr_t) ptr;
+    update.guest_len = update.trans_len;
+
+    trace_kvm_sev_receive_update_data(trans, ptr, update.guest_len,
+            hdr, update.hdr_len);
+
+    ret = sev_ioctl(sev_guest->sev_fd, KVM_SEV_RECEIVE_UPDATE_DATA,
+                    &update, &fw_error);
+    if (ret) {
+        error_report("Error RECEIVE_UPDATE_DATA ret=%d fw_error=%d '%s'",
+                     ret, fw_error, fw_error_to_str(fw_error));
+        goto err;
+    }
+err:
+    g_free(trans);
+    g_free(hdr);
+    return ret;
+}
+
+int sev_load_incoming_page(QEMUFile *f, uint8_t *ptr)
+{
+    SevGuestState *s = sev_guest;
+
+    /*
+     * If this is first buffer and SEV is not in recieiving state then
+     * use RECEIVE_START command to create a encryption context.
+     */
+    if (!sev_check_state(s, SEV_STATE_RECEIVE_UPDATE) &&
+        sev_receive_start(s, f)) {
+        return 1;
+    }
+
+    return sev_receive_update_data(f, ptr);
+}
+
+int sev_remove_shared_regions_list(unsigned long start, unsigned long end)
+{
+    SevGuestState *s = sev_guest;
+    struct shared_region *pos, *next_pos;
+
+    QTAILQ_FOREACH_SAFE(pos, &s->shared_regions_list, list, next_pos) {
+        unsigned long l, r;
+        unsigned long curr_gfn_end = pos->gfn_end;
+
+        /*
+         * Find if any intersection exists ?
+         * left bound for intersecting segment
+         */
+        l = MAX(start, pos->gfn_start);
+        /* right bound for intersecting segment */
+        r = MIN(end, pos->gfn_end);
+        if (l <= r) {
+            if (pos->gfn_start == l && pos->gfn_end == r) {
+                QTAILQ_REMOVE(&s->shared_regions_list, pos, list);
+                g_free(pos);
+            } else if (l == pos->gfn_start) {
+                pos->gfn_start = r;
+            } else if (r == pos->gfn_end) {
+                pos->gfn_end = l;
+            } else {
+                /* Do a de-merge -- split linked list nodes */
+                struct shared_region *shrd_region;
+
+                pos->gfn_end = l;
+                shrd_region = g_malloc0(sizeof(*shrd_region));
+                if (!shrd_region) {
+                    return 0;
+                }
+                shrd_region->gfn_start = r;
+                shrd_region->gfn_end = curr_gfn_end;
+                QTAILQ_INSERT_AFTER(&s->shared_regions_list, pos,
+                                    shrd_region, list);
+            }
+        }
+        if (end <= curr_gfn_end) {
+            break;
+        }
+    }
+    return 0;
+}
+
+int sev_add_shared_regions_list(unsigned long start, unsigned long end)
+{
+    struct shared_region *shrd_region;
+    struct shared_region *pos;
+    SevGuestState *s = sev_guest;
+
+    if (QTAILQ_EMPTY(&s->shared_regions_list)) {
+        shrd_region = g_malloc0(sizeof(*shrd_region));
+        if (!shrd_region) {
+            return -1;
+        }
+        shrd_region->gfn_start = start;
+        shrd_region->gfn_end = end;
+        QTAILQ_INSERT_TAIL(&s->shared_regions_list, shrd_region, list);
+        return 0;
+    }
+
+    /*
+     * shared regions list is a sorted list in ascending order
+     * of guest PA's and also merges consecutive range of guest PA's
+     */
+    QTAILQ_FOREACH(pos, &s->shared_regions_list, list) {
+        /* handle duplicate overlapping regions */
+        if (start >= pos->gfn_start && end <= pos->gfn_end) {
+            return 0;
+        }
+        if (pos->gfn_end < start) {
+            continue;
+        }
+        /* merge consecutive guest PA(s) -- forward merge */
+        if (pos->gfn_start <= start && pos->gfn_end >= start) {
+            pos->gfn_end = end;
+            return 0;
+        }
+        break;
+    }
+    /*
+     * Add a new node
+     */
+    shrd_region = g_malloc0(sizeof(*shrd_region));
+    if (!shrd_region) {
+        return -1;
+    }
+    shrd_region->gfn_start = start;
+    shrd_region->gfn_end = end;
+    if (pos) {
+        QTAILQ_INSERT_BEFORE(pos, shrd_region, list);
+    } else {
+        QTAILQ_INSERT_TAIL(&s->shared_regions_list, shrd_region, list);
+    }
+    return 1;
+}
+
+int sev_save_outgoing_shared_regions_list(QEMUFile *f, uint64_t *bytes_sent)
+{
+    SevGuestState *s = sev_guest;
+    struct shared_region *pos;
+
+    QTAILQ_FOREACH(pos, &s->shared_regions_list, list) {
+        qemu_put_be32(f, SHARED_REGION_LIST_CONT);
+        qemu_put_be32(f, pos->gfn_start);
+        qemu_put_be32(f, pos->gfn_end);
+        *bytes_sent += 12;
+    }
+
+    qemu_put_be32(f, SHARED_REGION_LIST_END);
+    *bytes_sent += 4;
+    return 0;
+}
+
+int sev_load_incoming_shared_regions_list(QEMUFile *f)
+{
+    SevGuestState *s = sev_guest;
+    struct shared_region *shrd_region;
+    int status;
+
+    status = qemu_get_be32(f);
+    while (status == SHARED_REGION_LIST_CONT) {
+
+        shrd_region = g_malloc0(sizeof(*shrd_region));
+        if (!shrd_region) {
+            return 0;
+        }
+        shrd_region->gfn_start = qemu_get_be32(f);
+        shrd_region->gfn_end = qemu_get_be32(f);
+
+        QTAILQ_INSERT_TAIL(&s->shared_regions_list, shrd_region, list);
+
+        status = qemu_get_be32(f);
+    }
+    return 0;
+}
+
+bool sev_is_gfn_in_unshared_region(unsigned long gfn)
+{
+    SevGuestState *s = sev_guest;
+    struct shared_region *pos;
+
+    QTAILQ_FOREACH(pos, &s->shared_regions_list, list) {
+        if (gfn >= pos->gfn_start && gfn < pos->gfn_end) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static CsvBatchCmdList *
+csv_batch_cmd_list_create(struct kvm_csv_batch_list_node *head,
+                          CsvDestroyCmdNodeFn func)
+{
+    CsvBatchCmdList *csv_batch_cmd_list =
+                        g_malloc0(sizeof(*csv_batch_cmd_list));
+
+    if (!csv_batch_cmd_list) {
+        return NULL;
+    }
+
+    csv_batch_cmd_list->head = head;
+    csv_batch_cmd_list->tail = head;
+    csv_batch_cmd_list->destroy_fn = func;
+
+    return csv_batch_cmd_list;
+}
+
+static int
+csv_batch_cmd_list_add_after(CsvBatchCmdList *list,
+                             struct kvm_csv_batch_list_node *new_node)
+{
+    list->tail->next_cmd_addr = (__u64)new_node;
+    list->tail = new_node;
+
+    return 0;
+}
+
+static struct kvm_csv_batch_list_node *
+csv_batch_cmd_list_node_create(uint64_t cmd_data_addr, uint64_t addr)
+{
+    struct kvm_csv_batch_list_node *new_node =
+                        g_malloc0(sizeof(struct kvm_csv_batch_list_node));
+
+    if (!new_node) {
+        return NULL;
+    }
+
+    new_node->cmd_data_addr = cmd_data_addr;
+    new_node->addr = addr;
+    new_node->next_cmd_addr = 0;
+
+    return new_node;
+}
+
+static int csv_batch_cmd_list_destroy(CsvBatchCmdList *list)
+{
+    struct kvm_csv_batch_list_node *node = list->head;
+
+    while (node != NULL) {
+        if (list->destroy_fn != NULL)
+            list->destroy_fn((void *)node->cmd_data_addr);
+
+        list->head = (struct kvm_csv_batch_list_node *)node->next_cmd_addr;
+        g_free(node);
+        node = list->head;
+    }
+
+    g_free(list);
+    return 0;
+}
+
+static void send_update_data_free(void *data)
+{
+    struct kvm_sev_send_update_data *update =
+                        (struct kvm_sev_send_update_data *)data;
+    g_free((guchar *)update->hdr_uaddr);
+    g_free((guchar *)update->trans_uaddr);
+    g_free(update);
+}
+
+static void receive_update_data_free(void *data)
+{
+    struct kvm_sev_receive_update_data *update =
+                        (struct kvm_sev_receive_update_data *)data;
+    g_free((guchar *)update->hdr_uaddr);
+    g_free((guchar *)update->trans_uaddr);
+    g_free(update);
+}
+
+static int
+csv_send_queue_data(SevGuestState *s, uint8_t *ptr,
+                    uint32_t size, uint64_t addr)
+{
+    int ret = 0;
+    int fw_error;
+    guchar *trans;
+    guchar *packet_hdr;
+    struct kvm_sev_send_update_data *update;
+    struct kvm_csv_batch_list_node *new_node = NULL;
+
+    /* If this is first call then query the packet header bytes and allocate
+     * the packet buffer.
+     */
+    if (s->send_packet_hdr_len < 1) {
+        s->send_packet_hdr_len = sev_send_get_packet_len(&fw_error);
+        if (s->send_packet_hdr_len < 1) {
+            error_report("%s: SEND_UPDATE fw_error=%d '%s'",
+                    __func__, fw_error, fw_error_to_str(fw_error));
+            return 1;
+        }
+    }
+
+    packet_hdr = g_new(guchar, s->send_packet_hdr_len);
+    memset(packet_hdr, 0, s->send_packet_hdr_len);
+
+    update = g_new0(struct kvm_sev_send_update_data, 1);
+
+    /* allocate transport buffer */
+    trans = g_new(guchar, size);
+
+    update->hdr_uaddr = (unsigned long)packet_hdr;
+    update->hdr_len = s->send_packet_hdr_len;
+    update->guest_uaddr = (unsigned long)ptr;
+    update->guest_len = size;
+    update->trans_uaddr = (unsigned long)trans;
+    update->trans_len = size;
+
+    new_node = csv_batch_cmd_list_node_create((uint64_t)update, addr);
+    if (!new_node) {
+        ret = -ENOMEM;
+        goto err;
+    }
+
+    if (s->csv_batch_cmd_list == NULL) {
+        s->csv_batch_cmd_list = csv_batch_cmd_list_create(new_node,
+                                                send_update_data_free);
+        if (s->csv_batch_cmd_list == NULL) {
+            ret = -ENOMEM;
+            goto err;
+        }
+    } else {
+        /* Add new_node's command address to the last_node */
+        csv_batch_cmd_list_add_after(s->csv_batch_cmd_list, new_node);
+    }
+
+    trace_kvm_sev_send_update_data(ptr, trans, size);
+
+    return ret;
+
+err:
+    g_free(trans);
+    g_free(update);
+    g_free(packet_hdr);
+    g_free(new_node);
+    if (s->csv_batch_cmd_list) {
+        csv_batch_cmd_list_destroy(s->csv_batch_cmd_list);
+        s->csv_batch_cmd_list = NULL;
+    }
+    return ret;
+}
+
+static int
+csv_receive_queue_data(SevGuestState *s, QEMUFile *f, uint8_t *ptr)
+{
+    int ret = 0;
+    gchar *hdr = NULL, *trans = NULL;
+    struct kvm_sev_receive_update_data *update;
+    struct kvm_csv_batch_list_node *new_node = NULL;
+
+    update = g_new0(struct kvm_sev_receive_update_data, 1);
+    /* get packet header */
+    update->hdr_len = qemu_get_be32(f);
+    hdr = g_new(gchar, update->hdr_len);
+    qemu_get_buffer(f, (uint8_t *)hdr, update->hdr_len);
+    update->hdr_uaddr = (unsigned long)hdr;
+
+    /* get transport buffer */
+    update->trans_len = qemu_get_be32(f);
+    trans = g_new(gchar, update->trans_len);
+    update->trans_uaddr = (unsigned long)trans;
+    qemu_get_buffer(f, (uint8_t *)update->trans_uaddr, update->trans_len);
+
+    /* set guest address,guest len is page_size */
+    update->guest_uaddr = (uint64_t)ptr;
+    update->guest_len = TARGET_PAGE_SIZE;
+
+    new_node = csv_batch_cmd_list_node_create((uint64_t)update, 0);
+    if (!new_node) {
+        ret = -ENOMEM;
+        goto err;
+    }
+
+    if (s->csv_batch_cmd_list == NULL) {
+        s->csv_batch_cmd_list = csv_batch_cmd_list_create(new_node,
+                                                receive_update_data_free);
+        if (s->csv_batch_cmd_list == NULL) {
+            ret = -ENOMEM;
+            goto err;
+        }
+    } else {
+        /* Add new_node's command address to the last_node */
+        csv_batch_cmd_list_add_after(s->csv_batch_cmd_list, new_node);
+    }
+
+    trace_kvm_sev_receive_update_data(trans, (void *)ptr, update->guest_len,
+            (void *)hdr, update->hdr_len);
+
+    return ret;
+
+err:
+    g_free(trans);
+    g_free(update);
+    g_free(hdr);
+    g_free(new_node);
+    if (s->csv_batch_cmd_list) {
+        csv_batch_cmd_list_destroy(s->csv_batch_cmd_list);
+        s->csv_batch_cmd_list = NULL;
+    }
+    return ret;
+}
+
+static int
+csv_command_batch(uint32_t cmd_id, uint64_t head_uaddr, int *fw_err)
+{
+    int ret;
+    struct kvm_csv_command_batch command_batch = { };
+
+    command_batch.command_id = cmd_id;
+    command_batch.csv_batch_list_uaddr = head_uaddr;
+
+    ret = sev_ioctl(sev_guest->sev_fd, KVM_CSV_COMMAND_BATCH,
+                    &command_batch, fw_err);
+    if (ret) {
+        error_report("%s: COMMAND_BATCH ret=%d fw_err=%d '%s'",
+                __func__, ret, *fw_err, fw_error_to_str(*fw_err));
+    }
+
+    return ret;
+}
+
+static int
+csv_send_update_data_batch(SevGuestState *s, QEMUFile *f, uint64_t *bytes_sent)
+{
+    int ret, fw_error = 0;
+    struct kvm_sev_send_update_data *update;
+    struct kvm_csv_batch_list_node *node;
+
+    ret = csv_command_batch(KVM_SEV_SEND_UPDATE_DATA,
+                            (uint64_t)s->csv_batch_cmd_list->head, &fw_error);
+    if (ret) {
+        error_report("%s: csv_command_batch ret=%d fw_error=%d '%s'",
+                __func__, ret, fw_error, fw_error_to_str(fw_error));
+        goto err;
+    }
+
+    for (node = s->csv_batch_cmd_list->head;
+         node != NULL;
+         node = (struct kvm_csv_batch_list_node *)node->next_cmd_addr) {
+        if (node != s->csv_batch_cmd_list->head) {
+            /* head's page header is saved before send_update_data */
+            qemu_put_be64(f, node->addr);
+            *bytes_sent += 8;
+            if (node->next_cmd_addr != 0)
+                qemu_put_be32(f, RAM_SAVE_ENCRYPTED_PAGE_BATCH);
+            else
+                qemu_put_be32(f, RAM_SAVE_ENCRYPTED_PAGE_BATCH_END);
+            *bytes_sent += 4;
+        }
+        update = (struct kvm_sev_send_update_data *)node->cmd_data_addr;
+        qemu_put_be32(f, update->hdr_len);
+        qemu_put_buffer(f, (uint8_t *)update->hdr_uaddr, update->hdr_len);
+        *bytes_sent += (4 + update->hdr_len);
+
+        qemu_put_be32(f, update->trans_len);
+        qemu_put_buffer(f, (uint8_t *)update->trans_uaddr, update->trans_len);
+        *bytes_sent += (4 + update->trans_len);
+    }
+
+err:
+    csv_batch_cmd_list_destroy(s->csv_batch_cmd_list);
+    s->csv_batch_cmd_list = NULL;
+    return ret;
+}
+
+static int
+csv_receive_update_data_batch(SevGuestState *s)
+{
+    int ret;
+    int fw_error;
+
+    ret = csv_command_batch(KVM_SEV_RECEIVE_UPDATE_DATA,
+                            (uint64_t)s->csv_batch_cmd_list->head, &fw_error);
+    if (ret) {
+        error_report("%s: csv_command_batch ret=%d fw_error=%d '%s'",
+                __func__, ret, fw_error, fw_error_to_str(fw_error));
+    }
+
+    csv_batch_cmd_list_destroy(s->csv_batch_cmd_list);
+    s->csv_batch_cmd_list = NULL;
+    return ret;
+}
+
+int
+csv_queue_outgoing_page(uint8_t *ptr, uint32_t sz, uint64_t addr)
+{
+    SevGuestState *s = sev_guest;
+
+    /* Only support for HYGON CSV */
+    if (!is_hygon_cpu()) {
+        error_report("Only support enqueue pages for HYGON CSV");
+        return -EINVAL;
+    }
+
+    return csv_send_queue_data(s, ptr, sz, addr);
+}
+
+int csv_queue_incoming_page(QEMUFile *f, uint8_t *ptr)
+{
+    SevGuestState *s = sev_guest;
+
+    /* Only support for HYGON CSV */
+    if (!is_hygon_cpu()) {
+        error_report("Only support enqueue received pages for HYGON CSV");
+        return -EINVAL;
+    }
+
+    /*
+     * If this is first buffer and SEV is not in recieiving state then
+     * use RECEIVE_START command to create a encryption context.
+     */
+    if (!sev_check_state(s, SEV_STATE_RECEIVE_UPDATE) &&
+        sev_receive_start(s, f)) {
+        return 1;
+    }
+
+    return csv_receive_queue_data(s, f, ptr);
+}
+
+int
+csv_save_queued_outgoing_pages(QEMUFile *f, uint64_t *bytes_sent)
+{
+    SevGuestState *s = sev_guest;
+
+    /* Only support for HYGON CSV */
+    if (!is_hygon_cpu()) {
+        error_report("Only support transfer queued pages for HYGON CSV");
+        return -EINVAL;
+    }
+
+    /*
+     * If this is a first buffer then create outgoing encryption context
+     * and write our PDH, policy and session data.
+     */
+    if (!sev_check_state(s, SEV_STATE_SEND_UPDATE) &&
+        sev_send_start(s, f, bytes_sent)) {
+        error_report("Failed to create outgoing context");
+        return 1;
+    }
+
+    return csv_send_update_data_batch(s, f, bytes_sent);
+}
+
+int csv_load_queued_incoming_pages(QEMUFile *f)
+{
+    SevGuestState *s = sev_guest;
+
+    /* Only support for HYGON CSV */
+    if (!is_hygon_cpu()) {
+        error_report("Only support load queued pages for HYGON CSV");
+        return -EINVAL;
+    }
+
+    return csv_receive_update_data_batch(s);
+}
+
+static int
+sev_send_vmsa_get_packet_len(int *fw_err)
+{
+    int ret;
+    struct kvm_sev_send_update_vmsa update = { 0, };
+
+    ret = sev_ioctl(sev_guest->sev_fd, KVM_SEV_SEND_UPDATE_VMSA,
+                    &update, fw_err);
+    if (*fw_err != SEV_RET_INVALID_LEN) {
+        ret = 0;
+        error_report("%s: failed to get session length ret=%d fw_error=%d '%s'",
+                     __func__, ret, *fw_err, fw_error_to_str(*fw_err));
+        goto err;
+    }
+
+    ret = update.hdr_len;
+
+err:
+    return ret;
+}
+
+static int
+sev_send_update_vmsa(SevGuestState *s, QEMUFile *f, uint32_t cpu_id,
+                     uint32_t cpu_index, uint32_t size, uint64_t *bytes_sent)
+{
+    int ret, fw_error;
+    guchar *trans = NULL;
+    struct kvm_sev_send_update_vmsa update = {};
+
+    /*
+     * If this is first call then query the packet header bytes and allocate
+     * the packet buffer.
+     */
+    if (!s->send_vmsa_packet_hdr) {
+        s->send_vmsa_packet_hdr_len = sev_send_vmsa_get_packet_len(&fw_error);
+        if (s->send_vmsa_packet_hdr_len < 1) {
+            error_report("%s: SEND_UPDATE_VMSA fw_error=%d '%s'",
+                         __func__, fw_error, fw_error_to_str(fw_error));
+            return 1;
+        }
+
+        s->send_vmsa_packet_hdr = g_new(gchar, s->send_vmsa_packet_hdr_len);
+    }
+
+    /* allocate transport buffer */
+    trans = g_new(guchar, size);
+
+    update.vcpu_id = cpu_id;
+    update.hdr_uaddr = (uintptr_t)s->send_vmsa_packet_hdr;
+    update.hdr_len = s->send_vmsa_packet_hdr_len;
+    update.trans_uaddr = (uintptr_t)trans;
+    update.trans_len = size;
+
+    trace_kvm_sev_send_update_vmsa(cpu_id, cpu_index, trans, size);
+
+    ret = sev_ioctl(s->sev_fd, KVM_SEV_SEND_UPDATE_VMSA, &update, &fw_error);
+    if (ret) {
+        error_report("%s: SEND_UPDATE_VMSA ret=%d fw_error=%d '%s'",
+                     __func__, ret, fw_error, fw_error_to_str(fw_error));
+        goto err;
+    }
+
+    /*
+     * Migration of vCPU's VMState according to the instance_id
+     * (i.e. CPUState.cpu_index)
+     */
+    qemu_put_be32(f, sizeof(uint32_t));
+    qemu_put_buffer(f, (uint8_t *)&cpu_index, sizeof(uint32_t));
+    *bytes_sent += 4 + sizeof(uint32_t);
+
+    qemu_put_be32(f, update.hdr_len);
+    qemu_put_buffer(f, (uint8_t *)update.hdr_uaddr, update.hdr_len);
+    *bytes_sent += 4 + update.hdr_len;
+
+    qemu_put_be32(f, update.trans_len);
+    qemu_put_buffer(f, (uint8_t *)update.trans_uaddr, update.trans_len);
+    *bytes_sent += 4 + update.trans_len;
+
+err:
+    g_free(trans);
+    return ret;
+}
+
+int csv_save_outgoing_cpu_state(QEMUFile *f, uint64_t *bytes_sent)
+{
+    SevGuestState *s = sev_guest;
+    CPUState *cpu;
+    int ret = 0;
+
+    /* Only support migrate VMSAs for HYGON CSV2 guest */
+    if (!sev_es_enabled() || !is_hygon_cpu()) {
+        return 0;
+    }
+
+    CPU_FOREACH(cpu) {
+        qemu_put_be32(f, ENCRYPTED_CPU_STATE_CONT);
+        *bytes_sent += 4;
+        ret = sev_send_update_vmsa(s, f, kvm_arch_vcpu_id(cpu),
+                                   cpu->cpu_index, TARGET_PAGE_SIZE, bytes_sent);
+        if (ret) {
+            goto err;
+        }
+    }
+
+    qemu_put_be32(f, ENCRYPTED_CPU_STATE_END);
+    *bytes_sent += 4;
+
+err:
+    return ret;
+}
+
+static int sev_receive_update_vmsa(QEMUFile *f)
+{
+    int ret = 1, fw_error = 0;
+    CPUState *cpu;
+    uint32_t cpu_index, cpu_id = 0;
+    gchar *hdr = NULL, *trans = NULL;
+    struct kvm_sev_receive_update_vmsa update = {};
+
+    /* get cpu index buffer */
+    assert(qemu_get_be32(f) == sizeof(uint32_t));
+    qemu_get_buffer(f, (uint8_t *)&cpu_index, sizeof(uint32_t));
+
+    CPU_FOREACH(cpu) {
+        if (cpu->cpu_index == cpu_index) {
+            cpu_id = kvm_arch_vcpu_id(cpu);
+            break;
+        }
+    }
+    update.vcpu_id = cpu_id;
+
+    /* get packet header */
+    update.hdr_len = qemu_get_be32(f);
+    if (!check_blob_length(update.hdr_len)) {
+        return 1;
+    }
+
+    hdr = g_new(gchar, update.hdr_len);
+    qemu_get_buffer(f, (uint8_t *)hdr, update.hdr_len);
+    update.hdr_uaddr = (uintptr_t)hdr;
+
+    /* get transport buffer */
+    update.trans_len = qemu_get_be32(f);
+    if (!check_blob_length(update.trans_len)) {
+        goto err;
+    }
+
+    trans = g_new(gchar, update.trans_len);
+    update.trans_uaddr = (uintptr_t)trans;
+    qemu_get_buffer(f, (uint8_t *)update.trans_uaddr, update.trans_len);
+
+    trace_kvm_sev_receive_update_vmsa(cpu_id, cpu_index,
+                trans, update.trans_len, hdr, update.hdr_len);
+
+    ret = sev_ioctl(sev_guest->sev_fd, KVM_SEV_RECEIVE_UPDATE_VMSA,
+                    &update, &fw_error);
+    if (ret) {
+        error_report("Error RECEIVE_UPDATE_VMSA ret=%d fw_error=%d '%s'",
+                     ret, fw_error, fw_error_to_str(fw_error));
+    }
+
+err:
+    g_free(trans);
+    g_free(hdr);
+    return ret;
+}
+
+int csv_load_incoming_cpu_state(QEMUFile *f)
+{
+    int status, ret = 0;
+
+    /* Only support migrate VMSAs for HYGON CSV2 guest */
+    if (!sev_es_enabled() || !is_hygon_cpu()) {
+        return 0;
+    }
+
+    status = qemu_get_be32(f);
+    while (status == ENCRYPTED_CPU_STATE_CONT) {
+        ret = sev_receive_update_vmsa(f);
+        if (ret) {
+            break;
+        }
+
+        status = qemu_get_be32(f);
+    }
+
+    return ret;
 }
 
 static const QemuUUID sev_hash_table_header_guid = {

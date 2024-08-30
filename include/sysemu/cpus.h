@@ -44,6 +44,8 @@ extern int icount_align_option;
 void qemu_cpu_kick_self(void);
 
 bool cpus_are_resettable(void);
+void cpus_control_pre_system_reset(void);
+void cpus_control_post_system_reset(void);
 
 void cpu_synchronize_all_states(void);
 void cpu_synchronize_all_post_reset(void);

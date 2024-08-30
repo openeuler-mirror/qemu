@@ -553,4 +553,6 @@ int migration_stop_vm(RunState state);
 
 void migrate_fd_cancel(MigrationState *s);
 
+bool memcrypt_enabled(void);
+
 #endif

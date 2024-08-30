@@ -38,6 +38,13 @@ typedef struct SevKernelLoaderContext {
     size_t cmdline_size;
 } SevKernelLoaderContext;
 
+#define RAM_SAVE_ENCRYPTED_PAGE           0x1
+#define RAM_SAVE_SHARED_REGIONS_LIST      0x2
+
+#define RAM_SAVE_ENCRYPTED_PAGE_BATCH     0x4
+#define RAM_SAVE_ENCRYPTED_PAGE_BATCH_END 0x5
+#define RAM_SAVE_ENCRYPTED_CPU_STATE      0x6
+
 #ifdef CONFIG_SEV
 bool sev_enabled(void);
 bool sev_es_enabled(void);
@@ -51,12 +58,26 @@ uint32_t sev_get_reduced_phys_bits(void);
 bool sev_add_kernel_loader_hashes(SevKernelLoaderContext *ctx, Error **errp);
 
 int sev_encrypt_flash(uint8_t *ptr, uint64_t len, Error **errp);
+int sev_save_setup(const char *pdh, const char *plat_cert,
+                   const char *amd_cert);
+int sev_save_outgoing_page(QEMUFile *f, uint8_t *ptr,
+                           uint32_t size, uint64_t *bytes_sent);
+int sev_load_incoming_page(QEMUFile *f, uint8_t *ptr);
 int sev_inject_launch_secret(const char *hdr, const char *secret,
                              uint64_t gpa, Error **errp);
 
 int sev_es_save_reset_vector(void *flash_ptr, uint64_t flash_size);
 void sev_es_set_reset_vector(CPUState *cpu);
+int sev_remove_shared_regions_list(unsigned long gfn_start,
+                                   unsigned long gfn_end);
+int sev_add_shared_regions_list(unsigned long gfn_start, unsigned long gfn_end);
+int sev_save_outgoing_shared_regions_list(QEMUFile *f, uint64_t *bytes_sent);
+int sev_load_incoming_shared_regions_list(QEMUFile *f);
+bool sev_is_gfn_in_unshared_region(unsigned long gfn);
+void sev_del_migrate_blocker(void);
 
 int sev_kvm_init(ConfidentialGuestSupport *cgs, Error **errp);
+
+extern bool sev_kvm_has_msr_ghcb;
 
 #endif

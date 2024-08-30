@@ -32,6 +32,7 @@
 #include "sysemu/runstate.h"
 #include "kvm_i386.h"
 #include "sev.h"
+#include "csv.h"
 #include "xen-emu.h"
 #include "hyperv.h"
 #include "hyperv-proto.h"
@@ -148,6 +149,7 @@ static int has_xcrs;
 static int has_sregs2;
 static int has_exception_payload;
 static int has_triple_fault_event;
+static int has_map_gpa_range;
 
 static bool has_msr_mcg_ext_ctl;
 
@@ -2191,6 +2193,17 @@ int kvm_arch_init_vcpu(CPUState *cs)
         c->eax = MAX(c->eax, KVM_CPUID_SIGNATURE | 0x10);
     }
 
+    if (sev_enabled()) {
+        c = cpuid_find_entry(&cpuid_data.cpuid,
+                             KVM_CPUID_FEATURES | kvm_base, 0);
+        if (c) {
+            c->eax |= (1 << KVM_FEATURE_MIGRATION_CONTROL);
+            if (has_map_gpa_range) {
+                c->eax |= (1 << KVM_FEATURE_HC_MAP_GPA_RANGE);
+            }
+        }
+    }
+
     cpuid_data.cpuid.nent = cpuid_i;
 
     cpuid_data.cpuid.padding = 0;
@@ -2256,6 +2269,11 @@ void kvm_arch_reset_vcpu(X86CPU *cpu)
                                           KVM_MP_STATE_UNINITIALIZED;
     } else {
         env->mp_state = KVM_MP_STATE_RUNNABLE;
+    }
+
+    if (cpu_is_bsp(cpu) &&
+        sev_enabled() && has_map_gpa_range) {
+        sev_remove_shared_regions_list(0, -1);
     }
 
     /* enabled by default */
@@ -2476,6 +2494,32 @@ static bool kvm_rdmsr_core_thread_count(X86CPU *cpu, uint32_t msr,
     return true;
 }
 
+/*
+ * Currently this exit is only used by SEV guests for
+ * MSR_KVM_MIGRATION_CONTROL to indicate if the guest
+ * is ready for migration.
+ */
+static uint64_t msr_kvm_migration_control;
+
+static bool kvm_rdmsr_kvm_migration_control(X86CPU *cpu, uint32_t msr,
+                                            uint64_t *val)
+{
+    *val = msr_kvm_migration_control;
+
+    return true;
+}
+
+static bool kvm_wrmsr_kvm_migration_control(X86CPU *cpu, uint32_t msr,
+                                            uint64_t val)
+{
+    msr_kvm_migration_control = val;
+
+    if (val == KVM_MIGRATION_READY)
+        sev_del_migrate_blocker();
+
+    return true;
+}
+
 static Notifier smram_machine_done;
 static KVMMemoryListener smram_listener;
 static AddressSpace smram_address_space;
@@ -2582,6 +2626,17 @@ int kvm_arch_init(MachineState *ms, KVMState *s)
         error_report("kvm: Xen support not enabled in qemu");
         return -ENOTSUP;
 #endif
+    }
+
+    has_map_gpa_range = kvm_check_extension(s, KVM_CAP_EXIT_HYPERCALL);
+    if (has_map_gpa_range) {
+        ret = kvm_vm_enable_cap(s, KVM_CAP_EXIT_HYPERCALL, 0,
+                                KVM_EXIT_HYPERCALL_VALID_MASK);
+        if (ret < 0) {
+            error_report("kvm: Failed to enable MAP_GPA_RANGE cap: %s",
+                         strerror(-ret));
+            return ret;
+        }
     }
 
     ret = kvm_get_supported_msrs(s);
@@ -2709,6 +2764,15 @@ int kvm_arch_init(MachineState *ms, KVMState *s)
                            kvm_rdmsr_core_thread_count, NULL);
         if (!r) {
             error_report("Could not install MSR_CORE_THREAD_COUNT handler: %s",
+                         strerror(-ret));
+            exit(1);
+        }
+
+        r = kvm_filter_msr(s, MSR_KVM_MIGRATION_CONTROL,
+                           kvm_rdmsr_kvm_migration_control,
+                           kvm_wrmsr_kvm_migration_control);
+        if (!r) {
+            error_report("Could not install MSR_KVM_MIGRATION_CONTROL handler: %s",
                          strerror(-ret));
             exit(1);
         }
@@ -3562,6 +3626,10 @@ static int kvm_put_msrs(X86CPU *cpu, int level)
         }
     }
 
+    if (sev_kvm_has_msr_ghcb) {
+        kvm_msr_entry_add(cpu, MSR_AMD64_SEV_ES_GHCB, env->ghcb_gpa);
+    }
+
     return kvm_buf_set_msrs(cpu);
 }
 
@@ -3936,6 +4004,10 @@ static int kvm_get_msrs(X86CPU *cpu)
         }
     }
 
+    if (sev_kvm_has_msr_ghcb) {
+        kvm_msr_entry_add(cpu, MSR_AMD64_SEV_ES_GHCB, 0);
+    }
+
     ret = kvm_vcpu_ioctl(CPU(cpu), KVM_GET_MSRS, cpu->kvm_msr_buf);
     if (ret < 0) {
         return ret;
@@ -4255,6 +4327,9 @@ static int kvm_get_msrs(X86CPU *cpu)
             break;
         case MSR_ARCH_LBR_INFO_0 ... MSR_ARCH_LBR_INFO_0 + 31:
             env->lbr_records[index - MSR_ARCH_LBR_INFO_0].info = msrs[i].data;
+            break;
+        case MSR_AMD64_SEV_ES_GHCB:
+            env->ghcb_gpa = msrs[i].data;
             break;
         }
     }
@@ -4936,6 +5011,28 @@ static int kvm_handle_tpr_access(X86CPU *cpu)
     return 1;
 }
 
+static int kvm_handle_exit_hypercall(X86CPU *cpu, struct kvm_run *run)
+{
+    /*
+     * Currently this exit is only used by SEV guests for
+     * guest page encryption status tracking.
+     */
+    if (run->hypercall.nr == KVM_HC_MAP_GPA_RANGE) {
+        unsigned long enc = run->hypercall.args[2];
+        unsigned long gpa = run->hypercall.args[0];
+        unsigned long npages = run->hypercall.args[1];
+        unsigned long gfn_start = gpa >> TARGET_PAGE_BITS;
+        unsigned long gfn_end = gfn_start + npages;
+
+        if (enc) {
+            sev_remove_shared_regions_list(gfn_start, gfn_end);
+         } else {
+            sev_add_shared_regions_list(gfn_start, gfn_end);
+         }
+    }
+    return 0;
+}
+
 int kvm_arch_insert_sw_breakpoint(CPUState *cs, struct kvm_sw_breakpoint *bp)
 {
     static const uint8_t int3 = 0xcc;
@@ -5359,6 +5456,9 @@ int kvm_arch_handle_exit(CPUState *cs, struct kvm_run *run)
         ret = kvm_xen_handle_exit(cpu, &run->xen);
         break;
 #endif
+    case KVM_EXIT_HYPERCALL:
+        ret = kvm_handle_exit_hypercall(cpu, run);
+        break;
     default:
         fprintf(stderr, "KVM: unknown exit reason %d\n", run->exit_reason);
         ret = -1;
@@ -5611,6 +5711,9 @@ bool kvm_has_waitpkg(void)
 
 bool kvm_arch_cpu_check_are_resettable(void)
 {
+    if (is_hygon_cpu())
+        return !csv_kvm_cpu_reset_inhibit;
+
     return !sev_es_enabled();
 }
 

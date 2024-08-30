@@ -522,6 +522,8 @@ typedef enum X86Seg {
 
 #define MSR_VM_HSAVE_PA                 0xc0010117
 
+#define MSR_AMD64_SEV_ES_GHCB           0xc0010130
+
 #define MSR_IA32_XFD                    0x000001c4
 #define MSR_IA32_XFD_ERR                0x000001c5
 
@@ -1889,6 +1891,9 @@ typedef struct CPUArchState {
 
     /* Number of dies within this CPU package. */
     unsigned nr_dies;
+
+    /* GHCB guest physical address info */
+    uint64_t ghcb_gpa;
 } CPUX86State;
 
 struct kvm_msrs;

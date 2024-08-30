@@ -53,8 +53,54 @@ struct ConfidentialGuestSupport {
     bool ready;
 };
 
+/**
+ * The functions registers with ConfidentialGuestMemoryEncryptionOps will be
+ * used during the encrypted guest migration.
+ */
+struct ConfidentialGuestMemoryEncryptionOps {
+    /* Initialize the platform specific state before starting the migration */
+    int (*save_setup)(const char *pdh, const char *plat_cert,
+                      const char *amd_cert);
+
+    /* Write the encrypted page and metadata associated with it */
+    int (*save_outgoing_page)(QEMUFile *f, uint8_t *ptr, uint32_t size,
+                              uint64_t *bytes_sent);
+
+    /* Load the incoming encrypted page into guest memory */
+    int (*load_incoming_page)(QEMUFile *f, uint8_t *ptr);
+
+    /* Check if gfn is in shared/unencrypted region */
+    bool (*is_gfn_in_unshared_region)(unsigned long gfn);
+
+    /* Write the shared regions list */
+    int (*save_outgoing_shared_regions_list)(QEMUFile *f, uint64_t *bytes_sent);
+
+    /* Load the shared regions list */
+    int (*load_incoming_shared_regions_list)(QEMUFile *f);
+
+    /* Queue the encrypted page and metadata associated with it into a list */
+    int (*queue_outgoing_page)(uint8_t *ptr, uint32_t size, uint64_t addr);
+
+    /* Write the list queued with encrypted pages and metadata associated
+     * with them */
+    int (*save_queued_outgoing_pages)(QEMUFile *f, uint64_t *bytes_sent);
+
+    /* Queue the incoming encrypted page into a list */
+    int (*queue_incoming_page)(QEMUFile *f, uint8_t *ptr);
+
+    /* Load the incoming encrypted pages queued in list into guest memory */
+    int (*load_queued_incoming_pages)(QEMUFile *f);
+
+    /* Write the encrypted cpu state */
+    int (*save_outgoing_cpu_state)(QEMUFile *f, uint64_t *bytes_sent);
+
+    /* Load the encrypted cpu state */
+    int (*load_incoming_cpu_state)(QEMUFile *f);
+};
+
 typedef struct ConfidentialGuestSupportClass {
     ObjectClass parent;
+    struct ConfidentialGuestMemoryEncryptionOps *memory_encryption_ops;
 } ConfidentialGuestSupportClass;
 
 #endif /* !CONFIG_USER_ONLY */
