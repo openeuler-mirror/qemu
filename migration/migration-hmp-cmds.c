@@ -30,6 +30,7 @@
 #include "sysemu/runstate.h"
 #include "ui/qemu-spice.h"
 #include "sysemu/sysemu.h"
+#include "sysemu/kvm.h"
 #include "options.h"
 #include "migration.h"
 
@@ -405,6 +406,11 @@ void hmp_loadvm(Monitor *mon, const QDict *qdict)
     int saved_vm_running  = runstate_is_running();
     const char *name = qdict_get_str(qdict, "name");
     Error *err = NULL;
+
+    if (virtcca_cvm_enabled()) {
+        error_setg(&err, "The loadvm command is temporarily unsupported in cvm.");
+        return;
+    }
 
     vm_stop(RUN_STATE_RESTORE_VM);
 

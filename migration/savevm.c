@@ -61,6 +61,7 @@
 #include "sysemu/replay.h"
 #include "sysemu/runstate.h"
 #include "sysemu/sysemu.h"
+#include "sysemu/kvm.h"
 #include "sysemu/xen.h"
 #include "migration/colo.h"
 #include "qemu/bitmap.h"
@@ -3044,6 +3045,11 @@ int qemu_loadvm_approve_switchover(void)
 bool save_snapshot(const char *name, bool overwrite, const char *vmstate,
                   bool has_devices, strList *devices, Error **errp)
 {
+    if (virtcca_cvm_enabled()) {
+        error_setg(errp, "The savevm command is temporarily unsupported in cvm.");
+        return false;
+    }
+
     BlockDriverState *bs;
     QEMUSnapshotInfo sn1, *sn = &sn1;
     int ret = -1, ret2;
