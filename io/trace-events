@@ -38,7 +38,7 @@ qio_channel_file_new_path(void *ioc, const char *path, int flags, int mode, int 
 
 # channel-tls.c
 qio_channel_tls_new_client(void *ioc, void *master, void *creds, const char *hostname) "TLS new client ioc=%p master=%p creds=%p hostname=%s"
-qio_channel_tls_new_server(void *ioc, void *master, void *creds, const char *aclname) "TLS new client ioc=%p master=%p creds=%p acltname=%s"
+qio_channel_tls_new_server(void *ioc, void *master, void *creds, const char *aclname) "TLS new client ioc=%p master=%p creds=%p aclname=%s"
 qio_channel_tls_handshake_start(void *ioc) "TLS handshake start ioc=%p"
 qio_channel_tls_handshake_pending(void *ioc, int status) "TLS handshake pending ioc=%p status=%d"
 qio_channel_tls_handshake_fail(void *ioc) "TLS handshake fail ioc=%p"
