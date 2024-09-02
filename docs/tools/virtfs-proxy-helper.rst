@@ -55,7 +55,7 @@ The following options are supported:
 .. option:: -f, --fd SOCKET_ID
 
   Use given file descriptor as socket descriptor for communicating with
-  qemu proxy fs drier. Usually a helper like libvirt will create
+  qemu proxy fs driver. Usually a helper like libvirt will create
   socketpair and pass one of the fds as parameter to this option.
 
 .. option:: -s, --socket SOCKET_FILE
