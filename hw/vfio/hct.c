@@ -44,10 +44,10 @@
 
 #define HCT_SHARE_DEV                "/dev/hct_share"
 
-#define HCT_VERSION_STRING           "0.6"
 #define DEF_VERSION_STRING           "0.1"
 #define HCT_VERSION_STR_02           "0.2"
 #define HCT_VERSION_STR_05           "0.5"
+#define HCT_VERSION_STR_06           "0.6"
 #define VERSION_SIZE                 16
 
 #define HCT_SHARE_IOC_TYPE           'C'
@@ -68,7 +68,6 @@
 
 #define PASID_OFFSET                 40
 #define HCT_PASID_MEM_GID_OFFSET     1024
-#define HCT_PASID_MEM_MDEV_OFFSET    2048
 
 static volatile struct hct_data {
     int init;
@@ -77,6 +76,7 @@ static volatile struct hct_data {
     unsigned long hct_shared_size;
     uint8_t *pasid_memory;
     uint8_t *hct_shared_memory;
+    uint8_t hct_version[VERSION_SIZE];
     uint8_t ccp_index[MAX_CCP_CNT];
     uint8_t ccp_cnt;
 } hct_data;
@@ -110,6 +110,11 @@ struct hct_dev_ctrl {
     };
 };
 
+enum MDEV_USED_TYPE {
+    MDEV_USED_FOR_HOST,
+    MDEV_USED_FOR_VM,
+    MDEV_USED_UNDEF
+};
 
 static int hct_get_sysfs_value(const char *path, int *val)
 {
@@ -141,17 +146,14 @@ static int hct_get_sysfs_value(const char *path, int *val)
 
 /*
  * the memory layout of pasid_memory is as follows:
- * offset -- 0               1024            2048                            4096
- * a page -- |pasid(8B) ---  |gid(8B) ---    |mdev_idx(8B) ---               |
+ * offset -- 0              1024                            4096
+ * a page -- |pasid(8B) --- |gid(8B) ---                    |
  */
 static int pasid_get_and_init(HCTDevState *state)
 {
     void *base = (void *)hct_data.pasid_memory;
     struct hct_dev_ctrl ctrl;
     unsigned long *gid = NULL;
-    unsigned long *mdev_idx = NULL;
-    char path[PATH_MAX];
-    int index;
     int ret;
 
     ctrl.op = HCT_SHARE_OP_GET_PASID;
@@ -175,16 +177,6 @@ static int pasid_get_and_init(HCTDevState *state)
 
     gid = (unsigned long *)((unsigned long)base + HCT_PASID_MEM_GID_OFFSET);
     *(unsigned long *)gid = (unsigned long)ctrl.id;
-
-    snprintf(path, PATH_MAX, "%s/vendor/idx", state->vdev.sysfsdev);
-    if (hct_get_sysfs_value(path, &index)) {
-        ret = -EINVAL;
-        error_report("get %s sysfs value fail.\n", path);
-        goto out;
-    }
-
-    mdev_idx = (unsigned long *)((unsigned long)base + HCT_PASID_MEM_MDEV_OFFSET);
-    *(unsigned long *)mdev_idx = (unsigned long)index;
 
 out:
     return ret;
@@ -304,7 +296,20 @@ static int hct_check_duplicated_index(int index)
 static int hct_get_ccp_index(HCTDevState *state)
 {
     char path[PATH_MAX] = {0};
-    int index;
+    int mdev_used, index;
+
+    if (memcmp((void *)hct_data.hct_version, HCT_VERSION_STR_06,
+                                 sizeof(HCT_VERSION_STR_06)) >= 0) {
+        snprintf(path, PATH_MAX, "%s/vendor/use", state->vdev.sysfsdev);
+        if (hct_get_sysfs_value(path, &mdev_used)) {
+            error_report("get %s sysfs value fail.\n", path);
+            return -1;
+        } else if (mdev_used != MDEV_USED_FOR_VM) {
+            error_report("The value of file node(%s) is %d, should be MDEV_USED_FOR_VM(%d), pls check.\n",
+			    path, mdev_used, MDEV_USED_FOR_VM);
+            return -1;
+        }
+    }
 
     snprintf(path, PATH_MAX, "%s/vendor/id", state->vdev.sysfsdev);
     if (hct_get_sysfs_value(path, &index)) {
@@ -334,11 +339,9 @@ static int hct_api_version_check(void)
         error_report("The hct.ko version is %s, please upgrade to version %s or higher.\n",
                       ctrl.version, HCT_VERSION_STR_02);
         return -1;
-    } else if (memcmp(ctrl.version,  HCT_VERSION_STRING, sizeof(HCT_VERSION_STRING)) != 0) {
-        info_report("The hct.ko version is %s, please upgrade to version %s.\n",
-                      ctrl.version, HCT_VERSION_STRING);
     }
 
+    memcpy((void *)hct_data.hct_version, (void *)ctrl.version, sizeof(hct_data.hct_version));
     if (memcmp(ctrl.version,  HCT_VERSION_STR_05, sizeof(HCT_VERSION_STR_05)) < 0)
         hct_data.hct_shared_size = PAGE_SIZE * DEF_CCP_CNT_MAX;
     else
