@@ -33,6 +33,7 @@
 
 #include "qemu/coroutine.h"
 #include "qemu/bitmap.h"
+#include "qemu/range.h"
 
 /*
  * Reference for the LUKS format implemented here is
@@ -591,7 +592,7 @@ qcrypto_block_luks_check_header(const QCryptoBlockLUKS *luks, Error **errp)
                                                        header_sectors,
                                                        slot2->stripes);
 
-            if (start1 + len1 > start2 && start2 + len2 > start1) {
+            if (ranges_overlap(start1, len1, start2, len2)) {
                 error_setg(errp,
                            "Keyslots %zu and %zu are overlapping in the header",
                            i, j);
