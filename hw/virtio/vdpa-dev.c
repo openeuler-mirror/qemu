@@ -32,6 +32,7 @@
 #include "hw/virtio/vdpa-dev-mig.h"
 #include "migration/migration.h"
 #include "exec/address-spaces.h"
+#include "standard-headers/linux/virtio_ids.h"
 
 static void
 vhost_vdpa_device_dummy_handle_output(VirtIODevice *vdev, VirtQueue *vq)
@@ -202,7 +203,23 @@ static void
 vhost_vdpa_device_get_config(VirtIODevice *vdev, uint8_t *config)
 {
     VhostVdpaDevice *s = VHOST_VDPA_DEVICE(vdev);
+    uint8_t *new_config;
+    int ret;
 
+    if (s->vdev_id != VIRTIO_ID_BLOCK) {
+        goto out;
+    }
+
+    new_config = g_malloc0(s->config_size);
+    ret = vhost_dev_get_config(&s->dev, new_config, s->config_size, NULL);
+    if (ret < 0) {
+        error_report("vhost-vdpa-device: get config failed(%d)\n", ret);
+        goto free;
+    }
+    memcpy(s->config, new_config, s->config_size);
+free:
+    g_free(new_config);
+out:
     memcpy(config, s->config, s->config_size);
 }
 
