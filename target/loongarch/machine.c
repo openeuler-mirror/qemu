@@ -112,24 +112,6 @@ static const VMStateDescription vmstate_lasx = {
     },
 };
 
-static int cpu_post_load(void *opaque, int version_id)
-{
-#ifdef CONFIG_KVM
-    LoongArchCPU *cpu = opaque;
-    kvm_loongarch_put_pvtime(cpu);
-#endif
-    return 0;
-}
-
-static int cpu_pre_save(void *opaque)
-{
-#ifdef CONFIG_KVM
-    LoongArchCPU *cpu = opaque;
-    kvm_loongarch_get_pvtime(cpu);
-#endif
-    return 0;
-}
-
 static bool lbt_needed(void *opaque)
 {
     LoongArchCPU *cpu = opaque;
@@ -190,8 +172,6 @@ const VMStateDescription vmstate_loongarch_cpu = {
     .name = "cpu",
     .version_id = 3,
     .minimum_version_id = 3,
-    .post_load = cpu_post_load,
-    .pre_save = cpu_pre_save,
     .fields = (const VMStateField[]) {
         VMSTATE_UINTTL_ARRAY(env.gpr, LoongArchCPU, 32),
         VMSTATE_UINTTL(env.pc, LoongArchCPU),

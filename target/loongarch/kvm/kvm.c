@@ -684,53 +684,6 @@ static int kvm_check_cpucfg2(CPUState *cs)
     return ret;
 }
 
-static int kvm_check_cpucfg6(CPUState *cs)
-{
-    int ret;
-    uint64_t val;
-    struct kvm_device_attr attr = {
-        .group = KVM_LOONGARCH_VCPU_CPUCFG,
-        .attr = 6,
-        .addr = (uint64_t)&val,
-    };
-    LoongArchCPU *cpu = LOONGARCH_CPU(cs);
-    CPULoongArchState *env = &cpu->env;
-
-    ret = kvm_vcpu_ioctl(cs, KVM_HAS_DEVICE_ATTR, &attr);
-    if (!ret) {
-        kvm_vcpu_ioctl(cs, KVM_GET_DEVICE_ATTR, &attr);
-
-        if (FIELD_EX32(env->cpucfg[6], CPUCFG6, PMP)) {
-             /* Check PMP */
-             if (!FIELD_EX32(val, CPUCFG6, PMP)) {
-                 error_report("'pmu' feature not supported by KVM on this host"
-                              " Please disable 'pmu' with "
-                              "'... -cpu XXX,pmu=off ...'\n");
-                 exit(EXIT_FAILURE);
-             }
-             /* Check PMNUM */
-             int guest_pmnum = FIELD_EX32(env->cpucfg[6], CPUCFG6, PMNUM);
-             int host_pmnum = FIELD_EX32(val, CPUCFG6, PMNUM);
-             if (guest_pmnum > host_pmnum){
-                 warn_report("The guest pmnum %d larger than KVM support %d\n",
-                              guest_pmnum, host_pmnum);
-                 env->cpucfg[6] = FIELD_DP32(env->cpucfg[6], CPUCFG6,
-                                             PMNUM, host_pmnum);
-             }
-             /* Check PMBITS */
-             int guest_pmbits = FIELD_EX32(env->cpucfg[6], CPUCFG6, PMBITS);
-             int host_pmbits = FIELD_EX32(val, CPUCFG6, PMBITS);
-             if (guest_pmbits != host_pmbits) {
-                 warn_report("The host not support PMBITS %d\n", guest_pmbits);
-                 env->cpucfg[6] = FIELD_DP32(env->cpucfg[6], CPUCFG6,
-                                             PMBITS, host_pmbits);
-             }
-        }
-    }
-
-    return ret;
-}
-
 static int kvm_loongarch_put_cpucfg(CPUState *cs)
 {
     int i, ret = 0;
@@ -745,12 +698,6 @@ static int kvm_loongarch_put_cpucfg(CPUState *cs)
                 return ret;
             }
         }
-        if (i == 6) {
-            ret = kvm_check_cpucfg6(cs);
-            if (ret) {
-                return ret;
-            }
-        }
         val = env->cpucfg[i];
         ret = kvm_set_one_reg(cs, KVM_IOC_CPUCFG(i), &val);
         if (ret < 0) {
@@ -758,56 +705,6 @@ static int kvm_loongarch_put_cpucfg(CPUState *cs)
         }
     }
     return ret;
-}
-
-int kvm_loongarch_put_pvtime(LoongArchCPU *cpu)
-{
-    CPULoongArchState *env = &cpu->env;
-    int err;
-    struct kvm_device_attr attr = {
-        .group = KVM_LOONGARCH_VCPU_PVTIME_CTRL,
-        .attr = KVM_LOONGARCH_VCPU_PVTIME_GPA,
-        .addr = (uint64_t)&env->st.guest_addr,
-    };
-
-    err = kvm_vcpu_ioctl(CPU(cpu), KVM_HAS_DEVICE_ATTR, attr);
-    if (err != 0) {
-        /* It's ok even though kvm has not such attr */
-        return 0;
-    }
-
-    err = kvm_vcpu_ioctl(CPU(cpu), KVM_SET_DEVICE_ATTR, attr);
-    if (err != 0) {
-        error_report("PVTIME IPA: KVM_SET_DEVICE_ATTR: %s", strerror(-err));
-        return err;
-    }
-
-    return 0;
-}
-
-int kvm_loongarch_get_pvtime(LoongArchCPU *cpu)
-{
-    CPULoongArchState *env = &cpu->env;
-    int err;
-    struct kvm_device_attr attr = {
-        .group = KVM_LOONGARCH_VCPU_PVTIME_CTRL,
-        .attr = KVM_LOONGARCH_VCPU_PVTIME_GPA,
-        .addr = (uint64_t)&env->st.guest_addr,
-    };
-
-    err = kvm_vcpu_ioctl(CPU(cpu), KVM_HAS_DEVICE_ATTR, attr);
-    if (err != 0) {
-        /* It's ok even though kvm has not such attr */
-        return 0;
-    }
-
-    err = kvm_vcpu_ioctl(CPU(cpu), KVM_GET_DEVICE_ATTR, attr);
-    if (err != 0) {
-        error_report("PVTIME IPA: KVM_GET_DEVICE_ATTR: %s", strerror(-err));
-        return err;
-    }
-
-    return 0;
 }
 
 int kvm_arch_get_registers(CPUState *cs)

@@ -11,8 +11,6 @@
 #define QEMU_KVM_LOONGARCH_H
 
 int  kvm_loongarch_set_interrupt(LoongArchCPU *cpu, int irq, int level);
-int kvm_loongarch_put_pvtime(LoongArchCPU *cpu);
-int kvm_loongarch_get_pvtime(LoongArchCPU *cpu);
 void kvm_arch_reset_vcpu(CPUState *cs);
 
 #endif
