@@ -32,6 +32,7 @@
 
 #define TYPE_LOONGARCH_IPI "loongarch_ipi"
 OBJECT_DECLARE_SIMPLE_TYPE(LoongArchIPI, LOONGARCH_IPI)
+#define TYPE_KVM_LOONGARCH_IPI "loongarch-ipi-kvm"
 
 typedef struct IPICore {
     uint32_t status;
@@ -50,5 +51,27 @@ struct LoongArchIPI {
     uint32_t num_cpu;
     IPICore *cpu;
 };
+
+struct KVMLoongArchIPI {
+    SysBusDevice parent_obj;
+    uint32_t num_cpu;
+    IPICore *cpu;
+};
+typedef struct KVMLoongArchIPI KVMLoongArchIPI;
+DECLARE_INSTANCE_CHECKER(KVMLoongArchIPI, KVM_LOONGARCH_IPI,
+                         TYPE_KVM_LOONGARCH_IPI)
+
+struct KVMLoongArchIPIClass {
+    SysBusDeviceClass parent_class;
+    DeviceRealize parent_realize;
+
+    bool is_created;
+    int dev_fd;
+
+};
+typedef struct KVMLoongArchIPIClass KVMLoongArchIPIClass;
+DECLARE_CLASS_CHECKERS(KVMLoongArchIPIClass, KVM_LOONGARCH_IPI,
+                       TYPE_KVM_LOONGARCH_IPI)
+
 
 #endif
