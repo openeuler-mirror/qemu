@@ -216,7 +216,7 @@ static int64_t load_kernel_info(struct loongarch_boot_info *info)
     return kernel_entry;
 }
 
-static void reset_load_elf(void *opaque)
+void reset_load_elf(void *opaque)
 {
     LoongArchCPU *cpu = opaque;
     CPULoongArchState *env = &cpu->env;
