@@ -100,6 +100,9 @@ config LOONGARCH_PCH_PIC
     bool
     select UNIMP
 
+config LOONGARCH_PCH_PIC_KVM
+    bool
+
 config LOONGARCH_PCH_MSI
     select MSI_NONBROKEN
     bool
