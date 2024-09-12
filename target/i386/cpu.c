@@ -8907,6 +8907,7 @@ static void x86_cpu_realizefn(DeviceState *dev, Error **errp)
 
     mce_init(cpu);
 
+    x86_cpu_gdb_init(cs);
     qemu_init_vcpu(cs);
 
 #ifndef CONFIG_USER_ONLY
