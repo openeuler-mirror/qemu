@@ -3360,7 +3360,8 @@ static int kvm_get_xsave(X86CPU *cpu)
 {
     CPUX86State *env = &cpu->env;
     void *xsave = env->xsave_buf;
-    int type, ret;
+    unsigned long type;
+    int ret;
 
     if (!has_xsave) {
         return kvm_get_fpu(cpu);
