@@ -276,6 +276,11 @@ void migration_incoming_state_destroy(void)
 
     multifd_recv_cleanup();
     compress_threads_load_cleanup();
+    /*
+     * RAM state cleanup needs to happen after multifd cleanup, because
+     * multifd threads can use some of its states (receivedmap).
+     */
+    qemu_loadvm_state_cleanup();
 
     if (mis->to_src_file) {
         /* Tell source that we are done */
