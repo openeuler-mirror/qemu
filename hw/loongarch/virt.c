@@ -918,7 +918,7 @@ static void virt_irq_init(LoongArchVirtMachineState *lvms)
         pch_pic = qdev_new(TYPE_KVM_LOONGARCH_PCH_PIC);
         sysbus_realize_and_unref(SYS_BUS_DEVICE(pch_pic), &error_fatal);
     } else {
-        pch_pic = qdev_new(TYPE_LOONGARCH_PCH_PIC);
+        pch_pic = qdev_new(TYPE_LOONGARCH_PIC);
         num = VIRT_PCH_PIC_IRQ_NUM;
         qdev_prop_set_uint32(pch_pic, "pch_pic_irq_num", num);
         d = SYS_BUS_DEVICE(pch_pic);

@@ -26,10 +26,6 @@ struct LoongarchPICClass {
     DeviceRealize parent_realize;
 };
 
-#define TYPE_LOONGARCH_PCH_PIC TYPE_LOONGARCH_PIC
-typedef struct LoongArchPICCommonState LoongArchPCHPIC;
-#define LOONGARCH_PCH_PIC(obj)   ((struct LoongArchPICCommonState *)(obj))
-
 struct KVMLoongArchPCHPIC {
     SysBusDevice parent_obj;
     uint64_t int_mask; /*0x020 interrupt mask register*/
