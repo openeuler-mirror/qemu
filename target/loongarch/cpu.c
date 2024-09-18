@@ -695,48 +695,6 @@ static void loongarch_set_lasx(Object *obj, bool value, Error **errp)
     }
 }
 
-static bool loongarch_get_pmu(Object *obj, Error **errp)
-{
-    LoongArchCPU *cpu = LOONGARCH_CPU(obj);
-
-    return  !!(FIELD_EX32(cpu->env.cpucfg[6], CPUCFG6, PMP));
-}
-
-static void loongarch_set_pmu(Object *obj, bool value,  Error **errp)
-{
-    LoongArchCPU *cpu = LOONGARCH_CPU(obj);
-
-    cpu->env.cpucfg[6] = FIELD_DP32(cpu->env.cpucfg[6], CPUCFG6, PMP, value);
-}
-
-static void loongarch_get_pmnum(Object *obj, Visitor *v,
-                                const char *name, void *opaque,
-                                Error **errp)
-{
-    LoongArchCPU *cpu = LOONGARCH_CPU(obj);
-    uint32_t value = FIELD_EX32(cpu->env.cpucfg[6], CPUCFG6, PMNUM);
-
-    visit_type_uint32(v, name, &value, errp);
-}
-
-static void loongarch_set_pmnum(Object *obj, Visitor *v,
-                                const char *name, void *opaque,
-                                Error **errp)
-{
-    LoongArchCPU *cpu = LOONGARCH_CPU(obj);
-    uint32_t *value= opaque;
-
-    if (!visit_type_uint32(v, name, value, errp)) {
-        return;
-    }
-    if ((*value <= PMNUM_MAX) && (*value > 0)) {
-        cpu->env.cpucfg[6] = FIELD_DP32(cpu->env.cpucfg[6], CPUCFG6, PMNUM, *value -1);
-    } else {
-        error_report("Performance counter number need be in [1- %d]\n", PMNUM_MAX);
-        exit(EXIT_FAILURE);
-    }
-}
-
 static bool loongarch_get_lbt(Object *obj, Error **errp)
 {
     return LOONGARCH_CPU(obj)->lbt != ON_OFF_AUTO_OFF;
@@ -749,6 +707,18 @@ static void loongarch_set_lbt(Object *obj, bool value, Error **errp)
     cpu->lbt = value ? ON_OFF_AUTO_ON : ON_OFF_AUTO_OFF;
 }
 
+static bool loongarch_get_pmu(Object *obj, Error **errp)
+{
+    return LOONGARCH_CPU(obj)->pmu != ON_OFF_AUTO_OFF;
+}
+
+static void loongarch_set_pmu(Object *obj, bool value, Error **errp)
+{
+    LoongArchCPU *cpu = LOONGARCH_CPU(obj);
+
+    cpu->pmu = value ? ON_OFF_AUTO_ON : ON_OFF_AUTO_OFF;
+}
+
 void loongarch_cpu_post_init(Object *obj)
 {
     LoongArchCPU *cpu = LOONGARCH_CPU(obj);
@@ -759,21 +729,18 @@ void loongarch_cpu_post_init(Object *obj)
                              loongarch_set_lasx);
 
     if (kvm_enabled()) {
-        object_property_add_bool(obj, "pmu", loongarch_get_pmu,
-                                 loongarch_set_pmu);
-        if (FIELD_EX32(cpu->env.cpucfg[6], CPUCFG6, PMP)) {
-            uint32_t value = 4;
-            object_property_add(obj, "pmnum", "uint32",
-                                loongarch_get_pmnum,
-                                loongarch_set_pmnum, NULL,
-                                (void *)&value);
-        }
-
 	cpu->lbt = ON_OFF_AUTO_AUTO;
         object_property_add_bool(obj, "lbt", loongarch_get_lbt,
                                  loongarch_set_lbt);
         object_property_set_description(obj, "lbt",
                                    "Set off to disable Binary Tranlation.");
+
+        cpu->pmu = ON_OFF_AUTO_AUTO;
+        object_property_add_bool(obj, "pmu", loongarch_get_pmu,
+                                 loongarch_set_pmu);
+        object_property_set_description(obj, "pmu",
+                                   "Set off to performance monitor unit.");
+
     } else {
         cpu->lbt = ON_OFF_AUTO_OFF;
     }
