@@ -16,6 +16,7 @@
 #include "exec/target_page.h"
 #include "sysemu/sysemu.h"
 #include "exec/ramblock.h"
+#include "qemu/cutils.h"
 #include "qemu/error-report.h"
 #include "qapi/error.h"
 #include "qapi/qapi-events-migration.h"
@@ -400,7 +401,8 @@ void multifd_send_fill_packet(MultiFDSendParams *p)
     packet->packet_num = cpu_to_be64(packet_num);
 
     if (pages->block) {
-        strncpy(packet->ramblock, pages->block->idstr, 256);
+        pstrcpy(packet->ramblock, sizeof(packet->ramblock),
+                pages->block->idstr);
     }
 
     for (i = 0; i < pages->num; i++) {
