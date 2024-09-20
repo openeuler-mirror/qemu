@@ -10,6 +10,7 @@
 
 #include "hw/intc/loongarch_extioi_common.h"
 
+#define LoongArchExtIOI LoongArchExtIOICommonState
 #define TYPE_LOONGARCH_EXTIOI        "loongarch-extioi"
 #define TYPE_KVM_LOONGARCH_EXTIOI    "loongarch-kvm-extioi"
 
