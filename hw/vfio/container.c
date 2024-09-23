@@ -33,6 +33,7 @@
 #include "trace.h"
 #include "qapi/error.h"
 #include "migration/migration.h"
+#include "sysemu/kvm.h"
 
 VFIOGroupList vfio_group_list =
     QLIST_HEAD_INITIALIZER(vfio_group_list);
@@ -399,6 +400,14 @@ static int vfio_get_iommu_type(VFIOContainer *container,
                           VFIO_SPAPR_TCE_v2_IOMMU, VFIO_SPAPR_TCE_IOMMU };
     int i;
 
+    if (virtcca_cvm_enabled()) {
+        if (ioctl(container->fd, VFIO_CHECK_EXTENSION, VFIO_TYPE1v2_S_IOMMU)) {
+            return VFIO_TYPE1v2_S_IOMMU;
+        } else {
+            return -errno;
+        }
+    }
+
     for (i = 0; i < ARRAY_SIZE(iommu_types); i++) {
         if (ioctl(container->fd, VFIO_CHECK_EXTENSION, iommu_types[i])) {
             return iommu_types[i];
@@ -625,6 +634,7 @@ static int vfio_connect_container(VFIOGroup *group, AddressSpace *as,
     switch (container->iommu_type) {
     case VFIO_TYPE1v2_IOMMU:
     case VFIO_TYPE1_IOMMU:
+    case VFIO_TYPE1v2_S_IOMMU:
     {
         struct vfio_iommu_type1_info *info;
 
@@ -854,6 +864,11 @@ static int vfio_get_device(VFIOGroup *group, const char *name,
     if (!info) {
         error_setg_errno(errp, errno, "error getting device info");
         close(fd);
+        return -1;
+    }
+
+    if (!virtcca_cvm_enabled() && (info->flags & VFIO_DEVICE_FLAGS_SECURE)) {
+        error_setg(errp, "Normal vm cannot use confidential device.");
         return -1;
     }
 
