@@ -58,6 +58,65 @@
 /* See Linux kernel arch/arm64/include/asm/pvclock-abi.h */
 #define PVTIME_SIZE_PER_CPU 64
 
+/* ARM CLIDR_EL1 related definitions */
+/* Ctypen, bits[3(n - 1) + 2 : 3(n - 1)], for n = 1 to 7 */
+#define CTYPE_NONE     0b000
+#define CTYPE_INS      0b001
+#define CTYPE_DATA     0b010
+#define CTYPE_INS_DATA 0b011
+#define CTYPE_UNIFIED  0b100
+
+#define ARM64_REG_CLIDR_EL1 ARM64_SYS_REG(3, 1, 0, 0, 1)
+
+#define CLIDR_CTYPE_SHIFT(level) (3 * (level - 1))
+#define CLIDR_CTYPE_MASK(level) (7 << CLIDR_CTYPE_SHIFT(level))
+#define CLIDR_CTYPE(clidr, level) \
+    (((clidr) & CLIDR_CTYPE_MASK(level)) >> CLIDR_CTYPE_SHIFT(level))
+
+/* L1 data cache */
+#define ARM_L1DCACHE_SIZE 65536
+#define ARM_L1DCACHE_SETS 256
+#define ARM_L1DCACHE_ASSOCIATIVITY 4
+#define ARM_L1DCACHE_ATTRIBUTES 2
+#define ARM_L1DCACHE_LINE_SIZE 64
+
+/* L1 instruction cache */
+#define ARM_L1ICACHE_SIZE 65536
+#define ARM_L1ICACHE_SETS 256
+#define ARM_L1ICACHE_ASSOCIATIVITY 4
+#define ARM_L1ICACHE_ATTRIBUTES 4
+#define ARM_L1ICACHE_LINE_SIZE 64
+
+/* L1 unified cache */
+#define ARM_L1CACHE_SIZE 131072
+#define ARM_L1CACHE_SETS 256
+#define ARM_L1CACHE_ASSOCIATIVITY 4
+#define ARM_L1CACHE_ATTRIBUTES 10
+#define ARM_L1CACHE_LINE_SIZE 128
+
+/* L2 unified cache */
+#define ARM_L2CACHE_SIZE 524288
+#define ARM_L2CACHE_SETS 1024
+#define ARM_L2CACHE_ASSOCIATIVITY 8
+#define ARM_L2CACHE_ATTRIBUTES 10
+#define ARM_L2CACHE_LINE_SIZE 64
+
+/* L3 unified cache */
+#define ARM_L3CACHE_SIZE 33554432
+#define ARM_L3CACHE_SETS 2048
+#define ARM_L3CACHE_ASSOCIATIVITY 15
+#define ARM_L3CACHE_ATTRIBUTES 10
+#define ARM_L3CACHE_LINE_SIZE 128
+
+/* Definitions of the hardcoded cache info */
+typedef enum {
+    ARM_L1D_CACHE,
+    ARM_L1I_CACHE,
+    ARM_L1_CACHE,
+    ARM_L2_CACHE,
+    ARM_L3_CACHE
+} ArmCacheType;
+
 enum {
     VIRT_FLASH,
     VIRT_MEM,
@@ -191,6 +250,7 @@ void virt_madt_cpu_entry(AcpiDeviceIf *adev, int uid,
                          bool force_enabled);
 void virt_acpi_dsdt_cpu_cppc(AcpiDeviceIf *adev, int uid,
                              int num_cpu, Aml *dev);
+bool cpu_l1_cache_unified(int cpu);
 
 /* Return the number of used redistributor regions  */
 static inline int virt_gicv3_redist_region_count(VirtMachineState *vms)
