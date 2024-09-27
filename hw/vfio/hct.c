@@ -136,7 +136,9 @@ static const MemoryRegionOps hct_mmio_ops = {
 static void vfio_hct_detach_device(HCTDevState *state)
 {
     vfio_detach_device(&state->vdev);
-    g_free(state->vdev.name);
+
+    if (state->vdev.name)
+        g_free(state->vdev.name);
 }
 
 static void vfio_hct_exit(PCIDevice *dev)
@@ -413,7 +415,6 @@ static int hct_data_init(HCTDevState *state)
     int ret;
 
     if (hct_data.init == 0) {
-
         hct_data.hct_fd = qemu_open_old(HCT_SHARE_DEV, O_RDWR);
         if (hct_data.hct_fd < 0) {
             error_report("fail to open %s, errno %d.", HCT_SHARE_DEV, errno);
@@ -465,7 +466,6 @@ static void vfio_hct_realize(PCIDevice *pci_dev, Error **errp)
 {
     int ret;
     char *mdevid;
-    Error *err = NULL;
     HCTDevState *state = PCI_HCT_DEV(pci_dev);
 
     /* parsing mdev device name from startup scripts */
@@ -475,14 +475,18 @@ static void vfio_hct_realize(PCIDevice *pci_dev, Error **errp)
     ret = hct_data_init(state);
     if (ret < 0) {
         g_free(state->vdev.name);
+        state->vdev.name = NULL;
+        error_setg(errp, "hct data init failed");
         goto out;
     }
 
     ret = vfio_attach_device(state->vdev.name, &state->vdev,
-                             pci_device_iommu_address_space(pci_dev), &err);
+                             pci_device_iommu_address_space(pci_dev), errp);
 
     if (ret) {
-        error_report("attach device failed, name = %s", state->vdev.name);
+        g_free(state->vdev.name);
+        state->vdev.name = NULL;
+        error_setg(errp, "attach device failed, name = %s", state->vdev.name);
         goto data_uninit_out;
     }
 
@@ -491,7 +495,12 @@ static void vfio_hct_realize(PCIDevice *pci_dev, Error **errp)
 
     ret = vfio_hct_region_mmap(state);
     if (ret < 0)
+    {
+        g_free(state->vdev.name);
+        state->vdev.name = NULL;
+        error_setg(errp, "region mmap failed, name = %s", state->vdev.name);
         goto detach_device_out;
+    }
 
     return;
 
