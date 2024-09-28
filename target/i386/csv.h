@@ -58,6 +58,8 @@ bool csv3_enabled(void);
 #define CSV_OUTGOING_PAGE_WINDOW_SIZE     (4094 * TARGET_PAGE_SIZE)
 
 extern bool csv_kvm_cpu_reset_inhibit;
+extern uint32_t kvm_hygon_coco_ext;
+extern uint32_t kvm_hygon_coco_ext_inuse;
 
 typedef struct CsvBatchCmdList CsvBatchCmdList;
 typedef void (*CsvDestroyCmdNodeFn) (void *data);

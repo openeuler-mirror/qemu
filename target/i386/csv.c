@@ -34,6 +34,8 @@
 #include "csv.h"
 
 bool csv_kvm_cpu_reset_inhibit;
+uint32_t kvm_hygon_coco_ext;
+uint32_t kvm_hygon_coco_ext_inuse;
 
 struct ConfidentialGuestMemoryEncryptionOps csv3_memory_encryption_ops = {
     .save_setup = sev_save_setup,
