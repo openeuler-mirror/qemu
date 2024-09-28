@@ -2748,7 +2748,17 @@ bool sev_add_kernel_loader_hashes(SevKernelLoaderContext *ctx, Error **errp)
     /* zero the excess data so the measurement can be reliably calculated */
     memset(padded_ht->padding, 0, sizeof(padded_ht->padding));
 
-    if (sev_encrypt_flash((uint8_t *)padded_ht, sizeof(*padded_ht), errp) < 0) {
+    if (csv3_enabled()) {
+        if (kvm_hygon_coco_ext_inuse & KVM_CAP_HYGON_COCO_EXT_CSV3_MULT_LUP_DATA) {
+            if (csv3_load_data(area->base, (uint8_t *)padded_ht,
+                               sizeof(*padded_ht), errp) < 0) {
+                ret = false;
+            }
+        } else {
+            error_report("%s: CSV3 load kernel hashes unsupported!", __func__);
+            ret = false;
+        }
+    } else if (sev_encrypt_flash((uint8_t *)padded_ht, sizeof(*padded_ht), errp) < 0) {
         ret = false;
     }
 
