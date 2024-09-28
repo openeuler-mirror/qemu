@@ -698,3 +698,26 @@ int csv3_load_incoming_context(QEMUFile *f)
     /* receive csv3 context. */
     return csv3_receive_encrypt_context(s, f);
 }
+
+int csv3_set_guest_private_memory(Error **errp)
+{
+    int fw_error;
+    int ret = 0;
+
+    if (!csv3_enabled()) {
+        error_setg(errp, "%s: CSV3 is not enabled", __func__);
+        return -1;
+    }
+
+    /* if CSV3 is in update state then load the data to secure memory */
+    if (csv3_check_state(SEV_STATE_LAUNCH_UPDATE)) {
+        trace_kvm_csv3_set_guest_private_memory();
+        ret = csv3_ioctl(KVM_CSV3_SET_GUEST_PRIVATE_MEMORY, NULL, &fw_error);
+        if (ret)
+            error_setg(errp, "%s: CSV3 fail set private memory, ret=%d"
+                       " fw_error=%d '%s'",
+                       __func__, ret, fw_error, fw_error_to_str(fw_error));
+    }
+
+    return ret;
+}

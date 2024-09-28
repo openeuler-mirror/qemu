@@ -154,6 +154,14 @@ extern bool kvm_csv3_allowed;
  */
 #define kvm_csv3_enabled() (kvm_csv3_allowed)
 
+/**
+ * kvm_csv3_should_set_priv_mem:
+ * Returns: true if we should explicitly request
+ *          KVM_CSV3_SET_GUEST_PRIVATE_MEMORY.
+ */
+#define kvm_csv3_should_set_priv_mem() \
+        (kvm_hygon_coco_ext_inuse & KVM_CAP_HYGON_COCO_EXT_CSV3_SET_PRIV_MEM)
+
 #else
 
 #define kvm_enabled()           (0)
@@ -171,6 +179,7 @@ extern bool kvm_csv3_allowed;
 #define kvm_readonly_mem_enabled() (false)
 #define kvm_msi_devid_required() (false)
 #define kvm_csv3_enabled() (false)
+#define kvm_csv3_should_set_priv_mem() (false)
 
 #endif  /* CONFIG_KVM_IS_POSSIBLE */
 

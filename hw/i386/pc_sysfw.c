@@ -268,6 +268,9 @@ void x86_firmware_configure(void *ptr, int size)
             ram_addr_t offset = 0;
             MemoryRegion *mr;
 
+            if (kvm_csv3_should_set_priv_mem())
+                csv3_set_guest_private_memory(&error_fatal);
+
             mr = memory_region_from_host(ptr, &offset);
             if (!mr) {
                 error_report("failed to get memory region of flash");

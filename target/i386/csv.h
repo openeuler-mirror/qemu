@@ -130,4 +130,6 @@ int csv3_queue_outgoing_page(uint8_t *ptr, uint32_t sz, uint64_t addr);
 int csv3_save_queued_outgoing_pages(QEMUFile *f, uint64_t *bytes_sent);
 int csv3_save_outgoing_context(QEMUFile *f, uint64_t *bytes_sent);
 
+int csv3_set_guest_private_memory(Error **errp);
+
 #endif
