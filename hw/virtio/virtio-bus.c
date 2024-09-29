@@ -30,6 +30,7 @@
 #include "hw/virtio/virtio-bus.h"
 #include "hw/virtio/virtio.h"
 #include "exec/address-spaces.h"
+#include "sysemu/kvm.h"
 
 /* #define DEBUG_VIRTIO_BUS */
 
@@ -70,6 +71,12 @@ void virtio_bus_device_plugged(VirtIODevice *vdev, Error **errp)
         error_propagate(errp, local_err);
         return;
     }
+
+    if (virtcca_cvm_enabled() && (strcmp(vdev->name, "vhost-user-fs") == 0)) {
+        /* VIRTIO_F_IOMMU_PLATFORM should be enabled for vhost-user-fs using swiotlb */
+        error_setg(errp, "iommu_platform is not supported by this device");
+        return;
+    } 
 
     if (klass->device_plugged != NULL) {
         klass->device_plugged(qbus->parent, &local_err);
