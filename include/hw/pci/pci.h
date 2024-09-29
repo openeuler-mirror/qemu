@@ -352,6 +352,9 @@ struct PCIDevice {
     MSIVectorUseNotifier msix_vector_use_notifier;
     MSIVectorReleaseNotifier msix_vector_release_notifier;
     MSIVectorPollNotifier msix_vector_poll_notifier;
+
+    /* Maximum DMA bounce buffer size used for indirect memory map requests */
+    uint32_t max_bounce_buffer_size;
 };
 
 void pci_register_bar(PCIDevice *pci_dev, int region_num,
