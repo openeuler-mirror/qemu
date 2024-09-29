@@ -1416,7 +1416,17 @@ int sev_inject_launch_secret(const char *packet_hdr, const char *secret,
     input.trans_uaddr = (uint64_t)(unsigned long)data;
     input.trans_len = data_sz;
 
-    input.guest_uaddr = (uint64_t)(unsigned long)hva;
+    /* For Hygon CSV3 guest, the guest_uaddr should be the gpa */
+    if (csv3_enabled()) {
+        if (kvm_hygon_coco_ext_inuse & KVM_CAP_HYGON_COCO_EXT_CSV3_INJ_SECRET) {
+            input.guest_uaddr = gpa;
+        } else {
+            error_setg(errp, "CSV3 inject secret unsupported!");
+            return 1;
+        }
+    } else {
+        input.guest_uaddr = (uint64_t)(unsigned long)hva;
+    }
     input.guest_len = data_sz;
 
     trace_kvm_sev_launch_secret(gpa, input.guest_uaddr,
