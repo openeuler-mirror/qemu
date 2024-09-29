@@ -17,6 +17,7 @@
 #include "sysemu/runstate.h"
 #include "exec/memory.h"
 #include "exec/address-spaces.h"
+#include "exec/ramblock.h"
 #include "hw/i386/e820_memory_layout.h"
 #include <sys/ioctl.h>
 
@@ -38,6 +39,8 @@ struct PSPDevState {
      * the TKM module uses different key spaces based on different vids.
     */
     uint32_t vid;
+    /* pinned hugepage numbers */
+    int hp_num;
 };
 
 #define PSP_DEV_PATH "/dev/hygon_psp_config"
@@ -45,6 +48,8 @@ struct PSPDevState {
 #define PSP_IOC_MUTEX_ENABLE    _IOWR(HYGON_PSP_IOC_TYPE, 1, NULL)
 #define PSP_IOC_MUTEX_DISABLE   _IOWR(HYGON_PSP_IOC_TYPE, 2, NULL)
 #define PSP_IOC_VPSP_OPT        _IOWR(HYGON_PSP_IOC_TYPE, 3, NULL)
+#define PSP_IOC_PIN_USER_PAGE   _IOWR(HYGON_PSP_IOC_TYPE, 4, NULL)
+#define PSP_IOC_UNPIN_USER_PAGE _IOWR(HYGON_PSP_IOC_TYPE, 5, NULL)
 
 enum VPSP_DEV_CTRL_OPCODE {
     VPSP_OP_VID_ADD,
@@ -69,6 +74,109 @@ struct psp_dev_ctrl {
     } __attribute__ ((packed)) data;
 };
 
+static MemoryRegion *find_memory_region_by_name(MemoryRegion *root, const char *name) {
+    MemoryRegion *subregion;
+    MemoryRegion *result;
+
+    if (strcmp(root->name, name) == 0)
+        return root;
+
+    QTAILQ_FOREACH(subregion, &root->subregions, subregions_link) {
+        result = find_memory_region_by_name(subregion, name);
+        if (result) {
+            return result;
+        }
+    }
+
+    return NULL;
+}
+
+static int pin_user_hugepage(int fd, uint64_t vaddr)
+{
+    int ret;
+
+    ret = ioctl(fd, PSP_IOC_PIN_USER_PAGE, vaddr);
+    /* 22: Invalid argument, some old kernel doesn't support this ioctl command */
+    if (ret != 0 && errno == EINVAL) {
+        ret = 0;
+    }
+    return ret;
+}
+
+static int unpin_user_hugepage(int fd, uint64_t vaddr)
+{
+    int ret;
+
+    ret = ioctl(fd, PSP_IOC_UNPIN_USER_PAGE, vaddr);
+    /* 22: Invalid argument, some old kernel doesn't support this ioctl command */
+    if (ret != 0 && errno == EINVAL) {
+        ret = 0;
+    }
+    return ret;
+}
+
+static int pin_psp_user_hugepages(struct PSPDevState *state, MemoryRegion *root)
+{
+    int ret = 0;
+    char mr_name[128] = {0};
+    int i, pinned_num;
+    MemoryRegion *find_mr = NULL;
+
+    for (i = 0 ; i < state->hp_num; ++i) {
+        sprintf(mr_name, "mem2-%d", i);
+        find_mr = find_memory_region_by_name(root, mr_name);
+        if (!find_mr) {
+            error_report("fail to find memory region by name %s.", mr_name);
+            ret = -ENOMEM;
+            goto end;
+        }
+
+        ret = pin_user_hugepage(state->dev_fd, (uint64_t)find_mr->ram_block->host);
+        if (ret) {
+            error_report("fail to pin_user_hugepage, ret: %d.", ret);
+            goto end;
+        }
+    }
+end:
+    if (ret) {
+        pinned_num = i;
+        for (i = 0 ; i < pinned_num; ++i) {
+            sprintf(mr_name, "mem2-%d", i);
+            find_mr = find_memory_region_by_name(root, mr_name);
+            if (!find_mr) {
+                continue;
+            }
+            unpin_user_hugepage(state->dev_fd, (uint64_t)find_mr->ram_block->host);
+        }
+
+    }
+    return ret;
+}
+
+static int unpin_psp_user_hugepages(struct PSPDevState *state, MemoryRegion *root)
+{
+    int ret = 0;
+    char mr_name[128] = {0};
+    int i;
+    MemoryRegion *find_mr = NULL;
+
+    for (i = 0 ; i < state->hp_num; ++i) {
+        sprintf(mr_name, "mem2-%d", i);
+        find_mr = find_memory_region_by_name(root, mr_name);
+        if (!find_mr) {
+            continue;
+        }
+
+        ret = unpin_user_hugepage(state->dev_fd, (uint64_t)find_mr->ram_block->host);
+        if (ret) {
+            error_report("fail to unpin_user_hugepage, ret: %d.", ret);
+            goto end;
+        }
+    }
+end:
+    return ret;
+}
+
 static void psp_dev_destroy(PSPDevState *state)
 {
     struct psp_dev_ctrl ctrl = { 0 };
@@ -77,6 +185,11 @@ static void psp_dev_destroy(PSPDevState *state)
             ctrl.op = VPSP_OP_VID_DEL;
             if (ioctl(state->dev_fd, PSP_IOC_VPSP_OPT, &ctrl) < 0) {
                 error_report("VPSP_OP_VID_DEL: %d", -errno);
+            }
+
+            /* Unpin hugepage memory */
+            if (unpin_psp_user_hugepages(state, get_system_memory())) {
+                error_report("unpin_psp_user_hugepages failed");
             } else {
                 state->enabled = false;
             }
@@ -97,23 +210,6 @@ static void psp_dev_shutdown_notify(Notifier *notifier, void *data)
 {
     PSPDevState *state = container_of(notifier, PSPDevState, shutdown_notifier);
     psp_dev_destroy(state);
-}
-
-static MemoryRegion *find_memory_region_by_name(MemoryRegion *root, const char *name) {
-    MemoryRegion *subregion;
-    MemoryRegion *result;
-
-    if (strcmp(root->name, name) == 0)
-        return root;
-
-    QTAILQ_FOREACH(subregion, &root->subregions, subregions_link) {
-        result = find_memory_region_by_name(subregion, name);
-        if (result) {
-            return result;
-        }
-    }
-
-    return NULL;
 }
 
 static void psp_dev_realize(DeviceState *dev, Error **errp)
@@ -150,6 +246,8 @@ static void psp_dev_realize(DeviceState *dev, Error **errp)
         ram2_end = find_mr->addr + find_mr->size - 1;
     }
 
+    state->hp_num = i;
+
     if (ram2_start != ram2_end) {
         ctrl.op = VPSP_OP_SET_GPA;
         ctrl.data.gpa.gpa_start = ram2_start;
@@ -157,6 +255,12 @@ static void psp_dev_realize(DeviceState *dev, Error **errp)
         if (ioctl(state->dev_fd, PSP_IOC_VPSP_OPT, &ctrl) < 0) {
             error_setg(errp, "psp_dev_realize VPSP_OP_SET_GPA (start 0x%lx, end 0x%lx), return %d",
                         ram2_start, ram2_end, -errno);
+            goto del_vid;
+        }
+
+        /* Pin hugepage memory */
+        if(pin_psp_user_hugepages(state, root_mr)) {
+            error_setg(errp, "pin_psp_user_hugepages failed.");
             goto del_vid;
         }
     }
