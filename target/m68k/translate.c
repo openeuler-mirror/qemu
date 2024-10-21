@@ -2359,6 +2359,7 @@ DISAS_INSN(arith_im)
         tcg_gen_or_i32(dest, src1, im);
         if (with_SR) {
             gen_set_sr(s, dest, opsize == OS_BYTE);
+            gen_exit_tb(s);
         } else {
             DEST_EA(env, insn, opsize, dest, &addr);
             gen_logic_cc(s, dest, opsize);
@@ -2368,6 +2369,7 @@ DISAS_INSN(arith_im)
         tcg_gen_and_i32(dest, src1, im);
         if (with_SR) {
             gen_set_sr(s, dest, opsize == OS_BYTE);
+            gen_exit_tb(s);
         } else {
             DEST_EA(env, insn, opsize, dest, &addr);
             gen_logic_cc(s, dest, opsize);
@@ -2391,6 +2393,7 @@ DISAS_INSN(arith_im)
         tcg_gen_xor_i32(dest, src1, im);
         if (with_SR) {
             gen_set_sr(s, dest, opsize == OS_BYTE);
+            gen_exit_tb(s);
         } else {
             DEST_EA(env, insn, opsize, dest, &addr);
             gen_logic_cc(s, dest, opsize);
@@ -4594,6 +4597,7 @@ DISAS_INSN(strldsr)
     }
     gen_push(s, gen_get_sr(s));
     gen_set_sr_im(s, ext, 0);
+    gen_exit_tb(s);
 }
 
 DISAS_INSN(move_from_sr)
