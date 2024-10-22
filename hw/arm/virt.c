@@ -369,6 +369,39 @@ static void fdt_add_timer_nodes(const VirtMachineState *vms)
                        GIC_FDT_IRQ_TYPE_PPI, ARCH_TIMER_NS_EL2_IRQ, irqflags);
 }
 
+/*
+ * In CLIDR_EL1 exposed to guest by the hypervisor, L1 cache type
+ * maybe unified or seperate ins and data. We need to read the
+ * guest visable CLIDR_EL1 and check L1 cache type.
+ */
+bool cpu_l1_cache_unified(int cpu)
+{
+    bool unified = false;
+    uint64_t clidr;
+    ARMCPU *armcpu = ARM_CPU(qemu_get_cpu(cpu));
+    CPUState *cs = CPU(armcpu);
+    int ret;
+
+    if (kvm_enabled()) {
+        struct kvm_one_reg reg = {
+            .id = ARM64_REG_CLIDR_EL1,
+            .addr = (uintptr_t)&clidr
+        };
+
+        ret = kvm_vcpu_ioctl(cs, KVM_GET_ONE_REG, &reg);
+        if (ret) {
+            error_setg(&error_fatal, "Get vCPU clidr from KVM failed:%d", ret);
+            return unified;
+        }
+
+        if (CLIDR_CTYPE(clidr, 1) == CTYPE_UNIFIED) {
+            unified = true;
+        }
+    }
+
+    return unified;
+}
+
 static void fdt_add_l3cache_nodes(const VirtMachineState *vms)
 {
     int i;
@@ -383,9 +416,10 @@ static void fdt_add_l3cache_nodes(const VirtMachineState *vms)
         qemu_fdt_setprop_string(ms->fdt, nodename, "compatible", "cache");
         qemu_fdt_setprop_string(ms->fdt, nodename, "cache-unified", "true");
         qemu_fdt_setprop_cell(ms->fdt, nodename, "cache-level", 3);
-        qemu_fdt_setprop_cell(ms->fdt, nodename, "cache-size", 0x2000000);
-        qemu_fdt_setprop_cell(ms->fdt, nodename, "cache-line-size", 128);
-        qemu_fdt_setprop_cell(ms->fdt, nodename, "cache-sets", 2048);
+        qemu_fdt_setprop_cell(ms->fdt, nodename, "cache-size", ARM_L3CACHE_SIZE);
+        qemu_fdt_setprop_cell(ms->fdt, nodename, "cache-line-size",
+                              ARM_L3CACHE_LINE_SIZE);
+        qemu_fdt_setprop_cell(ms->fdt, nodename, "cache-sets", ARM_L3CACHE_SETS);
         qemu_fdt_setprop_cell(ms->fdt, nodename, "phandle",
                               qemu_fdt_alloc_phandle(ms->fdt));
         g_free(nodename);
@@ -404,10 +438,12 @@ static void fdt_add_l2cache_nodes(const VirtMachineState *vms)
         char *nodename = g_strdup_printf("/cpus/l2-cache%d", cpu);
 
         qemu_fdt_add_subnode(ms->fdt, nodename);
+        qemu_fdt_setprop_string(ms->fdt, nodename, "cache-unified", "true");
         qemu_fdt_setprop_string(ms->fdt, nodename, "compatible", "cache");
-        qemu_fdt_setprop_cell(ms->fdt, nodename, "cache-size", 0x80000);
-        qemu_fdt_setprop_cell(ms->fdt, nodename, "cache-line-size", 64);
-        qemu_fdt_setprop_cell(ms->fdt, nodename, "cache-sets", 1024);
+        qemu_fdt_setprop_cell(ms->fdt, nodename, "cache-size", ARM_L2CACHE_SIZE);
+        qemu_fdt_setprop_cell(ms->fdt, nodename, "cache-line-size",
+                              ARM_L2CACHE_LINE_SIZE);
+        qemu_fdt_setprop_cell(ms->fdt, nodename, "cache-sets", ARM_L2CACHE_SETS);
         qemu_fdt_setprop_phandle(ms->fdt, nodename, "next-level-cache",
                                  next_path);
         qemu_fdt_setprop_cell(ms->fdt, nodename, "phandle",
@@ -421,18 +457,32 @@ static void fdt_add_l2cache_nodes(const VirtMachineState *vms)
 static void fdt_add_l1cache_prop(const VirtMachineState *vms,
                                  char *nodename, int cpu)
 {
-        const MachineState *ms = MACHINE(vms);
-        char *cachename = g_strdup_printf("/cpus/l2-cache%d", cpu);
+    const MachineState *ms = MACHINE(vms);
+    char *next_path = g_strdup_printf("/cpus/l2-cache%d", cpu);
+    bool unified_l1 = cpu_l1_cache_unified(0);
 
-        qemu_fdt_setprop_cell(ms->fdt, nodename, "d-cache-size", 0x10000);
-        qemu_fdt_setprop_cell(ms->fdt, nodename, "d-cache-line-size", 64);
-        qemu_fdt_setprop_cell(ms->fdt, nodename, "d-cache-sets", 256);
-        qemu_fdt_setprop_cell(ms->fdt, nodename, "i-cache-size", 0x10000);
-        qemu_fdt_setprop_cell(ms->fdt, nodename, "i-cache-line-size", 64);
-        qemu_fdt_setprop_cell(ms->fdt, nodename, "i-cache-sets", 256);
-        qemu_fdt_setprop_phandle(ms->fdt, nodename, "next-level-cache",
-                                 cachename);
-        g_free(cachename);
+    if (unified_l1) {
+        qemu_fdt_setprop_cell(ms->fdt, nodename, "cache-size", ARM_L1CACHE_SIZE);
+        qemu_fdt_setprop_cell(ms->fdt, nodename, "cache-line-size",
+                              ARM_L1CACHE_LINE_SIZE);
+        qemu_fdt_setprop_cell(ms->fdt, nodename, "cache-sets", ARM_L1CACHE_SETS);
+    } else {
+        qemu_fdt_setprop_cell(ms->fdt, nodename, "d-cache-size",
+                              ARM_L1DCACHE_SIZE);
+        qemu_fdt_setprop_cell(ms->fdt, nodename, "d-cache-line-size",
+                              ARM_L1DCACHE_LINE_SIZE);
+        qemu_fdt_setprop_cell(ms->fdt, nodename, "d-cache-sets",
+                              ARM_L1DCACHE_SETS);
+        qemu_fdt_setprop_cell(ms->fdt, nodename, "i-cache-size",
+                              ARM_L1ICACHE_SIZE);
+        qemu_fdt_setprop_cell(ms->fdt, nodename, "i-cache-line-size",
+                              ARM_L1ICACHE_LINE_SIZE);
+        qemu_fdt_setprop_cell(ms->fdt, nodename, "i-cache-sets",
+                              ARM_L1ICACHE_SETS);
+    }
+    qemu_fdt_setprop_phandle(ms->fdt, nodename, "next-level-cache", next_path);
+
+    g_free(next_path);
 }
 
 static void fdt_add_cpu_nodes(const VirtMachineState *vms)
