@@ -64,6 +64,7 @@ struct LoongArchVirtMachineState {
     AddressSpace as_iocsr;
     int          features;
     struct loongarch_boot_info bootinfo;
+    DeviceState *ipi;
 };
 
 #define TYPE_LOONGARCH_VIRT_MACHINE  MACHINE_TYPE_NAME("virt")
