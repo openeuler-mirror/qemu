@@ -390,6 +390,10 @@ int kvm_arm_set_irq(int cpu, int irqtype, int irq, int level);
 
 void tmm_add_ram_region(hwaddr base1, hwaddr len1, hwaddr base2, hwaddr len2, bool populate);
 
+int tmm_get_kae_num(void);
+void tmm_set_sec_addr(hwaddr base, int num);
+void tmm_set_hpre_addr(hwaddr base, int num);
+
 int kvm_arm_tmm_init(ConfidentialGuestSupport *cgs, Error **errp);
 bool kvm_arm_tmm_enabled(void);
 

@@ -921,6 +921,7 @@
 { 'struct': 'TmmGuestProperties',
   'data': { '*sve-vector-length': 'uint32',
             '*num-pmu-counters': 'uint32',
+            '*kae': 'uint32',
             '*measurement-algo': 'TmmGuestMeasurementAlgo' } }
 
 ##

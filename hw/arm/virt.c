@@ -1967,6 +1967,10 @@ static void virt_set_memmap(VirtMachineState *vms, int pa_bits)
                                                             "kvm-type", &error_abort);
 
         if (!strcmp(kvm_type, "cvm")) {
+            /* support kae vf device tree nodes */
+            vms->memmap[VIRT_PCIE_MMIO] = (MemMapEntry) { 0x10000000, 0x2edf0000 };
+            vms->memmap[VIRT_KAE_DEVICE] = (MemMapEntry) { 0x3edf0000, 0x00200000 };
+
             vms->memmap[VIRT_MEM].base = 3 * GiB;
             vms->memmap[VIRT_MEM].size = ms->ram_size;
             info_report("[qemu] fix VIRT_MEM range 0x%llx - 0x%llx\n", (unsigned long long)(vms->memmap[VIRT_MEM].base),
@@ -2380,6 +2384,56 @@ out:
     return;
 }
 
+static void fdt_add_hisi_sec_nodes(const VirtMachineState *vms, int dev_id)
+{
+    const MachineState *ms = MACHINE(vms);
+    hwaddr size = 0x10000;
+
+    /*
+     * Calculate the base address for the sec device node.
+     * Each device group contains one sec device and one hpre device,spaced by 2 * size.
+     */
+    hwaddr base = vms->memmap[VIRT_KAE_DEVICE].base + dev_id * 2 * size;
+    char *nodename;
+
+    tmm_set_sec_addr(base, dev_id);
+
+    nodename = g_strdup_printf("/hisi-sec@%" PRIx64, base);
+    qemu_fdt_add_subnode(ms->fdt, nodename);
+    qemu_fdt_setprop_string(ms->fdt, nodename, "compatible", "hisilicon,hip07-sec-vf");
+    qemu_fdt_setprop_sized_cells(ms->fdt, nodename, "reg", 2, base, 2, size);
+    g_free(nodename);
+}
+
+static void fdt_add_hisi_hpre_nodes(const VirtMachineState *vms, int dev_id)
+{
+    const MachineState *ms = MACHINE(vms);
+    hwaddr size = 0x10000;
+
+    /*
+     * Calculate the base address for the hpre device node.
+     * Each hpre device follows the corresponding sec device by an additional offset of size.
+     */
+    hwaddr base = vms->memmap[VIRT_KAE_DEVICE].base + dev_id * 2 * size + size;
+    char *nodename;
+
+    tmm_set_hpre_addr(base, dev_id);
+
+    nodename = g_strdup_printf("/hisi-hpre@%" PRIx64, base);
+    qemu_fdt_add_subnode(ms->fdt, nodename);
+    qemu_fdt_setprop_string(ms->fdt, nodename, "compatible", "hisilicon,hip07-hpre-vf");
+    qemu_fdt_setprop_sized_cells(ms->fdt, nodename, "reg", 2, base, 2, size);
+    g_free(nodename);
+}
+
+static void fdt_add_all_hisi_nodes(const VirtMachineState *vms, int dev_id)
+{
+    for (int i = 0; i < dev_id; i++) {
+        fdt_add_hisi_sec_nodes(vms, i);
+        fdt_add_hisi_hpre_nodes(vms, i);
+    }
+}
+
 static void machvirt_init(MachineState *machine)
 {
     VirtMachineState *vms = VIRT_MACHINE(machine);
@@ -2530,14 +2584,19 @@ static void machvirt_init(MachineState *machine)
         }
     }
 
+    create_fdt(vms);
+
     if (virtcca_cvm_enabled()) {
+        int kae_num = tmm_get_kae_num();
+        fdt_add_all_hisi_nodes(vms, kae_num);
+
         int ret = kvm_arm_tmm_init(machine->cgs, &error_fatal);
         if (ret != 0) {
             error_report("fail to initialize TMM");
             exit(1);
         }
     }
-    create_fdt(vms);
+
     qemu_log("cpu init start\n");
 
     cpu_class = object_class_by_name(machine->cpu_type);
