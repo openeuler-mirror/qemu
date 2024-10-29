@@ -1292,8 +1292,6 @@ static int vhost_vdpa_dev_start(struct vhost_dev *dev, bool started)
 
 static void vhost_vdpa_reset_status(struct vhost_dev *dev)
 {
-    struct vhost_vdpa *v = dev->opaque;
-
     if (dev->vq_index + dev->nvqs != dev->vq_index_end) {
         return;
     }
@@ -1301,7 +1299,6 @@ static void vhost_vdpa_reset_status(struct vhost_dev *dev)
     vhost_vdpa_reset_device(dev);
     vhost_vdpa_add_status(dev, VIRTIO_CONFIG_S_ACKNOWLEDGE |
                                VIRTIO_CONFIG_S_DRIVER);
-    memory_listener_unregister(&v->listener);
 }
 
 static int vhost_vdpa_set_log_base(struct vhost_dev *dev, uint64_t base,
