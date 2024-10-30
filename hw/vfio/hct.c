@@ -13,6 +13,7 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <fnmatch.h>
 
 #include "qemu/osdep.h"
 #include "qemu/queue.h"
@@ -36,13 +37,18 @@
 #define PATH_MAX                     4096
 #define TYPE_HCT_DEV                 "hct"
 #define PCI_HCT_DEV(obj)             OBJECT_CHECK(HCTDevState, (obj), TYPE_HCT_DEV)
-#define HCT_MMIO_SIZE                (1 << 20)
 #define HCT_MAX_PASID                (1 << 8)
 
 #define PCI_VENDOR_ID_HYGON_CCP      0x1d94
 #define PCI_DEVICE_ID_HYGON_CCP      0x1468
 
+#define VFIO_DEVICE_CCP_SET_MODE     _IO(VFIO_TYPE, VFIO_BASE + 32)
+#define VFIO_DEVICE_CCP_GET_MODE     _IO(VFIO_TYPE, VFIO_BASE + 33)
+
 #define HCT_SHARE_DEV                "/dev/hct_share"
+#define CCP_SHARE_DEV                "/dev/ccp_share"
+#define PCI_DRV_HCT_DIR              "/sys/bus/pci/drivers/hct"
+#define PCI_DRV_CCP_DIR              "/sys/bus/pci/drivers/ccp"
 
 #define DEF_VERSION_STRING           "0.1"
 #define HCT_VERSION_STR_02           "0.2"
@@ -79,6 +85,7 @@ static volatile struct hct_data {
     uint8_t hct_version[VERSION_SIZE];
     uint8_t ccp_index[MAX_CCP_CNT];
     uint8_t ccp_cnt;
+    uint8_t driver;
 } hct_data;
 
 typedef struct SharedDevice {
@@ -92,7 +99,9 @@ typedef struct HctDevState {
     MemoryRegion mmio;
     MemoryRegion shared;
     MemoryRegion pasid;
+    uint64_t map_size[PCI_NUM_REGIONS];
     void *maps[PCI_NUM_REGIONS];
+    char *ccp_dev_path;
 } HCTDevState;
 
 struct hct_dev_ctrl {
@@ -110,10 +119,21 @@ struct hct_dev_ctrl {
     };
 };
 
+enum ccp_dev_used_mode {
+    _KERNEL_SPACE_USED = 0,
+    _USER_SPACE_USED,
+};
+
 enum MDEV_USED_TYPE {
     MDEV_USED_FOR_HOST,
     MDEV_USED_FOR_VM,
     MDEV_USED_UNDEF
+};
+
+enum hct_ccp_driver_mode_type {
+    HCT_CCP_DRV_MOD_UNINIT = 0,
+    HCT_CCP_DRV_MOD_HCT,
+    HCT_CCP_DRV_MOD_CCP,
 };
 
 static int hct_get_sysfs_value(const char *path, int *val)
@@ -154,7 +174,7 @@ static int pasid_get_and_init(HCTDevState *state)
     void *base = (void *)hct_data.pasid_memory;
     struct hct_dev_ctrl ctrl;
     unsigned long *gid = NULL;
-    int ret;
+    int ret = 0;
 
     ctrl.op = HCT_SHARE_OP_GET_PASID;
     ret = ioctl(hct_data.hct_fd, HCT_SHARE_OP, &ctrl);
@@ -194,25 +214,28 @@ static const MemoryRegionOps hct_mmio_ops = {
 static void vfio_hct_detach_device(HCTDevState *state)
 {
     vfio_detach_device(&state->vdev);
-
-    if (state->vdev.name)
-        g_free(state->vdev.name);
 }
 
 static void vfio_hct_exit(PCIDevice *dev)
 {
     HCTDevState *state = PCI_HCT_DEV(dev);
 
-    vfio_hct_detach_device(state);
+    if (hct_data.driver == HCT_CCP_DRV_MOD_HCT)
+        vfio_hct_detach_device(state);
 
     if (hct_data.hct_fd) {
         qemu_close(hct_data.hct_fd);
         hct_data.hct_fd = 0;
     }
+    if (state->vdev.fd) {
+        qemu_close(state->vdev.fd);
+        state->vdev.fd = 0;
+    }
 }
 
 static Property vfio_hct_properties[] = {
     DEFINE_PROP_STRING("sysfsdev", HCTDevState, vdev.sysfsdev),
+    DEFINE_PROP_STRING("path", HCTDevState, ccp_dev_path),
     DEFINE_PROP_END_OF_LIST(),
 };
 
@@ -246,14 +269,15 @@ static int vfio_hct_region_mmap(HCTDevState *state)
                 error_report("vfio mmap fail\n");
                 goto out;
             }
+            state->map_size[i] = info->size;
         }
         g_free(info);
     }
 
-    memory_region_init_io(&state->mmio, OBJECT(state), &hct_mmio_ops, state,
-                          "hct mmio", HCT_MMIO_SIZE);
-    memory_region_init_ram_device_ptr(&state->mmio, OBJECT(state), "hct mmio",
-                                      HCT_MMIO_SIZE,
+    memory_region_init_io(&state->mmio, OBJECT(state), &hct_mmio_ops,
+                          state, "hct mmio", state->map_size[HCT_REG_BAR_IDX]);
+    memory_region_init_ram_device_ptr(&state->mmio, OBJECT(state),
+                                      "hct mmio", state->map_size[HCT_REG_BAR_IDX],
                                       state->maps[HCT_REG_BAR_IDX]);
 
     memory_region_init_io(&state->shared, OBJECT(state), &hct_mmio_ops, state,
@@ -293,10 +317,66 @@ static int hct_check_duplicated_index(int index)
     return 0;
 }
 
+static int hct_ccp_dev_get_index(HCTDevState *state)
+{
+    char fpath[PATH_MAX] = {0};
+    char *ptr = NULL;
+    uint32_t loops= 0;
+    uint32_t max_loops = 10000;
+    int ccp_idx;
+    int fd;
+    int ret;
+
+    if (!state->ccp_dev_path) {
+        error_report("state->ccp_dev_path is NULL.");
+        return -1;
+    }
+
+    ptr = strstr(state->ccp_dev_path, "ccp");
+    if (!ptr)
+        return -1;
+
+    ccp_idx = atoi(ptr + strlen("ccp"));
+    if (hct_check_duplicated_index(ccp_idx))
+        return -1;
+
+    fd = qemu_open_old(state->ccp_dev_path, O_RDWR);
+    if (fd < 0) {
+        error_report("fail to open %s, errno %d.", fpath, errno);
+        return -1;
+    }
+
+    while ((ret = ioctl(fd, VFIO_DEVICE_CCP_SET_MODE, _USER_SPACE_USED)) < 0
+                                        && errno == EAGAIN) {
+        if (++loops > max_loops) {
+            error_report("loops = %u, configure user mode fail.\n", loops);
+            break;
+        }
+        usleep(10);
+    }
+    if (ret < 0) {
+        error_report("configure user mode for %s fail, errno %d", fpath, errno);
+        close(fd);
+        return -1;
+    }
+
+    state->vdev.fd = fd;
+    state->sdev.shared_memory_offset = ccp_idx;
+    return 0;
+}
+
 static int hct_get_ccp_index(HCTDevState *state)
 {
     char path[PATH_MAX] = {0};
     int mdev_used, index;
+
+    if (hct_data.driver == HCT_CCP_DRV_MOD_CCP)
+        return hct_ccp_dev_get_index(state);
+
+    if (!state->vdev.sysfsdev) {
+        error_report("state->vdev.sysfsdev is NULL.");
+        return -1;
+    }
 
     if (memcmp((void *)hct_data.hct_version, HCT_VERSION_STR_06,
                                  sizeof(HCT_VERSION_STR_06)) >= 0) {
@@ -439,11 +519,41 @@ static MemoryListener hct_memory_listener = {
     .region_del = hct_listener_region_del,
 };
 
+static int hct_get_used_driver_walk(const char *path)
+{
+    const char filter[] = "0000:*";
+    struct dirent *e = NULL;
+    DIR *dir = NULL;
+    int ret = -EINVAL;
+
+    dir = opendir(path);
+    if (dir == NULL)
+        return -1;
+
+    while ((e = readdir(dir)) != NULL) {
+        if (e->d_name[0] == '.')
+            continue;
+
+        if (fnmatch(filter, e->d_name, 0) == 0) {
+            ret = 0;
+            break;
+        }
+    }
+
+    closedir(dir);
+    return ret;
+}
+
 static void hct_data_uninit(HCTDevState *state)
 {
     if (hct_data.hct_fd) {
         qemu_close(hct_data.hct_fd);
         hct_data.hct_fd = 0;
+    }
+
+    if (state->vdev.fd) {
+        qemu_close(state->vdev.fd);
+        state->vdev.fd = 0;
     }
 
     if (hct_data.pasid) {
@@ -465,12 +575,23 @@ static void hct_data_uninit(HCTDevState *state)
 
 static int hct_data_init(HCTDevState *state)
 {
+    const char *hct_shr_name = NULL;
     int ret;
 
     if (hct_data.init == 0) {
-        hct_data.hct_fd = qemu_open_old(HCT_SHARE_DEV, O_RDWR);
+
+        ret = hct_get_used_driver_walk(PCI_DRV_HCT_DIR);
+        if (ret == 0) {
+            hct_data.driver = HCT_CCP_DRV_MOD_HCT;
+            hct_shr_name = HCT_SHARE_DEV;
+        } else {
+            hct_data.driver = HCT_CCP_DRV_MOD_CCP;
+            hct_shr_name = CCP_SHARE_DEV;
+        }
+
+        hct_data.hct_fd = qemu_open_old(hct_shr_name, O_RDWR);
         if (hct_data.hct_fd < 0) {
-            error_report("fail to open %s, errno %d.", HCT_SHARE_DEV, errno);
+            error_report("fail to open %s, errno %d.", hct_shr_name, errno);
             ret = -errno;
             goto out;
         }
@@ -519,46 +640,43 @@ static void vfio_hct_realize(PCIDevice *pci_dev, Error **errp)
 {
     int ret;
     char *mdevid;
+    Error *err = NULL;
     HCTDevState *state = PCI_HCT_DEV(pci_dev);
-
-    /* parsing mdev device name from startup scripts */
-    mdevid = g_path_get_basename(state->vdev.sysfsdev);
-    state->vdev.name = g_strdup_printf("%s", mdevid);
 
     ret = hct_data_init(state);
     if (ret < 0) {
-        g_free(state->vdev.name);
-        state->vdev.name = NULL;
-        error_setg(errp, "hct data init failed");
+        error_setg(errp, "hct data initialization failed.");
         goto out;
     }
 
-    ret = vfio_attach_device(state->vdev.name, &state->vdev,
-                             pci_device_iommu_address_space(pci_dev), errp);
+    if (hct_data.driver == HCT_CCP_DRV_MOD_HCT) {
+        mdevid =  g_path_get_basename(state->vdev.sysfsdev);
+        state->vdev.name = g_strdup_printf("%s", mdevid);
 
-    if (ret) {
+        ret = vfio_attach_device(state->vdev.name, &state->vdev,
+                    pci_device_iommu_address_space(pci_dev), &err);
+        if (ret) {
+            error_setg(errp, "attach device failed, name = %s.", state->vdev.name);
+            g_free(state->vdev.name);
+            goto data_uninit_out;
+        }
+
+        state->vdev.ops = &vfio_ccp_ops;
+        state->vdev.dev = &state->sdev.dev.qdev;
         g_free(state->vdev.name);
-        state->vdev.name = NULL;
-        error_setg(errp, "attach device failed, name = %s", state->vdev.name);
-        goto data_uninit_out;
     }
 
-    state->vdev.ops = &vfio_ccp_ops;
-    state->vdev.dev = &state->sdev.dev.qdev;
-
     ret = vfio_hct_region_mmap(state);
-    if (ret < 0)
-    {
-        g_free(state->vdev.name);
-        state->vdev.name = NULL;
-        error_setg(errp, "region mmap failed, name = %s", state->vdev.name);
+    if (ret < 0) {
+        error_setg(errp, "hct vfio region mmap failed.");
         goto detach_device_out;
     }
 
     return;
 
 detach_device_out:
-    vfio_hct_detach_device(state);
+    if (hct_data.driver == HCT_CCP_DRV_MOD_HCT)
+        vfio_hct_detach_device(state);
 
 data_uninit_out:
     hct_data_uninit(state);
