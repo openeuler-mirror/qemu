@@ -1423,7 +1423,7 @@ static void raw_refresh_zoned_limits(BlockDriverState *bs, struct stat *st,
                                      Error **errp)
 {
     BDRVRawState *s = bs->opaque;
-    BlockZoneModel zoned;
+    BlockZoneModel zoned = BLK_Z_NONE;
     int ret;
 
     ret = get_sysfs_zoned_model(st, &zoned);
