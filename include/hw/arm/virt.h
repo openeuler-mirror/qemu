@@ -254,6 +254,7 @@ struct VirtMachineState {
     char *oem_table_id;
     char *kvm_type;
     NotifierList cpuhp_notifiers;
+    Object *event_log;
 };
 
 #define VIRT_ECAM_ID(high) (high ? VIRT_HIGH_PCIE_ECAM : VIRT_PCIE_ECAM)
