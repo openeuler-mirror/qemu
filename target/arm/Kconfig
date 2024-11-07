@@ -9,3 +9,4 @@ config ARM
 config AARCH64
     bool
     select ARM
+    select TPM_LOG if KVM

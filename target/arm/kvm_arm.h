@@ -451,6 +451,16 @@ void kvm_arm_rme_init_guest_ram(hwaddr base, size_t size);
  */
 void kvm_arm_rme_init_gpa_space(hwaddr highest_gpa, PCIBus *pci_bus);
 
+/**
+ * kvm_arm_rme_get_measurement_log
+ *
+ * Obtain the measurement log object if enabled, in order to get its size and
+ * set its base address.
+ *
+ * Returns NULL if measurement log is disabled.
+ */
+Object *kvm_arm_rme_get_measurement_log(void);
+
 #else
 
 /*
@@ -484,6 +494,11 @@ static inline void kvm_arm_rme_init_guest_ram(hwaddr base, size_t size)
 static inline void kvm_arm_rme_init_gpa_space(hwaddr highest_gpa,
                                               PCIBus *pci_bus)
 {
+}
+
+static inline Object *kvm_arm_rme_get_measurement_log(void)
+{
+    return NULL;
 }
 
 /*
