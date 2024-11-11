@@ -866,6 +866,9 @@
 #     designated guest firmware page for measured boot with -kernel
 #     (default: false) (since 6.2)
 #
+# @user-id: the user id of the guest owner, only support on Hygon CPUs
+#     (since 8.2)
+#
 # Since: 2.12
 ##
 { 'struct': 'SevGuestProperties',
@@ -876,7 +879,8 @@
             '*handle': 'uint32',
             '*cbitpos': 'uint32',
             'reduced-phys-bits': 'uint32',
-            '*kernel-hashes': 'bool' } }
+            '*kernel-hashes': 'bool',
+            '*user-id': 'str' } }
 
 ##
 # @ThreadContextProperties:

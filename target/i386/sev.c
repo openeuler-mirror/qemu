@@ -72,6 +72,7 @@ struct SevGuestState {
     uint32_t cbitpos;
     uint32_t reduced_phys_bits;
     bool kernel_hashes;
+    char *user_id;
 
     /* runtime state */
     uint32_t handle;
@@ -374,6 +375,22 @@ sev_guest_set_dh_cert_file(Object *obj, const char *value, Error **errp)
 }
 
 static char *
+sev_guest_get_user_id(Object *obj, Error **errp)
+{
+    SevGuestState *s = SEV_GUEST(obj);
+
+    return g_strdup(s->user_id);
+}
+
+static void
+sev_guest_set_user_id(Object *obj, const char *value, Error **errp)
+{
+    SevGuestState *s = SEV_GUEST(obj);
+
+    s->user_id = g_strdup(value);
+}
+
+static char *
 sev_guest_get_sev_device(Object *obj, Error **errp)
 {
     SevGuestState *sev = SEV_GUEST(obj);
@@ -426,6 +443,11 @@ sev_guest_class_init(ObjectClass *oc, void *data)
                                    sev_guest_set_kernel_hashes);
     object_class_property_set_description(oc, "kernel-hashes",
             "add kernel hashes to guest firmware for measured Linux boot");
+    object_class_property_add_str(oc, "user-id",
+                                  sev_guest_get_user_id,
+                                  sev_guest_set_user_id);
+    object_class_property_set_description(oc, "user-id",
+            "user id of the guest owner");
 }
 
 static void
@@ -589,7 +611,8 @@ static int sev_get_cpu0_id(int fd, guchar **id, size_t *id_len, Error **errp)
 
     /* query the ID length */
     r = sev_platform_ioctl(fd, SEV_GET_ID2, &get_id2, &err);
-    if (r < 0 && err != SEV_RET_INVALID_LEN) {
+    if (r < 0 && err != SEV_RET_INVALID_LEN &&
+        !(is_hygon_cpu() && err == SEV_RET_INVALID_PARAM)) {
         error_setg(errp, "SEV: Failed to get ID ret=%d fw_err=%d (%s)",
                    r, err, fw_error_to_str(err));
         return 1;
@@ -1173,7 +1196,29 @@ int sev_kvm_init(ConfidentialGuestSupport *cgs, Error **errp)
     }
 
     trace_kvm_sev_init();
-    ret = sev_ioctl(sev->sev_fd, cmd, NULL, &fw_error);
+
+    /* Only support reuse asid for CSV/CSV2 guest */
+    if (is_hygon_cpu() &&
+        (sev_guest->policy & GUEST_POLICY_REUSE_ASID)) {
+        char *user_id = NULL;
+        struct kvm_csv_init *init_cmd_buf = NULL;
+
+        user_id = object_property_get_str(OBJECT(sev), "user-id", NULL);
+        if (user_id && strlen(user_id)) {
+            init_cmd_buf = g_new0(struct kvm_csv_init, 1);
+            init_cmd_buf->len = strlen(user_id);
+            init_cmd_buf->userid_addr = (__u64)user_id;
+        }
+        ret = sev_ioctl(sev->sev_fd, cmd, init_cmd_buf, &fw_error);
+
+        if (user_id) {
+            g_free(user_id);
+            g_free(init_cmd_buf);
+        }
+    } else {
+        ret = sev_ioctl(sev->sev_fd, cmd, NULL, &fw_error);
+    }
+
     if (ret) {
         error_setg(errp, "%s: failed to initialize ret=%d fw_error=%d '%s'",
                    __func__, ret, fw_error, fw_error_to_str(fw_error));
