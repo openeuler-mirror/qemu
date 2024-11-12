@@ -162,6 +162,7 @@ static const MemMapEntry base_memmap[] = {
     [VIRT_PVTIME] =             { 0x090a0000, 0x00010000 },
     [VIRT_SECURE_GPIO] =        { 0x090b0000, 0x00001000 },
     [VIRT_CPUHP_ACPI] =         { 0x090c0000, ACPI_CPU_HOTPLUG_REG_LEN},
+    /* In the virtCCA scenario, this space is used for MSI interrupt mapping */
     [VIRT_MMIO] =               { 0x0a000000, 0x00000200 },
     [VIRT_CPUFREQ] =            { 0x0b000000, 0x00010000 },
     /* ...repeating for a total of NUM_VIRTIO_TRANSPORTS, each of that size */
