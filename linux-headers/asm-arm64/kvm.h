@@ -541,6 +541,9 @@ struct reg_mask_range {
 #define KVM_CAP_ARM_TMM_CFG_SVE			2
 #define KVM_CAP_ARM_TMM_CFG_DBG			3
 #define KVM_CAP_ARM_TMM_CFG_PMU			4
+#define KVM_CAP_ARM_TMM_CFG_KAE			5
+
+#define KVM_ARM_TMM_MAX_KAE_VF_NUM		11
 
 struct kvm_cap_arm_tmm_config_item {
 	__u32 cfg;
@@ -569,6 +572,13 @@ struct kvm_cap_arm_tmm_config_item {
 		/* cfg == KVM_CAP_ARM_TMM_CFG_PMU */
 		struct {
 			__u32 num_pmu_cntrs;
+		};
+
+		/* cfg == KVM_CAP_ARM_TMM_CFG_KAE */
+		struct {
+			__u32 kae_vf_num;
+			__u64 sec_addr[KVM_ARM_TMM_MAX_KAE_VF_NUM];
+			__u64 hpre_addr[KVM_ARM_TMM_MAX_KAE_VF_NUM];
 		};
 		/* Fix the size of the union */
 		__u8 reserved[256];

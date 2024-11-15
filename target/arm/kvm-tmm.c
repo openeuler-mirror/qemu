@@ -19,13 +19,20 @@
 #include "sysemu/kvm.h"
 #include "sysemu/runstate.h"
 #include "hw/loader.h"
+#include "linux-headers/asm-arm64/kvm.h"
 
 #define TYPE_TMM_GUEST "tmm-guest"
 OBJECT_DECLARE_SIMPLE_TYPE(TmmGuest, TMM_GUEST)
 
 #define TMM_PAGE_SIZE qemu_real_host_page_size()
-#define TMM_MAX_PMU_CTRS    0x20 
-#define TMM_MAX_CFG      5 
+#define TMM_MAX_PMU_CTRS    0x20
+#define TMM_MAX_CFG      6
+
+typedef struct {
+    uint32_t kae_vf_num;
+    hwaddr sec_addr[KVM_ARM_TMM_MAX_KAE_VF_NUM];
+    hwaddr hpre_addr[KVM_ARM_TMM_MAX_KAE_VF_NUM];
+} KaeDeviceInfo;
 
 struct TmmGuest {
     ConfidentialGuestSupport parent_obj;
@@ -33,6 +40,7 @@ struct TmmGuest {
     TmmGuestMeasurementAlgo measurement_algo;
     uint32_t sve_vl;
     uint32_t num_pmu_cntrs;
+    KaeDeviceInfo kae_device_info;
 };
 
 typedef struct {
@@ -91,6 +99,17 @@ static int tmm_configure_one(TmmGuest *guest, uint32_t cfg, Error **errp)
             }
             args.num_pmu_cntrs = guest->num_pmu_cntrs;
             cfg_str = "PMU";
+            break;
+        case KVM_CAP_ARM_TMM_CFG_KAE:
+            if (!guest->kae_device_info.kae_vf_num) {
+                return 0;
+            }
+            args.kae_vf_num= guest->kae_device_info.kae_vf_num;
+            for (int i = 0; i < guest->kae_device_info.kae_vf_num; i++) {
+                args.sec_addr[i] = guest->kae_device_info.sec_addr[i];
+                args.hpre_addr[i] = guest->kae_device_info.hpre_addr[i];
+            }
+            cfg_str = "KAE";
             break;
         default:
             g_assert_not_reached();
@@ -289,6 +308,47 @@ static void tmm_set_measurement_algo(Object *obj, int algo, Error **errp G_GNUC_
     guest->measurement_algo = algo;
 }
 
+static void tmm_get_kae_vf_num(Object *obj, Visitor *v, const char *name,
+                               void *opaque, Error **errp)
+{
+    TmmGuest *guest = TMM_GUEST(obj);
+
+    visit_type_uint32(v, name, &guest->kae_device_info.kae_vf_num, errp);
+}
+
+static void tmm_set_kae_vf_num(Object *obj, Visitor *v, const char *name,
+                               void *opaque, Error **errp)
+{
+    TmmGuest *guest = TMM_GUEST(obj);
+    uint32_t value;
+
+    if (!visit_type_uint32(v, name, &value, errp)) {
+        return;
+    }
+
+    if (value > KVM_ARM_TMM_MAX_KAE_VF_NUM) {
+        error_setg(errp, "invalid number of kae vfs");
+        return;
+    }
+
+    guest->kae_device_info.kae_vf_num = value;
+}
+
+int tmm_get_kae_num(void)
+{
+    return tmm_guest->kae_device_info.kae_vf_num;
+}
+
+void tmm_set_sec_addr(hwaddr base, int num)
+{
+    tmm_guest->kae_device_info.sec_addr[num] = base;
+}
+
+void tmm_set_hpre_addr(hwaddr base, int num)
+{
+    tmm_guest->kae_device_info.hpre_addr[num] = base;
+}
+
 static void tmm_guest_class_init(ObjectClass *oc, void *data)
 {
     object_class_property_add_enum(oc, "measurement-algo",
@@ -314,6 +374,10 @@ static void tmm_guest_class_init(ObjectClass *oc, void *data)
                               NULL, NULL);
     object_class_property_set_description(oc, "num-pmu-counters",
             "Number of PMU counters");
+    object_class_property_add(oc, "kae", "uint32", tmm_get_kae_vf_num,
+                              tmm_set_kae_vf_num, NULL, NULL);
+    object_class_property_set_description(oc, "kae",
+            "Number of KAE virtual functions. 0 disables KAE (the default)");
 }
  
 static void tmm_guest_instance_init(Object *obj)
