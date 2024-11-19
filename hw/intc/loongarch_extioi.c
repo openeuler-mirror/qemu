@@ -18,6 +18,45 @@
 #include "migration/vmstate.h"
 #include "trace.h"
 
+#define BIT32_MASK(nr)            (1UL << ((nr) % 32))
+#define BIT32_WORD(nr)            ((nr) / 32)
+
+/**
+ * test_bit32 - Determine whether a bit is set
+ * @nr: bit number to test
+ * @addr: Address to start counting from
+ */
+static inline int test_bit32(long nr, const uint32_t *addr)
+{
+    return 1U & (addr[BIT32_WORD(nr)] >> (nr & 31));
+}
+
+/**
+ * set_bit32 - Set a bit in memory
+ * @nr: the bit to set
+ * @addr: the address to start counting from
+ */
+static inline void set_bit32(long nr, uint32_t *addr)
+{
+    uint32_t mask = BIT32_MASK(nr);
+    uint32_t *p = addr + BIT32_WORD(nr);
+
+    *p  |= mask;
+}
+
+/**
+ * clear_bit32 - Clears a bit in memory
+ * @nr: Bit to clear
+ * @addr: Address to start counting from
+ */
+static inline void clear_bit32(long nr, uint32_t *addr)
+{
+    uint32_t mask = BIT32_MASK(nr);
+    uint32_t *p = addr + BIT32_WORD(nr);
+
+    *p &= ~mask;
+}
+
 
 static void extioi_update_irq(LoongArchExtIOI *s, int irq, int level)
 {
@@ -57,14 +96,9 @@ static void extioi_setirq(void *opaque, int irq, int level)
     LoongArchExtIOI *s = LOONGARCH_EXTIOI(opaque);
     trace_loongarch_extioi_setirq(irq, level);
     if (level) {
-        /*
-         * s->isr should be used in vmstate structure,
-         * but it not support 'unsigned long',
-         * so we have to switch it.
-         */
-        set_bit(irq, (unsigned long *)s->isr);
+        set_bit32(irq, s->isr);
     } else {
-        clear_bit(irq, (unsigned long *)s->isr);
+        clear_bit32(irq, s->isr);
     }
     extioi_update_irq(s, irq, level);
 }
@@ -143,17 +177,18 @@ static inline void extioi_update_sw_coremap(LoongArchExtIOI *s, int irq,
 
     for (i = 0; i < 4; i++) {
         cpu = val & 0xff;
+        val = val >> 8;
+
 	if (!(s->status & BIT(EXTIOI_ENABLE_CPU_ENCODE))) {
             cpu = ctz32(cpu);
             cpu = (cpu >= 4) ? 0 : cpu;
         }
-        val = val >> 8;
 
         if (s->sw_coremap[irq + i] == cpu) {
             continue;
         }
 
-        if (notify && test_bit(irq + i, (unsigned long *)s->isr)) {
+        if (notify && test_bit32(irq + i, s->isr)) {
             /*
              * lower irq at old cpu and raise irq at new cpu
              */
@@ -280,7 +315,7 @@ static MemTxResult extioi_virt_readw(void *opaque, hwaddr addr, uint64_t *data,
         *data = s->status;
         break;
     default:
-        break;
+        g_assert_not_reached();
     }
 
     return MEMTX_OK;
@@ -307,7 +342,7 @@ static MemTxResult extioi_virt_writew(void *opaque, hwaddr addr,
         s->status = val & s->features;
         break;
     default:
-        break;
+        g_assert_not_reached();
     }
     return MEMTX_OK;
 }
