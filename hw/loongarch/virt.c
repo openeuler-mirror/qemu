@@ -334,7 +334,7 @@ static void virt_cpu_irq_init(LoongArchVirtMachineState *lvms)
     /* cpu nodes */
     possible_cpus = mc->possible_cpu_arch_ids(ms);
     for (num = 0; num < possible_cpus->len; num++) {
-        cs = possible_cpus->cpus[num].cpu;
+        cs = CPU(possible_cpus->cpus[num].cpu);
         if (cs == NULL) {
             continue;
         }
@@ -810,24 +810,45 @@ static void virt_initfn(Object *obj)
     virt_flash_create(lvms);
 }
 
+static void virt_get_topo_from_index(MachineState *ms,
+                                     LoongArchCPUTopo *topo, int index)
+{
+    topo->socket_id = index / (ms->smp.cores * ms->smp.threads);
+    topo->core_id = index / ms->smp.threads % ms->smp.cores;
+    topo->thread_id = index % ms->smp.threads;
+}
+
+static unsigned int topo_align_up(unsigned int count)
+{
+    g_assert(count >= 1);
+    count -= 1;
+    return BIT(count ? 32 - clz32(count) : 0);
+}
+
+/*
+ * LoongArch Reference Manual Vol1, Chapter 7.4.12 CPU Identity
+ *  For CPU architecture, bit0 .. bit8 is valid for CPU id, max cpuid is 512
+ *  However for IPI/Eiointc interrupt controller, max supported cpu id for
+ *  irq routingis 256
+ *
+ *  Here max cpu id is 256 for virt machine
+ */
 static int virt_get_arch_id_from_topo(MachineState *ms, LoongArchCPUTopo *topo)
 {
-    int arch_id, sock_vcpu_num, core_vcpu_num;
+    int arch_id, threads, cores, sockets;
 
-    /*
-     * calculate total logical cpus across socket/core/thread.
-     * For more information on how to calculate the arch_id,
-     * you can refer to the CPU Topology chapter of the
-     * docs/system/loongarch/virt.rst document.
-     */
-    sock_vcpu_num = topo->socket_id * (ms->smp.threads * ms->smp.cores);
-    core_vcpu_num = topo->core_id * ms->smp.threads;
+    threads = topo_align_up(ms->smp.threads);
+    cores = topo_align_up(ms->smp.cores);
+    sockets = topo_align_up(ms->smp.sockets);
+    if ((threads * cores * sockets) > 256) {
+        error_report("Exceeding max cpuid 256 with sockets[%d] cores[%d]"
+                     " threads[%d]", ms->smp.sockets, ms->smp.cores,
+                     ms->smp.threads);
+        exit(1);
+    }
 
-    /* get vcpu-id(logical cpu index) for this vcpu from this topology */
-    arch_id = (sock_vcpu_num + core_vcpu_num) + topo->thread_id;
-
-    assert(arch_id >= 0 && arch_id < ms->possible_cpus->len);
-
+    arch_id = topo->thread_id + topo->core_id * threads;
+    arch_id += topo->socket_id * threads * cores;
     return arch_id;
 }
 
@@ -1114,17 +1135,9 @@ static HotplugHandler *virt_get_hotplug_handler(MachineState *machine,
     return NULL;
 }
 
-static void virt_get_cpu_topo_from_index(MachineState *ms,
-                                         LoongArchCPUTopo *topo, int index)
-{
-    topo->socket_id  = index / (ms->smp.cores * ms->smp.threads);
-    topo->core_id = index / ms->smp.threads % ms->smp.cores;
-    topo->thread_id = index % ms->smp.threads;
-}
-
 static const CPUArchIdList *virt_possible_cpu_arch_ids(MachineState *ms)
 {
-    int n;
+    int n, arch_id;
     unsigned int max_cpus = ms->smp.max_cpus;
     LoongArchCPUTopo topo;
 
@@ -1137,18 +1150,17 @@ static const CPUArchIdList *virt_possible_cpu_arch_ids(MachineState *ms)
                                   sizeof(CPUArchId) * max_cpus);
     ms->possible_cpus->len = max_cpus;
     for (n = 0; n < ms->possible_cpus->len; n++) {
-        ms->possible_cpus->cpus[n].vcpus_count = ms->smp.threads;
+        virt_get_topo_from_index(ms, &topo, n);
+        arch_id = virt_get_arch_id_from_topo(ms, &topo);
         ms->possible_cpus->cpus[n].type = ms->cpu_type;
-        virt_get_cpu_topo_from_index(ms, &topo, n);
-
+        ms->possible_cpus->cpus[n].arch_id = arch_id;
+        ms->possible_cpus->cpus[n].vcpus_count = 1;
         ms->possible_cpus->cpus[n].props.has_socket_id = true;
-        ms->possible_cpus->cpus[n].props.socket_id  = topo.socket_id;
+        ms->possible_cpus->cpus[n].props.socket_id = topo.socket_id;
         ms->possible_cpus->cpus[n].props.has_core_id = true;
         ms->possible_cpus->cpus[n].props.core_id = topo.core_id;
         ms->possible_cpus->cpus[n].props.has_thread_id = true;
         ms->possible_cpus->cpus[n].props.thread_id = topo.thread_id;
-        ms->possible_cpus->cpus[n].arch_id =
-                                virt_get_arch_id_from_topo(ms, &topo);
     }
     return ms->possible_cpus;
 }
