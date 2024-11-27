@@ -852,15 +852,12 @@ static int virt_get_arch_id_from_topo(MachineState *ms, LoongArchCPUTopo *topo)
     return arch_id;
 }
 
-/* find cpu slot in machine->possible_cpus by arch_id */
-static CPUArchId *virt_find_cpu_slot(MachineState *ms, int arch_id, int *index)
+/* Find cpu slot in machine->possible_cpus by arch_id */
+static CPUArchId *virt_find_cpu_slot(MachineState *ms, int arch_id)
 {
     int n;
     for (n = 0; n < ms->possible_cpus->len; n++) {
         if (ms->possible_cpus->cpus[n].arch_id == arch_id) {
-            if (index) {
-                *index = n;
-            }
             return &ms->possible_cpus->cpus[n];
         }
     }
@@ -939,53 +936,57 @@ out:
 }
 
 static void virt_cpu_unplug_request(HotplugHandler *hotplug_dev,
-                                       DeviceState *dev, Error **errp)
+                                    DeviceState *dev, Error **errp)
 {
     LoongArchVirtMachineState *lvms = LOONGARCH_VIRT_MACHINE(hotplug_dev);
-    Error *local_err = NULL;
-    HotplugHandlerClass *hhc;
+    Error *err = NULL;
     LoongArchCPU *cpu = LOONGARCH_CPU(dev);
     CPUState *cs = CPU(dev);
 
-    if (!lvms->acpi_ged) {
-        error_setg(&local_err, "CPU hot unplug not supported without ACPI");
-        error_propagate(errp, local_err);
-        return;
-    }
-
     if (cs->cpu_index == 0) {
-        error_setg(&local_err,
-                   "hot-unplug of boot cpu(id%d=%d:%d:%d) not supported",
+        error_setg(&err, "hot-unplug of boot cpu(id%d=%d:%d:%d) not supported",
                    cs->cpu_index, cpu->socket_id,
                    cpu->core_id, cpu->thread_id);
-        error_propagate(errp, local_err);
+        error_propagate(errp, err);
         return;
     }
 
-    hhc = HOTPLUG_HANDLER_GET_CLASS(lvms->acpi_ged);
-    hhc->unplug_request(HOTPLUG_HANDLER(lvms->acpi_ged), dev, &local_err);
+    hotplug_handler_unplug_request(HOTPLUG_HANDLER(lvms->acpi_ged), dev, &err);
+    if (err) {
+        error_propagate(errp, err);
+    }
 }
 
 static void virt_cpu_unplug(HotplugHandler *hotplug_dev,
-                                DeviceState *dev, Error **errp)
+                            DeviceState *dev, Error **errp)
 {
     CPUArchId *cpu_slot;
-    HotplugHandlerClass *hhc;
-    Error *local_err = NULL;
+    Error *err = NULL;
     LoongArchCPU *cpu = LOONGARCH_CPU(dev);
     LoongArchVirtMachineState *lvms = LOONGARCH_VIRT_MACHINE(hotplug_dev);
 
-    hhc = HOTPLUG_HANDLER_GET_CLASS(lvms->acpi_ged);
-    qemu_unregister_reset(reset_load_elf, cpu);
-    hhc->unplug(HOTPLUG_HANDLER(lvms->acpi_ged), dev, &local_err);
-    if (local_err) {
-        error_propagate(errp, local_err);
+    /* Notify ipi and extioi irqchip to remove interrupt routing to CPU */
+    hotplug_handler_unplug(HOTPLUG_HANDLER(lvms->ipi), dev, &err);
+    if (err) {
+        error_propagate(errp, err);
         return;
     }
 
-    cpu_slot = virt_find_cpu_slot(MACHINE(lvms), cpu->phy_id, NULL);
+    hotplug_handler_unplug(HOTPLUG_HANDLER(lvms->extioi), dev, &err);
+    if (err) {
+        error_propagate(errp, err);
+        return;
+    }
+
+    /* Notify acpi ged CPU removed */
+    hotplug_handler_unplug(HOTPLUG_HANDLER(lvms->acpi_ged), dev, &err);
+    if (err) {
+        error_propagate(errp, err);
+        return;
+    }
+
+    cpu_slot = virt_find_cpu_slot(MACHINE(lvms), cpu->phy_id);
     cpu_slot->cpu = NULL;
-    return;
 }
 
 static void virt_cpu_plug(HotplugHandler *hotplug_dev,
