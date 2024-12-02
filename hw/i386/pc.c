@@ -743,6 +743,111 @@ void xen_load_linux(PCMachineState *pcms)
     x86ms->fw_cfg = fw_cfg;
 }
 
+static int try_create_2MB_page(uint32_t page_num)
+{
+    char nr_hp_num_s[256] = {0};
+    char free_hp_num_s[256] = {0};
+    const char *nr_hugepages_dir = "/sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages";
+    const char *free_hugepages_dir = "/sys/kernel/mm/hugepages/hugepages-2048kB/free_hugepages";
+    int nr_hp_num = -1, free_hp_num = -1, ret = -1;
+    int nr_fd = qemu_open_old(nr_hugepages_dir, O_RDWR);
+    int free_fd = qemu_open_old(free_hugepages_dir, O_RDONLY);
+
+    if (nr_fd < 0 || free_fd < 0) {
+        error_report("%s: qemu_open failed: %s\n", __func__, strerror(errno));
+        goto end;
+    }
+
+    if (read(nr_fd, nr_hp_num_s, 256) < 0)
+        goto end;
+    if (read(free_fd, free_hp_num_s, 256) < 0)
+        goto end;
+
+    nr_hp_num = atoi(nr_hp_num_s);
+    free_hp_num = atoi(free_hp_num_s);
+    if (nr_hp_num < 0 || free_hp_num < 0)
+        goto end;
+
+    if (page_num <= free_hp_num) {
+        ret = 0;
+        goto end;
+    }
+
+    nr_hp_num += (page_num - free_hp_num);
+    snprintf (nr_hp_num_s, 256, "%d", nr_hp_num);
+    if (write(nr_fd, nr_hp_num_s, strlen(nr_hp_num_s)) < 0)
+        goto end;
+
+    ret = 0;
+end:
+    if (nr_fd >= 0)
+        close(nr_fd);
+    if (free_fd >= 0)
+        close(free_fd);
+    return ret;
+}
+
+#define HUGEPAGE_NUM_MAX  128
+#define HUGEPAGE_SIZE     (1024*1024*2)
+static void mem2_init(MachineState *ms, MemoryRegion *system_memory)
+{
+    MemoryRegion *mem2_mr;
+    char mr_name[128] = {0};
+    void *ram = NULL;
+    int ret = 0, lock_fd;
+    const char *lock_file = "/sys/kernel/mm/hugepages/hugepages-2048kB/nr_overcommit_hugepages";
+    uint32_t page_num = ms->ram2_size / HUGEPAGE_SIZE, i;
+
+    if (HUGEPAGE_NUM_MAX < page_num) {
+        error_report("\"-mem2 'size='\" needs to Less than %dM\n",
+                        (HUGEPAGE_SIZE * HUGEPAGE_NUM_MAX) / (1024 * 1024));
+        exit(EXIT_FAILURE);
+    }
+
+    // Apply for hugepages from OS and use them, which needs to be synchronized
+    lock_fd = qemu_open_old(lock_file, O_WRONLY);
+    if (lock_fd < 0) {
+        error_report("%s: open %s failed: %s\n", __func__, lock_file, strerror(errno));
+        exit(EXIT_FAILURE);
+    }
+
+    while (qemu_lock_fd(lock_fd, 0, 0, true)) {
+        if (errno != EACCES && errno != EAGAIN) {
+            error_report("qemu_lock_fd failed: %s\n", strerror(errno));
+            exit(EXIT_FAILURE);
+        }
+    }
+
+    /** try to create hugepage.
+     *  If there are enough free hugepages, then do nothing.
+     */
+    ret = try_create_2MB_page(page_num);
+    if (ret) {
+        error_report("%s: Failed to allocate hugepage\n", __func__);
+        goto unlock;
+    }
+
+    for (i = 0; i < page_num; ++i) {
+        mem2_mr = g_malloc(sizeof(*mem2_mr));
+        ram = mmap(NULL, HUGEPAGE_SIZE, PROT_READ | PROT_WRITE,
+                    MAP_PRIVATE | MAP_ANONYMOUS | MAP_POPULATE | MAP_HUGETLB, -1, 0);
+        if (ram == MAP_FAILED) {
+            error_report("%s: mmap failed: %s", __func__, strerror(errno));
+            goto unlock;
+        }
+
+        sprintf(mr_name, "mem2-%d", i);
+        memory_region_init_ram_ptr(mem2_mr, NULL, mr_name, HUGEPAGE_SIZE, ram);
+        memory_region_add_subregion(system_memory, ms->ram2_base + (i * HUGEPAGE_SIZE), mem2_mr);
+    }
+
+    ret = 0;
+unlock:
+    qemu_unlock_fd(lock_fd, 0, 0);
+    if (ret)
+        exit(EXIT_FAILURE);
+}
+
 #define PC_ROM_MIN_VGA     0xc0000
 #define PC_ROM_MIN_OPTION  0xc8000
 #define PC_ROM_MAX         0xe0000
@@ -963,6 +1068,22 @@ void pc_memory_init(PCMachineState *pcms,
                                     ram_above_4g);
         e820_add_entry(x86ms->above_4g_mem_start, x86ms->above_4g_mem_size,
                        E820_RAM);
+    }
+
+    if (machine->ram2_size && machine->ram2_base) {
+        if (0x100000000ULL + x86ms->above_4g_mem_size > machine->ram2_base) {
+            error_report("\"-mem2 'base'\" needs to greater 0x%llx\n",
+                            0x100000000ULL + x86ms->above_4g_mem_size);
+            exit(EXIT_FAILURE);
+        }
+        if (machine->ram2_base & (HUGEPAGE_SIZE - 1) ||
+                machine->ram2_size & (HUGEPAGE_SIZE - 1)) {
+            error_report("\"-mem2 'base|size'\" needs to aligned to 0x%x\n", HUGEPAGE_SIZE);
+            exit(EXIT_FAILURE);
+        }
+
+        mem2_init(machine, system_memory);
+        e820_add_entry(machine->ram2_base, machine->ram2_size, E820_RAM);
     }
 
     if (pcms->sgx_epc.size != 0) {

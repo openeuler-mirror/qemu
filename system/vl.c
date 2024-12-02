@@ -173,6 +173,8 @@ static QemuPluginList plugin_list = QTAILQ_HEAD_INITIALIZER(plugin_list);
 static BlockdevOptionsQueue bdo_queue = QSIMPLEQ_HEAD_INITIALIZER(bdo_queue);
 static bool nographic = false;
 static int mem_prealloc; /* force preallocation of physical target memory */
+static ram_addr_t ram2_base;
+static ram_addr_t ram2_size;
 static const char *vga_model = NULL;
 static DisplayOptions dpy;
 static int num_serial_hds;
@@ -499,6 +501,23 @@ static QemuOptsList qemu_action_opts = {
         },{
             .name = "watchdog",
             .type = QEMU_OPT_STRING,
+        },
+        { /* end of list */ }
+    },
+};
+
+static QemuOptsList qemu_mem2_opts = {
+    .name = "mem2",
+    .merge_lists = true,
+    .head = QTAILQ_HEAD_INITIALIZER(qemu_mem2_opts.head),
+    .desc = {
+        {
+            .name = "base",
+            .type = QEMU_OPT_SIZE,
+        },
+        {
+            .name = "size",
+            .type = QEMU_OPT_SIZE,
         },
         { /* end of list */ }
     },
@@ -1932,6 +1951,9 @@ static void qemu_apply_machine_options(QDict *qdict)
 {
     object_set_properties_from_keyval(OBJECT(current_machine), qdict, false, &error_fatal);
 
+    current_machine->ram2_size = ram2_size;
+    current_machine->ram2_base = ram2_base;
+
     if (semihosting_enabled(false) && !semihosting_get_argc()) {
         /* fall back to the -kernel/-append */
         semihosting_arg_fallback(current_machine->kernel_filename, current_machine->kernel_cmdline);
@@ -2094,10 +2116,56 @@ static void parse_memory_options(void)
     loc_pop(&loc);
 }
 
+static void set_mem2_options(void)
+{
+    uint64_t sz, base;
+    const char *mem_str;
+    QemuOpts *opts = qemu_find_opts_singleton("mem2");
+    Location loc;
+
+    loc_push_none(&loc);
+    qemu_opts_loc_restore(opts);
+
+    mem_str = qemu_opt_get(opts, "base");
+    if (mem_str) {
+        if (!*mem_str) {
+            error_report("missing 'base' option value");
+            exit(EXIT_FAILURE);
+        }
+
+        base = qemu_opt_get_size(opts, "base", ram2_base);
+        ram2_base = base;
+    }
+
+    mem_str = qemu_opt_get(opts, "size");
+    if (mem_str) {
+        if (!*mem_str) {
+            error_report("missing 'base' option value");
+            exit(EXIT_FAILURE);
+        }
+
+        sz = qemu_opt_get_size(opts, "size", ram2_size);
+        ram2_size = sz;
+    }
+
+    if (ram2_base && !ram2_size){
+        error_report("missing 'size' option value");
+        exit(EXIT_FAILURE);
+    }
+    if (!ram2_base && ram2_size){
+        error_report("missing 'base' option value");
+        exit(EXIT_FAILURE);
+    }
+
+    loc_pop(&loc);
+}
+
 static void qemu_create_machine(QDict *qdict)
 {
     MachineClass *machine_class = select_machine(qdict, &error_fatal);
     object_set_machine_compat_props(machine_class->compat_props);
+
+    set_mem2_options();
 
     current_machine = MACHINE(object_new_with_class(OBJECT_CLASS(machine_class)));
     object_property_add_child(object_get_root(), "machine",
@@ -2777,6 +2845,7 @@ void qemu_init(int argc, char **argv)
     qemu_add_opts(&qemu_semihosting_config_opts);
     qemu_add_opts(&qemu_fw_cfg_opts);
     qemu_add_opts(&qemu_action_opts);
+    qemu_add_opts(&qemu_mem2_opts);
     qemu_add_run_with_opts();
     module_call_init(MODULE_INIT_OPTS);
 
@@ -3595,6 +3664,13 @@ void qemu_init(int argc, char **argv)
                 break;
             case QEMU_OPTION_nouserconfig:
                 /* Nothing to be parsed here. Especially, do not error out below. */
+                break;
+            case QEMU_OPTION_mem2:
+                opts = qemu_opts_parse_noisily(qemu_find_opts("mem2"),
+                                               optarg, false);
+                if (!opts) {
+                    exit(EXIT_FAILURE);
+                }
                 break;
 #if defined(CONFIG_POSIX)
             case QEMU_OPTION_runas:
