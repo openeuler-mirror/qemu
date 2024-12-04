@@ -39,11 +39,11 @@ void kvm_arm_init_debug(KVMState *s)
     have_guest_debug = kvm_check_extension(s,
                                            KVM_CAP_SET_GUEST_DEBUG);
 
-    max_hw_wps = kvm_check_extension(s, KVM_CAP_GUEST_DEBUG_HW_WPS);
+    max_hw_wps = kvm_vm_check_extension(s, KVM_CAP_GUEST_DEBUG_HW_WPS);
     hw_watchpoints = g_array_sized_new(true, true,
                                        sizeof(HWWatchpoint), max_hw_wps);
 
-    max_hw_bps = kvm_check_extension(s, KVM_CAP_GUEST_DEBUG_HW_BPS);
+    max_hw_bps = kvm_vm_check_extension(s, KVM_CAP_GUEST_DEBUG_HW_BPS);
     hw_breakpoints = g_array_sized_new(true, true,
                                        sizeof(HWBreakpoint), max_hw_bps);
     return;
@@ -513,12 +513,12 @@ bool kvm_arm_aarch32_supported(void)
 
 bool kvm_arm_sve_supported(void)
 {
-    return kvm_check_extension(kvm_state, KVM_CAP_ARM_SVE);
+    return kvm_vm_check_extension(kvm_state, KVM_CAP_ARM_SVE);
 }
 
 bool kvm_arm_steal_time_supported(void)
 {
-    return kvm_check_extension(kvm_state, KVM_CAP_STEAL_TIME);
+    return kvm_vm_check_extension(kvm_state, KVM_CAP_STEAL_TIME);
 }
 
 QEMU_BUILD_BUG_ON(KVM_ARM64_SVE_VQ_MIN != 1);
