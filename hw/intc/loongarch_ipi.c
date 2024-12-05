@@ -15,6 +15,7 @@
 #include "exec/address-spaces.h"
 #include "hw/loongarch/virt.h"
 #include "migration/vmstate.h"
+#include "target/loongarch/cpu.h"
 #include "target/loongarch/internals.h"
 #include "trace.h"
 
