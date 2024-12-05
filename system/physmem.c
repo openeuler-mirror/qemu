@@ -761,7 +761,7 @@ void cpu_address_space_init(CPUState *cpu, int asidx,
 
     if (!cpu->cpu_ases) {
         cpu->cpu_ases = g_new0(CPUAddressSpace, cpu->num_ases);
-        cpu->cpu_ases_ref_count = cpu->num_ases;
+        cpu->cpu_ases_count = cpu->num_ases;
     }
 
     newas = &cpu->cpu_ases[asidx];
@@ -779,24 +779,28 @@ void cpu_address_space_destroy(CPUState *cpu, int asidx)
 {
     CPUAddressSpace *cpuas;
 
-    assert(asidx < cpu->num_ases);
-    assert(asidx == 0 || !kvm_enabled());
     assert(cpu->cpu_ases);
+    assert(asidx >= 0 && asidx < cpu->num_ases);
+    /* KVM cannot currently support multiple address spaces. */
+    assert(asidx == 0 || !kvm_enabled());
 
     cpuas = &cpu->cpu_ases[asidx];
     if (tcg_enabled()) {
         memory_listener_unregister(&cpuas->tcg_as_listener);
     }
 
-    cpuas->as->free_in_rcu = true;
     address_space_destroy(cpuas->as);
+    g_free_rcu(cpuas->as, rcu);
 
-    if (cpu->cpu_ases_ref_count == 1) {
+    if (asidx == 0) {
+        /* reset the convenience alias for address space 0 */
+        cpu->as = NULL;
+    }
+
+    if (--cpu->cpu_ases_count == 0) {
         g_free(cpu->cpu_ases);
         cpu->cpu_ases = NULL;
     }
-
-    cpu->cpu_ases_ref_count--;
 }
 
 AddressSpace *cpu_get_address_space(CPUState *cpu, int asidx)

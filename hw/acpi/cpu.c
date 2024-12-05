@@ -392,11 +392,13 @@ void build_cpus_aml(Aml *table, MachineState *machine, CPUHotplugFeatures opts,
             aml_name_decl("_UID", aml_string("CPU Hotplug resources")));
         aml_append(cpu_ctrl_dev, aml_mutex(CPU_LOCK, 0));
 
+        assert((rs == AML_SYSTEM_IO) || (rs == AML_SYSTEM_MEMORY));
+
         crs = aml_resource_template();
         if (rs == AML_SYSTEM_IO) {
             aml_append(crs, aml_io(AML_DECODE16, base_addr, base_addr, 1,
                                ACPI_CPU_HOTPLUG_REG_LEN));
-        } else {
+        } else if (rs == AML_SYSTEM_MEMORY) {
             aml_append(crs, aml_memory32_fixed(base_addr,
                                ACPI_CPU_HOTPLUG_REG_LEN, AML_READ_WRITE));
         }

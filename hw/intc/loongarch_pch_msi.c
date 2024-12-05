@@ -14,6 +14,8 @@
 #include "hw/misc/unimp.h"
 #include "migration/vmstate.h"
 #include "trace.h"
+#include "sysemu/kvm.h"
+#include "hw/loongarch/virt.h"
 
 static uint64_t loongarch_msi_mem_read(void *opaque, hwaddr addr, unsigned size)
 {
@@ -26,14 +28,24 @@ static void loongarch_msi_mem_write(void *opaque, hwaddr addr,
     LoongArchPCHMSI *s = (LoongArchPCHMSI *)opaque;
     int irq_num;
 
-    /*
-     * vector number is irq number from upper extioi intc
-     * need subtract irq base to get msi vector offset
-     */
-    irq_num = (val & 0xff) - s->irq_base;
-    trace_loongarch_msi_set_irq(irq_num);
-    assert(irq_num < s->irq_num);
-    qemu_set_irq(s->pch_msi_irq[irq_num], 1);
+    MSIMessage msg = {
+        .address = addr,
+        .data = val,
+    };
+
+    if (kvm_enabled() && kvm_irqchip_in_kernel()) {
+        kvm_irqchip_send_msi(kvm_state, msg);
+    } else {
+        /*
+         * vector number is irq number from upper extioi intc
+         * need subtract irq base to get msi vector offset
+         */
+        irq_num = (val & 0xff) - s->irq_base;
+        trace_loongarch_msi_set_irq(irq_num);
+        assert(irq_num < s->irq_num);
+
+        qemu_set_irq(s->pch_msi_irq[irq_num], 1);
+    }
 }
 
 static const MemoryRegionOps loongarch_pch_msi_ops = {
@@ -46,7 +58,16 @@ static void pch_msi_irq_handler(void *opaque, int irq, int level)
 {
     LoongArchPCHMSI *s = LOONGARCH_PCH_MSI(opaque);
 
-    qemu_set_irq(s->pch_msi_irq[irq], level);
+    MSIMessage msg = {
+        .address = 0,
+        .data = irq,
+    };
+
+    if (kvm_enabled() && kvm_irqchip_in_kernel()) {
+        kvm_irqchip_send_msi(kvm_state, msg);
+    } else {
+        qemu_set_irq(s->pch_msi_irq[irq], level);
+    }
 }
 
 static void loongarch_pch_msi_realize(DeviceState *dev, Error **errp)

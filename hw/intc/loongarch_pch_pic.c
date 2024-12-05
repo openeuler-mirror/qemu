@@ -16,19 +16,28 @@
 #include "migration/vmstate.h"
 #include "trace.h"
 #include "qapi/error.h"
+#include "sysemu/kvm.h"
 
 static void pch_pic_update_irq(LoongArchPCHPIC *s, uint64_t mask, int level)
 {
     uint64_t val;
     int irq;
+    int kvm_irq;
 
     if (level) {
         val = mask & s->intirr & ~s->int_mask;
         if (val) {
             irq = ctz64(val);
             s->intisr |= MAKE_64BIT_MASK(irq, 1);
-            qemu_set_irq(s->parent_irq[s->htmsi_vector[irq]], 1);
-        }
+            if (kvm_enabled() && kvm_irqchip_in_kernel()) {
+                kvm_irq = (
+                KVM_LOONGARCH_IRQ_TYPE_IOAPIC << KVM_LOONGARCH_IRQ_TYPE_SHIFT)
+                | (0 <<  KVM_LOONGARCH_IRQ_VCPU_SHIFT) | s->htmsi_vector[irq];
+                kvm_set_irq(kvm_state, kvm_irq, !!level);
+            } else {
+                qemu_set_irq(s->parent_irq[s->htmsi_vector[irq]], 1);
+            }
+	}
     } else {
         /*
          * intirr means requested pending irq
@@ -38,8 +47,15 @@ static void pch_pic_update_irq(LoongArchPCHPIC *s, uint64_t mask, int level)
         if (val) {
             irq = ctz64(val);
             s->intisr &= ~MAKE_64BIT_MASK(irq, 1);
-            qemu_set_irq(s->parent_irq[s->htmsi_vector[irq]], 0);
-        }
+            if (kvm_enabled() && kvm_irqchip_in_kernel()) {
+                kvm_irq = (
+                KVM_LOONGARCH_IRQ_TYPE_IOAPIC << KVM_LOONGARCH_IRQ_TYPE_SHIFT)
+                | (0 <<  KVM_LOONGARCH_IRQ_VCPU_SHIFT) | s->htmsi_vector[irq];
+                kvm_set_irq(kvm_state, kvm_irq, !!level);
+            } else {
+                qemu_set_irq(s->parent_irq[s->htmsi_vector[irq]], 0);
+            }
+	}
     }
 }
 
