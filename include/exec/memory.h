@@ -775,6 +775,17 @@ bool memory_get_xlat_addr(IOMMUTLBEntry *iotlb, void **vaddr,
                           ram_addr_t *ram_addr, bool *read_only,
                           bool *mr_has_discard_manager);
 
+typedef struct SharedRegionListener SharedRegionListener;
+struct SharedRegionListener {
+    MemoryListener *listener;
+    AddressSpace *as;
+    QTAILQ_ENTRY(SharedRegionListener) next;
+};
+
+void shared_region_register_listener(SharedRegionListener *shl);
+void shared_region_unregister_listener(SharedRegionListener *shl);
+void *shared_region_listeners_get(void);
+
 typedef struct CoalescedMemoryRange CoalescedMemoryRange;
 typedef struct MemoryRegionIoeventfd MemoryRegionIoeventfd;
 

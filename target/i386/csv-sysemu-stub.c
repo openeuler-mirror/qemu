@@ -14,3 +14,28 @@
 #include "qemu/osdep.h"
 #include "sev.h"
 #include "csv.h"
+
+int csv3_init(uint32_t policy, int fd, void *state, struct sev_ops *ops)
+{
+    return 0;
+}
+
+int csv3_load_data(uint64_t gpa, uint8_t *ptr, uint64_t len, Error **errp)
+{
+    g_assert_not_reached();
+}
+
+int csv3_launch_encrypt_vmcb(void)
+{
+    g_assert_not_reached();
+}
+
+int csv3_shared_region_dma_map(uint64_t start, uint64_t end)
+{
+    return 0;
+}
+
+void csv3_shared_region_dma_unmap(uint64_t start, uint64_t end)
+{
+
+}

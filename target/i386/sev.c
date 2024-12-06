@@ -880,8 +880,12 @@ sev_launch_get_measure(Notifier *notifier, void *unused)
     }
 
     if (sev_es_enabled()) {
-        /* measure all the VM save areas before getting launch_measure */
-        ret = sev_launch_update_vmsa(sev);
+        if (csv3_enabled()) {
+            ret = csv3_launch_encrypt_vmcb();
+        } else {
+            /* measure all the VM save areas before getting launch_measure */
+            ret = sev_launch_update_vmsa(sev);
+        }
         if (ret) {
             exit(1);
         }
@@ -1225,6 +1229,18 @@ int sev_kvm_init(ConfidentialGuestSupport *cgs, Error **errp)
         goto err;
     }
 
+    /* Support CSV3 */
+    if (!ret && cmd == KVM_SEV_ES_INIT) {
+        ret = csv3_init(sev_guest->policy, sev->sev_fd, (void *)&sev->state, &sev_ops);
+        if (ret) {
+            error_setg(errp, "%s: failed to init csv3 context", __func__);
+            goto err;
+        }
+        /* The CSV3 guest is not resettable */
+        if (csv3_enabled())
+            csv_kvm_cpu_reset_inhibit = true;
+    }
+
     /*
      * The LAUNCH context is used for new guest, if its an incoming guest
      * then RECEIVE context will be created after the connection is established.
@@ -1246,12 +1262,19 @@ int sev_kvm_init(ConfidentialGuestSupport *cgs, Error **errp)
         }
     }
 
-    ram_block_notifier_add(&sev_ram_notifier);
+    /* CSV3 guest do not need notifier to reg/unreg memory */
+    if (!csv3_enabled()) {
+        ram_block_notifier_add(&sev_ram_notifier);
+    }
     qemu_add_machine_init_done_notifier(&sev_machine_done_notify);
     qemu_add_vm_change_state_handler(sev_vm_state_change, sev);
     migration_add_notifier(&sev_migration_state, sev_migration_state_notifier);
 
-    cgs_class->memory_encryption_ops = &sev_memory_encryption_ops;
+    if (csv3_enabled()) {
+        cgs_class->memory_encryption_ops = &csv3_memory_encryption_ops;
+    } else {
+        cgs_class->memory_encryption_ops = &sev_memory_encryption_ops;
+    }
     QTAILQ_INIT(&sev->shared_regions_list);
 
     /* Determine whether support MSR_AMD64_SEV_ES_GHCB */
@@ -2634,6 +2657,27 @@ bool sev_add_kernel_loader_hashes(SevKernelLoaderContext *ctx, Error **errp)
 
     return ret;
 }
+
+static int _sev_send_start(QEMUFile *f, uint64_t *bytes_sent)
+{
+    SevGuestState *s = sev_guest;
+
+    return sev_send_start(s, f, bytes_sent);
+}
+
+static int _sev_receive_start(QEMUFile *f)
+{
+    SevGuestState *s = sev_guest;
+
+    return sev_receive_start(s, f);
+}
+
+struct sev_ops sev_ops = {
+    .sev_ioctl = sev_ioctl,
+    .fw_error_to_str = fw_error_to_str,
+    .sev_send_start = _sev_send_start,
+    .sev_receive_start = _sev_receive_start,
+};
 
 static void
 sev_register_types(void)

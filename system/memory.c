@@ -48,6 +48,9 @@ static QTAILQ_HEAD(, MemoryListener) memory_listeners
 static QTAILQ_HEAD(, AddressSpace) address_spaces
     = QTAILQ_HEAD_INITIALIZER(address_spaces);
 
+static QTAILQ_HEAD(, SharedRegionListener) shared_region_listeners
+    = QTAILQ_HEAD_INITIALIZER(shared_region_listeners);
+
 static GHashTable *flat_views;
 
 typedef struct AddrRange AddrRange;
@@ -2224,6 +2227,21 @@ bool memory_get_xlat_addr(IOMMUTLBEntry *iotlb, void **vaddr,
     }
 
     return true;
+}
+
+void shared_region_register_listener(SharedRegionListener *shl)
+{
+    QTAILQ_INSERT_TAIL(&shared_region_listeners, shl, next);
+}
+
+void shared_region_unregister_listener(SharedRegionListener *shl)
+{
+    QTAILQ_REMOVE(&shared_region_listeners, shl, next);
+}
+
+void *shared_region_listeners_get(void)
+{
+    return &shared_region_listeners;
 }
 
 void memory_region_set_log(MemoryRegion *mr, bool log, unsigned client)

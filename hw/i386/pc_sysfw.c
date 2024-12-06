@@ -37,6 +37,7 @@
 #include "hw/block/flash.h"
 #include "sysemu/kvm.h"
 #include "sev.h"
+#include "csv.h"
 
 #define FLASH_SECTOR_SIZE 4096
 
@@ -263,7 +264,18 @@ void x86_firmware_configure(void *ptr, int size)
             error_report("failed to locate and/or save reset vector");
             exit(1);
         }
+        if (csv3_enabled()) {
+            ram_addr_t offset = 0;
+            MemoryRegion *mr;
 
-        sev_encrypt_flash(ptr, size, &error_fatal);
+            mr = memory_region_from_host(ptr, &offset);
+            if (!mr) {
+                error_report("failed to get memory region of flash");
+                exit(1);
+            }
+            csv3_load_data(mr->addr + offset, ptr, size, &error_fatal);
+        } else {
+            sev_encrypt_flash(ptr, size, &error_fatal);
+        }
     }
 }
