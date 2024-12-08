@@ -735,7 +735,7 @@ static void *multifd_send_thread(void *opaque)
             }
 
             stat64_add(&mig_stats.multifd_bytes,
-                       p->next_packet_size + p->packet_len);
+                       (uint64_t)p->next_packet_size + p->packet_len);
             p->next_packet_size = 0;
             qemu_mutex_lock(&p->mutex);
             p->pending_job--;
