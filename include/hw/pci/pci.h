@@ -753,16 +753,6 @@ static inline void pci_irq_deassert(PCIDevice *pci_dev)
     pci_set_irq(pci_dev, 0);
 }
 
-/*
- * FIXME: PCI does not work this way.
- * All the callers to this method should be fixed.
- */
-static inline void pci_irq_pulse(PCIDevice *pci_dev)
-{
-    pci_irq_assert(pci_dev);
-    pci_irq_deassert(pci_dev);
-}
-
 static inline int pci_is_express(const PCIDevice *d)
 {
     return d->cap_present & QEMU_PCI_CAP_EXPRESS;
