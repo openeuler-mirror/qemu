@@ -121,6 +121,7 @@ enum {
     VIRT_UART,
     VIRT_CPUFREQ,
     VIRT_MMIO,
+    VIRT_CVM_MSI,
     VIRT_RTC,
     VIRT_FW_CFG,
     VIRT_PCIE,
