@@ -25,9 +25,6 @@ struct LoongArchExtIOIClass {
     DeviceUnrealize parent_unrealize;
 };
 
-#define LoongArchExtIOI         LoongArchExtIOICommonState
-#define LOONGARCH_EXTIOI(obj)   ((LoongArchExtIOICommonState *)obj)
-
 struct KVMLoongArchExtIOI {
     SysBusDevice parent_obj;
     uint32_t num_cpu;
