@@ -10,11 +10,24 @@
 
 #include "hw/intc/loongarch_extioi_common.h"
 
-#define LoongArchExtIOI LoongArchExtIOICommonState
 #define TYPE_LOONGARCH_EXTIOI        "loongarch-extioi"
 #define TYPE_KVM_LOONGARCH_EXTIOI    "loongarch-kvm-extioi"
+OBJECT_DECLARE_TYPE(LoongArchExtIOIState, LoongArchExtIOIClass, LOONGARCH_EXTIOI)
 
-OBJECT_DECLARE_SIMPLE_TYPE(LoongArchExtIOI, LOONGARCH_EXTIOI)
+struct LoongArchExtIOIState {
+    LoongArchExtIOICommonState parent_obj;
+};
+
+struct LoongArchExtIOIClass {
+    LoongArchExtIOICommonClass parent_class;
+
+    DeviceRealize parent_realize;
+    DeviceUnrealize parent_unrealize;
+};
+
+#define LoongArchExtIOI         LoongArchExtIOICommonState
+#define LOONGARCH_EXTIOI(obj)   ((LoongArchExtIOICommonState *)obj)
+
 struct KVMLoongArchExtIOI {
     SysBusDevice parent_obj;
     uint32_t num_cpu;
