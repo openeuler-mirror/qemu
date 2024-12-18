@@ -373,6 +373,7 @@ static int qatzip_recv(MultiFDRecvParams *p, Error **errp)
         memcpy(p->host + p->normal[i],
                q->out_buf + p->page_size * i,
                p->page_size);
+        ramblock_recv_bitmap_set_offset(p->block, p->normal[i]);
     }
     return 0;
 }
