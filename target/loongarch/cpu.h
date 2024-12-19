@@ -288,6 +288,7 @@ typedef struct LoongArchTLB LoongArchTLB;
 #endif
 
 enum loongarch_features {
+    LOONGARCH_FEATURE_LSX,
     LOONGARCH_FEATURE_LBT, /* loongson binary translation extension */
     LOONGARCH_FEATURE_PMU,
 };
@@ -418,6 +419,7 @@ struct ArchCPU {
     uint32_t  phy_id;
     OnOffAuto lbt;
     OnOffAuto pmu;
+    OnOffAuto lsx;
     int32_t socket_id;  /* socket-id of this VCPU */
     int32_t core_id;    /* core-id of this VCPU */
     int32_t thread_id;  /* thread-id of this VCPU */
