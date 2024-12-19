@@ -1985,14 +1985,10 @@ typedef struct CPUArchState {
 
     TPRAccess tpr_access_type;
 
-    /* Number of dies within this CPU package. */
-    unsigned nr_dies;
-
     /* GHCB guest physical address info */
     uint64_t ghcb_gpa;
 
-    /* Number of modules within one die. */
-    unsigned nr_modules;
+    X86CPUTopoInfo topo_info;
 
     /* Bitmap of available CPU topology levels for this CPU. */
     DECLARE_BITMAP(avail_cpu_topo, CPU_TOPOLOGY_LEVEL__MAX);
