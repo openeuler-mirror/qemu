@@ -56,7 +56,7 @@ qcrypto_gcrypt_hash_bytesv(QCryptoHashAlgorithm alg,
                            size_t *resultlen,
                            Error **errp)
 {
-    int i, ret;
+    gcry_error_t ret;
     gcry_md_hd_t md;
     unsigned char *digest;
 
@@ -69,7 +69,7 @@ qcrypto_gcrypt_hash_bytesv(QCryptoHashAlgorithm alg,
 
     ret = gcry_md_open(&md, qcrypto_hash_alg_map[alg], 0);
 
-    if (ret < 0) {
+    if (ret != 0) {
         error_setg(errp,
                    "Unable to initialize hash algorithm: %s",
                    gcry_strerror(ret));
