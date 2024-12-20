@@ -316,7 +316,7 @@ void acpi_cpu_unplug_cb(CPUHotplugState *cpu_st,
 
 static const VMStateDescription vmstate_cpuhp_sts = {
     .name = "CPU hotplug device state",
-    .version_id = 1,
+    .version_id = 2,
     .minimum_version_id = 1,
     .fields      = (VMStateField[]) {
         VMSTATE_BOOL(is_inserting, AcpiCpuStatus),
