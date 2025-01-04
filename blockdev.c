@@ -588,7 +588,7 @@ static BlockBackend *blockdev_init(const char *file, QDict *bs_opts,
 
     read_only = qemu_opt_get_bool(opts, BDRV_OPT_READ_ONLY, false);
 
-    if (!file || !*file) {
+    if ((!file || !*file) && qdict_size(bs_opts) == 2) {
         cache = qdict_get_try_str(bs_opts, BDRV_OPT_CACHE_NO_FLUSH);
         if (cache && !strcmp(cache, "on")) {
             bdrv_flags |= BDRV_O_NO_FLUSH;
