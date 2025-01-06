@@ -54,6 +54,23 @@ static inline void clear_bit32(long nr, uint32_t *addr)
     *p &= ~mask;
 }
 
+static int extioi_get_index_from_archid(LoongArchExtIOICommonState *s,
+                                        uint64_t arch_id)
+{
+    int i;
+
+    for (i = 0; i < s->num_cpu; i++) {
+        if (s->cpu[i].arch_id == arch_id) {
+            break;
+        }
+    }
+
+    if ((i < s->num_cpu) && s->cpu[i].cpu) {
+        return i;
+    }
+
+    return -1;
+}
 
 static void extioi_update_irq(LoongArchExtIOICommonState *s, int irq, int level)
 {
@@ -164,7 +181,7 @@ static inline void extioi_enable_irq(LoongArchExtIOICommonState *s, int index,\
 static inline void extioi_update_sw_coremap(LoongArchExtIOICommonState *s,
                                             int irq, uint64_t val, bool notify)
 {
-    int i, cpu;
+    int i, cpu, cpuid;
 
     /*
      * loongarch only support little endian,
@@ -173,12 +190,17 @@ static inline void extioi_update_sw_coremap(LoongArchExtIOICommonState *s,
     val = cpu_to_le64(val);
 
     for (i = 0; i < 4; i++) {
-        cpu = val & 0xff;
+        cpuid = val & 0xff;
         val = val >> 8;
 
-	if (!(s->status & BIT(EXTIOI_ENABLE_CPU_ENCODE))) {
-            cpu = ctz32(cpu);
-            cpu = (cpu >= 4) ? 0 : cpu;
+        if (!(s->status & BIT(EXTIOI_ENABLE_CPU_ENCODE))) {
+            cpuid = ctz32(cpuid);
+            cpuid = (cpuid >= 4) ? 0 : cpuid;
+        }
+
+        cpu = extioi_get_index_from_archid(s, cpuid);
+        if (cpu < 0) {
+            continue;
         }
 
         if (s->sw_coremap[irq + i] == cpu) {
