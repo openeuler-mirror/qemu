@@ -933,7 +933,6 @@ static void virt_irq_init(LoongArchVirtMachineState *lvms)
         sysbus_realize_and_unref(SYS_BUS_DEVICE(extioi), &error_fatal);
     } else {
         extioi = qdev_new(TYPE_LOONGARCH_EXTIOI);
-        qdev_prop_set_uint32(extioi, "num-cpu", ms->smp.max_cpus);
         if (virt_is_veiointc_enabled(lvms)) {
             qdev_prop_set_bit(extioi, "has-virtualization-extension", true);
         }
