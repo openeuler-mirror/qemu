@@ -9,7 +9,6 @@
 #include "hw/sysbus.h"
 #include "hw/intc/loongson_ipi_common.h"
 #include "hw/irq.h"
-#include "hw/qdev-properties.h"
 #include "qemu/log.h"
 #include "migration/vmstate.h"
 #include "trace.h"
@@ -301,11 +300,6 @@ static const VMStateDescription vmstate_loongson_ipi_common = {
     }
 };
 
-static Property ipi_common_properties[] = {
-    DEFINE_PROP_UINT32("num-cpu", LoongsonIPICommonState, num_cpu, 1),
-    DEFINE_PROP_END_OF_LIST(),
-};
-
 static void loongson_ipi_common_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
@@ -315,7 +309,6 @@ static void loongson_ipi_common_class_init(ObjectClass *klass, void *data)
                                     &licc->parent_realize);
     device_class_set_parent_unrealize(dc, loongson_ipi_common_unrealize,
                                       &licc->parent_unrealize);
-    device_class_set_props(dc, ipi_common_properties);
     dc->vmsd = &vmstate_loongson_ipi_common;
 }
 
