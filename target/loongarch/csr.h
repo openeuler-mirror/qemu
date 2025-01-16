@@ -16,10 +16,13 @@ enum {
 };
 
 typedef struct {
+    const char *name;
     int offset;
     int flags;
     GenCSRFunc readfn;
     GenCSRFunc writefn;
 } CSRInfo;
 
+CSRInfo *get_csr(unsigned int csr_num);
+bool set_csr_flag(unsigned int csr_num, int flag);
 #endif /* TARGET_LOONGARCH_CSR_H */
