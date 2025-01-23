@@ -243,6 +243,17 @@ typedef struct IOMMUTLBEvent {
 /* RAM FD is opened read-only */
 #define RAM_READONLY_FD (1 << 11)
 
+/* The GPA range of the VirtCCA bounce buffer is from 1GB to 4GB. */
+#define VIRTCCA_SHARED_HUGEPAGE_MAX_SIZE 0xc0000000ULL
+
+/* The VirtCCA shared hugepage memory granularity is 1GB */
+#define VIRTCCA_SHARED_HUGEPAGE_ALIGN 0x40000000ULL
+
+/* The GPA starting address of the VirtCCA CVM is 1GB */
+#define VIRTCCA_GPA_START 0x40000000ULL
+
+extern uint64_t virtcca_cvm_ram_size;
+
 static inline void iommu_notifier_init(IOMMUNotifier *n, IOMMUNotify fn,
                                        IOMMUNotifierFlag flags,
                                        hwaddr start, hwaddr end,

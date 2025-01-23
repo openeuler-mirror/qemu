@@ -20,9 +20,13 @@
 #include "qom/object.h"
 #include "qapi/visitor.h"
 #include "qapi/qapi-visit-common.h"
+#include "sysemu/kvm.h"
+#include "exec/address-spaces.h"
 
 OBJECT_DECLARE_SIMPLE_TYPE(HostMemoryBackendFile, MEMORY_BACKEND_FILE)
 
+bool virtcca_shared_hugepage_mapped = false;
+uint64_t virtcca_cvm_ram_size = 0;
 
 struct HostMemoryBackendFile {
     HostMemoryBackend parent_obj;
@@ -35,6 +39,83 @@ struct HostMemoryBackendFile {
     bool readonly;
     OnOffAuto rom;
 };
+
+/* Parse the path of the hugepages memory file used for memory sharing */
+static int virtcca_parse_share_mem_path(char *src, char *dst)
+{
+    int ret = 0;
+    char src_copy[PATH_MAX];
+    char *token = NULL;
+    char *last_dir = NULL;
+    char *second_last_dir = NULL;
+    static const char delimiter[] = "/";
+
+    if (src == NULL || dst == NULL ||
+        strlen(src) == 0 || strlen(src) > PATH_MAX - 1) {
+        error_report("Invalid input: NULL pointer or invalid string length.");
+        return -1;
+    }
+
+    strcpy(src_copy, src);
+    token = strtok(src_copy, delimiter);
+
+    /* Iterate over the path segments to find the second-to-last directory */
+    while (token != NULL) {
+        second_last_dir = last_dir;
+        last_dir = token;
+        token = strtok(NULL, delimiter);
+    }
+
+    /* Check if the second-to-last directory is found */
+    if (second_last_dir == NULL) {
+        error_report("Invalid path: second-to-last directory not found.");
+        return -1;
+    }
+
+    /*
+     * Construct the share memory path by appending the extracted domain name
+     * to the hugepages memory filesystem prefix
+     */
+    ret = snprintf(dst, PATH_MAX, "/dev/hugepages/libvirt/qemu/%s",
+                   second_last_dir);
+
+    if (ret < 0 || ret >= PATH_MAX) {
+        error_report("Error: snprintf failed to construct the share mem path");
+        return -1;
+    }
+
+    return 0;
+}
+
+/*
+ * Create a hugepage memory region in the virtcca scenario
+ * for sharing with process like vhost-user and others.
+ */
+static void
+virtcca_shared_backend_memory_alloc(char *mem_path, uint32_t ram_flags, Error **errp)
+{
+    char dst[PATH_MAX];
+    uint64_t size = virtcca_cvm_ram_size;
+
+    if (virtcca_parse_share_mem_path(mem_path, dst)) {
+        error_report("parse virtcca share memory path failed");
+        exit(1);
+    }
+    if (virtcca_cvm_ram_size >= VIRTCCA_SHARED_HUGEPAGE_MAX_SIZE) {
+        size = VIRTCCA_SHARED_HUGEPAGE_MAX_SIZE;
+    }
+
+    virtcca_shared_hugepage = g_new(MemoryRegion, 1);
+    memory_region_init_ram_from_file(virtcca_shared_hugepage, NULL,
+                                     "virtcca_shared_hugepage", size,
+                                     VIRTCCA_SHARED_HUGEPAGE_ALIGN,
+                                     ram_flags, dst, 0, errp);
+    if (*errp) {
+        error_reportf_err(*errp, "cannot init RamBlock for virtcca_shared_hugepage: ");
+        exit(1);
+    }
+    virtcca_shared_hugepage_mapped = true;
+}
 
 static void
 file_backend_memory_alloc(HostMemoryBackend *backend, Error **errp)
@@ -90,6 +171,10 @@ file_backend_memory_alloc(HostMemoryBackend *backend, Error **errp)
                                      backend->size, fb->align, ram_flags,
                                      fb->mem_path, fb->offset, errp);
     g_free(name);
+
+    if (virtcca_cvm_enabled() && backend->share && !virtcca_shared_hugepage_mapped) {
+        virtcca_shared_backend_memory_alloc(fb->mem_path, ram_flags, errp);
+    }
 #endif
 }
 

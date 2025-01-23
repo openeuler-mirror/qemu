@@ -28,6 +28,7 @@ typedef uint64_t vaddr;
 
 void cpu_exec_init_all(void);
 void cpu_exec_step_atomic(CPUState *cpu);
+void virtcca_shared_memory_address_space_init(void);
 
 /* Using intptr_t ensures that qemu_*_page_mask is sign-extended even
  * when intptr_t is 32-bit and we are aligning a long long.

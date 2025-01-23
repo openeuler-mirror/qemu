@@ -42,6 +42,8 @@
 #include "qemu/option.h"
 #include "qemu/config-file.h"
 #include "qemu/cutils.h"
+#include "exec/address-spaces.h"
+#include "sysemu/kvm.h"
 
 QemuOptsList qemu_numa_opts = {
     .name = "numa",
@@ -641,6 +643,21 @@ static void numa_init_memdev_container(MachineState *ms, MemoryRegion *ram)
     }
 }
 
+/*
+ * Add virtcca_shared_hugepage as a sub-MR to the root MR of address space
+ * address_space_memory and address_space_virtcca_shared_memory.
+ */
+static void virtcca_shared_memory_configuration(MachineState *ms)
+{
+    MemoryRegion *alias_mr = g_new(MemoryRegion, 1);
+
+    memory_region_add_subregion_overlap(ms->ram, 0, virtcca_shared_hugepage, 1);
+    memory_region_init_alias(alias_mr, NULL, "alias-mr", virtcca_shared_hugepage,
+                             0, int128_get64(virtcca_shared_hugepage->size));
+    memory_region_add_subregion(address_space_virtcca_shared_memory.root,
+                                VIRTCCA_GPA_START, alias_mr);
+}
+
 void numa_complete_configuration(MachineState *ms)
 {
     int i;
@@ -711,6 +728,9 @@ void numa_complete_configuration(MachineState *ms)
             memory_region_init(ms->ram, OBJECT(ms), mc->default_ram_id,
                                ms->ram_size);
             numa_init_memdev_container(ms, ms->ram);
+            if (virtcca_cvm_enabled() && virtcca_shared_hugepage->ram_block) {
+                virtcca_shared_memory_configuration(ms);
+            }
         }
         /* QEMU needs at least all unique node pair distances to build
          * the whole NUMA distance table. QEMU treats the distance table
