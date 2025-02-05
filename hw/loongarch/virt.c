@@ -330,14 +330,43 @@ static void virt_devices_init(DeviceState *pch_pic,
     lvms->platform_bus_dev = create_platform_bus(pch_pic);
 }
 
+static void virt_cpu_irq_init(LoongArchVirtMachineState *lvms)
+{
+    int num, pin;
+    MachineState *ms = MACHINE(lvms);
+    MachineClass *mc = MACHINE_GET_CLASS(ms);
+    const CPUArchIdList *possible_cpus;
+    CPUState *cs;
+
+    /* cpu nodes */
+    possible_cpus = mc->possible_cpu_arch_ids(ms);
+    for (num = 0; num < possible_cpus->len; num++) {
+        cs = possible_cpus->cpus[num].cpu;
+        if (cs == NULL) {
+            continue;
+        }
+
+        /* connect ipi irq to cpu irq */
+        qdev_connect_gpio_out(lvms->ipi, num,
+                              qdev_get_gpio_in(DEVICE(cs), IRQ_IPI));
+
+        /*
+         * connect ext irq to the cpu irq
+         * cpu_pin[9:2] <= intc_pin[7:0]
+         */
+        for (pin = 0; pin < LS3A_INTC_IP; pin++) {
+            qdev_connect_gpio_out(lvms->extioi, (num * LS3A_INTC_IP + pin),
+                                  qdev_get_gpio_in(DEVICE(cs), pin + 2));
+        }
+    }
+}
+
 static void virt_irq_init(LoongArchVirtMachineState *lvms)
 {
-    MachineState *ms = MACHINE(lvms);
-    DeviceState *pch_pic, *pch_msi, *cpudev;
+    DeviceState *pch_pic, *pch_msi;
     DeviceState *ipi, *extioi;
     SysBusDevice *d;
-    CPUState *cpu_state;
-    int cpu, pin, i, start, num;
+    int i, start, num;
 
     /*
      * The connection of interrupts:
@@ -367,6 +396,8 @@ static void virt_irq_init(LoongArchVirtMachineState *lvms)
         sysbus_realize_and_unref(SYS_BUS_DEVICE(ipi), &error_fatal);
     } else {
         ipi = qdev_new(TYPE_LOONGARCH_IPI);
+        lvms->ipi = ipi;
+
         sysbus_realize_and_unref(SYS_BUS_DEVICE(ipi), &error_fatal);
 
         /* IPI iocsr memory region */
@@ -374,13 +405,6 @@ static void virt_irq_init(LoongArchVirtMachineState *lvms)
                        sysbus_mmio_get_region(SYS_BUS_DEVICE(ipi), 0));
         memory_region_add_subregion(&lvms->system_iocsr, MAIL_SEND_ADDR,
                        sysbus_mmio_get_region(SYS_BUS_DEVICE(ipi), 1));
-        for (cpu = 0; cpu < ms->smp.cpus; cpu++) {
-            cpu_state = qemu_get_cpu(cpu);
-            cpudev = DEVICE(cpu_state);
-
-            /* connect ipi irq to cpu irq */
-            qdev_connect_gpio_out(ipi, cpu, qdev_get_gpio_in(cpudev, IRQ_IPI));
-        }
     }
 
     lvms->ipi = ipi;
@@ -393,6 +417,7 @@ static void virt_irq_init(LoongArchVirtMachineState *lvms)
         sysbus_realize_and_unref(SYS_BUS_DEVICE(extioi), &error_fatal);
     } else {
         extioi = qdev_new(TYPE_LOONGARCH_EXTIOI);
+        lvms->extioi = extioi;
         if (virt_is_veiointc_enabled(lvms)) {
             qdev_prop_set_bit(extioi, "has-virtualization-extension", true);
         }
@@ -403,21 +428,11 @@ static void virt_irq_init(LoongArchVirtMachineState *lvms)
             memory_region_add_subregion(&lvms->system_iocsr, EXTIOI_VIRT_BASE,
                         sysbus_mmio_get_region(SYS_BUS_DEVICE(extioi), 1));
         }
-        /*
-         * connect ext irq to the cpu irq
-         * cpu_pin[9:2] <= intc_pin[7:0]
-         */
-        for (cpu = 0; cpu < ms->smp.cpus; cpu++) {
-            cpudev = DEVICE(qemu_get_cpu(cpu));
-            for (pin = 0; pin < LS3A_INTC_IP; pin++) {
-                qdev_connect_gpio_out(extioi, (cpu * 8 + pin),
-                                      qdev_get_gpio_in(cpudev, pin + 2));
-            }
-       }
     }
 
     lvms->extioi = extioi;
 
+    virt_cpu_irq_init(lvms);
     if (kvm_enabled() && kvm_irqchip_in_kernel()) {
         pch_pic = qdev_new(TYPE_KVM_LOONGARCH_PCH_PIC);
         sysbus_realize_and_unref(SYS_BUS_DEVICE(pch_pic), &error_fatal);
