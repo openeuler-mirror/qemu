@@ -390,7 +390,6 @@ static void virt_irq_init(LoongArchVirtMachineState *lvms)
         cpudev = DEVICE(cpu_state);
         lacpu = LOONGARCH_CPU(cpu_state);
         env = &(lacpu->env);
-        env->address_space_iocsr = &lvms->as_iocsr;
         env->ipistate = ipi;
     }
 
@@ -702,6 +701,7 @@ static void virt_init(MachineState *machine)
         lacpu = LOONGARCH_CPU(cpuobj);
 
         lacpu->phy_id = machine->possible_cpus->cpus[i].arch_id;
+        lacpu->env.address_space_iocsr = &lvms->as_iocsr;
         object_property_set_int(cpuobj, "socket-id",
                                 machine->possible_cpus->cpus[i].props.socket_id,
                                 NULL);
