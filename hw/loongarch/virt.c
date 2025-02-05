@@ -336,8 +336,6 @@ static void virt_irq_init(LoongArchVirtMachineState *lvms)
     DeviceState *pch_pic, *pch_msi, *cpudev;
     DeviceState *ipi, *extioi;
     SysBusDevice *d;
-    LoongArchCPU *lacpu;
-    CPULoongArchState *env;
     CPUState *cpu_state;
     int cpu, pin, i, start, num;
 
@@ -383,14 +381,6 @@ static void virt_irq_init(LoongArchVirtMachineState *lvms)
             /* connect ipi irq to cpu irq */
             qdev_connect_gpio_out(ipi, cpu, qdev_get_gpio_in(cpudev, IRQ_IPI));
         }
-    }
-
-    for (cpu = 0; cpu < ms->smp.cpus; cpu++) {
-        cpu_state = qemu_get_cpu(cpu);
-        cpudev = DEVICE(cpu_state);
-        lacpu = LOONGARCH_CPU(cpu_state);
-        env = &(lacpu->env);
-        env->ipistate = ipi;
     }
 
     lvms->ipi = ipi;
