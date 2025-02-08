@@ -687,7 +687,7 @@ static const VMStateDescription vmstate_acpi_build = {
     },
 };
 
-static bool loongarch_is_acpi_enabled(LoongArchVirtMachineState *lvms)
+static bool virt_is_acpi_enabled(LoongArchVirtMachineState *lvms)
 {
     if (lvms->acpi == ON_OFF_AUTO_OFF) {
         return false;
@@ -695,7 +695,7 @@ static bool loongarch_is_acpi_enabled(LoongArchVirtMachineState *lvms)
     return true;
 }
 
-void loongarch_acpi_setup(LoongArchVirtMachineState *lvms)
+void virt_acpi_setup(LoongArchVirtMachineState *lvms)
 {
     AcpiBuildTables tables;
     AcpiBuildState *build_state;
@@ -705,7 +705,7 @@ void loongarch_acpi_setup(LoongArchVirtMachineState *lvms)
         return;
     }
 
-    if (!loongarch_is_acpi_enabled(lvms)) {
+    if (!virt_is_acpi_enabled(lvms)) {
         ACPI_BUILD_DPRINTF("ACPI disabled. Bailing out.\n");
         return;
     }
