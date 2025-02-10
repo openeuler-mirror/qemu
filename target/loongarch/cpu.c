@@ -646,13 +646,13 @@ static void loongarch_cpu_realizefn(DeviceState *dev, Error **errp)
 
 static void loongarch_cpu_unrealizefn(DeviceState *dev)
 {
-    LoongArchCPUClass *mcc = LOONGARCH_CPU_GET_CLASS(dev);
+    LoongArchCPUClass *lacc = LOONGARCH_CPU_GET_CLASS(dev);
 
 #ifndef CONFIG_USER_ONLY
     cpu_remove_sync(CPU(dev));
 #endif
 
-    mcc->parent_unrealize(dev);
+    lacc->parent_unrealize(dev);
 }
 
 static bool loongarch_get_lsx(Object *obj, Error **errp)
