@@ -128,7 +128,7 @@ build_madt(GArray *table_data, BIOSLinker *linker,
     MachineState *ms = MACHINE(lvms);
     MachineClass *mc = MACHINE_GET_CLASS(ms);
     const CPUArchIdList *arch_ids = mc->possible_cpu_arch_ids(ms);
-    int i, arch_id;
+    int i, arch_id, flags;
     AcpiTable table = { .sig = "APIC", .rev = 1, .oem_id = lvms->oem_id,
                         .oem_table_id = lvms->oem_table_id };
 
@@ -139,10 +139,9 @@ build_madt(GArray *table_data, BIOSLinker *linker,
     build_append_int_noprefix(table_data, 1 /* PCAT_COMPAT */, 4); /* Flags */
 
     for (i = 0; i < arch_ids->len; i++) {
-        uint32_t flags;
-
         /* Processor Core Interrupt Controller Structure */
         arch_id = arch_ids->cpus[i].arch_id;
+
         flags   = arch_ids->cpus[i].cpu ? 1 : 0;
         build_append_int_noprefix(table_data, 17, 1);    /* Type */
         build_append_int_noprefix(table_data, 15, 1);    /* Length */
