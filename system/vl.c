@@ -3785,6 +3785,15 @@ void qemu_init(int argc, char **argv)
     phase_advance(PHASE_ACCEL_CREATED);
 
     /*
+     * Must run after kvm_init completes, as virtcca_cvm_enabled()
+     * depends on initialization performed in kvm_init.
+     */
+    if (virtcca_cvm_enabled()) {
+        virtcca_cvm_ram_size = current_machine->ram_size;
+        virtcca_shared_memory_address_space_init();
+    }
+
+    /*
      * Beware, QOM objects created before this point miss global and
      * compat properties.
      *

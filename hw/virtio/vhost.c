@@ -30,6 +30,7 @@
 #include "sysemu/dma.h"
 #include "trace.h"
 #include "qapi/qapi-commands-migration.h"
+#include "sysemu/kvm.h"
 
 /* enabled until disconnected backend stabilizes */
 #define _VHOST_DEBUG 1
@@ -1616,7 +1617,12 @@ int vhost_dev_init(struct vhost_dev *hdev, void *opaque,
     hdev->log_size = 0;
     hdev->log_enabled = false;
     hdev->started = false;
-    memory_listener_register(&hdev->memory_listener, &address_space_memory);
+    if (virtcca_cvm_enabled()) {
+        memory_listener_register(&hdev->memory_listener,
+                                 &address_space_virtcca_shared_memory);
+    } else {
+        memory_listener_register(&hdev->memory_listener, &address_space_memory);
+    }
     QLIST_INSERT_HEAD(&vhost_devices, hdev, entry);
 
     /*

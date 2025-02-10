@@ -89,9 +89,17 @@ RAMList ram_list = { .blocks = QLIST_HEAD_INITIALIZER(ram_list.blocks) };
 
 static MemoryRegion *system_memory;
 static MemoryRegion *system_io;
+static MemoryRegion *virtcca_shared_memory;
+
+/*
+ * Serves as the sub-MR of the root MR (virtcca_shared_memory)
+ * and is associated with the RAMBlock.
+ */
+MemoryRegion *virtcca_shared_hugepage;
 
 AddressSpace address_space_io;
 AddressSpace address_space_memory;
+AddressSpace address_space_virtcca_shared_memory;
 
 static MemoryRegion io_mem_unassigned;
 
@@ -2584,6 +2592,15 @@ static void memory_map_init(void)
     memory_region_init_io(system_io, NULL, &unassigned_io_ops, NULL, "io",
                           65536);
     address_space_init(&address_space_io, system_io, "I/O");
+}
+
+void virtcca_shared_memory_address_space_init(void)
+{
+    virtcca_shared_memory = g_malloc(sizeof(*virtcca_shared_memory));
+    memory_region_init(virtcca_shared_memory, NULL,
+                       "virtcca_shared_memory", UINT64_MAX);
+    address_space_init(&address_space_virtcca_shared_memory,
+                       virtcca_shared_memory, "virtcca_shared_memory");
 }
 
 MemoryRegion *get_system_memory(void)
