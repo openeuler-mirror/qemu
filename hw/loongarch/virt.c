@@ -660,13 +660,13 @@ static void fw_cfg_add_memory(MachineState *ms)
 
 static void virt_init(MachineState *machine)
 {
-    LoongArchCPU *lacpu;
     const char *cpu_model = machine->cpu_type;
     MemoryRegion *address_space_mem = get_system_memory();
     LoongArchVirtMachineState *lvms = LOONGARCH_VIRT_MACHINE(machine);
     int i;
     hwaddr base, size, ram_size = machine->ram_size;
     MachineClass *mc = MACHINE_GET_CLASS(machine);
+    Object *cpuobj;
 
     if (!cpu_model) {
         cpu_model = LOONGARCH_CPU_TYPE_NAME("la464");
@@ -684,38 +684,14 @@ static void virt_init(MachineState *machine)
     /* Init CPUs */
     mc->possible_cpu_arch_ids(machine);
     for (i = 0; i < machine->smp.cpus; i++) {
-        Object *cpuobj;
         cpuobj = object_new(machine->cpu_type);
-        lacpu = LOONGARCH_CPU(cpuobj);
-
-        lacpu->phy_id = machine->possible_cpus->cpus[i].arch_id;
-        lacpu->env.address_space_iocsr = &lvms->as_iocsr;
-        object_property_set_int(cpuobj, "socket-id",
-                                machine->possible_cpus->cpus[i].props.socket_id,
-                                NULL);
-        object_property_set_int(cpuobj, "core-id",
-                                machine->possible_cpus->cpus[i].props.core_id,
-                                NULL);
-        object_property_set_int(cpuobj, "thread-id",
-                                machine->possible_cpus->cpus[i].props.thread_id,
-                                NULL);
-        /*
-         * The CPU in place at the time of machine startup will also enter
-         * the CPU hot-plug process when it is created, but at this time,
-         * the GED device has not been created, resulting in exit in the CPU
-         * hot-plug process, which can avoid the incumbent CPU repeatedly
-         * applying for resources.
-         *
-         * The interrupt resource of the in-place CPU will be requested at
-         * the current function call loongarch_irq_init().
-         *
-         * The interrupt resource of the subsequently inserted CPU will be
-         * requested in the CPU hot-plug process.
-         */
-        qdev_realize(DEVICE(cpuobj), NULL, &error_fatal);
-        object_unref(cpuobj);
+        if (cpuobj == NULL) {
+            error_report("Fail to create object with type %s ",
+                         machine->cpu_type);
+            exit(EXIT_FAILURE);
+        }
+        qdev_realize_and_unref(DEVICE(cpuobj), NULL, &error_fatal);
     }
-
     fw_cfg_add_memory(machine);
 
     /* Node0 memory */
@@ -865,74 +841,52 @@ static CPUArchId *virt_find_cpu_slot(MachineState *ms, int arch_id)
     return NULL;
 }
 
+/* Find cpu slot for cold-plut CPU object where cpu is NULL */
+static CPUArchId *virt_find_empty_cpu_slot(MachineState *ms)
+{
+    int n;
+    for (n = 0; n < ms->possible_cpus->len; n++) {
+        if (ms->possible_cpus->cpus[n].cpu == NULL) {
+            return &ms->possible_cpus->cpus[n];
+        }
+    }
+
+    return NULL;
+}
+
 static void virt_cpu_pre_plug(HotplugHandler *hotplug_dev,
                               DeviceState *dev, Error **errp)
 {
+    LoongArchVirtMachineState *lvms = LOONGARCH_VIRT_MACHINE(hotplug_dev);
     MachineState *ms = MACHINE(OBJECT(hotplug_dev));
-    MachineClass *mc = MACHINE_GET_CLASS(hotplug_dev);
     LoongArchCPU *cpu = LOONGARCH_CPU(dev);
     CPUState *cs = CPU(dev);
     CPUArchId *cpu_slot;
-    Error *local_err = NULL;
+    Error *err = NULL;
     LoongArchCPUTopo topo;
-    int arch_id, index;
 
-    if (dev->hotplugged && !mc->has_hotpluggable_cpus) {
-        error_setg(&local_err, "CPU hotplug not supported for this machine");
+    if (lvms->acpi_ged) {
+        error_setg(&err, "CPU hotplug not supported");
         goto out;
+    } else {
+        /* For cold-add cpu, find empty cpu slot */
+        cpu_slot = virt_find_empty_cpu_slot(ms);
+        topo.socket_id = cpu_slot->props.socket_id;
+        topo.core_id = cpu_slot->props.core_id;
+        topo.thread_id = cpu_slot->props.thread_id;
+        object_property_set_int(OBJECT(dev), "socket-id", topo.socket_id, NULL);
+        object_property_set_int(OBJECT(dev), "core-id", topo.core_id, NULL);
+        object_property_set_int(OBJECT(dev), "thread-id", topo.thread_id, NULL);
     }
 
-    /* sanity check the cpu */
-    if (!object_dynamic_cast(OBJECT(cpu), ms->cpu_type)) {
-        error_setg(&local_err, "Invalid CPU type, expected cpu type: '%s'",
-                   ms->cpu_type);
-        goto out;
-    }
-
-    if ((cpu->thread_id < 0) || (cpu->thread_id >= ms->smp.threads)) {
-        error_setg(&local_err,
-                   "Invalid thread-id %u specified, must be in range 1:%u",
-                   cpu->thread_id, ms->smp.threads - 1);
-        goto out;
-    }
-
-    if ((cpu->core_id < 0) || (cpu->core_id >= ms->smp.cores)) {
-        error_setg(&local_err,
-                   "Invalid core-id %u specified, must be in range 1:%u",
-                   cpu->core_id, ms->smp.cores - 1);
-        goto out;
-    }
-
-    if ((cpu->socket_id < 0) || (cpu->socket_id >= ms->smp.sockets)) {
-        error_setg(&local_err,
-                   "Invalid socket-id %u specified, must be in range 1:%u",
-                   cpu->socket_id, ms->smp.sockets - 1);
-        goto out;
-    }
-
-    topo.socket_id = cpu->socket_id;
-    topo.core_id = cpu->core_id;
-    topo.thread_id = cpu->thread_id;
-    arch_id =  virt_get_arch_id_from_topo(ms, &topo);
-    cpu_slot = virt_find_cpu_slot(ms, arch_id, &index);
-    if (CPU(cpu_slot->cpu)) {
-        error_setg(&local_err,
-                   "cpu(id%d=%d:%d:%d) with arch-id %" PRIu64 " exists",
-                   cs->cpu_index, cpu->socket_id, cpu->core_id,
-                   cpu->thread_id, cpu_slot->arch_id);
-        goto out;
-    }
-    cpu->phy_id = arch_id;
-    /*
-     * update cpu_index calculation method since it is easily used as index
-     * with possible_cpus array by function virt_cpu_index_to_props
-     */
-    cs->cpu_index = index;
-    numa_cpu_pre_plug(cpu_slot, dev, &local_err);
-    return ;
-
+    cpu->env.address_space_iocsr = &lvms->as_iocsr;
+    cpu->phy_id = cpu_slot->arch_id;
+    cs->cpu_index = cpu_slot - ms->possible_cpus->cpus;
+    numa_cpu_pre_plug(cpu_slot, dev, &err);
 out:
-    error_propagate(errp, local_err);
+    if (err) {
+        error_propagate(errp, err);
+    }
 }
 
 static void virt_cpu_unplug_request(HotplugHandler *hotplug_dev,
@@ -990,44 +944,30 @@ static void virt_cpu_unplug(HotplugHandler *hotplug_dev,
 }
 
 static void virt_cpu_plug(HotplugHandler *hotplug_dev,
-                                DeviceState *dev, Error **errp)
+                          DeviceState *dev, Error **errp)
 {
     CPUArchId *cpu_slot;
-    HotplugHandlerClass *hhc;
-    Error *local_err = NULL;
     LoongArchCPU *cpu = LOONGARCH_CPU(dev);
-    CPUState *cs = CPU(cpu);
-    CPULoongArchState *env;
     LoongArchVirtMachineState *lvms = LOONGARCH_VIRT_MACHINE(hotplug_dev);
-    int pin;
+    Error *err = NULL;
 
-    if (lvms->acpi_ged) {
-        env = &(cpu->env);
-        env->address_space_iocsr = &lvms->as_iocsr;
-
-        qemu_register_reset(reset_load_elf, cpu);
-        env->ipistate = lvms->ipi;
-        if (!(kvm_enabled() && kvm_irqchip_in_kernel())) {
-            /* connect ipi irq to cpu irq, logic cpu index used here */
-            qdev_connect_gpio_out(lvms->ipi, cs->cpu_index,
-                                  qdev_get_gpio_in(dev, IRQ_IPI));
-
-            for (pin = 0; pin < LS3A_INTC_IP; pin++) {
-                qdev_connect_gpio_out(lvms->extioi, (cs->cpu_index * 8 + pin),
-                                      qdev_get_gpio_in(dev, pin + 2));
-            }
-        }
-        hhc = HOTPLUG_HANDLER_GET_CLASS(lvms->acpi_ged);
-        hhc->plug(HOTPLUG_HANDLER(lvms->acpi_ged), dev, &local_err);
-        if (local_err) {
-            error_propagate(errp, local_err);
-           return;
+    cpu_slot = virt_find_cpu_slot(MACHINE(lvms), cpu->phy_id);
+    cpu_slot->cpu = CPU(dev);
+    if (lvms->ipi) {
+        hotplug_handler_plug(HOTPLUG_HANDLER(lvms->ipi), dev, &err);
+        if (err) {
+            error_propagate(errp, err);
+            return;
         }
     }
 
-    cpu_slot = virt_find_cpu_slot(MACHINE(lvms), cpu->phy_id, NULL);
-    cpu_slot->cpu = OBJECT(dev);
-    return;
+    if (lvms->extioi) {
+        hotplug_handler_plug(HOTPLUG_HANDLER(lvms->extioi), dev, &err);
+        if (err) {
+            error_propagate(errp, err);
+            return;
+        }
+    }
 }
 
 static bool memhp_type_supported(DeviceState *dev)
