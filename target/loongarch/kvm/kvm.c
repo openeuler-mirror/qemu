@@ -1034,6 +1034,10 @@ int kvm_arch_init_vcpu(CPUState *cs)
     return ret;
 }
 
+void kvm_loongarch_cpu_post_init(LoongArchCPU *cpu)
+{
+}
+
 int kvm_arch_destroy_vcpu(CPUState *cs)
 {
     LoongArchCPU *cpu = LOONGARCH_CPU(cs);

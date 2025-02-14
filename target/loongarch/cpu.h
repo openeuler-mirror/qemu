@@ -526,4 +526,12 @@ void loongarch_cpu_list(void);
 
 void loongarch_cpu_post_init(Object *obj);
 
+#ifdef CONFIG_KVM
+void kvm_loongarch_cpu_post_init(LoongArchCPU *cpu);
+#else
+static inline void kvm_loongarch_cpu_post_init(LoongArchCPU *cpu)
+{
+}
+#endif
+
 #endif /* LOONGARCH_CPU_H */
