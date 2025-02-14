@@ -73,6 +73,8 @@ struct SevGuestState {
     uint32_t reduced_phys_bits;
     bool kernel_hashes;
     char *user_id;
+    char *secret_header_file;
+    char *secret_file;
 
     /* runtime state */
     uint32_t handle;
@@ -391,6 +393,38 @@ sev_guest_set_user_id(Object *obj, const char *value, Error **errp)
 }
 
 static char *
+sev_guest_get_secret_header_file(Object *obj, Error **errp)
+{
+    SevGuestState *s = SEV_GUEST(obj);
+
+    return g_strdup(s->secret_header_file);
+}
+
+static void
+sev_guest_set_secret_header_file(Object *obj, const char *value, Error **errp)
+{
+    SevGuestState *s = SEV_GUEST(obj);
+
+    s->secret_header_file = g_strdup(value);
+}
+
+static char *
+sev_guest_get_secret_file(Object *obj, Error **errp)
+{
+    SevGuestState *s = SEV_GUEST(obj);
+
+    return g_strdup(s->secret_file);
+}
+
+static void
+sev_guest_set_secret_file(Object *obj, const char *value, Error **errp)
+{
+    SevGuestState *s = SEV_GUEST(obj);
+
+    s->secret_file = g_strdup(value);
+}
+
+static char *
 sev_guest_get_sev_device(Object *obj, Error **errp)
 {
     SevGuestState *sev = SEV_GUEST(obj);
@@ -448,6 +482,16 @@ sev_guest_class_init(ObjectClass *oc, void *data)
                                   sev_guest_set_user_id);
     object_class_property_set_description(oc, "user-id",
             "user id of the guest owner");
+    object_class_property_add_str(oc, "secret-header-file",
+                                  sev_guest_get_secret_header_file,
+                                  sev_guest_set_secret_header_file);
+    object_class_property_set_description(oc, "secret-header-file",
+            "header file of the guest owner's secret");
+    object_class_property_add_str(oc, "secret-file",
+                                  sev_guest_get_secret_file,
+                                  sev_guest_set_secret_file);
+    object_class_property_set_description(oc, "secret-file",
+            "file of the guest owner's secret");
 }
 
 static void
@@ -867,6 +911,9 @@ sev_launch_update_vmsa(SevGuestState *sev)
     return ret;
 }
 
+static int
+csv_load_launch_secret(const char *secret_header_file, const char *secret_file);
+
 static void
 sev_launch_get_measure(Notifier *notifier, void *unused)
 {
@@ -917,6 +964,15 @@ sev_launch_get_measure(Notifier *notifier, void *unused)
     /* encode the measurement value and emit the event */
     sev->measurement = g_base64_encode(data, measurement.len);
     trace_kvm_sev_launch_measurement(sev->measurement);
+
+    /* Hygon CSV will auto load guest owner's secret */
+    if (is_hygon_cpu()) {
+        if (sev->secret_header_file &&
+            strlen(sev->secret_header_file) &&
+            sev->secret_file &&
+            strlen(sev->secret_file))
+            csv_load_launch_secret(sev->secret_header_file, sev->secret_file);
+    }
 }
 
 static char *sev_get_launch_measurement(void)
@@ -1360,7 +1416,17 @@ int sev_inject_launch_secret(const char *packet_hdr, const char *secret,
     input.trans_uaddr = (uint64_t)(unsigned long)data;
     input.trans_len = data_sz;
 
-    input.guest_uaddr = (uint64_t)(unsigned long)hva;
+    /* For Hygon CSV3 guest, the guest_uaddr should be the gpa */
+    if (csv3_enabled()) {
+        if (kvm_hygon_coco_ext_inuse & KVM_CAP_HYGON_COCO_EXT_CSV3_INJ_SECRET) {
+            input.guest_uaddr = gpa;
+        } else {
+            error_setg(errp, "CSV3 inject secret unsupported!");
+            return 1;
+        }
+    } else {
+        input.guest_uaddr = (uint64_t)(unsigned long)hva;
+    }
     input.guest_len = data_sz;
 
     trace_kvm_sev_launch_secret(gpa, input.guest_uaddr,
@@ -2526,6 +2592,50 @@ int csv_load_incoming_cpu_state(QEMUFile *f)
     return ret;
 }
 
+static int
+csv_load_launch_secret(const char *secret_header_file, const char *secret_file)
+{
+    gsize secret_header_size, secret_size;
+    gchar *secret_header = NULL, *secret = NULL;
+    uint8_t *data;
+    struct sev_secret_area *area;
+    uint64_t gpa;
+    GError *error = NULL;
+    Error *local_err = NULL;
+    int ret = 0;
+
+    if (!g_file_get_contents(secret_header_file,
+                             &secret_header,
+                             &secret_header_size, &error)) {
+        error_report("CSV: Failed to read '%s' (%s)",
+                     secret_header_file, error->message);
+        g_error_free(error);
+        return -1;
+    }
+
+    if (!g_file_get_contents(secret_file, &secret, &secret_size, &error)) {
+        error_report("CSV: Failed to read '%s' (%s)", secret_file, error->message);
+        g_error_free(error);
+        return -1;
+    }
+
+    if (!pc_system_ovmf_table_find(SEV_SECRET_GUID, &data, NULL)) {
+        error_report("CSV: no secret area found in OVMF, gpa must be"
+                     " specified.");
+        return -1;
+    }
+    area = (struct sev_secret_area *)data;
+    gpa = area->base;
+
+    ret = sev_inject_launch_secret((char *)secret_header,
+                                   (char *)secret, gpa, &local_err);
+
+    if (local_err) {
+        error_report_err(local_err);
+    }
+    return ret;
+}
+
 static const QemuUUID sev_hash_table_header_guid = {
     .data = UUID_LE(0x9438d606, 0x4f22, 0x4cc9, 0xb4, 0x79, 0xa7, 0x93,
                     0xd4, 0x11, 0xfd, 0x21)
@@ -2648,7 +2758,17 @@ bool sev_add_kernel_loader_hashes(SevKernelLoaderContext *ctx, Error **errp)
     /* zero the excess data so the measurement can be reliably calculated */
     memset(padded_ht->padding, 0, sizeof(padded_ht->padding));
 
-    if (sev_encrypt_flash((uint8_t *)padded_ht, sizeof(*padded_ht), errp) < 0) {
+    if (csv3_enabled()) {
+        if (kvm_hygon_coco_ext_inuse & KVM_CAP_HYGON_COCO_EXT_CSV3_MULT_LUP_DATA) {
+            if (csv3_load_data(area->base, (uint8_t *)padded_ht,
+                               sizeof(*padded_ht), errp) < 0) {
+                ret = false;
+            }
+        } else {
+            error_report("%s: CSV3 load kernel hashes unsupported!", __func__);
+            ret = false;
+        }
+    } else if (sev_encrypt_flash((uint8_t *)padded_ht, sizeof(*padded_ht), errp) < 0) {
         ret = false;
     }
 

@@ -2639,6 +2639,23 @@ int kvm_arch_init(MachineState *ms, KVMState *s)
         }
     }
 
+    if (is_hygon_cpu()) {
+        /* check and enable Hygon coco extensions */
+        kvm_hygon_coco_ext = (uint32_t)kvm_vm_check_extension(s,
+                                                    KVM_CAP_HYGON_COCO_EXT);
+        if (kvm_hygon_coco_ext) {
+            ret = kvm_vm_enable_cap(s, KVM_CAP_HYGON_COCO_EXT, 0,
+                                    (uint64_t)kvm_hygon_coco_ext);
+            if (ret == -EINVAL) {
+                error_report("kvm: Failed to enable KVM_CAP_HYGON_COCO_EXT cap: %s",
+                             strerror(-ret));
+                kvm_hygon_coco_ext_inuse = 0;
+            } else {
+                kvm_hygon_coco_ext_inuse = (uint32_t)ret;
+            }
+        }
+    }
+
     ret = kvm_get_supported_msrs(s);
     if (ret < 0) {
         return ret;

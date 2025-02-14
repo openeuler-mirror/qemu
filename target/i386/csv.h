@@ -58,6 +58,8 @@ bool csv3_enabled(void);
 #define CSV_OUTGOING_PAGE_WINDOW_SIZE     (4094 * TARGET_PAGE_SIZE)
 
 extern bool csv_kvm_cpu_reset_inhibit;
+extern uint32_t kvm_hygon_coco_ext;
+extern uint32_t kvm_hygon_coco_ext_inuse;
 
 typedef struct CsvBatchCmdList CsvBatchCmdList;
 typedef void (*CsvDestroyCmdNodeFn) (void *data);
@@ -127,5 +129,7 @@ int csv3_load_incoming_context(QEMUFile *f);
 int csv3_queue_outgoing_page(uint8_t *ptr, uint32_t sz, uint64_t addr);
 int csv3_save_queued_outgoing_pages(QEMUFile *f, uint64_t *bytes_sent);
 int csv3_save_outgoing_context(QEMUFile *f, uint64_t *bytes_sent);
+
+int csv3_set_guest_private_memory(Error **errp);
 
 #endif
