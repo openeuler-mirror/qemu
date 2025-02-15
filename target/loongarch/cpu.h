@@ -422,6 +422,8 @@ struct ArchCPU {
     OnOffAuto lsx;
     OnOffAuto lasx;
     OnOffAuto kvm_pv_ipi;
+    OnOffAuto kvm_steal_time;
+
     int32_t socket_id;  /* socket-id of this VCPU */
     int32_t core_id;    /* core-id of this VCPU */
     int32_t thread_id;  /* thread-id of this VCPU */
