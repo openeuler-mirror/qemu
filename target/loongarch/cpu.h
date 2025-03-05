@@ -383,6 +383,9 @@ typedef struct CPUArchState {
     uint32_t fcsr0_mask;
     uint64_t lladdr; /* LL virtual address compared against SC */
     uint64_t llval;
+    uint64_t llval_high; /* For 128-bit atomic SC.Q */
+    uint64_t llbit_scq; /* Potential LL.D+LD.D+SC.Q sequence in effect */
+    uint64_t hw_pte_mask; /* Mask of architecturally-defined (hardware) PTE bits. */
 #endif
 #ifndef CONFIG_USER_ONLY
 #ifdef CONFIG_TCG
@@ -424,7 +427,6 @@ struct ArchCPU {
     OnOffAuto lasx;
     OnOffAuto kvm_pv_ipi;
     OnOffAuto kvm_steal_time;
-
     int32_t socket_id;  /* socket-id of this VCPU */
     int32_t core_id;    /* core-id of this VCPU */
     int32_t thread_id;  /* thread-id of this VCPU */

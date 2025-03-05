@@ -20,7 +20,7 @@
 #include "hw/qdev-properties.h"
 #include "internals.h"
 #include "fpu/softfloat-helpers.h"
-#include "cpu-csr.h"
+#include "csr.h"
 #include "qapi/visitor.h"
 #include "sysemu/reset.h"
 #include "vec.h"
@@ -104,18 +104,12 @@ void G_NORETURN do_raise_exception(CPULoongArchState *env,
 
 static void loongarch_cpu_set_pc(CPUState *cs, vaddr value)
 {
-    LoongArchCPU *cpu = LOONGARCH_CPU(cs);
-    CPULoongArchState *env = &cpu->env;
-
-    set_pc(env, value);
+    set_pc(cpu_env(cs), value);
 }
 
 static vaddr loongarch_cpu_get_pc(CPUState *cs)
 {
-    LoongArchCPU *cpu = LOONGARCH_CPU(cs);
-    CPULoongArchState *env = &cpu->env;
-
-    return env->pc;
+    return cpu_env(cs)->pc;
 }
 
 #ifndef CONFIG_USER_ONLY
@@ -626,6 +620,7 @@ static void loongarch_cpu_reset_hold(Object *obj)
 
 static void loongarch_cpu_disas_set_info(CPUState *s, disassemble_info *info)
 {
+    info->endian = BFD_ENDIAN_LITTLE;
     info->print_insn = print_insn_loongarch;
 }
 
@@ -833,8 +828,7 @@ static void loongarch_cpu_dump_csr(CPUState *cs, FILE *f)
 
 void loongarch_cpu_dump_state(CPUState *cs, FILE *f, int flags)
 {
-    LoongArchCPU *cpu = LOONGARCH_CPU(cs);
-    CPULoongArchState *env = &cpu->env;
+    CPULoongArchState *env = cpu_env(cs);
     int i;
 
     qemu_fprintf(f, " PC=%016" PRIx64 " ", env->pc);
@@ -903,7 +897,6 @@ static Property loongarch_cpu_properties[] = {
     DEFINE_PROP_INT32("core-id", LoongArchCPU, core_id, 0),
     DEFINE_PROP_INT32("thread-id", LoongArchCPU, thread_id, 0),
     DEFINE_PROP_INT32("node-id", LoongArchCPU, node_id, CPU_UNSET_NUMA_NODE_ID),
-
     DEFINE_PROP_END_OF_LIST()
 };
 
