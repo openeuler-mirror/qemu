@@ -39,6 +39,10 @@ void machine_parse_smp_config(MachineState *ms,
 bool machine_parse_smp_cache(MachineState *ms,
                              const SmpCachePropertiesList *caches,
                              Error **errp);
+uint64_t machine_get_cache_size(const MachineState *ms,
+                                CacheLevelAndType cache);
+void machine_set_cache_size(MachineState *ms, CacheLevelAndType cache,
+                            uint64_t size);
 
 /**
  * machine_class_allow_dynamic_sysbus_dev: Add type to list of valid devices

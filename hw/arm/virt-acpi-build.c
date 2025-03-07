@@ -64,46 +64,62 @@
  * ACPI spec, Revision 6.3
  * 5.2.29.2 Cache Type Structure (Type 1)
  */
-static void build_cache_hierarchy_node(GArray *tbl, uint32_t next_level,
-                                       uint32_t cache_type)
+static void build_cache_hierarchy_node(MachineState *ms, GArray *tbl,
+                                       uint32_t next_level, uint32_t cache_type)
 {
     build_append_byte(tbl, 1);
     build_append_byte(tbl, 24);
     build_append_int_noprefix(tbl, 0, 2);
     build_append_int_noprefix(tbl, 127, 4);
     build_append_int_noprefix(tbl, next_level, 4);
+    uint64_t cache_size;
 
     switch (cache_type) {
     case ARM_L1D_CACHE: /* L1 dcache info */
-        build_append_int_noprefix(tbl, ARM_L1DCACHE_SIZE, 4);
+        cache_size = machine_get_cache_size(ms, CACHE_LEVEL_AND_TYPE_L1D);
+        build_append_int_noprefix(tbl,
+                                  cache_size > 0 ? cache_size : ARM_L1DCACHE_SIZE,
+                                  4);
         build_append_int_noprefix(tbl, ARM_L1DCACHE_SETS, 4);
         build_append_byte(tbl, ARM_L1DCACHE_ASSOCIATIVITY);
         build_append_byte(tbl, ARM_L1DCACHE_ATTRIBUTES);
         build_append_int_noprefix(tbl, ARM_L1DCACHE_LINE_SIZE, 2);
         break;
     case ARM_L1I_CACHE: /* L1 icache info */
-        build_append_int_noprefix(tbl, ARM_L1ICACHE_SIZE, 4);
+        cache_size = machine_get_cache_size(ms, CACHE_LEVEL_AND_TYPE_L1I);
+        build_append_int_noprefix(tbl,
+                                  cache_size > 0 ? cache_size : ARM_L1ICACHE_SIZE,
+                                  4);
         build_append_int_noprefix(tbl, ARM_L1ICACHE_SETS, 4);
         build_append_byte(tbl, ARM_L1ICACHE_ASSOCIATIVITY);
         build_append_byte(tbl, ARM_L1ICACHE_ATTRIBUTES);
         build_append_int_noprefix(tbl, ARM_L1ICACHE_LINE_SIZE, 2);
         break;
     case ARM_L1_CACHE: /* L1 cache info */
-        build_append_int_noprefix(tbl, ARM_L1CACHE_SIZE, 4);
+        cache_size = machine_get_cache_size(ms, CACHE_LEVEL_AND_TYPE_L1);
+        build_append_int_noprefix(tbl,
+                                  cache_size > 0 ? cache_size : ARM_L1CACHE_SIZE,
+                                  4);
         build_append_int_noprefix(tbl, ARM_L1CACHE_SETS, 4);
         build_append_byte(tbl, ARM_L1CACHE_ASSOCIATIVITY);
         build_append_byte(tbl, ARM_L1CACHE_ATTRIBUTES);
         build_append_int_noprefix(tbl, ARM_L1CACHE_LINE_SIZE, 2);
         break;
     case ARM_L2_CACHE: /* L2 cache info */
-        build_append_int_noprefix(tbl, ARM_L2CACHE_SIZE, 4);
+        cache_size = machine_get_cache_size(ms, CACHE_LEVEL_AND_TYPE_L2);
+        build_append_int_noprefix(tbl,
+                                  cache_size > 0 ? cache_size : ARM_L2CACHE_SIZE,
+                                  4);
         build_append_int_noprefix(tbl, ARM_L2CACHE_SETS, 4);
         build_append_byte(tbl, ARM_L2CACHE_ASSOCIATIVITY);
         build_append_byte(tbl, ARM_L2CACHE_ATTRIBUTES);
         build_append_int_noprefix(tbl, ARM_L2CACHE_LINE_SIZE, 2);
         break;
     case ARM_L3_CACHE: /* L3 cache info */
-        build_append_int_noprefix(tbl, ARM_L3CACHE_SIZE, 4);
+        cache_size = machine_get_cache_size(ms, CACHE_LEVEL_AND_TYPE_L3);
+        build_append_int_noprefix(tbl,
+                                  cache_size > 0 ? cache_size : ARM_L3CACHE_SIZE,
+                                  4);
         build_append_int_noprefix(tbl, ARM_L3CACHE_SETS, 4);
         build_append_byte(tbl, ARM_L3CACHE_ASSOCIATIVITY);
         build_append_byte(tbl, ARM_L3CACHE_ATTRIBUTES);
@@ -140,7 +156,7 @@ static void build_pptt_arm(GArray *table_data, BIOSLinker *linker, MachineState 
 
     for (socket = 0; socket < ms->smp.sockets; socket++) {
         uint32_t l3_cache_offset = table_data->len - pptt_start;
-        build_cache_hierarchy_node(table_data, 0, ARM_L3_CACHE);
+        build_cache_hierarchy_node(ms, table_data, 0, ARM_L3_CACHE);
 
         g_queue_push_tail(list,
             GUINT_TO_POINTER(table_data->len - pptt_start));
@@ -179,16 +195,16 @@ static void build_pptt_arm(GArray *table_data, BIOSLinker *linker, MachineState 
         for (core = 0; core < ms->smp.cores; core++) {
             uint32_t priv_rsrc[3] = {};
             priv_rsrc[0] = table_data->len - pptt_start; /* L2 cache offset */
-            build_cache_hierarchy_node(table_data, 0, ARM_L2_CACHE);
+            build_cache_hierarchy_node(ms, table_data, 0, ARM_L2_CACHE);
 
             if (unified_l1) {
                 priv_rsrc[1] = table_data->len - pptt_start; /* L1 cache offset */
-                build_cache_hierarchy_node(table_data, priv_rsrc[0], ARM_L1_CACHE);
+                build_cache_hierarchy_node(ms, table_data, priv_rsrc[0], ARM_L1_CACHE);
             } else {
                 priv_rsrc[1] = table_data->len - pptt_start; /* L1 dcache offset */
-                build_cache_hierarchy_node(table_data, priv_rsrc[0], ARM_L1D_CACHE);
+                build_cache_hierarchy_node(ms, table_data, priv_rsrc[0], ARM_L1D_CACHE);
                 priv_rsrc[2] = table_data->len - pptt_start; /* L1 icache offset */
-                build_cache_hierarchy_node(table_data, priv_rsrc[0], ARM_L1I_CACHE);
+                build_cache_hierarchy_node(ms, table_data, priv_rsrc[0], ARM_L1I_CACHE);
             }
 
             if (ms->smp.threads > 1) {

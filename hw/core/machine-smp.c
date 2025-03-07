@@ -212,8 +212,22 @@ bool machine_parse_smp_cache(MachineState *ms,
             return false;
         }
 
+        machine_set_cache_size(ms, node->value->cache,
+                               node->value->size);
         set_bit(node->value->cache, caches_bitmap);
     }
 
     return true;
+}
+
+uint64_t machine_get_cache_size(const MachineState *ms,
+                                CacheLevelAndType cache)
+{
+    return ms->smp_cache.props[cache].size;
+}
+
+void machine_set_cache_size(MachineState *ms, CacheLevelAndType cache,
+                            uint64_t size)
+{
+    ms->smp_cache.props[cache].size = size;
 }

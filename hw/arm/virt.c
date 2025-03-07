@@ -408,6 +408,7 @@ static void fdt_add_l3cache_nodes(const VirtMachineState *vms)
     const MachineState *ms = MACHINE(vms);
     int cpus_per_socket = ms->smp.clusters * ms->smp.cores * ms->smp.threads;
     int sockets = (ms->smp.cpus + cpus_per_socket - 1) / cpus_per_socket;
+    uint64_t cache_size = machine_get_cache_size(ms, CACHE_LEVEL_AND_TYPE_L3);
 
     for (i = 0; i < sockets; i++) {
         char *nodename = g_strdup_printf("/cpus/l3-cache%d", i);
@@ -416,7 +417,8 @@ static void fdt_add_l3cache_nodes(const VirtMachineState *vms)
         qemu_fdt_setprop_string(ms->fdt, nodename, "compatible", "cache");
         qemu_fdt_setprop_string(ms->fdt, nodename, "cache-unified", "true");
         qemu_fdt_setprop_cell(ms->fdt, nodename, "cache-level", 3);
-        qemu_fdt_setprop_cell(ms->fdt, nodename, "cache-size", ARM_L3CACHE_SIZE);
+        qemu_fdt_setprop_cell(ms->fdt, nodename, "cache-size",
+                              cache_size > 0 ? cache_size : ARM_L3CACHE_SIZE);
         qemu_fdt_setprop_cell(ms->fdt, nodename, "cache-line-size",
                               ARM_L3CACHE_LINE_SIZE);
         qemu_fdt_setprop_cell(ms->fdt, nodename, "cache-sets", ARM_L3CACHE_SETS);
@@ -431,6 +433,7 @@ static void fdt_add_l2cache_nodes(const VirtMachineState *vms)
     const MachineState *ms = MACHINE(vms);
     int cpus_per_socket = ms->smp.clusters * ms->smp.cores * ms->smp.threads;
     int cpu;
+    uint64_t cache_size = machine_get_cache_size(ms, CACHE_LEVEL_AND_TYPE_L2);
 
     for (cpu = 0; cpu < ms->smp.cpus; cpu++) {
         char *next_path = g_strdup_printf("/cpus/l3-cache%d",
@@ -440,7 +443,8 @@ static void fdt_add_l2cache_nodes(const VirtMachineState *vms)
         qemu_fdt_add_subnode(ms->fdt, nodename);
         qemu_fdt_setprop_string(ms->fdt, nodename, "cache-unified", "true");
         qemu_fdt_setprop_string(ms->fdt, nodename, "compatible", "cache");
-        qemu_fdt_setprop_cell(ms->fdt, nodename, "cache-size", ARM_L2CACHE_SIZE);
+        qemu_fdt_setprop_cell(ms->fdt, nodename, "cache-size",
+                              cache_size > 0 ? cache_size : ARM_L2CACHE_SIZE);
         qemu_fdt_setprop_cell(ms->fdt, nodename, "cache-line-size",
                               ARM_L2CACHE_LINE_SIZE);
         qemu_fdt_setprop_cell(ms->fdt, nodename, "cache-sets", ARM_L2CACHE_SETS);
@@ -460,21 +464,25 @@ static void fdt_add_l1cache_prop(const VirtMachineState *vms,
     const MachineState *ms = MACHINE(vms);
     char *next_path = g_strdup_printf("/cpus/l2-cache%d", cpu);
     bool unified_l1 = cpu_l1_cache_unified(0);
+    uint64_t l1d_cache_size = machine_get_cache_size(ms, CACHE_LEVEL_AND_TYPE_L1D);
+    uint64_t l1i_cache_size = machine_get_cache_size(ms, CACHE_LEVEL_AND_TYPE_L1I);
+    uint64_t l1_cache_size = machine_get_cache_size(ms, CACHE_LEVEL_AND_TYPE_L1);
 
     if (unified_l1) {
-        qemu_fdt_setprop_cell(ms->fdt, nodename, "cache-size", ARM_L1CACHE_SIZE);
+        qemu_fdt_setprop_cell(ms->fdt, nodename, "cache-size",
+                              l1_cache_size > 0 ? l1_cache_size : ARM_L1CACHE_SIZE);
         qemu_fdt_setprop_cell(ms->fdt, nodename, "cache-line-size",
                               ARM_L1CACHE_LINE_SIZE);
         qemu_fdt_setprop_cell(ms->fdt, nodename, "cache-sets", ARM_L1CACHE_SETS);
     } else {
         qemu_fdt_setprop_cell(ms->fdt, nodename, "d-cache-size",
-                              ARM_L1DCACHE_SIZE);
+                              l1d_cache_size > 0 ? l1d_cache_size : ARM_L1DCACHE_SIZE);
         qemu_fdt_setprop_cell(ms->fdt, nodename, "d-cache-line-size",
                               ARM_L1DCACHE_LINE_SIZE);
         qemu_fdt_setprop_cell(ms->fdt, nodename, "d-cache-sets",
                               ARM_L1DCACHE_SETS);
         qemu_fdt_setprop_cell(ms->fdt, nodename, "i-cache-size",
-                              ARM_L1ICACHE_SIZE);
+                              l1i_cache_size > 0 ? l1i_cache_size : ARM_L1ICACHE_SIZE);
         qemu_fdt_setprop_cell(ms->fdt, nodename, "i-cache-line-size",
                               ARM_L1ICACHE_LINE_SIZE);
         qemu_fdt_setprop_cell(ms->fdt, nodename, "i-cache-sets",
