@@ -416,13 +416,12 @@ static void loongarch_extioi_unrealize(DeviceState *dev)
     g_free(s->cpu);
 }
 
-static void loongarch_extioi_reset(DeviceState *d)
+static void loongarch_extioi_reset_hold(Object *obj)
 {
-    LoongArchExtIOICommonState *s = LOONGARCH_EXTIOI_COMMON(d);
+    LoongArchExtIOIClass *lec = LOONGARCH_EXTIOI_GET_CLASS(obj);
 
-    /* use legacy interrupt routing method by default */
-    if (s->features & BIT(EXTIOI_HAS_VIRT_EXTENSION)) {
-        s->status = 0;
+    if (lec->parent_phases.hold) {
+        lec->parent_phases.hold(obj);
     }
 }
 
@@ -448,12 +447,14 @@ static void loongarch_extioi_class_init(ObjectClass *klass, void *data)
     DeviceClass *dc = DEVICE_CLASS(klass);
     LoongArchExtIOIClass *lec = LOONGARCH_EXTIOI_CLASS(klass);
     LoongArchExtIOICommonClass *lecc = LOONGARCH_EXTIOI_COMMON_CLASS(klass);
+    ResettableClass *rc = RESETTABLE_CLASS(klass);
 
     device_class_set_parent_realize(dc, loongarch_extioi_realize,
                                     &lec->parent_realize);
     device_class_set_parent_unrealize(dc, loongarch_extioi_unrealize,
                                       &lec->parent_unrealize);
-    dc->reset   = loongarch_extioi_reset;
+    resettable_class_set_parent_phases(rc, NULL, loongarch_extioi_reset_hold,
+                                       NULL, &lec->parent_phases);
     lecc->post_load = vmstate_extioi_post_load;
 }
 
