@@ -759,6 +759,7 @@ int64_t qmp_guest_fsfreeze_thaw(Error **errp)
     ret = qmp_guest_fsfreeze_do_thaw(errp);
     if (ret >= 0) {
         ga_unset_frozen(ga_state);
+        slog("guest-fsthaw called");
         execute_fsfreeze_hook(FSFREEZE_HOOK_THAW, errp);
     } else {
         ret = 0;
