@@ -597,4 +597,6 @@ struct kvm_cap_arm_tmm_populate_region_args {
 
 #endif
 
+#define MIN_TMI_VERSION_FOR_UEFI_BOOTED_CVM  0x20001
+
 #endif /* __ARM_KVM_H__ */

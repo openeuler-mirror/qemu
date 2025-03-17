@@ -2422,4 +2422,7 @@ struct kvm_s390_zpci_op {
 /* flags for kvm_s390_zpci_op->u.reg_aen.flags */
 #define KVM_S390_ZPCIOP_REGAEN_HOST    (1 << 0)
 
+/* get tmi version */
+#define KVM_GET_TMI_VERSION	_IOR(KVMIO, 0xd2, uint64_t)
+
 #endif /* __LINUX_KVM_H */

@@ -1162,6 +1162,15 @@ static void arm_setup_confidential_firmware_boot(ARMCPU *cpu,
                                                  struct arm_boot_info *info,
                                                  const char *firmware_filename)
 {
+    uint64_t tmi_version = 0;
+    if (kvm_ioctl(kvm_state, KVM_GET_TMI_VERSION, &tmi_version) < 0) {
+        error_report("please check the kernel version!");
+        exit(EXIT_FAILURE);
+    }
+    if (tmi_version < MIN_TMI_VERSION_FOR_UEFI_BOOTED_CVM) {
+        error_report("please check the tmi version!");
+        exit(EXIT_FAILURE);
+    }
     ssize_t fw_size;
     const char *fname;
     AddressSpace *as = arm_boot_address_space(cpu, info);
