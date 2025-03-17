@@ -728,7 +728,8 @@ void numa_complete_configuration(MachineState *ms)
             memory_region_init(ms->ram, OBJECT(ms), mc->default_ram_id,
                                ms->ram_size);
             numa_init_memdev_container(ms, ms->ram);
-            if (virtcca_cvm_enabled() && virtcca_shared_hugepage->ram_block) {
+            if (virtcca_cvm_enabled() && virtcca_shared_hugepage &&
+                virtcca_shared_hugepage->ram_block) {
                 virtcca_shared_memory_configuration(ms);
             }
         }
