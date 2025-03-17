@@ -133,6 +133,9 @@ struct arm_boot_info {
     bool secure_board_setup;
 
     arm_endianness endianness;
+    hwaddr firmware_base;
+    hwaddr firmware_max_size;
+    bool confidential;
 };
 
 /**

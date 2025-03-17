@@ -1617,7 +1617,7 @@ int vhost_dev_init(struct vhost_dev *hdev, void *opaque,
     hdev->log_size = 0;
     hdev->log_enabled = false;
     hdev->started = false;
-    if (virtcca_cvm_enabled()) {
+    if (virtcca_cvm_enabled() && virtcca_shared_hugepage && virtcca_shared_hugepage->ram_block) {
         memory_listener_register(&hdev->memory_listener,
                                  &address_space_virtcca_shared_memory);
     } else {

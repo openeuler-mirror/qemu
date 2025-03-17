@@ -43,6 +43,9 @@
 
 #define BOOTLOADER_MAX_SIZE         (4 * KiB)
 
+#define UEFI_MAX_SIZE 0x8000000
+#define UEFI_LOADER_START 0x0
+#define DTB_MAX 0x200000
 AddressSpace *arm_boot_address_space(ARMCPU *cpu,
                                      const struct arm_boot_info *info)
 {
@@ -1146,17 +1149,51 @@ static void arm_setup_direct_kernel_boot(ARMCPU *cpu,
 
     if (kvm_enabled() && virtcca_cvm_enabled()) {
         if (info->dtb_limit == 0) {
-            info->dtb_limit = info->dtb_start + 0x200000;
+            info->dtb_limit = info->dtb_start + DTB_MAX;
         }
-        kvm_load_user_data(info->loader_start, image_high_addr, info->initrd_start,
-                           info->dtb_limit, info->ram_size, (struct kvm_numa_info *)info->numa_info);
+        kvm_load_user_data(info->loader_start, 0x1, info->dtb_start,
+                           info->dtb_limit - info->dtb_start, info->ram_size, (struct kvm_numa_info *)info->numa_info);
         tmm_add_ram_region(info->loader_start, image_high_addr - info->loader_start,
                            info->initrd_start, info->dtb_limit - info->initrd_start, true);
     }
 }
 
-static void arm_setup_firmware_boot(ARMCPU *cpu, struct arm_boot_info *info)
+static void arm_setup_confidential_firmware_boot(ARMCPU *cpu,
+                                                 struct arm_boot_info *info,
+                                                 const char *firmware_filename)
 {
+    uint64_t tmi_version = 0;
+    if (kvm_ioctl(kvm_state, KVM_GET_TMI_VERSION, &tmi_version) < 0) {
+        error_report("please check the kernel version!");
+        exit(EXIT_FAILURE);
+    }
+    if (tmi_version < MIN_TMI_VERSION_FOR_UEFI_BOOTED_CVM) {
+        error_report("please check the tmi version!");
+        exit(EXIT_FAILURE);
+    }
+    ssize_t fw_size;
+    const char *fname;
+    AddressSpace *as = arm_boot_address_space(cpu, info);
+
+    fname = qemu_find_file(QEMU_FILE_TYPE_BIOS, firmware_filename);
+    if (!fname) {
+        error_report("Could not find firmware image '%s'", firmware_filename);
+        exit(EXIT_FAILURE);
+    }
+
+    fw_size = load_image_targphys_as(firmware_filename,
+                                     info->firmware_base,
+                                     info->firmware_max_size, as);
+
+    if (fw_size <= 0) {
+        error_report("could not load firmware '%s'", firmware_filename);
+        exit(EXIT_FAILURE);
+    }
+}
+
+static void arm_setup_firmware_boot(ARMCPU *cpu, struct arm_boot_info *info, const char *firmware_filename)
+{
+    hwaddr mmio_start, mmio_size;
     /* Set up for booting firmware (which might load a kernel via fw_cfg) */
 
     if (have_dtb(info)) {
@@ -1166,6 +1203,8 @@ static void arm_setup_firmware_boot(ARMCPU *cpu, struct arm_boot_info *info)
          * DTB to the base of RAM for the bootloader to pick up.
          */
         info->dtb_start = info->loader_start;
+        if (info->confidential)
+            tmm_add_ram_region(UEFI_LOADER_START, UEFI_MAX_SIZE, info->dtb_start, DTB_MAX , true);
     }
 
     if (info->kernel_filename) {
@@ -1206,6 +1245,12 @@ static void arm_setup_firmware_boot(ARMCPU *cpu, struct arm_boot_info *info)
         }
     }
 
+    if (info->confidential) {
+        arm_setup_confidential_firmware_boot(cpu, info, firmware_filename);
+        virtcca_kvm_get_mmio_addr(&mmio_start, &mmio_size);
+        kvm_load_user_data(info->loader_start, DTB_MAX, mmio_start, mmio_size, info->ram_size,
+	        (struct kvm_numa_info *)info->numa_info);
+    }
     /*
      * We will start from address 0 (typically a boot ROM image) in the
      * same way as hardware. Leave env->boot_info NULL, so that
@@ -1282,7 +1327,7 @@ void arm_load_kernel(ARMCPU *cpu, MachineState *ms, struct arm_boot_info *info)
 
     /* Load the kernel.  */
     if (!info->kernel_filename || info->firmware_loaded) {
-        arm_setup_firmware_boot(cpu, info);
+        arm_setup_firmware_boot(cpu, info, ms->firmware);
     } else {
         arm_setup_direct_kernel_boot(cpu, info);
     }

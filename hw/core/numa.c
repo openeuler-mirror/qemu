@@ -655,7 +655,7 @@ static void virtcca_shared_memory_configuration(MachineState *ms)
     memory_region_init_alias(alias_mr, NULL, "alias-mr", virtcca_shared_hugepage,
                              0, int128_get64(virtcca_shared_hugepage->size));
     memory_region_add_subregion(address_space_virtcca_shared_memory.root,
-                                VIRTCCA_GPA_START, alias_mr);
+                                virtcca_cvm_gpa_start, alias_mr);
 }
 
 void numa_complete_configuration(MachineState *ms)
@@ -728,7 +728,8 @@ void numa_complete_configuration(MachineState *ms)
             memory_region_init(ms->ram, OBJECT(ms), mc->default_ram_id,
                                ms->ram_size);
             numa_init_memdev_container(ms, ms->ram);
-            if (virtcca_cvm_enabled() && virtcca_shared_hugepage->ram_block) {
+            if (virtcca_cvm_enabled() && virtcca_shared_hugepage &&
+                virtcca_shared_hugepage->ram_block) {
                 virtcca_shared_memory_configuration(ms);
             }
         }

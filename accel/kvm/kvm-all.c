@@ -2390,6 +2390,7 @@ static int kvm_init(MachineState *ms)
     qemu_mutex_init(&kml_slots_lock);
 
     s = KVM_STATE(ms->accelerator);
+    kvm_state = s;
 
     /*
      * On systems where the kernel can support different base page
@@ -2608,8 +2609,6 @@ static int kvm_init(MachineState *ms)
         }
 #endif
     }
-
-    kvm_state = s;
 
     ret = kvm_arch_init(ms, s);
     if (ret < 0) {
@@ -3528,7 +3527,7 @@ int kvm_get_one_reg(CPUState *cs, uint64_t id, void *target)
     return r;
 }
 
-int kvm_load_user_data(hwaddr loader_start, hwaddr image_end, hwaddr initrd_start, hwaddr dtb_end, hwaddr ram_size,
+int kvm_load_user_data(hwaddr loader_start, hwaddr dtb_info, hwaddr data_start, hwaddr data_size, hwaddr ram_size,
                        struct kvm_numa_info *numa_info)
 {
     KVMState *state = kvm_state;
@@ -3536,9 +3535,9 @@ int kvm_load_user_data(hwaddr loader_start, hwaddr image_end, hwaddr initrd_star
     int ret;
 
     data.loader_start = loader_start;
-    data.image_end = image_end;
-    data.initrd_start = initrd_start;
-    data.dtb_end = dtb_end;
+    data.dtb_info = dtb_info;
+    data.data_start = data_start;
+    data.data_size = data_size;
     data.ram_size = ram_size;
     memcpy(&data.numa_info, numa_info, sizeof(struct kvm_numa_info));
 
