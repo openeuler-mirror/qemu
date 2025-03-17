@@ -58,6 +58,7 @@
 #include "migration/vmstate.h"
 #include "hw/acpi/ghes.h"
 #include "hw/acpi/viot.h"
+#include "kvm_arm.h"
 
 #define ARM_SPI_BASE 32
 
@@ -403,6 +404,54 @@ static void acpi_dsdt_add_virtio(Aml *scope,
         aml_append(scope, dev);
         base += size;
     }
+}
+
+static void acpi_dsdt_add_hisi_sec(Aml *scope,
+                                   const MemMapEntry *virtio_mmio_memmap,
+                                   int dev_id)
+{
+    hwaddr size = 0x10000;
+
+    /*
+     * Calculate the base address for the sec device node.
+     * Each device group contains one sec device and one hpre device,spaced by 2 * size.
+     */
+    hwaddr base = virtio_mmio_memmap->base + dev_id * 2 * size;
+
+    Aml *dev = aml_device("SE%02u", dev_id);
+    aml_append(dev, aml_name_decl("_HID", aml_string("SEC07")));
+    aml_append(dev, aml_name_decl("_UID", aml_int(dev_id)));
+    aml_append(dev, aml_name_decl("_CCA", aml_int(1)));
+
+    Aml *crs = aml_resource_template();
+
+    aml_append(crs, aml_memory32_fixed(base, size, AML_READ_WRITE));
+    aml_append(dev, aml_name_decl("_CRS", crs));
+    aml_append(scope, dev);
+}
+
+static void acpi_dsdt_add_hisi_hpre(Aml *scope,
+                                    const MemMapEntry *virtio_mmio_memmap,
+                                    int dev_id)
+{
+    hwaddr size = 0x10000;
+
+    /*
+     * Calculate the base address for the hpre device node.
+     * Each hpre device follows the corresponding sec device by an additional offset of size.
+     */
+    hwaddr base = virtio_mmio_memmap->base + dev_id * 2 * size + size;
+
+    Aml *dev = aml_device("HP%02u", dev_id);
+    aml_append(dev, aml_name_decl("_HID", aml_string("HPRE07")));
+    aml_append(dev, aml_name_decl("_UID", aml_int(dev_id)));
+    aml_append(dev, aml_name_decl("_CCA", aml_int(1)));
+
+    Aml *crs = aml_resource_template();
+
+    aml_append(crs, aml_memory32_fixed(base, size, AML_READ_WRITE));
+    aml_append(dev, aml_name_decl("_CRS", crs));
+    aml_append(scope, dev);
 }
 
 static void acpi_dsdt_add_pci(Aml *scope, const MemMapEntry *memmap,
@@ -1201,6 +1250,15 @@ build_dsdt(GArray *table_data, BIOSLinker *linker, VirtMachineState *vms)
     acpi_dsdt_add_virtio(scope, &memmap[VIRT_MMIO],
                     (irqmap[VIRT_MMIO] + ARM_SPI_BASE), NUM_VIRTIO_TRANSPORTS);
     acpi_dsdt_add_pci(scope, memmap, irqmap[VIRT_PCIE] + ARM_SPI_BASE, vms);
+
+    if (virtcca_cvm_enabled()) {
+        int kae_num = tmm_get_kae_num();
+        for (int i = 0; i < kae_num; i++) {
+            acpi_dsdt_add_hisi_sec(scope, &memmap[VIRT_KAE_DEVICE], i);
+            acpi_dsdt_add_hisi_hpre(scope, &memmap[VIRT_KAE_DEVICE], i);
+        }
+    }
+
     if (vms->acpi_dev) {
         build_ged_aml(scope, "\\_SB."GED_DEVICE,
                       HOTPLUG_HANDLER(vms->acpi_dev),
