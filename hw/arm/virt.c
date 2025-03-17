@@ -1398,6 +1398,9 @@ static void virt_flash_map1(PFlashCFI01 *flash,
     qdev_prop_set_uint32(dev, "num-blocks", size / VIRT_FLASH_SECTOR_SIZE);
     sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
 
+    if (virtcca_cvm_enabled()) {
+        return;
+    }
     memory_region_add_subregion(sysmem, base,
                                 sysbus_mmio_get_region(SYS_BUS_DEVICE(dev),
                                                        0));
@@ -1432,6 +1435,10 @@ static void virt_flash_fdt(VirtMachineState *vms,
     hwaddr flashbase = vms->memmap[VIRT_FLASH].base;
     MachineState *ms = MACHINE(vms);
     char *nodename;
+
+    if (virtcca_cvm_enabled()) {
+        return;
+    }
 
     if (sysmem == secure_sysmem) {
         /* Report both flash devices as a single node in the DT */
@@ -1468,6 +1475,23 @@ static void virt_flash_fdt(VirtMachineState *vms,
     }
 }
 
+static bool virt_confidential_firmware_init(VirtMachineState *vms,
+                                            MemoryRegion *sysmem)
+{
+    MemoryRegion *fw_ram;
+    hwaddr fw_base = vms->memmap[VIRT_FLASH].base;
+    hwaddr fw_size = vms->memmap[VIRT_FLASH].size;
+
+    if (!MACHINE(vms)->firmware) {
+        return false;
+    }
+
+    fw_ram = g_new(MemoryRegion, 1);
+    memory_region_init_ram(fw_ram, NULL, "fw_ram", fw_size, NULL);
+    memory_region_add_subregion(sysmem, fw_base, fw_ram);
+    return true;
+}
+
 static bool virt_firmware_init(VirtMachineState *vms,
                                MemoryRegion *sysmem,
                                MemoryRegion *secure_sysmem)
@@ -1485,6 +1509,10 @@ static bool virt_firmware_init(VirtMachineState *vms,
     virt_flash_map(vms, sysmem, secure_sysmem);
 
     pflash_blk0 = pflash_cfi01_get_blk(vms->flash[0]);
+
+    if (virtcca_cvm_enabled()) {
+        return virt_confidential_firmware_init(vms, sysmem);
+    }
 
     bios_name = MACHINE(vms)->firmware;
     if (bios_name) {
@@ -2023,7 +2051,7 @@ static void virt_set_memmap(VirtMachineState *vms, int pa_bits)
             vms->memmap[VIRT_PCIE_MMIO] = (MemMapEntry) { 0x10000000, 0x2edf0000 };
             vms->memmap[VIRT_KAE_DEVICE] = (MemMapEntry) { 0x3edf0000, 0x00200000 };
 
-            vms->memmap[VIRT_MEM].base = 3 * GiB;
+            vms->memmap[VIRT_MEM].base = 1 * GiB;
             vms->memmap[VIRT_MEM].size = ms->ram_size;
             info_report("[qemu] fix VIRT_MEM range 0x%llx - 0x%llx\n", (unsigned long long)(vms->memmap[VIRT_MEM].base),
                  (unsigned long long)(vms->memmap[VIRT_MEM].base + ms->ram_size));
@@ -2822,6 +2850,9 @@ static void machvirt_init(MachineState *machine)
     vms->bootinfo.get_dtb = machvirt_dtb;
     vms->bootinfo.skip_dtb_autoload = true;
     vms->bootinfo.firmware_loaded = firmware_loaded;
+    vms->bootinfo.firmware_base = vms->memmap[VIRT_FLASH].base;
+    vms->bootinfo.firmware_max_size = vms->memmap[VIRT_FLASH].size;
+    vms->bootinfo.confidential = virtcca_cvm_enabled();
     vms->bootinfo.psci_conduit = vms->psci_conduit;
     arm_load_kernel(ARM_CPU(first_cpu), machine, &vms->bootinfo);
 
