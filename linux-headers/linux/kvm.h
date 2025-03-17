@@ -1510,9 +1510,15 @@ struct kvm_numa_info {
 
 struct kvm_user_data {
 	__u64 loader_start;
-	__u64 image_end;
-	__u64 initrd_start;
-	__u64 dtb_end;
+	/*
+	 * When the lowest bit of dtb_info is 0, the value of dtb_info represents the size of the DTB,
+	 * and data_start and data_size represent the address base and size of the MMIO.
+	 * When the lowest bit of dtb_info is 1, data_start and data_size represent the address base
+	 * and size of the DTB.
+	 */
+	__u64 dtb_info;
+	__u64 data_start;
+	__u64 data_size;
 	__u64 ram_size;
 	struct kvm_numa_info numa_info;
 };

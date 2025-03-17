@@ -73,6 +73,8 @@ int kvm_arm_vcpu_finalize(CPUState *cs, int feature);
 void kvm_arm_register_device(MemoryRegion *mr, uint64_t devid, uint64_t group,
                              uint64_t attr, int dev_fd, uint64_t addr_ormask);
 
+void virtcca_kvm_get_mmio_addr(hwaddr *mmio_start, hwaddr *mmio_size);
+
 /**
  * kvm_arm_init_cpreg_list:
  * @cpu: ARMCPU

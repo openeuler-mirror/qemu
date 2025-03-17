@@ -1149,10 +1149,10 @@ static void arm_setup_direct_kernel_boot(ARMCPU *cpu,
 
     if (kvm_enabled() && virtcca_cvm_enabled()) {
         if (info->dtb_limit == 0) {
-            info->dtb_limit = info->dtb_start + 0x200000;
+            info->dtb_limit = info->dtb_start + DTB_MAX;
         }
-        kvm_load_user_data(info->loader_start, image_high_addr, info->initrd_start,
-                           info->dtb_limit, info->ram_size, (struct kvm_numa_info *)info->numa_info);
+        kvm_load_user_data(info->loader_start, 0x1, info->dtb_start,
+                           info->dtb_limit - info->dtb_start, info->ram_size, (struct kvm_numa_info *)info->numa_info);
         tmm_add_ram_region(info->loader_start, image_high_addr - info->loader_start,
                            info->initrd_start, info->dtb_limit - info->initrd_start, true);
     }
@@ -1193,6 +1193,7 @@ static void arm_setup_confidential_firmware_boot(ARMCPU *cpu,
 
 static void arm_setup_firmware_boot(ARMCPU *cpu, struct arm_boot_info *info, const char *firmware_filename)
 {
+    hwaddr mmio_start, mmio_size;
     /* Set up for booting firmware (which might load a kernel via fw_cfg) */
 
     if (have_dtb(info)) {
@@ -1246,7 +1247,8 @@ static void arm_setup_firmware_boot(ARMCPU *cpu, struct arm_boot_info *info, con
 
     if (info->confidential) {
         arm_setup_confidential_firmware_boot(cpu, info, firmware_filename);
-        kvm_load_user_data(UEFI_LOADER_START, UEFI_MAX_SIZE, info->loader_start, info->loader_start + DTB_MAX, info->ram_size,
+        virtcca_kvm_get_mmio_addr(&mmio_start, &mmio_size);
+        kvm_load_user_data(info->loader_start, DTB_MAX, mmio_start, mmio_size, info->ram_size,
 	        (struct kvm_numa_info *)info->numa_info);
     }
     /*

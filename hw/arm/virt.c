@@ -176,6 +176,12 @@ static const MemMapEntry base_memmap[] = {
     [VIRT_MEM] =                { GiB, LEGACY_RAMLIMIT_BYTES },
 };
 
+void virtcca_kvm_get_mmio_addr(hwaddr *mmio_start, hwaddr *mmio_size)
+{
+    *mmio_start = base_memmap[VIRT_PCIE_MMIO].base;
+    *mmio_size = base_memmap[VIRT_PCIE_MMIO].size;
+}
+
 /*
  * Highmem IO Regions: This memory map is floating, located after the RAM.
  * Each MemMapEntry base (GPA) will be dynamically computed, depending on the
