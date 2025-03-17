@@ -27,6 +27,7 @@ OBJECT_DECLARE_SIMPLE_TYPE(HostMemoryBackendFile, MEMORY_BACKEND_FILE)
 
 bool virtcca_shared_hugepage_mapped = false;
 uint64_t virtcca_cvm_ram_size = 0;
+uint64_t virtcca_cvm_gpa_start = 0;
 
 struct HostMemoryBackendFile {
     HostMemoryBackend parent_obj;
@@ -101,8 +102,16 @@ virtcca_shared_backend_memory_alloc(char *mem_path, uint32_t ram_flags, Error **
         error_report("parse virtcca share memory path failed");
         exit(1);
     }
-    if (virtcca_cvm_ram_size >= VIRTCCA_SHARED_HUGEPAGE_MAX_SIZE) {
-        size = VIRTCCA_SHARED_HUGEPAGE_MAX_SIZE;
+
+    /*
+     * 1) CVM_GPA_START = 3GB --> fix size = 1GB
+     * 2) CVM_GPA_START = 1GB && ram_size >= 3GB --> size = 3GB
+     * 3) CVM_GPA_START = 1GB && ram_size < 3GB  --> size = ram_size
+     */
+    if (virtcca_cvm_gpa_start != DEFAULT_VM_GPA_START) {
+        size = VIRTCCA_SHARED_HUGEPAGE_ADDR_LIMIT - virtcca_cvm_gpa_start;
+    } else if (virtcca_cvm_ram_size >= VIRTCCA_SHARED_HUGEPAGE_ADDR_LIMIT - DEFAULT_VM_GPA_START) {
+        size = VIRTCCA_SHARED_HUGEPAGE_ADDR_LIMIT - DEFAULT_VM_GPA_START;
     }
 
     virtcca_shared_hugepage = g_new(MemoryRegion, 1);
@@ -172,7 +181,9 @@ file_backend_memory_alloc(HostMemoryBackend *backend, Error **errp)
                                      fb->mem_path, fb->offset, errp);
     g_free(name);
 
-    if (virtcca_cvm_enabled() && backend->share && !virtcca_shared_hugepage_mapped) {
+    if (virtcca_cvm_enabled() && backend->share &&
+        (strcmp(fb->mem_path, "/dev/shm") != 0) &&
+        !virtcca_shared_hugepage_mapped) {
         virtcca_shared_backend_memory_alloc(fb->mem_path, ram_flags, errp);
     }
 #endif

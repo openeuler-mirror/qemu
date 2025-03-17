@@ -2063,6 +2063,7 @@ static void virt_set_memmap(VirtMachineState *vms, int pa_bits)
             if (tmi_version < MIN_TMI_VERSION_FOR_UEFI_BOOTED_CVM) {
                 vms->memmap[VIRT_MEM].base = 3 * GiB;
             }
+            virtcca_cvm_gpa_start = vms->memmap[VIRT_MEM].base;
             vms->memmap[VIRT_MEM].size = ms->ram_size;
             info_report("[qemu] fix VIRT_MEM range 0x%llx - 0x%llx\n", (unsigned long long)(vms->memmap[VIRT_MEM].base),
                  (unsigned long long)(vms->memmap[VIRT_MEM].base + ms->ram_size));

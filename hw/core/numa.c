@@ -655,7 +655,7 @@ static void virtcca_shared_memory_configuration(MachineState *ms)
     memory_region_init_alias(alias_mr, NULL, "alias-mr", virtcca_shared_hugepage,
                              0, int128_get64(virtcca_shared_hugepage->size));
     memory_region_add_subregion(address_space_virtcca_shared_memory.root,
-                                VIRTCCA_GPA_START, alias_mr);
+                                virtcca_cvm_gpa_start, alias_mr);
 }
 
 void numa_complete_configuration(MachineState *ms)
