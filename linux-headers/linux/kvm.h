@@ -2430,5 +2430,6 @@ struct kvm_s390_zpci_op {
 
 /* get tmi version */
 #define KVM_GET_TMI_VERSION	_IOR(KVMIO, 0xd2, uint64_t)
+#define MIN_TMI_VERSION_FOR_UEFI_BOOTED_CVM  0x20001
 
 #endif /* __LINUX_KVM_H */

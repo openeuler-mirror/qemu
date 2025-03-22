@@ -2057,7 +2057,11 @@ static void virt_set_memmap(VirtMachineState *vms, int pa_bits)
             vms->memmap[VIRT_PCIE_MMIO] = (MemMapEntry) { 0x10000000, 0x2edf0000 };
             vms->memmap[VIRT_KAE_DEVICE] = (MemMapEntry) { 0x3edf0000, 0x00200000 };
             uint64_t tmi_version = 0;
-            if (kvm_ioctl(kvm_state, KVM_GET_TMI_VERSION, &tmi_version) < 0) {
+            int ret = -1;
+            if (kvm_enabled()) {
+                ret = kvm_ioctl(kvm_state, KVM_GET_TMI_VERSION,  &tmi_version);
+            }
+            if (ret < 0) {
                 warn_report("can not get tmi version");
             }
             if (tmi_version < MIN_TMI_VERSION_FOR_UEFI_BOOTED_CVM) {

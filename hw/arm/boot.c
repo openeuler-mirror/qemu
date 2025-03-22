@@ -1163,7 +1163,12 @@ static void arm_setup_confidential_firmware_boot(ARMCPU *cpu,
                                                  const char *firmware_filename)
 {
     uint64_t tmi_version = 0;
-    if (kvm_ioctl(kvm_state, KVM_GET_TMI_VERSION, &tmi_version) < 0) {
+    int ret = -1;
+
+    if (kvm_enabled()) {
+        ret = kvm_ioctl(kvm_state, KVM_GET_TMI_VERSION, &tmi_version);
+    }
+    if (ret < 0) {
         error_report("please check the kernel version!");
         exit(EXIT_FAILURE);
     }
