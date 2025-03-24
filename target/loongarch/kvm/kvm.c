@@ -90,8 +90,7 @@ static int kvm_loongarch_get_regs_core(CPUState *cs)
     int ret = 0;
     int i;
     struct kvm_regs regs;
-    LoongArchCPU *cpu = LOONGARCH_CPU(cs);
-    CPULoongArchState *env = &cpu->env;
+    CPULoongArchState *env = cpu_env(cs);
 
     /* Get the current register set as KVM seems it */
     ret = kvm_vcpu_ioctl(cs, KVM_GET_REGS, &regs);
@@ -114,8 +113,7 @@ static int kvm_loongarch_put_regs_core(CPUState *cs)
     int ret = 0;
     int i;
     struct kvm_regs regs;
-    LoongArchCPU *cpu = LOONGARCH_CPU(cs);
-    CPULoongArchState *env = &cpu->env;
+    CPULoongArchState *env = cpu_env(cs);
 
     /* Set the registers based on QEMU's view of things */
     for (i = 0; i < 32; i++) {
@@ -134,8 +132,7 @@ static int kvm_loongarch_put_regs_core(CPUState *cs)
 static int kvm_loongarch_get_csr(CPUState *cs)
 {
     int ret = 0;
-    LoongArchCPU *cpu = LOONGARCH_CPU(cs);
-    CPULoongArchState *env = &cpu->env;
+    CPULoongArchState *env = cpu_env(cs);
 
     ret |= kvm_get_one_reg(cs, KVM_IOC_CSRID(LOONGARCH_CSR_CRMD),
                            &env->CSR_CRMD);
@@ -305,8 +302,7 @@ static int kvm_loongarch_get_csr(CPUState *cs)
 static int kvm_loongarch_put_csr(CPUState *cs, int level)
 {
     int ret = 0;
-    LoongArchCPU *cpu = LOONGARCH_CPU(cs);
-    CPULoongArchState *env = &cpu->env;
+    CPULoongArchState *env = cpu_env(cs);
 
     ret |= kvm_set_one_reg(cs, KVM_IOC_CSRID(LOONGARCH_CSR_CRMD),
                            &env->CSR_CRMD);
@@ -482,9 +478,7 @@ static int kvm_loongarch_get_regs_fp(CPUState *cs)
 {
     int ret, i;
     struct kvm_fpu fpu;
-
-    LoongArchCPU *cpu = LOONGARCH_CPU(cs);
-    CPULoongArchState *env = &cpu->env;
+    CPULoongArchState *env = cpu_env(cs);
 
     ret = kvm_vcpu_ioctl(cs, KVM_GET_FPU, &fpu);
     if (ret < 0) {
@@ -511,9 +505,7 @@ static int kvm_loongarch_put_regs_fp(CPUState *cs)
 {
     int ret, i;
     struct kvm_fpu fpu;
-
-    LoongArchCPU *cpu = LOONGARCH_CPU(cs);
-    CPULoongArchState *env = &cpu->env;
+    CPULoongArchState *env = cpu_env(cs);
 
     fpu.fcsr = env->fcsr0;
     fpu.fcc = 0;
@@ -607,8 +599,7 @@ static int kvm_loongarch_get_mpstate(CPUState *cs)
 {
     int ret = 0;
     struct kvm_mp_state mp_state;
-    LoongArchCPU *cpu = LOONGARCH_CPU(cs);
-    CPULoongArchState *env = &cpu->env;
+    CPULoongArchState *env = cpu_env(cs);
 
     if (cap_has_mp_state) {
         ret = kvm_vcpu_ioctl(cs, KVM_GET_MP_STATE, &mp_state);
@@ -626,11 +617,8 @@ static int kvm_loongarch_put_mpstate(CPUState *cs)
 {
     int ret = 0;
 
-    LoongArchCPU *cpu = LOONGARCH_CPU(cs);
-    CPULoongArchState *env = &cpu->env;
-
     struct kvm_mp_state mp_state = {
-        .mp_state = env->mp_state
+        .mp_state = cpu_env(cs)->mp_state
     };
 
     if (cap_has_mp_state) {
@@ -647,8 +635,7 @@ static int kvm_loongarch_get_cpucfg(CPUState *cs)
 {
     int i, ret = 0;
     uint64_t val;
-    LoongArchCPU *cpu = LOONGARCH_CPU(cs);
-    CPULoongArchState *env = &cpu->env;
+    CPULoongArchState *env = cpu_env(cs);
 
     for (i = 0; i < 21; i++) {
         ret = kvm_get_one_reg(cs, KVM_IOC_CPUCFG(i), &val);
@@ -669,8 +656,7 @@ static int kvm_check_cpucfg2(CPUState *cs)
         .attr = 2,
         .addr = (uint64_t)&val,
     };
-    LoongArchCPU *cpu = LOONGARCH_CPU(cs);
-    CPULoongArchState *env = &cpu->env;
+    CPULoongArchState *env = cpu_env(cs);
 
     ret = kvm_vcpu_ioctl(cs, KVM_HAS_DEVICE_ATTR, &attr);
 
@@ -695,9 +681,8 @@ static int kvm_check_cpucfg2(CPUState *cs)
 static int kvm_loongarch_put_cpucfg(CPUState *cs)
 {
     int i, ret = 0;
-    LoongArchCPU *cpu = LOONGARCH_CPU(cs);
-    CPULoongArchState *env = &cpu->env;
     uint64_t val;
+    CPULoongArchState *env = cpu_env(cs);
 
     for (i = 0; i < 21; i++) {
 	if (i == 2) {
@@ -1052,7 +1037,6 @@ static int kvm_cpu_check_pv_features(CPUState *cs, Error **errp)
             env->pv_features |= BIT(KVM_FEATURE_VIRT_EXTIOI);
         }
     }
-
     return 0;
 }
 
@@ -1063,7 +1047,8 @@ int kvm_arch_init_vcpu(CPUState *cs)
     Error *local_err = NULL;
     LoongArchCPU *cpu = LOONGARCH_CPU(cs);
 
-    cpu->vmsentry = qemu_add_vm_change_state_handler(kvm_loongarch_vm_stage_change, cs);
+    cpu->vmsentry = qemu_add_vm_change_state_handler(
+                    kvm_loongarch_vm_stage_change, cs);
 
     if (!kvm_get_one_reg(cs, KVM_REG_LOONGARCH_DEBUG_INST, &val)) {
         brk_insn = val;
@@ -1180,6 +1165,7 @@ void kvm_loongarch_cpu_post_init(LoongArchCPU *cpu)
 int kvm_arch_destroy_vcpu(CPUState *cs)
 {
     LoongArchCPU *cpu = LOONGARCH_CPU(cs);
+
     qemu_del_vm_change_state_handler(cpu->vmsentry);
     return 0;
 }
@@ -1258,9 +1244,11 @@ bool kvm_arch_cpu_check_are_resettable(void)
 
 void kvm_arch_update_guest_debug(CPUState *cpu, struct kvm_guest_debug *dbg)
 {
+#ifdef KVM_CAP_SET_GUEST_DEBUG
     if (kvm_sw_breakpoints_active(cpu)) {
         dbg->control |= KVM_GUESTDBG_ENABLE | KVM_GUESTDBG_USE_SW_BP;
     }
+#endif
 }
 
 int kvm_arch_insert_sw_breakpoint(CPUState *cs, struct kvm_sw_breakpoint *bp)
@@ -1310,9 +1298,11 @@ static bool kvm_loongarch_handle_debug(CPUState *cs, struct kvm_run *run)
         return true;
     }
 
+#ifdef KVM_CAP_SET_GUEST_DEBUG
     if (kvm_find_sw_breakpoint(cs, env->pc)) {
         return true;
     }
+#endif
 
     return false;
 }
@@ -1320,8 +1310,7 @@ static bool kvm_loongarch_handle_debug(CPUState *cs, struct kvm_run *run)
 int kvm_arch_handle_exit(CPUState *cs, struct kvm_run *run)
 {
     int ret = 0;
-    LoongArchCPU *cpu = LOONGARCH_CPU(cs);
-    CPULoongArchState *env = &cpu->env;
+    CPULoongArchState *env = cpu_env(cs);
     MemTxAttrs attrs = {};
 
     attrs.requester_id = env_cpu(env)->cpu_index;
