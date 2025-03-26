@@ -28,6 +28,7 @@ config VHOST_USER
 
 config VHOST_VDPA
     bool
+    select IOMMUFD
 
 config VHOST_KERNEL
     bool
