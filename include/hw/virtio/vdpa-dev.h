@@ -18,6 +18,7 @@
 #include "hw/virtio/vhost.h"
 #include "hw/virtio/vhost-vdpa.h"
 #include "qom/object.h"
+#include "sysemu/iommufd.h"
 
 
 #define TYPE_VHOST_VDPA_DEVICE "vhost-vdpa-device"
@@ -41,6 +42,7 @@ struct VhostVdpaDevice {
     int (*post_init)(VhostVdpaDevice *v, Error **errp);
     VMChangeStateEntry *vmstate;
     Notifier migration_state;
+    IOMMUFDBackend *iommufd;
 };
 
 #endif
