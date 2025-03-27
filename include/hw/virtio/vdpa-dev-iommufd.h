@@ -23,6 +23,7 @@ typedef struct IOMMUFDHWPT {
 } IOMMUFDHWPT;
 
 typedef struct VDPAIOMMUFDContainer {
+    MemoryListener listener;
     struct IOMMUFDBackend *iommufd;
     uint32_t ioas_id;
     QLIST_HEAD(, IOMMUFDHWPT) hwpt_list;

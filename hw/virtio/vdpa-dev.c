@@ -136,9 +136,9 @@ static void vhost_vdpa_device_realize(DeviceState *dev, Error **errp)
                        strerror(-ret));
             goto free_vqs;
         }
+    } else {
+        memory_listener_register(&v->vdpa.listener, &address_space_memory);
     }
-
-    memory_listener_register(&v->vdpa.listener, &address_space_memory);
     v->config_size = vhost_vdpa_device_get_u32(v->vhostfd,
                                                VHOST_VDPA_GET_CONFIG_SIZE,
                                                errp);

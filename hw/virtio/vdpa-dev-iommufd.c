@@ -9,10 +9,123 @@
 #include <sys/ioctl.h>
 #include <linux/vhost.h>
 #include "qapi/error.h"
+#include "exec/target_page.h"
+#include "exec/address-spaces.h"
 #include "hw/virtio/vdpa-dev-iommufd.h"
 
 static QLIST_HEAD(, VDPAIOMMUFDContainer) vdpa_container_list =
     QLIST_HEAD_INITIALIZER(vdpa_container_list);
+
+static int vhost_vdpa_iommufd_container_dma_map(VDPAIOMMUFDContainer *container, hwaddr iova,
+                                                hwaddr size, void *vaddr, bool readonly)
+{
+    return iommufd_backend_map_dma(container->iommufd, container->ioas_id, iova, size, vaddr, readonly);
+
+}
+static int vhost_vdpa_iommufd_container_dma_unmap(VDPAIOMMUFDContainer *container,
+                                                  hwaddr iova, hwaddr size)
+{
+    return iommufd_backend_unmap_dma(container->iommufd, container->ioas_id, iova, size);
+}
+
+static void vhost_vdpa_iommufd_container_region_add(MemoryListener *listener,
+                                                    MemoryRegionSection *section)
+{
+    VDPAIOMMUFDContainer *container = container_of(listener, VDPAIOMMUFDContainer, listener);
+    hwaddr iova;
+    Int128 llend, llsize;
+    void *vaddr;
+    int page_size = qemu_target_page_size();
+    int page_mask = -page_size;
+    int ret;
+
+    if (vhost_vdpa_listener_skipped_section(section, 0, ULLONG_MAX, page_mask)) {
+        return;
+    }
+
+    if (unlikely((section->offset_within_address_space & ~page_mask) !=
+                 (section->offset_within_region & ~page_mask))) {
+        return;
+    }
+
+    iova = ROUND_UP(section->offset_within_address_space, page_size);
+    llend = vhost_vdpa_section_end(section, page_mask);
+    if (int128_ge(int128_make64(iova), llend)) {
+        return;
+    }
+
+    memory_region_ref(section->mr);
+    vaddr = memory_region_get_ram_ptr(section->mr) +
+            section->offset_within_region +
+            (iova - section->offset_within_address_space);
+
+    llsize = int128_sub(llend, int128_make64(iova));
+
+    ret = vhost_vdpa_iommufd_container_dma_map(container, iova, int128_get64(llsize),
+                                               vaddr, section->readonly);
+    if (ret) {
+        qemu_log("vhost vdpa iommufd container dma map failed: %d\n", ret);
+    }
+}
+
+static void vhost_vdpa_iommufd_container_region_del(MemoryListener *listener,
+                                                    MemoryRegionSection *section)
+{
+    VDPAIOMMUFDContainer *container = container_of(listener, VDPAIOMMUFDContainer, listener);
+    hwaddr iova;
+    Int128 llend, llsize;
+    int page_size = qemu_target_page_size();
+    int page_mask = -page_size;
+    int ret;
+
+    if (vhost_vdpa_listener_skipped_section(section, 0, ULLONG_MAX, page_mask)) {
+        return;
+    }
+
+    if (unlikely((section->offset_within_address_space & ~page_mask) !=
+                 (section->offset_within_region & ~page_mask))) {
+        return;
+    }
+
+    iova = ROUND_UP(section->offset_within_address_space, page_size);
+    llend = vhost_vdpa_section_end(section, page_mask);
+
+    if (int128_ge(int128_make64(iova), llend)) {
+        return;
+    }
+
+    llsize = int128_sub(llend, int128_make64(iova));
+    /*
+     * The unmap ioctl doesn't accept a full 64-bit. need to check it
+     */
+    if (int128_eq(llsize, int128_2_64())) {
+        llsize = int128_rshift(llsize, 1);
+        ret = vhost_vdpa_iommufd_container_dma_unmap(container, iova, int128_get64(llsize));
+
+        if (ret) {
+            qemu_log("vhost vdpa iommufd container unmap failed(0x%" HWADDR_PRIx ", "
+                     "0x%" HWADDR_PRIx ") = %d (%m)", iova, int128_get64(llsize), ret);
+        }
+        iova += int128_get64(llsize);
+    }
+    ret = vhost_vdpa_iommufd_container_dma_unmap(container, iova, int128_get64(llsize));
+
+    if (ret) {
+        qemu_log("vhost vdpa iommufd container unmap failed(0x%" HWADDR_PRIx ", "
+                  "0x%" HWADDR_PRIx ") = %d (%m)", iova, int128_get64(llsize), ret);
+    }
+
+    memory_region_unref(section->mr);
+}
+
+/*
+ * IOTLB API used by vhost vdpa iommufd container
+ */
+const MemoryListener vhost_vdpa_iommufd_container_listener = {
+    .name = "vhost-vdpa-iommufd-container",
+    .region_add = vhost_vdpa_iommufd_container_region_add,
+    .region_del = vhost_vdpa_iommufd_container_region_del,
+};
 
 static int vhost_vdpa_container_connect_iommufd(VDPAIOMMUFDContainer *container)
 {
@@ -87,6 +200,7 @@ static VDPAIOMMUFDContainer *vhost_vdpa_create_container(VhostVdpaDevice *vdev)
 
     container = g_new0(VDPAIOMMUFDContainer, 1);
     container->iommufd = vdev->iommufd;
+    container->listener = vhost_vdpa_iommufd_container_listener;
     QLIST_INIT(&container->hwpt_list);
 
     QLIST_INSERT_HEAD(&vdpa_container_list, container, next);
@@ -213,11 +327,27 @@ static void vhost_vdpa_container_detach_device(VDPAIOMMUFDContainer *container, 
     }
 }
 
+static int vhost_vdpa_container_get_dev_count(VDPAIOMMUFDContainer *container)
+{
+    IOMMUFDHWPT *hwpt;
+    VhostVdpaDevice *dev;
+    int dev_count = 0;
+
+    QLIST_FOREACH(hwpt, &container->hwpt_list, next) {
+        QLIST_FOREACH(dev, &hwpt->device_list, next) {
+            dev_count++;
+        }
+    }
+
+    return dev_count;
+}
+
 int vhost_vdpa_attach_container(VhostVdpaDevice *vdev)
 {
     VDPAIOMMUFDContainer *container = NULL;
     IOMMUFDBackend *iommufd = vdev->iommufd;
     bool new_container = false;
+    int dev_count = 0;
     int ret = 0;
 
     if (!iommufd) {
@@ -249,6 +379,12 @@ int vhost_vdpa_attach_container(VhostVdpaDevice *vdev)
     if (ret) {
         qemu_log("vdpa container attach device failed\n");
         goto unbind;
+    }
+
+    /* register the container memory listener when attaching the first device */
+    dev_count = vhost_vdpa_container_get_dev_count(container);
+    if (dev_count == 1) {
+        memory_listener_register(&container->listener, &address_space_memory);
     }
 
     return 0;
@@ -288,6 +424,7 @@ void vhost_vdpa_detach_container(VhostVdpaDevice *vdev)
         return;
     }
     /* No HWPT in this container, destroy it */
+    memory_listener_unregister(&container->listener);
     vhost_vdpa_container_disconnect_iommufd(container);
 
     vhost_vdpa_destroy_container(container);
