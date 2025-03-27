@@ -43,6 +43,8 @@ struct VhostVdpaDevice {
     VMChangeStateEntry *vmstate;
     Notifier migration_state;
     IOMMUFDBackend *iommufd;
+    uint32_t iommufd_devid;
+    QLIST_ENTRY(VhostVdpaDevice) next;
 };
 
 #endif
