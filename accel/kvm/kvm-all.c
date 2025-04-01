@@ -1902,10 +1902,11 @@ static void kvm_add_routing_entry(KVMState *s,
     set_gsi(s, entry->gsi);
 }
 
-static int kvm_update_routing_entry(KVMState *s,
+static int kvm_update_routing_entry(KVMRouteChange *c,
                                     struct kvm_irq_routing_entry *new_entry)
 {
     struct kvm_irq_routing_entry *entry;
+    KVMState *s = c->s;
     int n;
 
     for (n = 0; n < s->irq_routes->nr; n++) {
@@ -1919,7 +1920,7 @@ static int kvm_update_routing_entry(KVMState *s,
         }
 
         *entry = *new_entry;
-
+        c->changes++;
         return 0;
     }
 
@@ -2051,7 +2052,7 @@ int kvm_irqchip_add_msi_route(KVMRouteChange *c, int vector, PCIDevice *dev)
     return virq;
 }
 
-int kvm_irqchip_update_msi_route(KVMState *s, int virq, MSIMessage msg,
+int kvm_irqchip_update_msi_route(KVMRouteChange *c, int virq, MSIMessage msg,
                                  PCIDevice *dev)
 {
     struct kvm_irq_routing_entry kroute = {};
@@ -2081,7 +2082,7 @@ int kvm_irqchip_update_msi_route(KVMState *s, int virq, MSIMessage msg,
 
     trace_kvm_irqchip_update_msi_route(virq);
 
-    return kvm_update_routing_entry(s, &kroute);
+    return kvm_update_routing_entry(c, &kroute);
 }
 
 static int kvm_irqchip_assign_irqfd(KVMState *s, EventNotifier *event,
@@ -2223,7 +2224,7 @@ static int kvm_irqchip_assign_irqfd(KVMState *s, EventNotifier *event,
     abort();
 }
 
-int kvm_irqchip_update_msi_route(KVMState *s, int virq, MSIMessage msg)
+int kvm_irqchip_update_msi_route(KVMRouteChange *c, int virq, MSIMessage msg)
 {
     return -ENOSYS;
 }
