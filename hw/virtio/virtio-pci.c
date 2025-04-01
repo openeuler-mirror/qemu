@@ -49,6 +49,18 @@
  * configuration space */
 #define VIRTIO_PCI_CONFIG_SIZE(dev)     VIRTIO_PCI_CONFIG_OFF(msix_enabled(dev))
 
+static KVMRouteChange virtio_pci_route_change;
+
+static inline void virtio_pci_begin_route_changes(void)
+{
+    virtio_pci_route_change = kvm_irqchip_begin_route_changes(kvm_state);
+}
+
+static inline void virtio_pci_commit_route_changes(void)
+{
+    kvm_irqchip_commit_route_changes(&virtio_pci_route_change);
+}
+
 static void virtio_pci_bus_new(VirtioBusState *bus, size_t bus_size,
                                VirtIOPCIProxy *dev);
 static void virtio_pci_reset(DeviceState *qdev);
@@ -815,12 +827,10 @@ static int kvm_virtio_pci_vq_vector_use(VirtIOPCIProxy *proxy,
     int ret;
 
     if (irqfd->users == 0) {
-        KVMRouteChange c = kvm_irqchip_begin_route_changes(kvm_state);
-        ret = kvm_irqchip_add_msi_route(&c, vector, &proxy->pci_dev);
+        ret = kvm_irqchip_add_msi_route(&virtio_pci_route_change, vector, &proxy->pci_dev);
         if (ret < 0) {
             return ret;
         }
-        kvm_irqchip_commit_route_changes(&c);
         irqfd->virq = ret;
     }
     irqfd->users++;
@@ -950,12 +960,14 @@ static int kvm_virtio_pci_vector_vq_use(VirtIOPCIProxy *proxy, int nvqs)
     }
 #endif
 
+    virtio_pci_begin_route_changes();
     for (queue_no = 0; queue_no < nvqs; queue_no++) {
         if (!virtio_queue_get_num(vdev, queue_no)) {
             return -1;
         }
         ret = kvm_virtio_pci_vector_use_one(proxy, queue_no);
     }
+    virtio_pci_commit_route_changes();
 
 #ifdef __aarch64__
     if (!strcmp(vdev->name, "virtio-net") && ret != 0) {
