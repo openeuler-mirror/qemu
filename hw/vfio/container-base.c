@@ -82,6 +82,7 @@ void vfio_container_init(VFIOContainerBase *bcontainer, VFIOAddressSpace *space,
     bcontainer->iova_ranges = NULL;
     QLIST_INIT(&bcontainer->giommu_list);
     QLIST_INIT(&bcontainer->vrdl_list);
+    QLIST_INIT(&bcontainer->vpsl_list);
 }
 
 void vfio_container_destroy(VFIOContainerBase *bcontainer)
