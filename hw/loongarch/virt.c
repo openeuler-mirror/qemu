@@ -51,6 +51,11 @@
 #include "qemu/error-report.h"
 #include "qemu/guest-random.h"
 
+#define FDT_IRQ_FLAGS_EDGE_LO_HI 1
+#define FDT_IRQ_FLAGS_EDGE_HI_LO 2
+#define FDT_IRQ_FLAGS_LEVEL_HI 4
+#define FDT_IRQ_FLAGS_LEVEL_LO 8
+
 static bool virt_is_veiointc_enabled(LoongArchVirtMachineState *lvms)
 {
     if (lvms->veiointc == ON_OFF_AUTO_OFF) {
@@ -275,7 +280,7 @@ static void fdt_add_rtc_node(LoongArchVirtMachineState *lvms,
                             "loongson,ls7a-rtc");
     qemu_fdt_setprop_sized_cells(ms->fdt, nodename, "reg", 2, base, 2, size);
     qemu_fdt_setprop_cells(ms->fdt, nodename, "interrupts",
-                           VIRT_RTC_IRQ - VIRT_GSI_BASE , 0x4);
+                           VIRT_RTC_IRQ - VIRT_GSI_BASE , FDT_IRQ_FLAGS_EDGE_LO_HI);
     qemu_fdt_setprop_cell(ms->fdt, nodename, "interrupt-parent",
                           *pch_pic_phandle);
     g_free(nodename);
@@ -334,7 +339,7 @@ static void fdt_add_uart_node(LoongArchVirtMachineState *lvms,
     qemu_fdt_setprop_cell(ms->fdt, nodename, "clock-frequency", 100000000);
     if (chosen)
         qemu_fdt_setprop_string(ms->fdt, "/chosen", "stdout-path", nodename);
-    qemu_fdt_setprop_cells(ms->fdt, nodename, "interrupts", irq, 0x4);
+    qemu_fdt_setprop_cells(ms->fdt, nodename, "interrupts", irq, FDT_IRQ_FLAGS_LEVEL_HI);
     qemu_fdt_setprop_cell(ms->fdt, nodename, "interrupt-parent",
                           *pch_pic_phandle);
     g_free(nodename);
