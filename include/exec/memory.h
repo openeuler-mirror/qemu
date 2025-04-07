@@ -580,8 +580,8 @@ typedef int (*ReplayStateChange)(MemoryRegionSection *section, void *opaque);
 typedef struct StateChangeListener StateChangeListener;
 typedef int (*NotifyStateSet)(StateChangeListener *scl,
                               MemoryRegionSection *section);
-typedef void (*NotifyStateClear)(StateChangeListener *scl,
-                                 MemoryRegionSection *section);
+typedef int (*NotifyStateClear)(StateChangeListener *scl,
+                                MemoryRegionSection *section);
 
 struct StateChangeListener {
     /*
