@@ -2857,6 +2857,10 @@ int qemu_loadvm_state_main(QEMUFile *f, MigrationIncomingState *mis)
     uint8_t section_type;
     int ret = 0;
 
+    if (qemu_mutex_iothread_locked()) {
+        memory_region_transaction_begin();
+    }
+
 retry:
     while (true) {
         section_type = qemu_get_byte(f);
@@ -2900,6 +2904,9 @@ retry:
     }
 
 out:
+    if (qemu_mutex_iothread_locked()) {
+        memory_region_transaction_commit();
+    }
     if (ret < 0) {
         qemu_file_set_error(f, ret);
 

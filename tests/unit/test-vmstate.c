@@ -31,6 +31,7 @@
 #include "../migration/savevm.h"
 #include "qemu/module.h"
 #include "io/channel-file.h"
+#include "exec/memory.h"
 
 static int temp_fd;
 
@@ -1477,6 +1478,11 @@ static void test_tmp_struct(void)
     g_assert_cmpint(obj.b, ==, 4); /* from the post_load */
     g_assert_cmpint(obj.d, ==, 1); /* From top level vmsd */
     g_assert_cmpint(obj.f, ==, 8); /* From the child->parent */
+}
+
+/* stub for ut */
+void memory_region_commit(void)
+{
 }
 
 int main(int argc, char **argv)

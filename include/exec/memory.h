@@ -2568,6 +2568,11 @@ void memory_region_transaction_begin(void);
 void memory_region_transaction_commit(void);
 
 /**
+ * memory_region_commit: Force commit memory region immediately.
+ */
+void memory_region_commit(void);
+
+/**
  * memory_listener_register: register callbacks to be called when memory
  *                           sections are mapped or unmapped into an address
  *                           space
