@@ -1134,10 +1134,12 @@ void memory_region_commit(void)
         ioeventfd_update_pending = false;
         MEMORY_LISTENER_CALL_GLOBAL(commit, Forward);
     } else if (ioeventfd_update_pending) {
+        MEMORY_LISTENER_CALL_GLOBAL(eventfd_begin, Forward);
         QTAILQ_FOREACH(as, &address_spaces, address_spaces_link) {
             address_space_update_ioeventfds(as);
         }
         ioeventfd_update_pending = false;
+        MEMORY_LISTENER_CALL_GLOBAL(eventfd_end, Forward);
     }
 }
 

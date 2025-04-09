@@ -1080,6 +1080,27 @@ struct MemoryListener {
                         bool match_data, uint64_t data, EventNotifier *e);
 
     /**
+     * @eventfd_begin:
+     *
+     * Called during an address space begin to update ioeventfd,
+     * notify kvm that ioeventfd will be update in batches.
+     *
+     * @listener: The #MemoryListener.
+     */
+    void (*eventfd_begin)(MemoryListener *listener);
+
+    /**
+     * @eventfd_end:
+     *
+     * Called during an address space update ioeventfd end,
+     * notify kvm that all ioeventfd modifications have been submitted
+     * and batch processing can be started.
+     *
+     * @listener: The #MemoryListener.
+     */
+    void (*eventfd_end)(MemoryListener *listener);
+
+    /**
      * @coalesced_io_add:
      *
      * Called during an address space update transaction,

@@ -1737,6 +1737,36 @@ static void kvm_io_ioeventfd_add(MemoryListener *listener,
     }
 }
 
+static int kvm_ioeventfd_batch(bool start)
+{
+    int ret;
+    struct kvm_ioeventfd iofd = {
+        .flags = start ?
+            KVM_IOEVENTFD_FLAG_BATCH_BEGIN : KVM_IOEVENTFD_FLAG_BATCH_END,
+    };
+
+    if (!kvm_enabled()) {
+        return -ENOSYS;
+    }
+
+    ret = kvm_vm_ioctl(kvm_state, KVM_IOEVENTFD, &iofd);
+    if (ret < 0) {
+        return -errno;
+    }
+
+    return 0;
+}
+
+static void kvm_ioeventfd_begin(MemoryListener *listener)
+{
+    kvm_ioeventfd_batch(true);
+}
+
+static void kvm_ioeventfd_end(MemoryListener *listener)
+{
+    kvm_ioeventfd_batch(false);
+}
+
 static void kvm_io_ioeventfd_del(MemoryListener *listener,
                                  MemoryRegionSection *section,
                                  bool match_data, uint64_t data,
@@ -2631,6 +2661,8 @@ static int kvm_init(MachineState *ms)
     s->memory_listener.listener.eventfd_del = kvm_mem_ioeventfd_del;
     s->memory_listener.listener.coalesced_io_add = kvm_coalesce_mmio_region;
     s->memory_listener.listener.coalesced_io_del = kvm_uncoalesce_mmio_region;
+    s->memory_listener.listener.eventfd_begin = kvm_ioeventfd_begin;
+    s->memory_listener.listener.eventfd_end = kvm_ioeventfd_end;
 
     kvm_memory_listener_register(s, &s->memory_listener,
                                  &address_space_memory, 0, "kvm-memory");
