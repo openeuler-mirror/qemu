@@ -133,6 +133,7 @@ struct vhost_dev {
     QLIST_HEAD(, vhost_iommu) iommu_list;
     IOMMUNotifier n;
     const VhostDevConfigOps *config_ops;
+    bool has_container;
 };
 
 extern const VhostOps kernel_ops;
@@ -205,6 +206,14 @@ static inline bool vhost_dev_is_started(struct vhost_dev *hdev)
 {
     return hdev->started;
 }
+
+/**
+ * vhost_bytemap_log_support() - check if the vhost device supports dirty bytemap
+ * @dev: common vhost_dev structure
+ *
+ * Return: true if the vhost device supports dirty bytemap, false otherwise.
+ */
+bool vhost_bytemap_log_support(struct vhost_dev *dev);
 
 /**
  * vhost_dev_start() - start the vhost device
@@ -343,6 +352,12 @@ int vhost_dev_get_inflight(struct vhost_dev *dev, uint16_t queue_size,
                            struct vhost_inflight *inflight);
 bool used_memslots_is_exceeded(void);
 bool vhost_dev_has_iommu(struct vhost_dev *dev);
+int vhost_sync_dirty_bitmap(struct vhost_dev *dev,
+                            MemoryRegionSection *section,
+                            hwaddr first,
+                            hwaddr last);
+int vhost_sync_dirty_bytemap(struct vhost_dev *dev,
+                             MemoryRegionSection *section);
 
 #ifdef CONFIG_VHOST
 int vhost_reset_device(struct vhost_dev *hdev);

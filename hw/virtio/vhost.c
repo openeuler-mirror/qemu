@@ -46,7 +46,7 @@
     do { } while (0)
 #endif
 
-static inline bool vhost_bytemap_log_support(struct vhost_dev *dev)
+bool vhost_bytemap_log_support(struct vhost_dev *dev)
 {
     return (dev->backend_cap & BIT_ULL(VHOST_BACKEND_F_BYTEMAPLOG));
 }
@@ -159,10 +159,10 @@ bool vhost_dev_has_iommu(struct vhost_dev *dev)
     }
 }
 
-static int vhost_sync_dirty_bitmap(struct vhost_dev *dev,
-                                   MemoryRegionSection *section,
-                                   hwaddr first,
-                                   hwaddr last)
+int vhost_sync_dirty_bitmap(struct vhost_dev *dev,
+                            MemoryRegionSection *section,
+                            hwaddr first,
+                            hwaddr last)
 {
     int i;
     hwaddr start_addr;
@@ -239,8 +239,8 @@ static int vhost_sync_dirty_bitmap(struct vhost_dev *dev,
     return 0;
 }
 
-static int vhost_sync_dirty_bytemap(struct vhost_dev *dev,
-                                    MemoryRegionSection *section)
+int vhost_sync_dirty_bytemap(struct vhost_dev *dev,
+                             MemoryRegionSection *section)
 {
     unsigned long *bytemap = dev->log->log;
     return memory_section_set_dirty_bytemap(section, bytemap);
@@ -253,7 +253,7 @@ static void vhost_log_sync(MemoryListener *listener,
                                          memory_listener);
     MigrationState *ms = migrate_get_current();
 
-    if (!dev->log_enabled || !dev->log) {
+    if (!dev->log_enabled || !dev->log || dev->has_container) {
         return;
     }
 

@@ -2271,6 +2271,12 @@ void memory_region_set_dirty(MemoryRegion *mr, hwaddr addr,
                                         memory_region_get_dirty_log_mask(mr));
 }
 
+bool is_first_section(MemoryRegionSection *section)
+{
+    return section->fv->ranges->addr.start == section->offset_within_address_space &&
+           section->fv->ranges->addr.size == section->size;
+}
+
 /*
  * If memory region `mr' is NULL, do global sync.  Otherwise, sync
  * dirty bitmap for the specified memory region.
