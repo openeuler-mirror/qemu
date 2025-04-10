@@ -856,6 +856,13 @@ static void address_space_update_ioeventfds(AddressSpace *as)
         return;
     }
 
+    view = address_space_get_flatview(as);
+    if (view->flags & FLATVIEW_FLAG_LAST_PROCESSED) {
+        flatview_unref(view);
+        return;
+    }
+    view->flags |= FLATVIEW_FLAG_LAST_PROCESSED;
+
     /*
      * It is likely that the number of ioeventfds hasn't changed much, so use
      * the previous size as the starting value, with some headroom to avoid
@@ -864,7 +871,6 @@ static void address_space_update_ioeventfds(AddressSpace *as)
     ioeventfd_max = QEMU_ALIGN_UP(as->ioeventfd_nb, 4);
     ioeventfds = g_new(MemoryRegionIoeventfd, ioeventfd_max);
 
-    view = address_space_get_flatview(as);
     FOR_EACH_FLAT_RANGE(fr, view) {
         for (i = 0; i < fr->mr->ioeventfd_nb; ++i) {
             tmp = addrrange_shift(fr->mr->ioeventfds[i].addr,
@@ -1111,6 +1117,17 @@ static void address_space_update_topology(AddressSpace *as)
     address_space_set_flatview(as);
 }
 
+static void address_space_update_view(AddressSpace *as)
+{
+    FlatView *view;
+
+    view = address_space_get_flatview(as);
+    if (view->flags & FLATVIEW_FLAG_LAST_PROCESSED) {
+        view->flags &= ~FLATVIEW_FLAG_LAST_PROCESSED;
+    }
+    flatview_unref(view);
+}
+
 void memory_region_transaction_begin(void)
 {
     qemu_flush_coalesced_mmio_buffer();
@@ -1132,6 +1149,9 @@ void memory_region_commit(void)
         }
         memory_region_update_pending = false;
         ioeventfd_update_pending = false;
+        QTAILQ_FOREACH(as, &address_spaces, address_spaces_link) {
+            address_space_update_view(as);
+        }
         MEMORY_LISTENER_CALL_GLOBAL(commit, Forward);
     } else if (ioeventfd_update_pending) {
         MEMORY_LISTENER_CALL_GLOBAL(eventfd_begin, Forward);
@@ -1139,6 +1159,9 @@ void memory_region_commit(void)
             address_space_update_ioeventfds(as);
         }
         ioeventfd_update_pending = false;
+        QTAILQ_FOREACH(as, &address_spaces, address_spaces_link) {
+            address_space_update_view(as);
+        }
         MEMORY_LISTENER_CALL_GLOBAL(eventfd_end, Forward);
     }
 }
@@ -3149,6 +3172,7 @@ void address_space_init(AddressSpace *as, MemoryRegion *root, const char *name)
     as->name = g_strdup(name ? name : "anonymous");
     address_space_update_topology(as);
     address_space_update_ioeventfds(as);
+    address_space_update_view(as);
 }
 
 static void do_address_space_destroy(AddressSpace *as)

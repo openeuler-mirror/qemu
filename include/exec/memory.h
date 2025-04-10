@@ -1201,6 +1201,8 @@ struct FlatView {
     unsigned nr_allocated;
     struct AddressSpaceDispatch *dispatch;
     MemoryRegion *root;
+    #define FLATVIEW_FLAG_LAST_PROCESSED (1 << 0)
+    unsigned flags;
 };
 
 static inline FlatView *address_space_to_flatview(AddressSpace *as)
