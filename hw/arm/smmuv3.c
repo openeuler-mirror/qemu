@@ -24,6 +24,7 @@
 #include "hw/qdev-properties.h"
 #include "hw/qdev-core.h"
 #include "hw/pci/pci.h"
+#include "hw/pci/pci_bridge.h"
 #include "cpu.h"
 #include "trace.h"
 #include "qemu/log.h"
@@ -33,6 +34,9 @@
 #include "hw/arm/smmuv3.h"
 #include "smmuv3-internal.h"
 #include "smmu-internal.h"
+#ifdef CONFIG_LINUX_IO_URING
+#include <liburing.h>
+#endif
 
 #define PTW_RECORD_FAULT(cfg)   (((cfg)->stage == 1) ? (cfg)->record_faults : \
                                  (cfg)->s2cfg.record_faults)
@@ -254,6 +258,81 @@ void smmuv3_record_event(SMMUv3State *s, SMMUEventInfo *info)
     info->recorded = true;
 }
 
+static void smmuv3_nested_init_regs(SMMUv3State *s)
+{
+    SMMUState *bs = ARM_SMMU(s);
+    SMMUDevice *sdev;
+    uint32_t data_type;
+    uint32_t val;
+    uint8_t pasid;
+    int ret;
+
+    if (!bs->nested || !bs->viommu) {
+        return;
+    }
+
+    sdev = QLIST_FIRST(&bs->viommu->device_list);
+    if (!sdev) {
+        return;
+    }
+
+    if (sdev->info.idr[0]) {
+        error_report("reusing the previous hw_info");
+        goto out;
+    }
+
+    ret = smmu_dev_get_info(sdev, &data_type, sizeof(sdev->info), &pasid,
+                            &sdev->info);
+    if (ret) {
+        error_report("failed to get SMMU device info");
+        return;
+    }
+
+    if (data_type != IOMMU_HW_INFO_TYPE_ARM_SMMUV3) {
+        error_report( "Wrong data type (%d)!", data_type);
+        return;
+    }
+
+out:
+    trace_smmuv3_get_device_info(sdev->info.idr[0], sdev->info.idr[1],
+                                 sdev->info.idr[3], sdev->info.idr[5]);
+
+    val = FIELD_EX32(sdev->info.idr[0], IDR0, BTM);
+    s->idr[0] = FIELD_DP32(s->idr[0], IDR0, BTM, val);
+    val = FIELD_EX32(sdev->info.idr[0], IDR0, ATS);
+    s->idr[0] = FIELD_DP32(s->idr[0], IDR0, ATS, val);
+    val = FIELD_EX32(sdev->info.idr[0], IDR0, ASID16);
+    s->idr[0] = FIELD_DP32(s->idr[0], IDR0, ASID16, val);
+    val = FIELD_EX32(sdev->info.idr[0], IDR0, TERM_MODEL);
+    s->idr[0] = FIELD_DP32(s->idr[0], IDR0, TERM_MODEL, val);
+    val = FIELD_EX32(sdev->info.idr[0], IDR0, STALL_MODEL);
+    s->idr[0] = FIELD_DP32(s->idr[0], IDR0, STALL_MODEL, val);
+    val = FIELD_EX32(sdev->info.idr[0], IDR0, STLEVEL);
+    s->idr[0] = FIELD_DP32(s->idr[0], IDR0, STLEVEL, val);
+
+    val = FIELD_EX32(sdev->info.idr[1], IDR1, SIDSIZE);
+    s->idr[1] = FIELD_DP32(s->idr[1], IDR1, SIDSIZE, val);
+    s->idr[1] = FIELD_DP32(s->idr[1], IDR1, SSIDSIZE, pasid);
+
+    val = FIELD_EX32(sdev->info.idr[3], IDR3, HAD);
+    s->idr[3] = FIELD_DP32(s->idr[3], IDR3, HAD, val);
+    val = FIELD_EX32(sdev->info.idr[3], IDR3, RIL);
+    s->idr[3] = FIELD_DP32(s->idr[3], IDR3, RIL, val);
+    val = FIELD_EX32(sdev->info.idr[3], IDR3, BBML);
+    s->idr[3] = FIELD_DP32(s->idr[3], IDR3, BBML, val);
+
+    val = FIELD_EX32(sdev->info.idr[5], IDR5, GRAN4K);
+    s->idr[5] = FIELD_DP32(s->idr[5], IDR5, GRAN4K, val);
+    val = FIELD_EX32(sdev->info.idr[5], IDR5, GRAN16K);
+    s->idr[5] = FIELD_DP32(s->idr[5], IDR5, GRAN16K, val);
+    val = FIELD_EX32(sdev->info.idr[5], IDR5, GRAN64K);
+    s->idr[5] = FIELD_DP32(s->idr[5], IDR5, GRAN64K, val);
+    val = FIELD_EX32(sdev->info.idr[5], IDR5, OAS);
+    s->idr[5] = FIELD_DP32(s->idr[5], IDR5, OAS, val);
+
+    /* FIXME check iidr and aidr registrs too */
+}
+
 static void smmuv3_init_regs(SMMUv3State *s)
 {
     /* Based on sys property, the stages supported in smmu will be advertised.*/
@@ -268,13 +347,14 @@ static void smmuv3_init_regs(SMMUv3State *s)
     s->idr[0] = FIELD_DP32(s->idr[0], IDR0, ASID16, 1); /* 16-bit ASID */
     s->idr[0] = FIELD_DP32(s->idr[0], IDR0, VMID16, 1); /* 16-bit VMID */
     s->idr[0] = FIELD_DP32(s->idr[0], IDR0, TTENDIAN, 2); /* little endian */
-    s->idr[0] = FIELD_DP32(s->idr[0], IDR0, STALL_MODEL, 1); /* No stall */
+    s->idr[0] = FIELD_DP32(s->idr[0], IDR0, STALL_MODEL, 0); /* stall */
     /* terminated transaction will always be aborted/error returned */
     s->idr[0] = FIELD_DP32(s->idr[0], IDR0, TERM_MODEL, 1);
     /* 2-level stream table supported */
     s->idr[0] = FIELD_DP32(s->idr[0], IDR0, STLEVEL, 1);
 
     s->idr[1] = FIELD_DP32(s->idr[1], IDR1, SIDSIZE, SMMU_IDR1_SIDSIZE);
+    s->idr[1] = FIELD_DP32(s->idr[1], IDR1, SSIDSIZE, SMMU_IDR1_SSIDSIZE);
     s->idr[1] = FIELD_DP32(s->idr[1], IDR1, EVENTQS, SMMU_EVENTQS);
     s->idr[1] = FIELD_DP32(s->idr[1], IDR1, CMDQS,   SMMU_CMDQS);
 
@@ -286,11 +366,14 @@ static void smmuv3_init_regs(SMMUv3State *s)
     s->idr[3] = FIELD_DP32(s->idr[3], IDR3, RIL, 1);
     s->idr[3] = FIELD_DP32(s->idr[3], IDR3, BBML, 2);
 
-    s->idr[5] = FIELD_DP32(s->idr[5], IDR5, OAS, SMMU_IDR5_OAS); /* 44 bits */
+    s->idr[5] = FIELD_DP32(s->idr[5], IDR5, OAS, SMMU_IDR5_OAS); /* 48 bits */
     /* 4K, 16K and 64K granule support */
     s->idr[5] = FIELD_DP32(s->idr[5], IDR5, GRAN4K, 1);
     s->idr[5] = FIELD_DP32(s->idr[5], IDR5, GRAN16K, 1);
     s->idr[5] = FIELD_DP32(s->idr[5], IDR5, GRAN64K, 1);
+
+    /* Override IDR fields with HW caps */
+    smmuv3_nested_init_regs(s);
 
     s->cmdq.base = deposit64(s->cmdq.base, 0, 5, SMMU_CMDQS);
     s->cmdq.prod = 0;
@@ -486,6 +569,27 @@ bad_ste:
     return -EINVAL;
 }
 
+static void decode_ste_config(SMMUTransCfg *cfg, uint32_t config)
+{
+
+    if (STE_CFG_ABORT(config)) {
+        cfg->aborted = true;
+        return;
+    }
+    if (STE_CFG_BYPASS(config)) {
+        cfg->bypassed = true;
+        return;
+    }
+
+    if (STE_CFG_S1_ENABLED(config)) {
+        cfg->stage = SMMU_STAGE_1;
+    }
+
+    if (STE_CFG_S2_ENABLED(config)) {
+        cfg->stage |= SMMU_STAGE_2;
+    }
+}
+
 /* Returns < 0 in case of invalid STE, 0 otherwise */
 static int decode_ste(SMMUv3State *s, SMMUTransCfg *cfg,
                       STE *ste, SMMUEventInfo *event)
@@ -502,12 +606,19 @@ static int decode_ste(SMMUv3State *s, SMMUTransCfg *cfg,
 
     config = STE_CONFIG(ste);
 
-    if (STE_CFG_ABORT(config)) {
+    decode_ste_config(cfg, config);
+
+    /* S1DSS.Terminate is same as Config.abort for default stream */
+    if (STE_CFG_S1_ENABLED(config) && STE_S1DSS(ste) == 0) {
         cfg->aborted = true;
+    }
+
+    if (cfg->aborted || cfg->bypassed) {
         return 0;
     }
 
-    if (STE_CFG_BYPASS(config)) {
+    /* S1DSS.Bypass is same as Config.bypass for default stream */
+    if (STE_CFG_S1_ENABLED(config) && STE_S1DSS(ste) == 0x1) {
         cfg->bypassed = true;
         return 0;
     }
@@ -545,13 +656,14 @@ static int decode_ste(SMMUv3State *s, SMMUTransCfg *cfg,
         }
     }
 
-    if (STE_S1CDMAX(ste) != 0) {
+    if (!FIELD_EX32(s->idr[1], IDR1, SSIDSIZE) && STE_S1CDMAX(ste) != 0) {
         qemu_log_mask(LOG_UNIMP,
                       "SMMUv3 does not support multiple context descriptors yet\n");
         goto bad_ste;
     }
 
-    if (STE_S1STALLD(ste)) {
+    /* STALL_MODEL being 0b01 means "stall is not supported" */
+    if ((FIELD_EX32(s->idr[0], IDR0, STALL_MODEL) & 0x1) && STE_S1STALLD(ste)) {
         qemu_log_mask(LOG_UNIMP,
                       "SMMUv3 S1 stalling fault model not allowed yet\n");
         goto bad_ste;
@@ -668,9 +780,6 @@ static int decode_cd(SMMUTransCfg *cfg, CD *cd, SMMUEventInfo *event)
     }
     if (!CD_A(cd)) {
         goto bad_cd; /* SMMU_IDR0.TERM_MODEL == 1 */
-    }
-    if (CD_S(cd)) {
-        goto bad_cd; /* !STE_SECURE && SMMU_IDR0.STALL_MODEL == 1 */
     }
     if (CD_HA(cd) || CD_HD(cd)) {
         goto bad_cd; /* HTTU = 0 */
@@ -1153,18 +1262,333 @@ static void smmuv3_range_inval(SMMUState *s, Cmd *cmd)
     }
 }
 
-static gboolean
-smmuv3_invalidate_ste(gpointer key, gpointer value, gpointer user_data)
+static void smmuv3_report_iommu_fault(SMMUS1Hwpt *hwpt,
+                                      struct iommu_hwpt_pgfault *fault)
 {
-    SMMUDevice *sdev = (SMMUDevice *)key;
+    PendFaultEntry *pend;
+    SMMUDevice *sdev = hwpt->sdev;
+    SMMUv3State *s3 = sdev->smmu;
     uint32_t sid = smmu_get_sid(sdev);
-    SMMUSIDRange *sid_range = (SMMUSIDRange *)user_data;
+    SMMUEventInfo info = {0};
+
+    info.sid = sid;
+    info.type = SMMU_EVT_F_TRANSLATION;
+    info.u.f_translation.addr = fault->addr;
+    info.u.f_translation.stall = true;
+    info.u.f_translation.ssid = fault->pasid;
+    info.u.f_translation.stag = fault->grpid;
+
+    if (fault->flags | IOMMU_PGFAULT_FLAGS_PASID_VALID) {
+        info.u.f_translation.ssv = true;
+    }
+    if (fault->perm & IOMMU_PGFAULT_PERM_READ) {
+        info.u.f_translation.rnw = true;
+    }
+    if (fault->perm & IOMMU_PGFAULT_PERM_PRIV) {
+        info.u.f_translation.pnu = true;
+    }
+    if (fault->perm & IOMMU_PGFAULT_PERM_EXEC) {
+        info.u.f_translation.ind = true;
+    }
+
+    pend = g_new0(PendFaultEntry, 1);
+    memcpy(&pend->fault, fault, sizeof(*fault));
+    qemu_mutex_lock(&hwpt->fault_mutex);
+    QTAILQ_INSERT_TAIL(&hwpt->pendfault, pend, entry);
+    qemu_mutex_unlock(&hwpt->fault_mutex);
+    smmuv3_record_event(s3, &info);
+    return;
+}
+
+static void smmuv3_notify_stall_resume(SMMUState *bs, uint32_t sid,
+                                       uint32_t stag, uint32_t code)
+{
+    SMMUDevice *sdev = smmu_find_sdev(bs, sid);
+    PageRespEntry *msg;
+    PendFaultEntry *pend, *tmp;
+    SMMUS1Hwpt *hwpt;
+    bool found = false;
+
+    if (!sdev) {
+        return;
+    }
+
+    hwpt = sdev->s1_hwpt;
+    msg = g_new0(PageRespEntry, 1);
+
+    /* Kernel expects addr and pasid info for page response */
+    qemu_mutex_lock(&hwpt->fault_mutex);
+    QTAILQ_FOREACH_SAFE(pend, &hwpt->pendfault, entry, tmp) {
+        if (pend->fault.grpid == stag) {
+            QTAILQ_REMOVE(&hwpt->pendfault, pend, entry);
+            msg->resp.cookie = pend->fault.cookie;
+            msg->resp.code = code;
+            QTAILQ_INSERT_TAIL(&hwpt->pageresp, msg, entry);
+            qemu_cond_signal(&hwpt->fault_cond);
+
+            g_free(pend);
+            found = true;
+            break;
+        }
+    }
+
+    qemu_mutex_unlock(&hwpt->fault_mutex);
+    if (!found) {
+        warn_report("No matching fault for resume(stag 0x%x), drop!", stag);
+        return;
+    }
+}
+
+static void *write_fault_handler(void *opaque)
+{
+    SMMUS1Hwpt *hwpt = opaque;
+    PageRespEntry *msg, *tmp;
+    struct iommu_hwpt_page_response *resp;
+    int ret;
+
+    resp = g_new0(struct iommu_hwpt_page_response, 1);
+    while (!hwpt->exiting) {
+        /* Check we have any pending responses */
+        qemu_mutex_lock(&hwpt->fault_mutex);
+        qemu_cond_wait(&hwpt->fault_cond, &hwpt->fault_mutex);
+        QTAILQ_FOREACH_SAFE(msg, &hwpt->pageresp, entry, tmp) {
+            QTAILQ_REMOVE(&hwpt->pageresp, msg, entry);
+            memcpy(resp, &msg->resp, sizeof(*resp));
+            g_free(msg);
+
+            ret = write(hwpt->out_fault_fd, resp, sizeof(*resp));
+            if (ret != sizeof(*resp)) {
+                warn_report("Write resp[cookie 0x%x] fail %d",
+                             resp->cookie, ret);
+            }
+        }
+        qemu_mutex_unlock(&hwpt->fault_mutex);
+    }
+    g_free(resp);
+    return NULL;
+}
+
+static void *read_fault_handler(void *opaque)
+{
+    SMMUS1Hwpt *hwpt = opaque;
+    struct io_uring_sqe *sqe;
+    struct io_uring_cqe *cqe;
+    struct iommu_hwpt_pgfault *fault;
+    struct io_uring *ring = &hwpt->fault_ring;
+    void *data;
+    int ret;
+
+    fault = g_new0(struct iommu_hwpt_pgfault, 1);
+    while (!hwpt->exiting) {
+        sqe = io_uring_get_sqe(ring);
+        io_uring_prep_read(sqe, hwpt->out_fault_fd, fault,
+                           sizeof(*fault), 0);
+        io_uring_sqe_set_data(sqe, fault);
+        io_uring_submit(ring);
+
+        ret = io_uring_wait_cqe(ring, &cqe);
+        if (ret == 0) {
+            if (cqe->res == sizeof(*fault)) {
+                data = io_uring_cqe_get_data(cqe);
+                smmuv3_report_iommu_fault(hwpt, data);
+            }
+        } else {
+            warn_report("Read fault[hwpt_id 0x%x] failed %d",
+                         hwpt->hwpt_id, ret);
+        }
+        io_uring_cqe_seen(ring, cqe);
+    }
+    g_free(fault);
+    return NULL;
+}
+
+static void create_fault_handlers(SMMUS1Hwpt *hwpt)
+{
+    if (!hwpt->out_fault_fd) {
+        warn_report("No fault fd for hwpt id: %d", hwpt->hwpt_id);
+        return;
+    }
+
+    io_uring_queue_init(1024, &hwpt->fault_ring, 0);
+    qemu_mutex_init(&hwpt->fault_mutex);
+    qemu_cond_init(&hwpt->fault_cond);
+    QTAILQ_INIT(&hwpt->pageresp);
+    QTAILQ_INIT(&hwpt->pendfault);
+    qemu_thread_create(&hwpt->read_fault_thread, "io fault read",
+                       read_fault_handler,
+                       hwpt, QEMU_THREAD_JOINABLE);
+    qemu_thread_create(&hwpt->write_fault_thread, "io fault write",
+                       write_fault_handler,
+                       hwpt, QEMU_THREAD_JOINABLE);
+}
+static void smmuv3_install_nested_ste(SMMUDevice *sdev, int sid)
+{
+#ifdef __linux__
+    SMMUEventInfo event = {.type = SMMU_EVT_NONE, .sid = sid,
+                           .inval_ste_allowed = true};
+    struct iommu_hwpt_arm_smmuv3 nested_data = {};
+    SMMUv3State *s = sdev->smmu;
+    SMMUState *bs = &s->smmu_state;
+    bool req_fault_fd = false;
+    uint32_t config;
+    STE ste;
+    int ret;
+
+    if (!sdev->viommu || !bs->nested) {
+        return;
+    }
+
+    if (!sdev->vdev && sdev->idev && sdev->viommu) {
+        SMMUVdev *vdev = g_new0(SMMUVdev, 1);
+        vdev->core = iommufd_backend_alloc_vdev(sdev->idev, sdev->viommu->core,
+                                                sid);
+        if (!vdev->core) {
+            error_report("failed to allocate a vDEVICE");
+            g_free(vdev);
+            return;
+        }
+        sdev->vdev = vdev;
+    }
+
+    ret = smmu_find_ste(sdev->smmu, sid, &ste, &event);
+    if (ret) {
+        /*
+         * For a 2-level Stream Table, the level-2 table might not be ready
+         * until the device gets inserted to the stream table. Ignore this.
+         */
+        return;
+    }
+
+    config = STE_CONFIG(&ste);
+    if (!STE_VALID(&ste) || !STE_CFG_S1_ENABLED(config)) {
+        smmu_dev_uninstall_nested_ste(sdev, STE_CFG_ABORT(config));
+        smmuv3_flush_config(sdev);
+        return;
+    }
+
+    nested_data.ste[0] = (uint64_t)ste.word[0] | (uint64_t)ste.word[1] << 32;
+    nested_data.ste[1] = (uint64_t)ste.word[2] | (uint64_t)ste.word[3] << 32;
+    /* V | CONFIG | S1FMT | S1CTXPTR | S1CDMAX */
+    nested_data.ste[0] &= 0xf80fffffffffffffULL;
+    /* S1DSS | S1CIR | S1COR | S1CSH | S1STALLD | EATS */
+    nested_data.ste[1] &= 0x380000ffULL;
+
+    if (STE_S1CDMAX(&ste)) {
+        req_fault_fd = true;
+    }
+
+    ret = smmu_dev_install_nested_ste(sdev, IOMMU_HWPT_DATA_ARM_SMMUV3,
+                                      sizeof(nested_data), &nested_data,
+                                      req_fault_fd);
+    if (ret) {
+        error_report("Unable to install nested STE=%16LX:%16LX, ret=%d",
+                     nested_data.ste[1], nested_data.ste[0], ret);
+    }
+
+    if (req_fault_fd) {
+        create_fault_handlers(sdev->s1_hwpt);
+    }
+
+    trace_smmuv3_install_nested_ste(sid, nested_data.ste[1], nested_data.ste[0]);
+#endif
+}
+
+static gboolean
+_smmuv3_invalidate_ste(SMMUDevice *sdev, SMMUSIDRange *sid_range)
+{
+    uint32_t sid = smmu_get_sid(sdev);
 
     if (sid < sid_range->start || sid > sid_range->end) {
         return false;
     }
+    smmuv3_flush_config(sdev);
+    smmuv3_install_nested_ste(sdev, sid);
     trace_smmuv3_config_cache_inv(sid);
     return true;
+}
+
+static gboolean
+smmuv3_invalidate_ste(gpointer key, gpointer value, gpointer user_data)
+{
+    return _smmuv3_invalidate_ste((SMMUDevice *)key, (SMMUSIDRange *)user_data);
+}
+
+static void smmuv3_invalidate_nested_ste(SMMUSIDRange *sid_range)
+{
+    SMMUState *bs = sid_range->state;
+    SMMUDevice *sdev;
+
+    if (!bs->viommu) {
+        return;
+    }
+
+    QLIST_FOREACH(sdev, &bs->viommu->device_list, next) {
+        if (smmu_get_sid(sdev)) {
+            _smmuv3_invalidate_ste(sdev, sid_range);
+        }
+    }
+}
+
+/**
+ * SMMUCommandBatch - batch of commands to issue for nested SMMU invalidation
+ * @cmds: Pointer to list of commands
+ * @cons: Pointer to list of CONS corresponding to the commands
+ * @ncmds: Total ncmds in the batch
+ * @dev_cache: Issue to a device cache
+ */
+typedef struct SMMUCommandBatch {
+    Cmd *cmds;
+    uint32_t *cons;
+    uint32_t ncmds;
+    bool dev_cache;
+} SMMUCommandBatch;
+
+/* Update batch->ncmds to the number of execute cmds */
+static int smmuv3_issue_cmd_batch(SMMUState *bs, SMMUCommandBatch *batch)
+{
+    uint32_t total = batch->ncmds;
+    int ret;
+
+    ret = smmu_viommu_invalidate_cache(bs->viommu->core,
+                                       IOMMU_VIOMMU_INVALIDATE_DATA_ARM_SMMUV3,
+                                       sizeof(Cmd), &batch->ncmds, batch->cmds);
+    if (total != batch->ncmds) {
+        error_report("%s failed: ret=%d, total=%d, done=%d",
+                      __func__, ret, total, batch->ncmds);
+        return ret;
+    }
+
+    batch->ncmds = 0;
+    batch->dev_cache = false;
+    return ret;
+}
+
+static int smmuv3_batch_cmds(SMMUState *bs, SMMUCommandBatch *batch,
+                             Cmd *cmd, uint32_t *cons, bool dev_cache)
+{
+    int ret;
+
+    if (!bs->nested || !bs->viommu) {
+        return 0;
+    }
+
+    /*
+     * Currently separate dev_cache and hwpt for safety, which might not be
+     * necessary if underlying HW SMMU does not have the errata.
+     *
+     * TODO check IIDR register values read from hw_info.
+     */
+    if (batch->ncmds && (dev_cache != batch->dev_cache)) {
+        ret = smmuv3_issue_cmd_batch(bs, batch);
+        if (ret) {
+            *cons = batch->cons[batch->ncmds];
+            return ret;
+        }
+    }
+    batch->dev_cache = dev_cache;
+    batch->cmds[batch->ncmds] = *cmd;
+    batch->cons[batch->ncmds++] = *cons;
+    return 0;
 }
 
 static int smmuv3_cmdq_consume(SMMUv3State *s)
@@ -1173,10 +1597,17 @@ static int smmuv3_cmdq_consume(SMMUv3State *s)
     SMMUCmdError cmd_error = SMMU_CERROR_NONE;
     SMMUQueue *q = &s->cmdq;
     SMMUCommandType type = 0;
+    SMMUCommandBatch batch = {};
+    uint32_t ncmds = 0;
 
     if (!smmuv3_cmdq_enabled(s)) {
         return 0;
     }
+
+    ncmds = smmuv3_q_ncmds(q);
+    batch.cmds = g_new0(Cmd, ncmds);
+    batch.cons = g_new0(uint32_t, ncmds);
+
     /*
      * some commands depend on register values, typically CR0. In case those
      * register values change while handling the command, spec says it
@@ -1217,21 +1648,20 @@ static int smmuv3_cmdq_consume(SMMUv3State *s)
         case SMMU_CMD_CFGI_STE:
         {
             uint32_t sid = CMD_SID(&cmd);
-            IOMMUMemoryRegion *mr = smmu_iommu_mr(bs, sid);
-            SMMUDevice *sdev;
+            SMMUDevice *sdev = smmu_find_sdev(bs, sid);
 
             if (CMD_SSEC(&cmd)) {
                 cmd_error = SMMU_CERROR_ILL;
                 break;
             }
 
-            if (!mr) {
+            if (!sdev) {
                 break;
             }
 
             trace_smmuv3_cmdq_cfgi_ste(sid);
-            sdev = container_of(mr, SMMUDevice, iommu);
             smmuv3_flush_config(sdev);
+            smmuv3_install_nested_ste(sdev, sid);
 
             break;
         }
@@ -1247,33 +1677,40 @@ static int smmuv3_cmdq_consume(SMMUv3State *s)
             }
 
             mask = (1ULL << (range + 1)) - 1;
+            sid_range.state = bs;
             sid_range.start = sid & ~mask;
             sid_range.end = sid_range.start + mask;
 
             trace_smmuv3_cmdq_cfgi_ste_range(sid_range.start, sid_range.end);
             g_hash_table_foreach_remove(bs->configs, smmuv3_invalidate_ste,
                                         &sid_range);
+            smmuv3_invalidate_nested_ste(&sid_range);
             break;
         }
         case SMMU_CMD_CFGI_CD:
         case SMMU_CMD_CFGI_CD_ALL:
         {
             uint32_t sid = CMD_SID(&cmd);
-            IOMMUMemoryRegion *mr = smmu_iommu_mr(bs, sid);
-            SMMUDevice *sdev;
+            SMMUDevice *sdev = smmu_find_sdev(bs, sid);
 
             if (CMD_SSEC(&cmd)) {
                 cmd_error = SMMU_CERROR_ILL;
                 break;
             }
 
-            if (!mr) {
+            if (!sdev) {
                 break;
             }
 
             trace_smmuv3_cmdq_cfgi_cd(sid);
-            sdev = container_of(mr, SMMUDevice, iommu);
             smmuv3_flush_config(sdev);
+
+            if (sdev->s1_hwpt) {
+                if (smmuv3_batch_cmds(sdev->smmu, &batch, &cmd, &q->cons, true)) {
+                    cmd_error = SMMU_CERROR_ILL;
+                    break;
+                }
+            }
             break;
         }
         case SMMU_CMD_TLBI_NH_ASID:
@@ -1288,6 +1725,10 @@ static int smmuv3_cmdq_consume(SMMUv3State *s)
             trace_smmuv3_cmdq_tlbi_nh_asid(asid);
             smmu_inv_notifiers_all(&s->smmu_state);
             smmu_iotlb_inv_asid(bs, asid);
+            if (smmuv3_batch_cmds(bs, &batch, &cmd, &q->cons, false)) {
+                cmd_error = SMMU_CERROR_ILL;
+                break;
+            }
             break;
         }
         case SMMU_CMD_TLBI_NH_ALL:
@@ -1300,6 +1741,11 @@ static int smmuv3_cmdq_consume(SMMUv3State *s)
             trace_smmuv3_cmdq_tlbi_nh();
             smmu_inv_notifiers_all(&s->smmu_state);
             smmu_iotlb_inv_all(bs);
+
+            if (smmuv3_batch_cmds(bs, &batch, &cmd, &q->cons, false)) {
+                cmd_error = SMMU_CERROR_ILL;
+                break;
+            }
             break;
         case SMMU_CMD_TLBI_NH_VAA:
         case SMMU_CMD_TLBI_NH_VA:
@@ -1308,7 +1754,24 @@ static int smmuv3_cmdq_consume(SMMUv3State *s)
                 break;
             }
             smmuv3_range_inval(bs, &cmd);
+
+            if (smmuv3_batch_cmds(bs, &batch, &cmd, &q->cons, false)) {
+                cmd_error = SMMU_CERROR_ILL;
+                break;
+            }
             break;
+        case SMMU_CMD_ATC_INV:
+        {
+            SMMUDevice *sdev = smmu_find_sdev(bs, CMD_SID(&cmd));
+
+            if (sdev->s1_hwpt) {
+                if (smmuv3_batch_cmds(sdev->smmu, &batch, &cmd, &q->cons, true)) {
+                    cmd_error = SMMU_CERROR_ILL;
+                    break;
+                }
+            }
+            break;
+        }
         case SMMU_CMD_TLBI_S12_VMALL:
         {
             uint16_t vmid = CMD_VMID(&cmd);
@@ -1340,12 +1803,23 @@ static int smmuv3_cmdq_consume(SMMUv3State *s)
         case SMMU_CMD_TLBI_EL2_ASID:
         case SMMU_CMD_TLBI_EL2_VA:
         case SMMU_CMD_TLBI_EL2_VAA:
-        case SMMU_CMD_ATC_INV:
         case SMMU_CMD_PRI_RESP:
-        case SMMU_CMD_RESUME:
         case SMMU_CMD_STALL_TERM:
             trace_smmuv3_unhandled_cmd(type);
             break;
+        case SMMU_CMD_RESUME:
+        {
+            uint32_t sid = CMD_SID(&cmd);
+            uint16_t stag = CMD_RESUME_STAG(&cmd);
+            uint8_t action = CMD_RESUME_AC(&cmd);
+            uint32_t code = IOMMUFD_PAGE_RESP_INVALID;
+
+            if (action) {
+                code = IOMMUFD_PAGE_RESP_SUCCESS;
+            }
+            smmuv3_notify_stall_resume(bs, sid, stag, code);
+            break;
+        }
         default:
             cmd_error = SMMU_CERROR_ILL;
             break;
@@ -1365,12 +1839,22 @@ static int smmuv3_cmdq_consume(SMMUv3State *s)
          */
         queue_cons_incr(q);
     }
+    qemu_mutex_lock(&s->mutex);
+    if (!cmd_error && batch.ncmds && bs->viommu) {
+        if (smmuv3_issue_cmd_batch(bs, &batch)) {
+            q->cons = batch.cons[batch.ncmds];
+            cmd_error = SMMU_CERROR_ILL;
+        }
+    }
+    qemu_mutex_unlock(&s->mutex);
 
     if (cmd_error) {
         trace_smmuv3_cmdq_consume_error(smmu_cmd_string(type), cmd_error);
         smmu_write_cmdq_err(s, cmd_error);
         smmuv3_trigger_irq(s, SMMU_IRQ_GERROR, R_GERROR_CMDQ_ERR_MASK);
     }
+    g_free(batch.cmds);
+    g_free(batch.cons);
 
     trace_smmuv3_cmdq_consume_out(Q_PROD(q), Q_CONS(q),
                                   Q_PROD_WRAP(q), Q_CONS_WRAP(q));
@@ -1746,6 +2230,11 @@ static void smmu_realize(DeviceState *d, Error **errp)
     SysBusDevice *dev = SYS_BUS_DEVICE(d);
     Error *local_err = NULL;
 
+    if (s->stage && strcmp("1", s->stage)) {
+        /* Only support nested with an stage1 only vSMMU */
+        sys->nested = false;
+    }
+
     c->parent_realize(d, &local_err);
     if (local_err) {
         error_propagate(errp, local_err);
@@ -1762,6 +2251,38 @@ static void smmu_realize(DeviceState *d, Error **errp)
     sysbus_init_mmio(dev, &sys->iomem);
 
     smmu_init_irq(s, dev);
+}
+
+static int smmuv3_accel_pci_host_bridge(Object *obj, void *opaque)
+{
+    DeviceState *d = opaque;
+
+    if (object_dynamic_cast(obj, TYPE_PCI_HOST_BRIDGE)) {
+        PCIBus *bus = PCI_HOST_BRIDGE(obj)->bus;
+        if (d->parent_bus && !strcmp(bus->qbus.name, d->parent_bus->name)) {
+            object_property_set_link(OBJECT(d), "primary-bus", OBJECT(bus),
+                                     &error_abort);
+        }
+    }
+    return 0;
+}
+
+static void smmu_accel_realize(DeviceState *d, Error **errp)
+{
+    SMMUv3AccelState *s_nested = ARM_SMMUV3_ACCEL(d);
+    SMMUv3AccelClass *c = ARM_SMMUV3_ACCEL_GET_CLASS(s_nested);
+    SysBusDevice *dev = SYS_BUS_DEVICE(d);
+    Error *local_err = NULL;
+
+    object_child_foreach_recursive(object_get_root(),
+                                   smmuv3_accel_pci_host_bridge, d);
+    object_property_set_bool(OBJECT(dev), "nested", true, &error_abort);
+
+    c->parent_realize(d, &local_err);
+    if (local_err) {
+        error_propagate(errp, local_err);
+        return;
+    }
 }
 
 static const VMStateDescription vmstate_smmuv3_queue = {
@@ -1862,6 +2383,19 @@ static void smmuv3_class_init(ObjectClass *klass, void *data)
     device_class_set_props(dc, smmuv3_properties);
 }
 
+static void smmuv3_accel_class_init(ObjectClass *klass, void *data)
+{
+    DeviceClass *dc = DEVICE_CLASS(klass);
+    SMMUv3AccelClass *c = ARM_SMMUV3_ACCEL_CLASS(klass);
+
+    dc->vmsd = &vmstate_smmuv3;
+    device_class_set_parent_realize(dc, smmu_accel_realize,
+                                    &c->parent_realize);
+    dc->user_creatable = true;
+    dc->hotpluggable = false;
+    dc->bus_type = TYPE_PCIE_BUS;
+}
+
 static int smmuv3_notify_flag_changed(IOMMUMemoryRegion *iommu,
                                       IOMMUNotifierFlag old,
                                       IOMMUNotifierFlag new,
@@ -1876,12 +2410,9 @@ static int smmuv3_notify_flag_changed(IOMMUMemoryRegion *iommu,
         return -EINVAL;
     }
 
-    if (new & IOMMU_NOTIFIER_MAP) {
-        error_setg(errp,
-                   "device %02x.%02x.%x requires iommu MAP notifier which is "
-                   "not currently supported", pci_bus_num(sdev->bus),
-                   PCI_SLOT(sdev->devfn), PCI_FUNC(sdev->devfn));
-        return -EINVAL;
+    /* nested-smmuv3 does not need IOMMU_NOTIFIER_MAP. Ignore it. */
+    if (s->nested) {
+        new &= ~IOMMU_NOTIFIER_MAP;
     }
 
     if (old == IOMMU_NOTIFIER_NONE) {
@@ -1903,6 +2434,14 @@ static void smmuv3_iommu_memory_region_class_init(ObjectClass *klass,
     imrc->notify_flag_changed = smmuv3_notify_flag_changed;
 }
 
+static const TypeInfo smmuv3_accel_type_info = {
+    .name          = TYPE_ARM_SMMUV3_ACCEL,
+    .parent        = TYPE_ARM_SMMUV3,
+    .instance_size = sizeof(SMMUv3AccelState),
+    .class_size    = sizeof(SMMUv3AccelClass),
+    .class_init    = smmuv3_accel_class_init,
+};
+
 static const TypeInfo smmuv3_type_info = {
     .name          = TYPE_ARM_SMMUV3,
     .parent        = TYPE_ARM_SMMU,
@@ -1921,6 +2460,7 @@ static const TypeInfo smmuv3_iommu_memory_region_info = {
 static void smmuv3_register_types(void)
 {
     type_register(&smmuv3_type_info);
+    type_register(&smmuv3_accel_type_info);
     type_register(&smmuv3_iommu_memory_region_info);
 }
 

@@ -22,6 +22,8 @@
 #include "hw/sysbus.h"
 #include "hw/pci/pci.h"
 #include "qom/object.h"
+#include "sysemu/iommufd.h"
+#include <linux/iommufd.h>
 
 #define SMMU_PCI_BUS_MAX                    256
 #define SMMU_PCI_DEVFN_MAX                  256
@@ -48,6 +50,13 @@ typedef enum {
     SMMU_PTW_ERR_ACCESS,      /* Access fault */
     SMMU_PTW_ERR_PERMISSION,  /* Permission fault */
 } SMMUPTWEventType;
+
+/* SMMU Stage */
+typedef enum {
+    SMMU_STAGE_1 = 1,
+    SMMU_STAGE_2,
+    SMMU_NESTED,
+} SMMUStage;
 
 typedef struct SMMUPTWEventInfo {
     int stage;
@@ -106,14 +115,73 @@ typedef struct SMMUTransCfg {
     struct SMMUS2Cfg s2cfg;
 } SMMUTransCfg;
 
+typedef struct SMMUS2Hwpt {
+    IOMMUFDBackend *iommufd;
+    uint32_t hwpt_id;
+    uint32_t ioas_id;
+} SMMUS2Hwpt;
+
+typedef struct SMMUViommu {
+    void *smmu;
+    IOMMUFDBackend *iommufd;
+    IOMMUFDViommu *core;
+    SMMUS2Hwpt *s2_hwpt;
+    uint32_t bypass_hwpt_id;
+    uint32_t abort_hwpt_id;
+    QLIST_HEAD(, SMMUDevice) device_list;
+    QLIST_ENTRY(SMMUViommu) next;
+} SMMUViommu;
+
+typedef struct SMMUVdev {
+    SMMUViommu *vsmmu;
+    IOMMUFDVdev *core;
+    uint32_t sid;
+}SMMUVdev;
+
+typedef struct PendFaultEntry {
+    struct iommu_hwpt_pgfault fault;
+    QTAILQ_ENTRY(PendFaultEntry) entry;
+} PendFaultEntry;
+
+typedef struct PageRespEntry {
+    struct iommu_hwpt_page_response resp;
+    QTAILQ_ENTRY(PageRespEntry) entry;
+} PageRespEntry;
+
+typedef struct SMMUS1Hwpt {
+    void  *sdev;
+    void *smmu;
+    IOMMUFDBackend *iommufd;
+    SMMUViommu *viommu;
+    uint32_t hwpt_id;
+    uint32_t out_fault_fd;
+    QLIST_HEAD(, SMMUDevice) device_list;
+    QLIST_ENTRY(SMMUViommu) next;
+    /* fault handling */
+    struct io_uring fault_ring;
+    QemuThread read_fault_thread;
+    QemuThread write_fault_thread;
+    QemuMutex fault_mutex;
+    QemuCond fault_cond;
+    QTAILQ_HEAD(, PageRespEntry) pageresp;
+    QTAILQ_HEAD(, PendFaultEntry) pendfault;
+    bool exiting;
+} SMMUS1Hwpt;
+
 typedef struct SMMUDevice {
     void               *smmu;
     PCIBus             *bus;
     int                devfn;
     IOMMUMemoryRegion  iommu;
+    HostIOMMUDeviceIOMMUFD *idev;
+    SMMUViommu         *viommu;
+    SMMUVdev           *vdev;
+    SMMUS1Hwpt         *s1_hwpt;
     AddressSpace       as;
+    AddressSpace       as_sysmem;
     uint32_t           cfg_cache_hits;
     uint32_t           cfg_cache_misses;
+    struct iommu_hw_info_arm_smmuv3 info;
     QLIST_ENTRY(SMMUDevice) next;
 } SMMUDevice;
 
@@ -134,7 +202,13 @@ struct SMMUState {
     /* <private> */
     SysBusDevice  dev;
     const char *mrtypename;
+    MemoryRegion root;
     MemoryRegion iomem;
+    MemoryRegion sysmem;
+
+    /* Nested SMMU */
+    bool nested;
+    SMMUViommu *viommu;
 
     GHashTable *smmu_pcibus_by_busptr;
     GHashTable *configs; /* cache for configuration data */
@@ -181,8 +255,8 @@ int smmu_ptw(SMMUTransCfg *cfg, dma_addr_t iova, IOMMUAccessFlags perm,
  */
 SMMUTransTableInfo *select_tt(SMMUTransCfg *cfg, dma_addr_t iova);
 
-/* Return the iommu mr associated to @sid, or NULL if none */
-IOMMUMemoryRegion *smmu_iommu_mr(SMMUState *s, uint32_t sid);
+/* Return the SMMUDevice associated to @sid, or NULL if none */
+SMMUDevice *smmu_find_sdev(SMMUState *s, uint32_t sid);
 
 #define SMMU_IOTLB_MAX_SIZE 256
 
@@ -200,4 +274,15 @@ void smmu_iotlb_inv_iova(SMMUState *s, int asid, int vmid, dma_addr_t iova,
 /* Unmap the range of all the notifiers registered to any IOMMU mr */
 void smmu_inv_notifiers_all(SMMUState *s);
 
+/* IOMMUFD helpers */
+int smmu_dev_get_info(SMMUDevice *sdev, uint32_t *data_type,
+                      uint32_t data_len, uint8_t *pasid, void *data);
+void smmu_dev_uninstall_nested_ste(SMMUDevice *sdev, bool abort);
+int smmu_dev_install_nested_ste(SMMUDevice *sdev, uint32_t data_type,
+                                uint32_t data_len, void *data,
+                                bool req_fault_fd);
+int smmu_hwpt_invalidate_cache(SMMUS1Hwpt *s1_hwpt, uint32_t type, uint32_t len,
+                               uint32_t *num, void *reqs);
+int smmu_viommu_invalidate_cache(IOMMUFDViommu *viommu, uint32_t type,
+                                 uint32_t len, uint32_t *num, void *reqs);
 #endif /* HW_ARM_SMMU_COMMON_H */

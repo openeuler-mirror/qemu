@@ -74,6 +74,7 @@ REG32(IDR1,                0x4)
     FIELD(IDR1, ECMDQ,        31, 1)
 
 #define SMMU_IDR1_SIDSIZE 16
+#define SMMU_IDR1_SSIDSIZE 16
 #define SMMU_CMDQS   19
 #define SMMU_EVENTQS 19
 
@@ -104,7 +105,7 @@ REG32(IDR5,                0x14)
      FIELD(IDR5, VAX,        10, 2);
      FIELD(IDR5, STALL_MAX,  16, 16);
 
-#define SMMU_IDR5_OAS 4
+#define SMMU_IDR5_OAS 5
 
 REG32(IIDR,                0x18)
 REG32(AIDR,                0x1c)
@@ -225,6 +226,19 @@ static inline bool smmuv3_gerror_irq_enabled(SMMUv3State *s)
 
 #define Q_CONS_WRAP(q) (((q)->cons & WRAP_MASK(q)) >> (q)->log2size)
 #define Q_PROD_WRAP(q) (((q)->prod & WRAP_MASK(q)) >> (q)->log2size)
+
+#define Q_IDX(llq, p)                   ((p) & ((1 << (llq)->max_n_shift) - 1))
+
+static inline int smmuv3_q_ncmds(SMMUQueue *q)
+{
+	uint32_t prod = Q_PROD(q);
+	uint32_t cons = Q_CONS(q);
+
+	if (Q_PROD_WRAP(q) == Q_CONS_WRAP(q))
+		return prod - cons;
+	else
+		return WRAP_MASK(q) - cons + prod;
+}
 
 static inline bool smmuv3_q_full(SMMUQueue *q)
 {
@@ -552,6 +566,7 @@ typedef struct CD {
 
 #define STE_S1FMT(x)       extract32((x)->word[0], 4 , 2)
 #define STE_S1CDMAX(x)     extract32((x)->word[1], 27, 5)
+#define STE_S1DSS(x)       extract32((x)->word[2], 0,  2)
 #define STE_S1STALLD(x)    extract32((x)->word[2], 27, 1)
 #define STE_EATS(x)        extract32((x)->word[2], 28, 2)
 #define STE_STRW(x)        extract32((x)->word[2], 30, 2)
