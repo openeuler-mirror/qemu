@@ -54,22 +54,6 @@ static const MemoryRegionOps loongarch_pch_msi_ops = {
     .endianness = DEVICE_LITTLE_ENDIAN,
 };
 
-static void pch_msi_irq_handler(void *opaque, int irq, int level)
-{
-    LoongArchPCHMSI *s = LOONGARCH_PCH_MSI(opaque);
-
-    MSIMessage msg = {
-        .address = 0,
-        .data = irq,
-    };
-
-    if (kvm_enabled() && kvm_irqchip_in_kernel()) {
-        kvm_irqchip_send_msi(kvm_state, msg);
-    } else {
-        qemu_set_irq(s->pch_msi_irq[irq], level);
-    }
-}
-
 static void loongarch_pch_msi_realize(DeviceState *dev, Error **errp)
 {
     LoongArchPCHMSI *s = LOONGARCH_PCH_MSI(dev);
@@ -80,9 +64,7 @@ static void loongarch_pch_msi_realize(DeviceState *dev, Error **errp)
     }
 
     s->pch_msi_irq = g_new(qemu_irq, s->irq_num);
-
     qdev_init_gpio_out(dev, s->pch_msi_irq, s->irq_num);
-    qdev_init_gpio_in(dev, pch_msi_irq_handler, s->irq_num);
 }
 
 static void loongarch_pch_msi_unrealize(DeviceState *dev)
