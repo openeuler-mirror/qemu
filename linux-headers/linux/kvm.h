@@ -1212,6 +1212,8 @@ struct kvm_ppc_resize_hpt {
 /* support request to inject secret to CSV3 guest */
 #define KVM_CAP_HYGON_COCO_EXT_CSV3_INJ_SECRET    (1 << 2)
 
+#define KVM_CAP_ARM_HW_DIRTY_STATE_TRACK 502
+
 #define KVM_CAP_ARM_VIRT_MSI_BYPASS 799
 
 #define KVM_EXIT_HYPERCALL_VALID_MASK (1 << KVM_HC_MAP_GPA_RANGE)

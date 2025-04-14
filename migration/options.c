@@ -186,6 +186,9 @@ Property migration_properties[] = {
     DEFINE_PROP_STRING("sev-pdh", MigrationState, parameters.sev_pdh),
     DEFINE_PROP_STRING("sev-plat-cert", MigrationState, parameters.sev_plat_cert),
     DEFINE_PROP_STRING("sev-amd-cert", MigrationState, parameters.sev_amd_cert),
+    DEFINE_PROP_UINT8("hdbss-buffer-size", MigrationState,
+                      parameters.hdbss_buffer_size,
+                      DEFAULT_HDBSS_BUFFER_SIZE),
 
     /* Migration capabilities */
     DEFINE_PROP_MIG_CAP("x-xbzrle", MIGRATION_CAPABILITY_XBZRLE),
@@ -853,6 +856,13 @@ MigMode migrate_mode(void)
     return s->parameters.mode;
 }
 
+int migrate_hdbss_buffer_size(void)
+{
+    MigrationState *s = migrate_get_current();
+
+    return s->parameters.hdbss_buffer_size;
+}
+
 int migrate_multifd_channels(void)
 {
     MigrationState *s = migrate_get_current();
@@ -1032,6 +1042,8 @@ MigrationParameters *qmp_query_migrate_parameters(Error **errp)
     params->vcpu_dirty_limit = s->parameters.vcpu_dirty_limit;
     params->has_mode = true;
     params->mode = s->parameters.mode;
+    params->has_hdbss_buffer_size = true;
+    params->hdbss_buffer_size = s->parameters.hdbss_buffer_size;
 
     return params;
 }
@@ -1069,6 +1081,7 @@ void migrate_params_init(MigrationParameters *params)
     params->has_x_vcpu_dirty_limit_period = true;
     params->has_vcpu_dirty_limit = true;
     params->has_mode = true;
+    params->has_hdbss_buffer_size = true;
 
     params->sev_pdh = g_strdup("");
     params->sev_plat_cert = g_strdup("");
@@ -1415,6 +1428,10 @@ static void migrate_params_test_apply(MigrateSetParameters *params,
         assert(params->sev_amd_cert->type == QTYPE_QSTRING);
         dest->sev_amd_cert = params->sev_amd_cert->u.s;
     }
+
+    if (params->has_hdbss_buffer_size) {
+        dest->hdbss_buffer_size = params->hdbss_buffer_size;
+    }
 }
 
 static void migrate_params_apply(MigrateSetParameters *params, Error **errp)
@@ -1578,6 +1595,10 @@ static void migrate_params_apply(MigrateSetParameters *params, Error **errp)
         g_free(s->parameters.sev_amd_cert);
         assert(params->sev_amd_cert->type == QTYPE_QSTRING);
         s->parameters.sev_amd_cert = g_strdup(params->sev_amd_cert->u.s);
+    }
+
+    if (params->has_hdbss_buffer_size) {
+        s->parameters.hdbss_buffer_size = params->hdbss_buffer_size;
     }
 }
 

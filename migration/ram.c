@@ -39,6 +39,7 @@
 #include "migration-stats.h"
 #include "migration/register.h"
 #include "migration/misc.h"
+#include "migration/options.h"
 #include "qemu-file.h"
 #include "postcopy-ram.h"
 #include "page_cache.h"
@@ -2790,6 +2791,31 @@ static void xbzrle_cleanup(void)
     XBZRLE_cache_unlock();
 }
 
+static void kvm_update_hdbss_cap(bool enable)
+{
+    KVMState *s = kvm_state;
+    int size, ret;
+
+    if (s == NULL || !kvm_check_extension(s, KVM_CAP_ARM_HW_DIRTY_STATE_TRACK)) {
+        return;
+    }
+
+    size = migrate_hdbss_buffer_size();
+    if (size < 0 || size > MAX_HDBSS_BUFFER_SIZE) {
+        fprintf(stderr, "Invalid hdbss buffer size: %d\n", size);
+        return;
+    }
+
+    ret = kvm_vm_enable_cap(s, KVM_CAP_ARM_HW_DIRTY_STATE_TRACK, 0,
+                            enable ? size : 0);
+    if (ret) {
+        fprintf(stderr, "Could not %s KVM_CAP_ARM_HW_DIRTY_STATE_TRACK: %d\n",
+                        enable ? "enable" : "disable", ret);
+    }
+
+    return;
+}
+
 static void ram_save_cleanup(void *opaque)
 {
     RAMState **rsp = opaque;
@@ -2806,6 +2832,7 @@ static void ram_save_cleanup(void *opaque)
              * memory_global_dirty_log_stop will assert that
              * memory_global_dirty_log_start/stop used in pairs
              */
+            kvm_update_hdbss_cap(false);
             memory_global_dirty_log_stop(GLOBAL_DIRTY_MIGRATION);
         }
     }
@@ -3209,6 +3236,7 @@ static void ram_init_bitmaps(RAMState *rs)
         ram_list_init_bitmaps();
         /* We don't use dirty log with background snapshots */
         if (!migrate_background_snapshot()) {
+            kvm_update_hdbss_cap(true);
             memory_global_dirty_log_start(GLOBAL_DIRTY_MIGRATION);
             migration_bitmap_sync_precopy(rs, false);
         }

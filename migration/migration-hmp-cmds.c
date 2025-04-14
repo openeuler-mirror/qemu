@@ -409,6 +409,11 @@ void hmp_info_migrate_parameters(Monitor *mon, const QDict *qdict)
         monitor_printf(mon, "%s: %s\n",
             MigrationParameter_str(MIGRATION_PARAMETER_SEV_AMD_CERT),
             params->sev_amd_cert);
+
+        assert(params->has_hdbss_buffer_size);
+        monitor_printf(mon, "%s: %u\n",
+            MigrationParameter_str(MIGRATION_PARAMETER_HDBSS_BUFFER_SIZE),
+            params->hdbss_buffer_size);
     }
 
     qapi_free_MigrationParameters(params);
@@ -724,6 +729,10 @@ void hmp_migrate_set_parameter(Monitor *mon, const QDict *qdict)
         p->sev_amd_cert = g_new0(StrOrNull, 1);
         p->sev_amd_cert->type = QTYPE_QSTRING;
         visit_type_str(v, param, &p->sev_amd_cert->u.s, &err);
+        break;
+    case MIGRATION_PARAMETER_HDBSS_BUFFER_SIZE:
+        p->has_hdbss_buffer_size = true;
+        visit_type_uint8(v, param, &p->hdbss_buffer_size, &err);
         break;
     default:
         assert(0);
