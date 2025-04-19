@@ -902,6 +902,9 @@
 # @sev-amd-cert: AMD certificate chain which include ASK and OCA encoded in
 #                base64, or vendor cert filename for hygon (Since 4.2)
 #
+# @hdbss-buffer-size: Size of the HDBSS(Hardware Dirty state tracking Structure).
+#     Defaults to 0.  (Since 8.6)
+#
 # Features:
 #
 # @deprecated: Member @block-incremental is deprecated.  Use
@@ -937,7 +940,7 @@
            { 'name': 'x-vcpu-dirty-limit-period', 'features': ['unstable'] },
            'vcpu-dirty-limit',
            'mode',
-           'sev-pdh', 'sev-plat-cert', 'sev-amd-cert'] }
+           'sev-pdh', 'sev-plat-cert', 'sev-amd-cert', 'hdbss-buffer-size'] }
 
 ##
 # @MigrateSetParameters:
@@ -1106,6 +1109,9 @@
 # @sev-amd-cert: AMD certificate chain which include ASK and OCA encoded in
 #                base64, or vendor cert filename for hygon (Since 4.2)
 #
+# @hdbss-buffer-size: Size of the HDBSS(Hardware Dirty state tracking Structure).
+#     Defaults to 0.  (Since 8.6)
+#
 # Features:
 #
 # @deprecated: Member @block-incremental is deprecated.  Use
@@ -1165,7 +1171,8 @@
             '*mode': 'MigMode',
             '*sev-pdh': 'StrOrNull',
             '*sev-plat-cert': 'StrOrNull',
-            '*sev-amd-cert' : 'StrOrNull' } }
+            '*sev-amd-cert' : 'StrOrNull',
+            '*hdbss-buffer-size': 'uint8'} }
 
 
 ##
@@ -1355,6 +1362,9 @@
 # @sev-amd-cert: AMD certificate chain which include ASK and OCA encoded in
 #                base64, or vendor cert filename for hygon (Since 4.2)
 #
+# @hdbss-buffer-size: Size of the HDBSS(Hardware Dirty state tracking Structure).
+#     Defaults to 0.  (Since 8.6)
+#
 # Features:
 #
 # @deprecated: Member @block-incremental is deprecated.  Use
@@ -1410,7 +1420,8 @@
             '*mode': 'MigMode',
             '*sev-pdh': 'str',
             '*sev-plat-cert': 'str',
-            '*sev-amd-cert' : 'str'} }
+            '*sev-amd-cert' : 'str',
+            '*hdbss-buffer-size': 'uint8'} }
 
 ##
 # @query-migrate-parameters:
