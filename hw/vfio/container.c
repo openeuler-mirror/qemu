@@ -439,6 +439,7 @@ static const VFIOIOMMUClass *vfio_get_iommu_class(int iommu_type, Error **errp)
     switch (iommu_type) {
     case VFIO_TYPE1v2_IOMMU:
     case VFIO_TYPE1_IOMMU:
+    case VFIO_TYPE1v2_S_IOMMU:
         klass = object_class_by_name(TYPE_VFIO_IOMMU_LEGACY);
         break;
     case VFIO_SPAPR_TCE_v2_IOMMU:
