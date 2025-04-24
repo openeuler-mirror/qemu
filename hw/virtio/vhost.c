@@ -288,7 +288,7 @@ static void vhost_log_sync(MemoryListener *listener,
                                          memory_listener);
     MigrationState *ms = migrate_get_current();
 
-    if (!dev->log_enabled || !dev->started) {
+    if (!dev->log_enabled || !dev->log) {
         return;
     }
 
@@ -2327,7 +2327,6 @@ int vhost_dev_suspend(struct vhost_dev *hdev, VirtIODevice *vdev, bool vrings)
         memory_listener_unregister(&hdev->iommu_listener);
     }
     vhost_stop_config_intr(hdev);
-    vhost_log_put(hdev, true);
     hdev->started = false;
     vdev->vhost_started = false;
     hdev->vdev = NULL;
