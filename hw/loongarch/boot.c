@@ -171,6 +171,48 @@ static uint64_t cpu_loongarch_virt_to_phys(void *opaque, uint64_t addr)
     return addr & MAKE_64BIT_MASK(0, TARGET_PHYS_ADDR_SPACE_BITS);
 }
 
+static void find_initrd_loadoffset(struct loongarch_boot_info *info,
+                uint64_t kernel_high, ssize_t kernel_size)
+{
+    hwaddr base, size, gap, low_end;
+    ram_addr_t initrd_end, initrd_start;
+
+    base = VIRT_LOWMEM_BASE;
+    gap = VIRT_LOWMEM_SIZE;
+    initrd_start = ROUND_UP(kernel_high + 4 * kernel_size, 64 * KiB);
+    initrd_end = initrd_start + initrd_size;
+
+    size = info->ram_size;
+    low_end = base + MIN(size, gap);
+    if (initrd_end <= low_end) {
+        initrd_offset = initrd_start;
+        return;
+    }
+
+    if (size <= gap) {
+        error_report("The low memory too small for initial ram disk '%s',"
+             "You need to expand the memory space",
+             info->initrd_filename);
+        exit(1);
+    }
+
+    /*
+     * Try to load initrd in the high memory
+     */
+    size -= gap;
+    base = VIRT_HIGHMEM_BASE;
+    initrd_start = ROUND_UP(base, 64 * KiB);
+    if (initrd_size <= size) {
+        initrd_offset = initrd_start;
+        return;
+    }
+
+    error_report("The high memory too small for initial ram disk '%s',"
+         "You need to expand the memory space",
+         info->initrd_filename);
+    exit(1);
+}
+
 static int64_t load_kernel_info(struct loongarch_boot_info *info)
 {
     uint64_t kernel_entry, kernel_low, kernel_high;
@@ -192,16 +234,9 @@ static int64_t load_kernel_info(struct loongarch_boot_info *info)
     if (info->initrd_filename) {
         initrd_size = get_image_size(info->initrd_filename);
         if (initrd_size > 0) {
-            initrd_offset = ROUND_UP(kernel_high + 4 * kernel_size, 64 * KiB);
-
-            if (initrd_offset + initrd_size > info->ram_size) {
-                error_report("memory too small for initial ram disk '%s'",
-                             info->initrd_filename);
-                exit(1);
-            }
-
+            find_initrd_loadoffset(info, kernel_high, kernel_size);
             initrd_size = load_image_targphys(info->initrd_filename, initrd_offset,
-                                              info->ram_size - initrd_offset);
+                                              initrd_size);
         }
 
         if (initrd_size == (target_ulong)-1) {

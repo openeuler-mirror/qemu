@@ -94,6 +94,10 @@ struct LoongArchExtIOI {
 
 struct KVMLoongArchExtIOI {
     SysBusDevice parent_obj;
+    uint32_t num_cpu;
+    uint32_t features;
+    uint32_t status;
+
     /* hardware state */
     uint32_t nodetype[EXTIOI_IRQS_NODETYPE_COUNT / 2];
     uint32_t bounce[EXTIOI_IRQS_GROUP_COUNT];
