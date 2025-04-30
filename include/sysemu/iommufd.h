@@ -15,7 +15,6 @@
 #define SYSEMU_IOMMUFD_H
 
 #include "qom/object.h"
-#include "qemu/thread.h"
 #include "exec/hwaddr.h"
 #include "exec/cpu-common.h"
 #include "sysemu/host_iommu_device.h"
@@ -33,7 +32,6 @@ struct IOMMUFDBackend {
     /*< protected >*/
     int fd;            /* /dev/iommu file descriptor */
     bool owned;        /* is the /dev/iommu opened internally */
-    QemuMutex lock;
     uint32_t users;
 
     /*< public >*/
@@ -45,11 +43,11 @@ typedef struct IOMMUFDViommu {
     uint32_t viommu_id;
 } IOMMUFDViommu;
 
-int iommufd_backend_connect(IOMMUFDBackend *be, Error **errp);
+bool iommufd_backend_connect(IOMMUFDBackend *be, Error **errp);
 void iommufd_backend_disconnect(IOMMUFDBackend *be);
 
-int iommufd_backend_alloc_ioas(IOMMUFDBackend *be, uint32_t *ioas_id,
-                               Error **errp);
+bool iommufd_backend_alloc_ioas(IOMMUFDBackend *be, uint32_t *ioas_id,
+                                Error **errp);
 void iommufd_backend_free_id(IOMMUFDBackend *be, uint32_t id);
 int iommufd_backend_map_dma(IOMMUFDBackend *be, uint32_t ioas_id, hwaddr iova,
                             ram_addr_t size, void *vaddr, bool readonly);

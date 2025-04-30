@@ -30,7 +30,6 @@ static void iommufd_backend_init(Object *obj)
     be->fd = -1;
     be->users = 0;
     be->owned = true;
-    qemu_mutex_init(&be->lock);
 }
 
 static void iommufd_backend_finalize(Object *obj)
@@ -45,6 +44,7 @@ static void iommufd_backend_finalize(Object *obj)
 
 static void iommufd_backend_set_fd(Object *obj, const char *str, Error **errp)
 {
+    ERRP_GUARD();
     IOMMUFDBackend *be = IOMMUFD_BACKEND(obj);
     int fd = -1;
 
@@ -53,10 +53,8 @@ static void iommufd_backend_set_fd(Object *obj, const char *str, Error **errp)
         error_prepend(errp, "Could not parse remote object fd %s:", str);
         return;
     }
-    qemu_mutex_lock(&be->lock);
     be->fd = fd;
     be->owned = false;
-    qemu_mutex_unlock(&be->lock);
     trace_iommu_backend_set_fd(be->fd);
 }
 
@@ -76,36 +74,25 @@ static void iommufd_backend_class_init(ObjectClass *oc, void *data)
     object_class_property_add_str(oc, "fd", NULL, iommufd_backend_set_fd);
 }
 
-int iommufd_backend_connect(IOMMUFDBackend *be, Error **errp)
+bool iommufd_backend_connect(IOMMUFDBackend *be, Error **errp)
 {
-    int fd, ret = 0;
+    int fd;
 
-    qemu_mutex_lock(&be->lock);
-    if (be->users == UINT32_MAX) {
-        error_setg(errp, "too many connections");
-        ret = -E2BIG;
-        goto out;
-    }
     if (be->owned && !be->users) {
-        fd = qemu_open_old("/dev/iommu", O_RDWR);
+        fd = qemu_open("/dev/iommu", O_RDWR, errp);
         if (fd < 0) {
-            error_setg_errno(errp, errno, "/dev/iommu opening failed");
-            ret = fd;
-            goto out;
+            return false;
         }
         be->fd = fd;
     }
     be->users++;
-out:
-    trace_iommufd_backend_connect(be->fd, be->owned,
-                                  be->users, ret);
-    qemu_mutex_unlock(&be->lock);
-    return ret;
+
+    trace_iommufd_backend_connect(be->fd, be->owned, be->users);
+    return true;
 }
 
 void iommufd_backend_disconnect(IOMMUFDBackend *be)
 {
-    qemu_mutex_lock(&be->lock);
     if (!be->users) {
         goto out;
     }
@@ -116,28 +103,26 @@ void iommufd_backend_disconnect(IOMMUFDBackend *be)
     }
 out:
     trace_iommufd_backend_disconnect(be->fd, be->users);
-    qemu_mutex_unlock(&be->lock);
 }
 
-int iommufd_backend_alloc_ioas(IOMMUFDBackend *be, uint32_t *ioas_id,
-                               Error **errp)
+bool iommufd_backend_alloc_ioas(IOMMUFDBackend *be, uint32_t *ioas_id,
+                                Error **errp)
 {
-    int ret, fd = be->fd;
+    int fd = be->fd;
     struct iommu_ioas_alloc alloc_data  = {
         .size = sizeof(alloc_data),
         .flags = 0,
     };
 
-    ret = ioctl(fd, IOMMU_IOAS_ALLOC, &alloc_data);
-    if (ret) {
+    if (ioctl(fd, IOMMU_IOAS_ALLOC, &alloc_data)) {
         error_setg_errno(errp, errno, "Failed to allocate ioas");
-        return ret;
+        return false;
     }
 
     *ioas_id = alloc_data.out_ioas_id;
-    trace_iommufd_backend_alloc_ioas(fd, *ioas_id, ret);
+    trace_iommufd_backend_alloc_ioas(fd, *ioas_id);
 
-    return ret;
+    return true;
 }
 
 void iommufd_backend_free_id(IOMMUFDBackend *be, uint32_t id)

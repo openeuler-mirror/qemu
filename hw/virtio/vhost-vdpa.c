@@ -26,13 +26,14 @@
 #include "qemu/main-loop.h"
 #include "trace.h"
 #include "qapi/error.h"
+#include "hw/virtio/vdpa-dev-iommufd.h"
 
 /*
  * Return one past the end of the end of section. Be careful with uint64_t
  * conversions!
  */
-static Int128 vhost_vdpa_section_end(const MemoryRegionSection *section,
-                                     int page_mask)
+Int128 vhost_vdpa_section_end(const MemoryRegionSection *section,
+                              int page_mask)
 {
     Int128 llend = int128_make64(section->offset_within_address_space);
     llend = int128_add(llend, section->size);
@@ -41,10 +42,10 @@ static Int128 vhost_vdpa_section_end(const MemoryRegionSection *section,
     return llend;
 }
 
-static bool vhost_vdpa_listener_skipped_section(MemoryRegionSection *section,
-                                                uint64_t iova_min,
-                                                uint64_t iova_max,
-                                                int page_mask)
+bool vhost_vdpa_listener_skipped_section(MemoryRegionSection *section,
+                                         uint64_t iova_min,
+                                         uint64_t iova_max,
+                                         int page_mask)
 {
     Int128 llend;
 

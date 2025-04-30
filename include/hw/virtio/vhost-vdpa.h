@@ -57,6 +57,13 @@ typedef struct vhost_vdpa {
 int vhost_vdpa_get_iova_range(int fd, struct vhost_vdpa_iova_range *iova_range);
 int vhost_vdpa_set_vring_ready(struct vhost_vdpa *v, unsigned idx);
 
+Int128 vhost_vdpa_section_end(const MemoryRegionSection *section,
+                              int page_mask);
+bool vhost_vdpa_listener_skipped_section(MemoryRegionSection *section,
+                                         uint64_t iova_min,
+                                         uint64_t iova_max,
+                                         int page_mask);
+
 int vhost_vdpa_dma_map(struct vhost_vdpa *v, uint32_t asid, hwaddr iova,
                        hwaddr size, void *vaddr, bool readonly);
 int vhost_vdpa_dma_unmap(struct vhost_vdpa *v, uint32_t asid, hwaddr iova,
