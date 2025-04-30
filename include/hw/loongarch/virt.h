@@ -63,6 +63,8 @@ struct LoongArchVirtMachineState {
     int          fdt_size;
     DeviceState *platform_bus_dev;
     DeviceState  *extioi;
+    struct memmap_entry *memmap_table;
+    unsigned int memmap_entries;
     PCIBus       *pci_bus;
     PFlashCFI01  *flash[2];
     MemoryRegion system_iocsr;
