@@ -270,6 +270,40 @@ end:
     return ret;
 }
 
+void csv3_shared_region_release(uint64_t gpa, uint32_t num_pages)
+{
+    struct kvm_csv3_handle_memory mem = { 0 };
+    MemoryRegion *mr = NULL;
+    void *hva;
+    int ret;
+
+    if (!csv3_enabled())
+        return;
+
+    if (!gpa || !num_pages)
+        return;
+
+    mem.gpa = (__u64)gpa;
+    mem.num_pages = (__u32)num_pages;
+    mem.opcode = (__u32)KVM_CSV3_RELEASE_SHARED_MEMORY;
+
+    /* unpin the pages */
+    ret = csv3_ioctl(KVM_CSV3_HANDLE_MEMORY, &mem, NULL);
+    if (ret <= 0) {
+        if (ret < 0)
+            error_report("%s: CSV3 unpin failed ret %d", __func__, ret);
+        return;
+    }
+
+    /* drop the pages */
+    hva = gpa2hva(&mr, gpa, num_pages << TARGET_PAGE_BITS, NULL);
+    if (hva) {
+        ret = madvise(hva, num_pages << TARGET_PAGE_BITS, MADV_DONTNEED);
+        if (ret)
+            error_report("%s: madvise failed %d", __func__, ret);
+    }
+}
+
 void csv3_shared_region_dma_unmap(uint64_t start, uint64_t end)
 {
     MemoryRegionSection section;
