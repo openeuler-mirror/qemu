@@ -26,24 +26,6 @@
 #define PCH_PIC_INT_STATUS              0x3a0
 #define PCH_PIC_INT_POL                 0x3e0
 
-#define PCH_PIC_INT_ID_START            PCH_PIC_INT_ID_LO
-#define PCH_PIC_MASK_START              PCH_PIC_INT_MASK_LO
-#define PCH_PIC_HTMSI_EN_START          PCH_PIC_HTMSI_EN_LO
-#define PCH_PIC_EDGE_START              PCH_PIC_INT_EDGE_LO
-#define PCH_PIC_CLEAR_START             PCH_PIC_INT_CLEAR_LO
-#define PCH_PIC_AUTO_CTRL0_START        PCH_PIC_AUTO_CTRL0_LO
-#define PCH_PIC_AUTO_CTRL1_START        PCH_PIC_AUTO_CTRL1_LO
-#define PCH_PIC_ROUTE_ENTRY_START       PCH_PIC_ROUTE_ENTRY_OFFSET
-#define PCH_PIC_HTMSI_VEC_START         PCH_PIC_HTMSI_VEC_OFFSET
-#define PCH_PIC_INT_IRR_START           0x380
-#define PCH_PIC_INT_ISR_START           PCH_PIC_INT_STATUS_LO
-#define PCH_PIC_POLARITY_START          PCH_PIC_INT_POL_LO
-
-#define STATUS_LO_START                 0
-#define STATUS_HI_START                 0x4
-#define POL_LO_START                    0x40
-#define POL_HI_START                    0x44
-
 #define TYPE_LOONGARCH_PIC_COMMON "loongarch_pic_common"
 OBJECT_DECLARE_TYPE(LoongArchPICCommonState,
                     LoongArchPICCommonClass, LOONGARCH_PIC_COMMON)
