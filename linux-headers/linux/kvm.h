@@ -1205,8 +1205,6 @@ struct kvm_ppc_resize_hpt {
 
 #define KVM_CAP_SEV_ES_GHCB 500
 #define KVM_CAP_HYGON_COCO_EXT 501
-
-#define KVM_CAP_ARM_IPIV_MODE 503
 /* support userspace to request firmware to build CSV3 guest's memory space */
 #define KVM_CAP_HYGON_COCO_EXT_CSV3_SET_PRIV_MEM  (1 << 0)
 /* support request to update CSV3 guest's memory region multiple times */

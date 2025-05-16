@@ -1324,25 +1324,9 @@ static void arm_cpu_dump_state(CPUState *cs, FILE *f, int flags)
 
 uint64_t arm_cpu_mp_affinity(int idx, uint8_t clustersz)
 {
-    uint64_t Aff0 = 0, Aff1 = 0, Aff2 = 0, Aff3 = 0;
-    int mode;
-
-    if (!kvm_enabled()) {
-        Aff1 = idx / clustersz;
-        Aff0 = idx % clustersz;
-        return (Aff1 << ARM_AFF1_SHIFT) | Aff0;
-    }
-
-    mode = kvm_check_extension(kvm_state, KVM_CAP_ARM_IPIV_MODE);
-    if (mode) {
-        Aff1 = idx % 16;
-        Aff2 = idx / 16;
-    } else {
-        Aff1 = idx / clustersz;
-        Aff0 = idx % clustersz;
-    }
-    return (Aff3 << ARM_AFF3_SHIFT) | (Aff2 << ARM_AFF2_SHIFT) |
-        (Aff1 << ARM_AFF1_SHIFT) | Aff0;
+    uint32_t Aff1 = idx / clustersz;
+    uint32_t Aff0 = idx % clustersz;
+    return (Aff1 << ARM_AFF1_SHIFT) | Aff0;
 }
 
 static void arm_cpu_initfn(Object *obj)
