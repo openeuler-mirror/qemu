@@ -625,11 +625,23 @@
 #
 # @zstd: use zstd compression method.
 #
+# @qatzip: use qatzip compression method.  (Since 9.2)
+#
+# @qpl: use qpl compression method.  Query Processing Library(qpl) is
+#       based on the deflate compression algorithm and use the Intel
+#       In-Memory Analytics Accelerator(IAA) accelerated compression
+#       and decompression.  (Since 9.1)
+#
+# @uadk: use UADK library compression method.  (Since 9.1)
+#
 # Since: 5.0
 ##
 { 'enum': 'MultiFDCompression',
   'data': [ 'none', 'zlib',
-            { 'name': 'zstd', 'if': 'CONFIG_ZSTD' } ] }
+            { 'name': 'zstd', 'if': 'CONFIG_ZSTD' },
+            { 'name': 'qatzip', 'if': 'CONFIG_QATZIP'},
+            { 'name': 'qpl', 'if': 'CONFIG_QPL' },
+            { 'name': 'uadk', 'if': 'CONFIG_UADK' } ] }
 
 ##
 # @MigMode:
@@ -652,6 +664,23 @@
 ##
 { 'enum': 'MigMode',
   'data': [ 'normal', 'cpr-reboot' ] }
+
+##
+# @ZeroPageDetection:
+#
+# @none: Do not perform zero page checking.
+#
+# @legacy: Perform zero page checking in main migration thread.
+#
+# @multifd: Perform zero page checking in multifd sender thread if
+#     multifd migration is enabled, else in the main migration
+#     thread as for @legacy.
+#
+# Since: 9.0
+#
+##
+{ 'enum': 'ZeroPageDetection',
+  'data': [ 'none', 'legacy', 'multifd' ] }
 
 ##
 # @BitmapMigrationBitmapAliasTransform:
@@ -859,6 +888,11 @@
 #     speed, and 9 means best compression ratio which will consume
 #     more CPU. Defaults to 1. (Since 5.0)
 #
+# @multifd-qatzip-level: Set the compression level to be used in live
+#     migration. The level is an integer between 1 and 9, where 1 means
+#     the best compression speed, and 9 means the best compression
+#     ratio which will consume more CPU. Defaults to 1.  (Since 9.2)
+#
 # @multifd-zstd-level: Set the compression level to be used in live
 #     migration, the compression level is an integer between 0 and 20,
 #     where 0 means no compression, 1 means the best compression
@@ -890,6 +924,10 @@
 #
 # @mode: Migration mode. See description in @MigMode. Default is 'normal'.
 #        (Since 8.2)
+#
+# @zero-page-detection: Whether and how to detect zero pages.
+#     See description in @ZeroPageDetection.  Default is 'legacy'.
+#     (since 9.0)
 #
 # @sev-pdh: The target host platform diffie-hellman key encoded in base64, or
 #           pdh filename for hygon
@@ -936,10 +974,12 @@
            'xbzrle-cache-size', 'max-postcopy-bandwidth',
            'max-cpu-throttle', 'multifd-compression',
            'multifd-zlib-level', 'multifd-zstd-level',
+           'multifd-qatzip-level',
            'block-bitmap-mapping',
            { 'name': 'x-vcpu-dirty-limit-period', 'features': ['unstable'] },
            'vcpu-dirty-limit',
            'mode',
+           'zero-page-detection',
            'sev-pdh', 'sev-plat-cert', 'sev-amd-cert', 'hdbss-buffer-size'] }
 
 ##
@@ -1066,6 +1106,11 @@
 #     speed, and 9 means best compression ratio which will consume
 #     more CPU. Defaults to 1. (Since 5.0)
 #
+# @multifd-qatzip-level: Set the compression level to be used in live
+#     migration. The level is an integer between 1 and 9, where 1 means
+#     the best compression speed, and 9 means the best compression
+#     ratio which will consume more CPU. Defaults to 1.  (Since 9.2)
+#
 # @multifd-zstd-level: Set the compression level to be used in live
 #     migration, the compression level is an integer between 0 and 20,
 #     where 0 means no compression, 1 means the best compression
@@ -1097,6 +1142,10 @@
 #
 # @mode: Migration mode. See description in @MigMode. Default is 'normal'.
 #        (Since 8.2)
+#
+# @zero-page-detection: Whether and how to detect zero pages.
+#     See description in @ZeroPageDetection.  Default is 'legacy'.
+#     (since 9.0)
 #
 # @sev-pdh: The target host platform diffie-hellman key encoded in base64, or
 #           pdh filename for hygon
@@ -1163,17 +1212,18 @@
             '*max-cpu-throttle': 'uint8',
             '*multifd-compression': 'MultiFDCompression',
             '*multifd-zlib-level': 'uint8',
+            '*multifd-qatzip-level': 'uint8',
             '*multifd-zstd-level': 'uint8',
             '*block-bitmap-mapping': [ 'BitmapMigrationNodeAlias' ],
             '*x-vcpu-dirty-limit-period': { 'type': 'uint64',
                                             'features': [ 'unstable' ] },
             '*vcpu-dirty-limit': 'uint64',
             '*mode': 'MigMode',
+            '*zero-page-detection': 'ZeroPageDetection',
             '*sev-pdh': 'StrOrNull',
             '*sev-plat-cert': 'StrOrNull',
             '*sev-amd-cert' : 'StrOrNull',
             '*hdbss-buffer-size': 'uint8'} }
-
 
 ##
 # @migrate-set-parameters:
@@ -1319,6 +1369,11 @@
 #     speed, and 9 means best compression ratio which will consume
 #     more CPU. Defaults to 1. (Since 5.0)
 #
+# @multifd-qatzip-level: Set the compression level to be used in live
+#     migration. The level is an integer between 1 and 9, where 1 means
+#     the best compression speed, and 9 means the best compression
+#     ratio which will consume more CPU. Defaults to 1.  (Since 9.2)
+#
 # @multifd-zstd-level: Set the compression level to be used in live
 #     migration, the compression level is an integer between 0 and 20,
 #     where 0 means no compression, 1 means the best compression
@@ -1350,6 +1405,10 @@
 #
 # @mode: Migration mode. See description in @MigMode. Default is 'normal'.
 #        (Since 8.2)
+#
+# @zero-page-detection: Whether and how to detect zero pages.
+#     See description in @ZeroPageDetection.  Default is 'legacy'.
+#     (since 9.0)
 #
 # @sev-pdh: The target host platform diffie-hellman key encoded in base64, or
 #           pdh filename for hygon
@@ -1412,12 +1471,14 @@
             '*max-cpu-throttle': 'uint8',
             '*multifd-compression': 'MultiFDCompression',
             '*multifd-zlib-level': 'uint8',
+            '*multifd-qatzip-level': 'uint8',
             '*multifd-zstd-level': 'uint8',
             '*block-bitmap-mapping': [ 'BitmapMigrationNodeAlias' ],
             '*x-vcpu-dirty-limit-period': { 'type': 'uint64',
                                             'features': [ 'unstable' ] },
             '*vcpu-dirty-limit': 'uint64',
             '*mode': 'MigMode',
+            '*zero-page-detection': 'ZeroPageDetection',
             '*sev-pdh': 'str',
             '*sev-plat-cert': 'str',
             '*sev-amd-cert' : 'str',

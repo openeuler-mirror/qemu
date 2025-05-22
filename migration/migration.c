@@ -127,11 +127,17 @@ static bool migration_needs_multiple_sockets(void)
     return migrate_multifd() || migrate_postcopy_preempt();
 }
 
-static bool transport_supports_multi_channels(SocketAddress *saddr)
+static bool transport_supports_multi_channels(MigrationAddress *addr)
 {
-    return saddr->type == SOCKET_ADDRESS_TYPE_INET ||
-           saddr->type == SOCKET_ADDRESS_TYPE_UNIX ||
-           saddr->type == SOCKET_ADDRESS_TYPE_VSOCK;
+    if (addr->transport == MIGRATION_ADDRESS_TYPE_SOCKET) {
+        SocketAddress *saddr = &addr->u.socket;
+
+        return saddr->type == SOCKET_ADDRESS_TYPE_INET ||
+               saddr->type == SOCKET_ADDRESS_TYPE_UNIX ||
+               saddr->type == SOCKET_ADDRESS_TYPE_VSOCK;
+    }
+
+    return false;
 }
 
 static bool
@@ -139,8 +145,7 @@ migration_channels_and_transport_compatible(MigrationAddress *addr,
                                             Error **errp)
 {
     if (migration_needs_multiple_sockets() &&
-        (addr->transport == MIGRATION_ADDRESS_TYPE_SOCKET) &&
-        !transport_supports_multi_channels(&addr->u.socket)) {
+        !transport_supports_multi_channels(addr)) {
         error_setg(errp, "Migration requires multi-channel URIs (e.g. tcp)");
         return false;
     }
@@ -269,8 +274,13 @@ void migration_incoming_state_destroy(void)
 {
     struct MigrationIncomingState *mis = migration_incoming_get_current();
 
-    multifd_load_cleanup();
+    multifd_recv_cleanup();
     compress_threads_load_cleanup();
+    /*
+     * RAM state cleanup needs to happen after multifd cleanup, because
+     * multifd threads can use some of its states (receivedmap).
+     */
+    qemu_loadvm_state_cleanup();
 
     if (mis->to_src_file) {
         /* Tell source that we are done */
@@ -622,7 +632,7 @@ static void process_incoming_migration_bh(void *opaque)
 
     trace_vmstate_downtime_checkpoint("dst-precopy-bh-announced");
 
-    multifd_load_shutdown();
+    multifd_recv_shutdown();
 
     dirty_bitmap_mig_before_vm_start();
 
@@ -698,6 +708,13 @@ process_incoming_migration_co(void *opaque)
     }
 
     if (ret < 0) {
+        MigrationState *s = migrate_get_current();
+
+        if (migrate_has_error(s)) {
+            WITH_QEMU_LOCK_GUARD(&s->error_mutex) {
+                error_report_err(s->error);
+            }
+        }
         error_report("load of migration failed: %s", strerror(-ret));
         goto fail;
     }
@@ -714,7 +731,7 @@ fail:
                       MIGRATION_STATUS_FAILED);
     qemu_fclose(mis->from_src_file);
 
-    multifd_load_cleanup();
+    multifd_recv_cleanup();
     compress_threads_load_cleanup();
 
     exit(EXIT_FAILURE);
@@ -847,8 +864,7 @@ void migration_ioc_process_incoming(QIOChannel *ioc, Error **errp)
         default_channel = !mis->from_src_file;
     }
 
-    if (multifd_load_setup(errp) != 0) {
-        error_setg(errp, "Failed to setup multifd channels");
+    if (multifd_recv_setup(errp) != 0) {
         return;
     }
 
@@ -1300,7 +1316,7 @@ static void migrate_fd_cleanup(MigrationState *s)
         }
         qemu_mutex_lock_iothread();
 
-        multifd_save_cleanup();
+        multifd_send_shutdown();
         qemu_mutex_lock(&s->qemu_file_lock);
         tmp = s->to_dst_file;
         s->to_dst_file = NULL;
@@ -3308,6 +3324,10 @@ static void *migration_thread(void *opaque)
     object_ref(OBJECT(s));
     update_iteration_initial_status(s);
 
+    if (!multifd_send_setup()) {
+        goto out;
+    }
+
     qemu_mutex_lock_iothread();
     qemu_savevm_state_header(s->to_dst_file);
     qemu_mutex_unlock_iothread();
@@ -3379,6 +3399,7 @@ static void *migration_thread(void *opaque)
         urgent = migration_rate_limit();
     }
 
+out:
     trace_migration_thread_after_loop();
     migration_iteration_finish(s);
     object_unref(OBJECT(s));
@@ -3629,15 +3650,6 @@ void migrate_fd_connect(MigrationState *s, Error *error_in)
         migrate_set_state(&s->state, MIGRATION_STATUS_POSTCOPY_PAUSED,
                           MIGRATION_STATUS_POSTCOPY_RECOVER);
         qemu_sem_post(&s->postcopy_pause_sem);
-        return;
-    }
-
-    if (multifd_save_setup(&local_err) != 0) {
-        migrate_set_error(s, local_err);
-        error_report_err(local_err);
-        migrate_set_state(&s->state, MIGRATION_STATUS_SETUP,
-                          MIGRATION_STATUS_FAILED);
-        migrate_fd_cleanup(s);
         return;
     }
 
