@@ -2812,6 +2812,7 @@ static void xbzrle_cleanup(void)
     XBZRLE_cache_unlock();
 }
 
+#ifdef TARGET_AARCH64
 static void kvm_update_hdbss_cap(bool enable)
 {
     KVMState *s = kvm_state;
@@ -2836,6 +2837,7 @@ static void kvm_update_hdbss_cap(bool enable)
 
     return;
 }
+#endif
 
 static void ram_save_cleanup(void *opaque)
 {
@@ -2853,7 +2855,9 @@ static void ram_save_cleanup(void *opaque)
              * memory_global_dirty_log_stop will assert that
              * memory_global_dirty_log_start/stop used in pairs
              */
+#ifdef TARGET_AARCH64
             kvm_update_hdbss_cap(false);
+#endif
             memory_global_dirty_log_stop(GLOBAL_DIRTY_MIGRATION);
         }
     }
@@ -3257,7 +3261,9 @@ static void ram_init_bitmaps(RAMState *rs)
         ram_list_init_bitmaps();
         /* We don't use dirty log with background snapshots */
         if (!migrate_background_snapshot()) {
+#ifdef TARGET_AARCH64
             kvm_update_hdbss_cap(true);
+#endif
             memory_global_dirty_log_start(GLOBAL_DIRTY_MIGRATION);
             migration_bitmap_sync_precopy(rs, false);
         }
