@@ -48,13 +48,6 @@ struct PostcopyBlocktimeContext;
  */
 #define CLEAR_BITMAP_SHIFT_MAX            31
 
-/*
- * The default HDBSS size. The value ranges [0, 9].
- * Set to 0 to disable the HDBSS feature.
- */
-#define DEFAULT_HDBSS_BUFFER_SIZE          0
-#define MAX_HDBSS_BUFFER_SIZE              9
-
 /* This is an abstraction of a "temp huge page" for postcopy's purpose */
 typedef struct {
     /*

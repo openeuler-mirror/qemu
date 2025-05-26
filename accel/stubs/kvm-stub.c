@@ -119,6 +119,11 @@ bool kvm_arm_supports_user_irq(void)
     return false;
 }
 
+void kvm_update_hdbss_cap(bool enable, int hdbss_buffer_size)
+{
+    g_assert_not_reached();
+}
+
 bool kvm_dirty_ring_enabled(void)
 {
     return false;

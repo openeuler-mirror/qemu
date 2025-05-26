@@ -3251,6 +3251,31 @@ bool kvm_arm_supports_user_irq(void)
     return kvm_check_extension(kvm_state, KVM_CAP_ARM_USER_IRQ);
 }
 
+void kvm_update_hdbss_cap(bool enable, int hdbss_buffer_size)
+{
+    KVMState *s = kvm_state;
+    int size, ret;
+
+    if (s == NULL || !kvm_check_extension(s, KVM_CAP_ARM_HW_DIRTY_STATE_TRACK)) {
+        return;
+    }
+
+    size = hdbss_buffer_size;
+    if (size < 0 || size > MAX_HDBSS_BUFFER_SIZE) {
+        fprintf(stderr, "Invalid hdbss buffer size: %d\n", size);
+        return;
+    }
+
+    ret = kvm_vm_enable_cap(s, KVM_CAP_ARM_HW_DIRTY_STATE_TRACK, 0,
+                            enable ? size : 0);
+    if (ret) {
+        fprintf(stderr, "Could not %s KVM_CAP_ARM_HW_DIRTY_STATE_TRACK: %d\n",
+                        enable ? "enable" : "disable", ret);
+    }
+
+    return;
+}
+
 #ifdef KVM_CAP_SET_GUEST_DEBUG
 struct kvm_sw_breakpoint *kvm_find_sw_breakpoint(CPUState *cpu, vaddr pc)
 {
