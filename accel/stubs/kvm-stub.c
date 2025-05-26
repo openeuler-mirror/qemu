@@ -133,3 +133,9 @@ uint32_t kvm_dirty_ring_size(void)
 {
     return 0;
 }
+
+int kvm_load_user_data(hwaddr loader_start, hwaddr image_end, hwaddr initrd_start, hwaddr dtb_end, hwaddr ram_size,
+                       struct kvm_numa_info *numa_info)
+{
+    return -ENOSYS;
+}
