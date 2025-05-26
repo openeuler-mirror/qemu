@@ -1737,6 +1737,36 @@ static void kvm_io_ioeventfd_add(MemoryListener *listener,
     }
 }
 
+static int kvm_ioeventfd_batch(bool start)
+{
+    int ret;
+    struct kvm_ioeventfd iofd = {
+        .flags = start ?
+            KVM_IOEVENTFD_FLAG_BATCH_BEGIN : KVM_IOEVENTFD_FLAG_BATCH_END,
+    };
+
+    if (!kvm_enabled()) {
+        return -ENOSYS;
+    }
+
+    ret = kvm_vm_ioctl(kvm_state, KVM_IOEVENTFD, &iofd);
+    if (ret < 0) {
+        return -errno;
+    }
+
+    return 0;
+}
+
+static void kvm_ioeventfd_begin(MemoryListener *listener)
+{
+    kvm_ioeventfd_batch(true);
+}
+
+static void kvm_ioeventfd_end(MemoryListener *listener)
+{
+    kvm_ioeventfd_batch(false);
+}
+
 static void kvm_io_ioeventfd_del(MemoryListener *listener,
                                  MemoryRegionSection *section,
                                  bool match_data, uint64_t data,
@@ -1902,10 +1932,11 @@ static void kvm_add_routing_entry(KVMState *s,
     set_gsi(s, entry->gsi);
 }
 
-static int kvm_update_routing_entry(KVMState *s,
+static int kvm_update_routing_entry(KVMRouteChange *c,
                                     struct kvm_irq_routing_entry *new_entry)
 {
     struct kvm_irq_routing_entry *entry;
+    KVMState *s = c->s;
     int n;
 
     for (n = 0; n < s->irq_routes->nr; n++) {
@@ -1919,7 +1950,7 @@ static int kvm_update_routing_entry(KVMState *s,
         }
 
         *entry = *new_entry;
-
+        c->changes++;
         return 0;
     }
 
@@ -2051,7 +2082,7 @@ int kvm_irqchip_add_msi_route(KVMRouteChange *c, int vector, PCIDevice *dev)
     return virq;
 }
 
-int kvm_irqchip_update_msi_route(KVMState *s, int virq, MSIMessage msg,
+int kvm_irqchip_update_msi_route(KVMRouteChange *c, int virq, MSIMessage msg,
                                  PCIDevice *dev)
 {
     struct kvm_irq_routing_entry kroute = {};
@@ -2081,7 +2112,7 @@ int kvm_irqchip_update_msi_route(KVMState *s, int virq, MSIMessage msg,
 
     trace_kvm_irqchip_update_msi_route(virq);
 
-    return kvm_update_routing_entry(s, &kroute);
+    return kvm_update_routing_entry(c, &kroute);
 }
 
 static int kvm_irqchip_assign_irqfd(KVMState *s, EventNotifier *event,
@@ -2223,7 +2254,7 @@ static int kvm_irqchip_assign_irqfd(KVMState *s, EventNotifier *event,
     abort();
 }
 
-int kvm_irqchip_update_msi_route(KVMState *s, int virq, MSIMessage msg)
+int kvm_irqchip_update_msi_route(KVMRouteChange *c, int virq, MSIMessage msg)
 {
     return -ENOSYS;
 }
@@ -2630,6 +2661,8 @@ static int kvm_init(MachineState *ms)
     s->memory_listener.listener.eventfd_del = kvm_mem_ioeventfd_del;
     s->memory_listener.listener.coalesced_io_add = kvm_coalesce_mmio_region;
     s->memory_listener.listener.coalesced_io_del = kvm_uncoalesce_mmio_region;
+    s->memory_listener.listener.eventfd_begin = kvm_ioeventfd_begin;
+    s->memory_listener.listener.eventfd_end = kvm_ioeventfd_end;
 
     kvm_memory_listener_register(s, &s->memory_listener,
                                  &address_space_memory, 0, "kvm-memory");

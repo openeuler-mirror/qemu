@@ -1080,6 +1080,27 @@ struct MemoryListener {
                         bool match_data, uint64_t data, EventNotifier *e);
 
     /**
+     * @eventfd_begin:
+     *
+     * Called during an address space begin to update ioeventfd,
+     * notify kvm that ioeventfd will be update in batches.
+     *
+     * @listener: The #MemoryListener.
+     */
+    void (*eventfd_begin)(MemoryListener *listener);
+
+    /**
+     * @eventfd_end:
+     *
+     * Called during an address space update ioeventfd end,
+     * notify kvm that all ioeventfd modifications have been submitted
+     * and batch processing can be started.
+     *
+     * @listener: The #MemoryListener.
+     */
+    void (*eventfd_end)(MemoryListener *listener);
+
+    /**
      * @coalesced_io_add:
      *
      * Called during an address space update transaction,
@@ -1180,6 +1201,8 @@ struct FlatView {
     unsigned nr_allocated;
     struct AddressSpaceDispatch *dispatch;
     MemoryRegion *root;
+    #define FLATVIEW_FLAG_LAST_PROCESSED (1 << 0)
+    unsigned flags;
 };
 
 static inline FlatView *address_space_to_flatview(AddressSpace *as)
@@ -2566,6 +2589,11 @@ void memory_region_transaction_begin(void);
  *                                   visible to the guest.
  */
 void memory_region_transaction_commit(void);
+
+/**
+ * memory_region_commit: Force commit memory region immediately.
+ */
+void memory_region_commit(void);
 
 /**
  * memory_listener_register: register callbacks to be called when memory

@@ -20,6 +20,7 @@
 #include "qemu/bitops.h"
 #include "qemu/error-report.h"
 #include "trace.h"
+#include "exec/memory.h"
 
 static int vmstate_subsection_save(QEMUFile *f, const VMStateDescription *vmsd,
                                    void *opaque, JSONWriter *vmdesc,
@@ -184,6 +185,13 @@ int vmstate_load_state(QEMUFile *f, const VMStateDescription *vmsd,
         return ret;
     }
     if (vmsd->post_load) {
+        /**
+         * We call memory_transaction_begin in qemu_loadvm_state_main,
+         * so address space will not be updated during vm state loading.
+         * But some dev need to use address space here, force commit
+         * memory region transaction before call post_load.
+         */
+        memory_region_commit();
         ret = vmsd->post_load(opaque, version_id);
     }
     trace_vmstate_load_state_end(vmsd->name, "end", ret);

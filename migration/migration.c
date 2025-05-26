@@ -68,6 +68,8 @@
 #include "sysemu/dirtylimit.h"
 #include "qemu/sockets.h"
 
+#define DEFAULT_FD_MAX 4096
+
 static NotifierList migration_state_notifiers =
     NOTIFIER_LIST_INITIALIZER(migration_state_notifiers);
 
@@ -1728,6 +1730,31 @@ void migrate_del_blocker(Error **reasonp)
     }
 }
 
+/* 
+ * Kernel will expand the fatable allocated to the qemu process when
+ * the number of fds held by qemu process exceeds a power of 2 (starting from 64).
+ * Each expansion introduces tens of ms of latency due to RCU synchronization.
+ * The expansion is completed during qemu process initialization to avoid
+ * triggering this action during the migration downtime phase.
+ */
+static void qemu_pre_extend_fdtable(void)
+{
+    int buffer[DEFAULT_FD_MAX] = {0};
+    int i;
+
+    /* expand fdtable */
+    for (i = 0; i < DEFAULT_FD_MAX; i++) {
+        buffer[i] = qemu_dup(STDIN_FILENO);
+    }
+
+    /* close tmp fd */
+    for (i = 0; i < DEFAULT_FD_MAX; i++) {
+        if (buffer[i] > 0) {
+            (void)qemu_close(buffer[i]);
+        }
+    }
+}
+
 void qmp_migrate_incoming(const char *uri, bool has_channels,
                           MigrationChannelList *channels, Error **errp)
 {
@@ -1746,6 +1773,8 @@ void qmp_migrate_incoming(const char *uri, bool has_channels,
     if (!yank_register_instance(MIGRATION_YANK_INSTANCE, errp)) {
         return;
     }
+
+    qemu_pre_extend_fdtable();
 
     qemu_start_incoming_migration(uri, has_channels, channels, &local_err);
 
