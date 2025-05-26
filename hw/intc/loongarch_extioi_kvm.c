@@ -115,7 +115,7 @@ static void kvm_loongarch_extioi_realize(DeviceState *dev, Error **errp)
     }
 
     if (!extioi_class->is_created) {
-        cd.type = KVM_DEV_TYPE_LA_EXTIOI;
+        cd.type = KVM_DEV_TYPE_LOONGARCH_EIOINTC;
         ret = kvm_vm_ioctl(kvm_state, KVM_CREATE_DEVICE, &cd);
         if (ret < 0) {
             error_setg_errno(errp, errno,

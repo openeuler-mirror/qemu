@@ -113,7 +113,7 @@ static void kvm_loongarch_pch_pic_realize(DeviceState *dev, Error **errp)
     }
 
     if (!pch_pic_class->is_created) {
-        cd.type = KVM_DEV_TYPE_LA_PCH_PIC;
+        cd.type = KVM_DEV_TYPE_LOONGARCH_PCHPIC;
         ret = kvm_vm_ioctl(kvm_state, KVM_CREATE_DEVICE, &cd);
         if (ret < 0) {
             error_setg_errno(errp, errno,
