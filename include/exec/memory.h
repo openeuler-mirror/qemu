@@ -2109,6 +2109,16 @@ void memory_region_set_dirty(MemoryRegion *mr, hwaddr addr,
                              hwaddr size);
 
 /**
+ * is_first_section: Determine whether a MemoryRegionSection is the first section
+ *
+ * Determine whether a MemoryRegionSection is the first section
+ * of its corresponding parent MemoryRegion.
+ *
+ * @section: MemoryRegionSection
+ */
+bool is_first_section(MemoryRegionSection *section);
+
+/**
  * memory_region_clear_dirty_bitmap - clear dirty bitmap for memory range
  *
  * This function is called when the caller wants to clear the remote

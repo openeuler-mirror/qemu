@@ -12,6 +12,9 @@
 #include "exec/target_page.h"
 #include "exec/address-spaces.h"
 #include "hw/virtio/vdpa-dev-iommufd.h"
+#include "migration/migration.h"
+#include "qapi/qapi-commands-migration.h"
+#include "hw/virtio/vhost.h"
 
 static QLIST_HEAD(, VDPAIOMMUFDContainer) vdpa_container_list =
     QLIST_HEAD_INITIALIZER(vdpa_container_list);
@@ -118,6 +121,51 @@ static void vhost_vdpa_iommufd_container_region_del(MemoryListener *listener,
     memory_region_unref(section->mr);
 }
 
+static void vhost_vdpa_iommufd_container_log_sync(MemoryListener *listener,
+                                                  MemoryRegionSection *section)
+{
+    VDPAIOMMUFDContainer *container = container_of(listener, VDPAIOMMUFDContainer, listener);
+    IOMMUFDHWPT *hwpt;
+    VhostVdpaDevice *vdev;
+    MigrationState *ms = migrate_get_current();
+
+    QLIST_FOREACH(hwpt, &container->hwpt_list, next) {
+        QLIST_FOREACH(vdev, &hwpt->device_list, next) {
+            if (!vdev->dev.log_enabled || !vdev->dev.log) {
+                continue;
+            }
+
+            /**
+             * For the vhost-vdpa device, log_sync is performed on the entire VM,
+             * that is, this sync is for the entire flatview.
+             * Therefore, the first MemoryRegionSection of flatview needs to be
+             * synchronized. The rest of the mrs do not need to be synchronized.
+             */
+            if (is_first_section(section)) {
+                int r = vdev->dev.vhost_ops->vhost_log_sync(&vdev->dev);
+                if (r < 0) {
+                    qemu_log("Failed to sync dirty log: %d\n", r);
+                    if (migration_is_running(ms->state)) {
+                        qmp_migrate_cancel(NULL);
+                    }
+                    return;
+                }
+            }
+
+            /**
+             * Dirty maps are merged separately by MRS, so each MRS needs to be iterated.
+             */
+            if (vhost_bytemap_log_support(&vdev->dev)) {
+                vhost_sync_dirty_bytemap(&vdev->dev, section);
+            } else {
+                vhost_sync_dirty_bitmap(&vdev->dev, section, 0x0, ~0x0ULL);
+            }
+            return;
+        }
+    }
+}
+
+
 /*
  * IOTLB API used by vhost vdpa iommufd container
  */
@@ -125,6 +173,7 @@ const MemoryListener vhost_vdpa_iommufd_container_listener = {
     .name = "vhost-vdpa-iommufd-container",
     .region_add = vhost_vdpa_iommufd_container_region_add,
     .region_del = vhost_vdpa_iommufd_container_region_del,
+    .log_sync = vhost_vdpa_iommufd_container_log_sync,
 };
 
 static int vhost_vdpa_container_connect_iommufd(VDPAIOMMUFDContainer *container)
@@ -268,6 +317,7 @@ static int vhost_vdpa_container_attach_device(VDPAIOMMUFDContainer *container, V
         ret = ioctl(vdev->vhostfd, VHOST_VDPA_ATTACH_IOMMUFD_PT, &pt_id);
         if (ret == 0) {
             QLIST_INSERT_HEAD(&hwpt->device_list, vdev, next);
+            vdev->dev.has_container = true;
             return 0;
         }
     }
@@ -293,6 +343,7 @@ static int vhost_vdpa_container_attach_device(VDPAIOMMUFDContainer *container, V
     }
 
     QLIST_INSERT_HEAD(&hwpt->device_list, vdev, next);
+    vdev->dev.has_container = true;
     QLIST_INSERT_HEAD(&container->hwpt_list, hwpt, next);
 
     return 0;
@@ -318,6 +369,7 @@ static void vhost_vdpa_container_detach_device(VDPAIOMMUFDContainer *container, 
     ioctl(vdev->vhostfd, VHOST_VDPA_DETACH_IOMMUFD_PT, &hwpt->hwpt_id);
 
     QLIST_SAFE_REMOVE(vdev, next);
+    vdev->dev.has_container = false;
 
     /* No device using this hwpt, free it */
     if (QLIST_EMPTY(&hwpt->device_list)) {
