@@ -229,6 +229,14 @@ int kvm_has_gsi_routing(void);
  */
 bool kvm_arm_supports_user_irq(void);
 
+/*
+ * The default HDBSS size. The value ranges [0, 9].
+ * Set to 0 to disable the HDBSS feature.
+ */
+#define DEFAULT_HDBSS_BUFFER_SIZE          0
+#define MAX_HDBSS_BUFFER_SIZE              9
+
+void kvm_update_hdbss_cap(bool enable, int hdbss_buffer_size);
 
 int kvm_on_sigbus_vcpu(CPUState *cpu, int code, void *addr);
 int kvm_on_sigbus(int code, void *addr);

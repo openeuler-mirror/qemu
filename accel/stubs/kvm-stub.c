@@ -119,6 +119,11 @@ bool kvm_arm_supports_user_irq(void)
     return false;
 }
 
+void kvm_update_hdbss_cap(bool enable, int hdbss_buffer_size)
+{
+    g_assert_not_reached();
+}
+
 bool kvm_dirty_ring_enabled(void)
 {
     return false;
@@ -127,4 +132,10 @@ bool kvm_dirty_ring_enabled(void)
 uint32_t kvm_dirty_ring_size(void)
 {
     return 0;
+}
+
+int kvm_load_user_data(hwaddr loader_start, hwaddr image_end, hwaddr initrd_start, hwaddr dtb_end, hwaddr ram_size,
+                       struct kvm_numa_info *numa_info)
+{
+    return -ENOSYS;
 }

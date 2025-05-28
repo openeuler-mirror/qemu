@@ -497,6 +497,16 @@ static inline void tmm_add_ram_region(hwaddr base1, hwaddr len1, hwaddr base2,
 {
     g_assert_not_reached();
 }
+
+static inline void tmm_set_sec_addr(hwaddr base, int num)
+{
+    g_assert_not_reached();
+}
+
+static inline void tmm_set_hpre_addr(hwaddr base, int num)
+{
+    g_assert_not_reached();
+}
 #endif
 
 /**
