@@ -257,6 +257,22 @@ int kvm_arch_get_default_type(MachineState *ms)
     return fixed_ipa ? 0 : size;
 }
 
+static void kvm_update_ipiv_cap(KVMState *s)
+{
+    int ret;
+
+    if (!kvm_check_extension(s, KVM_CAP_ARM_HISI_IPIV)) {
+        return;
+    }
+
+    ret = kvm_vm_enable_cap(s, KVM_CAP_ARM_HISI_IPIV, 0);
+    if (ret) {
+        fprintf(stderr, "Could not enable KVM_CAP_ARM_HISI_IPIV: %d\n", ret);
+    }
+
+    return;
+}
+
 int kvm_arch_init(MachineState *ms, KVMState *s)
 {
     MachineClass *mc = MACHINE_GET_CLASS(ms);
@@ -330,6 +346,7 @@ int kvm_arch_init(MachineState *ms, KVMState *s)
     }
 
     kvm_arm_init_debug(s);
+    kvm_update_ipiv_cap(s);
 
     return ret;
 }
