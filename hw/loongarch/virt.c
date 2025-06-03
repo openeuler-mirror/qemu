@@ -135,6 +135,10 @@ static void virt_build_smbios(LoongArchVirtMachineState *lvms)
         return;
     }
 
+    if (kvm_enabled()) {
+        product = "KVM Virtual Machine";
+    }
+
     smbios_set_defaults("QEMU", product, mc->name, false,
                         true, SMBIOS_ENTRY_POINT_TYPE_64);
 
