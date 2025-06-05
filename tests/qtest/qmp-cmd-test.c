@@ -110,6 +110,7 @@ static bool query_is_ignored(const char *cmd)
         "query-sev-capabilities",
         "query-sgx",
         "query-sgx-capabilities",
+        "query-virtcca-capabilities",
         /* Success depends on enabling dirty page rate limit */
         "query-vcpu-dirty-limit",
         NULL
