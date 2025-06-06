@@ -541,5 +541,6 @@ static inline void kvm_loongarch_cpu_post_init(LoongArchCPU *cpu)
 {
 }
 #endif
+void kvm_loongarch_init_irq_routing(void);
 
 #endif /* LOONGARCH_CPU_H */
