@@ -10,12 +10,12 @@
 
 #include "hw/intc/loongarch_extioi_common.h"
 
-#define TYPE_LOONGARCH_EXTIOI        "loongarch-extioi"
-#define TYPE_KVM_LOONGARCH_EXTIOI    "loongarch-kvm-extioi"
+#define TYPE_LOONGARCH_EXTIOI "loongarch.extioi"
 OBJECT_DECLARE_TYPE(LoongArchExtIOIState, LoongArchExtIOIClass, LOONGARCH_EXTIOI)
 
 struct LoongArchExtIOIState {
     LoongArchExtIOICommonState parent_obj;
+    int dev_fd;
 };
 
 struct LoongArchExtIOIClass {
@@ -26,35 +26,5 @@ struct LoongArchExtIOIClass {
     ResettablePhases parent_phases;
 };
 
-struct KVMLoongArchExtIOI {
-    SysBusDevice parent_obj;
-    uint32_t num_cpu;
-    uint32_t features;
-    uint32_t status;
-
-    /* hardware state */
-    uint32_t nodetype[EXTIOI_IRQS_NODETYPE_COUNT / 2];
-    uint32_t bounce[EXTIOI_IRQS_GROUP_COUNT];
-    uint32_t isr[EXTIOI_IRQS / 32];
-    uint32_t coreisr[EXTIOI_CPUS][EXTIOI_IRQS_GROUP_COUNT];
-    uint32_t enable[EXTIOI_IRQS / 32];
-    uint32_t ipmap[EXTIOI_IRQS_IPMAP_SIZE / 4];
-    uint32_t coremap[EXTIOI_IRQS / 4];
-    uint8_t  sw_coremap[EXTIOI_IRQS];
-};
-typedef struct KVMLoongArchExtIOI KVMLoongArchExtIOI;
-DECLARE_INSTANCE_CHECKER(KVMLoongArchExtIOI, KVM_LOONGARCH_EXTIOI,
-                         TYPE_KVM_LOONGARCH_EXTIOI)
-
-struct KVMLoongArchExtIOIClass {
-    SysBusDeviceClass parent_class;
-    DeviceRealize parent_realize;
-
-    bool is_created;
-    int dev_fd;
-};
-typedef struct KVMLoongArchExtIOIClass KVMLoongArchExtIOIClass;
-DECLARE_CLASS_CHECKERS(KVMLoongArchExtIOIClass, KVM_LOONGARCH_EXTIOI,
-                       TYPE_KVM_LOONGARCH_EXTIOI)
-
+void kvm_extioi_realize(DeviceState *dev, Error **errp);
 #endif /* LOONGARCH_EXTIOI_H */
