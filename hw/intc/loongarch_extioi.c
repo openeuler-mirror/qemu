@@ -430,6 +430,10 @@ static void loongarch_extioi_reset_hold(Object *obj)
     if (lec->parent_phases.hold) {
         lec->parent_phases.hold(obj);
     }
+
+    if (kvm_irqchip_in_kernel()) {
+        kvm_extioi_put(obj, 0);
+    }
 }
 
 static int vmstate_extioi_pre_save(void *opaque)
