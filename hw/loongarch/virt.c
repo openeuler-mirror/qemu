@@ -430,26 +430,13 @@ static void virt_irq_init(LoongArchVirtMachineState *lvms)
     lvms->extioi = extioi;
 
     virt_cpu_irq_init(lvms);
-    if (kvm_enabled() && kvm_irqchip_in_kernel()) {
-        pch_pic = qdev_new(TYPE_KVM_LOONGARCH_PCH_PIC);
-        sysbus_realize_and_unref(SYS_BUS_DEVICE(pch_pic), &error_fatal);
-    } else {
-        pch_pic = qdev_new(TYPE_LOONGARCH_PIC);
-        num = VIRT_PCH_PIC_IRQ_NUM;
-        qdev_prop_set_uint32(pch_pic, "pch_pic_irq_num", num);
-        d = SYS_BUS_DEVICE(pch_pic);
-        sysbus_realize_and_unref(d, &error_fatal);
-        memory_region_add_subregion(get_system_memory(), VIRT_IOAPIC_REG_BASE,
-                                sysbus_mmio_get_region(d, 0));
-
-        /* Connect pch_pic irqs to extioi */
-        for (i = 0; i < num; i++) {
-            qdev_connect_gpio_out(DEVICE(d), i, qdev_get_gpio_in(extioi, i));
-        }
-    }
+    pch_pic = qdev_new(TYPE_LOONGARCH_PIC);
+    num = VIRT_PCH_PIC_IRQ_NUM;
+    qdev_prop_set_uint32(pch_pic, "pch_pic_irq_num", num);
+    d = SYS_BUS_DEVICE(pch_pic);
+    sysbus_realize_and_unref(d, &error_fatal);
 
     pch_msi = qdev_new(TYPE_LOONGARCH_PCH_MSI);
-    num = VIRT_PCH_PIC_IRQ_NUM;
     start   =  num;
     num = EXTIOI_IRQS - start;
     qdev_prop_set_uint32(pch_msi, "msi_irq_base", start);
