@@ -487,3 +487,32 @@
 { 'command': 'xen-event-inject',
   'data': { 'port': 'uint32' },
   'if': 'TARGET_I386' }
+
+##
+# @VirtccaCapability:
+#
+# The struct describes capability for VIRTCCA feature.
+#
+# Since: 8.2.0
+##
+{ 'struct': 'VirtccaCapability',
+  'data': { 'enabled': 'bool' },
+  'if': 'TARGET_AARCH64' }
+
+##
+# @query-virtcca-capabilities:
+#
+# This command is used to get the VIRTCCA capabilities, and is supported
+# on HISI AARCH64 platforms only.
+#
+# Returns: VirtccaCapability objects.
+#
+# Since: 8.2.0
+#
+# Example:
+#
+# -> { "execute": "query-virtcca-capabilities" }
+# <- { "return": { "enabled": true } }
+##
+{ 'command': 'query-virtcca-capabilities', 'returns': 'VirtccaCapability',
+  'if': 'TARGET_AARCH64' }

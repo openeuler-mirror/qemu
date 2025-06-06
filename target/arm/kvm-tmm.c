@@ -15,11 +15,13 @@
 #include "kvm_arm.h"
 #include "migration/blocker.h"
 #include "qapi/error.h"
+#include "qapi/qapi-commands-misc-target.h"
 #include "qom/object_interfaces.h"
 #include "sysemu/kvm.h"
 #include "sysemu/runstate.h"
 #include "hw/loader.h"
 #include "linux-headers/asm-arm64/kvm.h"
+#include <unistd.h>
 
 #define TYPE_TMM_GUEST "tmm-guest"
 OBJECT_DECLARE_SIMPLE_TYPE(TmmGuest, TMM_GUEST)
@@ -27,6 +29,7 @@ OBJECT_DECLARE_SIMPLE_TYPE(TmmGuest, TMM_GUEST)
 #define TMM_PAGE_SIZE qemu_real_host_page_size()
 #define TMM_MAX_PMU_CTRS    0x20
 #define TMM_MAX_CFG      6
+#define TMM_MEMORY_INFO_SYSFS "/sys/kernel/tmm/memory_info"
 
 typedef struct {
     uint32_t kae_vf_num;
@@ -406,3 +409,33 @@ static void tmm_register_types(void)
     type_register_static(&tmm_guest_info);
 }
 type_init(tmm_register_types);
+
+static VirtccaCapability *virtcca_get_capabilities(Error **errp)
+{
+    VirtccaCapability *cap = NULL;
+    uint64_t tmi_version = 0;
+    int rc = 0;
+
+    if (kvm_ioctl(kvm_state, KVM_GET_TMI_VERSION, &tmi_version) < 0) {
+        error_setg(errp, "VIRTCCA is not enabled in KVM");
+        return NULL;
+    }
+
+    rc = access(TMM_MEMORY_INFO_SYSFS, R_OK);
+    if (rc < 0) {
+        error_setg_errno(errp, errno, "VIRTCCA: Failed to read %s",
+                    TMM_MEMORY_INFO_SYSFS);
+        return NULL;
+    }
+
+    cap = g_new0(VirtccaCapability, 1);
+
+    cap->enabled = true;
+
+    return cap;
+}
+
+VirtccaCapability *qmp_query_virtcca_capabilities(Error **errp)
+{
+    return virtcca_get_capabilities(errp);
+}
