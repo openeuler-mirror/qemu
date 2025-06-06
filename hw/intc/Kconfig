@@ -97,9 +97,6 @@ config LOONGSON_IPI
     bool
     select LOONGSON_IPI_COMMON
 
-config LOONGARCH_IPI_KVM
-    bool
-
 config LOONGARCH_IPI
     bool
     select LOONGSON_IPI_COMMON
