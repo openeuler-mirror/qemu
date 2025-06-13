@@ -74,21 +74,23 @@ static void iommufd_backend_class_init(ObjectClass *oc, void *data)
     object_class_property_add_str(oc, "fd", NULL, iommufd_backend_set_fd);
 }
 
-bool iommufd_backend_connect(IOMMUFDBackend *be, Error **errp)
+int iommufd_backend_connect(IOMMUFDBackend *be, Error **errp)
 {
-    int fd;
+    int fd, ret = 0;
 
     if (be->owned && !be->users) {
         fd = qemu_open("/dev/iommu", O_RDWR, errp);
         if (fd < 0) {
-            return false;
+            ret = fd;
+            goto out;
         }
         be->fd = fd;
     }
     be->users++;
-
-    trace_iommufd_backend_connect(be->fd, be->owned, be->users);
-    return true;
+out:
+    trace_iommufd_backend_connect(be->fd, be->owned,
+                                  be->users, ret);
+    return ret;
 }
 
 void iommufd_backend_disconnect(IOMMUFDBackend *be)
@@ -105,24 +107,25 @@ out:
     trace_iommufd_backend_disconnect(be->fd, be->users);
 }
 
-bool iommufd_backend_alloc_ioas(IOMMUFDBackend *be, uint32_t *ioas_id,
-                                Error **errp)
+int iommufd_backend_alloc_ioas(IOMMUFDBackend *be, uint32_t *ioas_id,
+                               Error **errp)
 {
-    int fd = be->fd;
+    int ret, fd = be->fd;
     struct iommu_ioas_alloc alloc_data  = {
         .size = sizeof(alloc_data),
         .flags = 0,
     };
 
-    if (ioctl(fd, IOMMU_IOAS_ALLOC, &alloc_data)) {
+    ret = ioctl(fd, IOMMU_IOAS_ALLOC, &alloc_data);
+    if (ret) {
         error_setg_errno(errp, errno, "Failed to allocate ioas");
-        return false;
+        return ret;
     }
 
     *ioas_id = alloc_data.out_ioas_id;
-    trace_iommufd_backend_alloc_ioas(fd, *ioas_id);
+    trace_iommufd_backend_alloc_ioas(fd, *ioas_id, ret);
 
-    return true;
+    return ret;
 }
 
 void iommufd_backend_free_id(IOMMUFDBackend *be, uint32_t id)
