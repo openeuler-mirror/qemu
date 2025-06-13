@@ -186,12 +186,12 @@ static int vhost_vdpa_container_connect_iommufd(VDPAIOMMUFDContainer *container)
         return -1;
     }
 
-    if (!iommufd_backend_connect(iommufd, &err)) {
+    if (iommufd_backend_connect(iommufd, &err)) {
         error_report_err(err);
         return -1;
     }
 
-    if (!iommufd_backend_alloc_ioas(iommufd, &ioas_id, &err)) {
+    if (iommufd_backend_alloc_ioas(iommufd, &ioas_id, &err)) {
         error_report_err(err);
         iommufd_backend_disconnect(iommufd);
         return -1;
