@@ -128,7 +128,7 @@ static void kvm_loongarch_ipi_realize(DeviceState *dev, Error **errp)
     }
 
     if (!ipi_class->is_created) {
-        cd.type = KVM_DEV_TYPE_LA_IPI;
+        cd.type = KVM_DEV_TYPE_LOONGARCH_IPI;
         ret = kvm_vm_ioctl(kvm_state, KVM_CREATE_DEVICE, &cd);
         if (ret < 0) {
             error_setg_errno(errp, errno, "Creating the KVM device failed");
