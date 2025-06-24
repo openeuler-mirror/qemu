@@ -497,7 +497,8 @@
 ##
 { 'struct': 'VirtccaCapability',
   'data': { 'enabled': 'bool' },
-  'if': 'TARGET_AARCH64' }
+  'if': { 'all': ['TARGET_AARCH64' , 'CONFIG_KVM'] }
+}
 
 ##
 # @query-virtcca-capabilities:
@@ -515,4 +516,5 @@
 # <- { "return": { "enabled": true } }
 ##
 { 'command': 'query-virtcca-capabilities', 'returns': 'VirtccaCapability',
-  'if': 'TARGET_AARCH64' }
+  'if': { 'all': ['TARGET_AARCH64' , 'CONFIG_KVM'] }
+}
