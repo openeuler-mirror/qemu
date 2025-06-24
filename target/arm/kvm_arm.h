@@ -507,6 +507,11 @@ static inline void tmm_set_hpre_addr(hwaddr base, int num)
 {
     g_assert_not_reached();
 }
+
+static inline int tmm_get_kae_num(void)
+{
+    g_assert_not_reached();
+}
 #endif
 
 /**
