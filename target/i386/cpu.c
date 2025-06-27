@@ -7423,21 +7423,6 @@ void cpu_x86_cpuid(CPUX86State *env, uint32_t index, uint32_t count,
         assert(!(*eax & ~0x1f));
         *ebx &= 0xffff; /* The count doesn't need to be reliable. */
         break;
-    case 0x1C:
-        if (cpu->enable_pmu && (env->features[FEAT_7_0_EDX] & CPUID_7_0_EDX_ARCH_LBR)) {
-            x86_cpu_get_supported_cpuid(0x1C, 0, eax, ebx, ecx, edx);
-            *edx = 0;
-        }
-        break;
-    case 0x1F:
-        /* V2 Extended Topology Enumeration Leaf */
-        if (!x86_has_cpuid_0x1f(cpu)) {
-            *eax = *ebx = *ecx = *edx = 0;
-            break;
-        }
-
-        encode_topo_cpuid1f(env, count, topo_info, eax, ebx, ecx, edx);
-        break;
     case 0xD: {
         /* Processor Extended State */
         *eax = 0;
@@ -7574,6 +7559,12 @@ void cpu_x86_cpuid(CPUX86State *env, uint32_t index, uint32_t count,
         }
         break;
     }
+    case 0x1C:
+        if (cpu->enable_pmu && (env->features[FEAT_7_0_EDX] & CPUID_7_0_EDX_ARCH_LBR)) {
+            x86_cpu_get_supported_cpuid(0x1C, 0, eax, ebx, ecx, edx);
+            *edx = 0;
+        }
+        break;
     case 0x1D: {
         /* AMX TILE, for now hardcoded for Sapphire Rapids*/
         *eax = 0;
@@ -7611,6 +7602,15 @@ void cpu_x86_cpuid(CPUX86State *env, uint32_t index, uint32_t count,
         }
         break;
     }
+    case 0x1F:
+        /* V2 Extended Topology Enumeration Leaf */
+        if (!x86_has_cpuid_0x1f(cpu)) {
+            *eax = *ebx = *ecx = *edx = 0;
+            break;
+        }
+
+        encode_topo_cpuid1f(env, count, topo_info, eax, ebx, ecx, edx);
+        break;
     case 0x24: {
         *eax = 0;
         *ebx = 0;
@@ -7858,6 +7858,20 @@ void cpu_x86_cpuid(CPUX86State *env, uint32_t index, uint32_t count,
             *edx = 0;
         }
         break;
+    case 0x8000001F:
+        *eax = *ebx = *ecx = *edx = 0;
+        if (sev_enabled()) {
+            *eax = 0x2;
+            *eax |= sev_es_enabled() ? 0x8 : 0;
+            *eax |= csv3_enabled() ? 0x40000000 : 0; /* bit 30 for CSV3 */
+            *ebx = sev_get_cbit_position() & 0x3f; /* EBX[5:0] */
+            *ebx |= (sev_get_reduced_phys_bits() & 0x3f) << 6; /* EBX[11:6] */
+        }
+        break;
+    case 0x80000021:
+        *eax = env->features[FEAT_8000_0021_EAX];
+        *ebx = *ecx = *edx = 0;
+        break;
     case 0xC0000000:
         *eax = env->cpuid_xlevel2;
         *ebx = 0;
@@ -7879,20 +7893,6 @@ void cpu_x86_cpuid(CPUX86State *env, uint32_t index, uint32_t count,
         *ebx = 0;
         *ecx = 0;
         *edx = 0;
-        break;
-    case 0x8000001F:
-        *eax = *ebx = *ecx = *edx = 0;
-        if (sev_enabled()) {
-            *eax = 0x2;
-            *eax |= sev_es_enabled() ? 0x8 : 0;
-            *eax |= csv3_enabled() ? 0x40000000 : 0; /* bit 30 for CSV3 */
-            *ebx = sev_get_cbit_position() & 0x3f; /* EBX[5:0] */
-            *ebx |= (sev_get_reduced_phys_bits() & 0x3f) << 6; /* EBX[11:6] */
-        }
-        break;
-    case 0x80000021:
-        *eax = env->features[FEAT_8000_0021_EAX];
-        *ebx = *ecx = *edx = 0;
         break;
     default:
         /* reserved values: zero */
