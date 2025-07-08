@@ -532,6 +532,4 @@ void loongarch_cpu_list(void);
 
 #define CPU_RESOLVING_TYPE TYPE_LOONGARCH_CPU
 
-void loongarch_cpu_post_init(Object *obj);
-
 #endif /* LOONGARCH_CPU_H */
