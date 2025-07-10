@@ -416,13 +416,6 @@ static void loongarch_extioi_realize(DeviceState *dev, Error **errp)
     }
 }
 
-static void loongarch_extioi_unrealize(DeviceState *dev)
-{
-    LoongArchExtIOICommonState *s = LOONGARCH_EXTIOI_COMMON(dev);
-
-    g_free(s->cpu);
-}
-
 static void loongarch_extioi_reset_hold(Object *obj)
 {
     LoongArchExtIOIClass *lec = LOONGARCH_EXTIOI_GET_CLASS(obj);
@@ -475,8 +468,6 @@ static void loongarch_extioi_class_init(ObjectClass *klass, void *data)
 
     device_class_set_parent_realize(dc, loongarch_extioi_realize,
                                     &lec->parent_realize);
-    device_class_set_parent_unrealize(dc, loongarch_extioi_unrealize,
-                                      &lec->parent_unrealize);
     resettable_class_set_parent_phases(rc, NULL, loongarch_extioi_reset_hold,
                                        NULL, &lec->parent_phases);
     lecc->pre_save  = vmstate_extioi_pre_save;
