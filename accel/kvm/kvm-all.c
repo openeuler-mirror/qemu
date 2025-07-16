@@ -2491,10 +2491,6 @@ static int kvm_init(MachineState *ms)
         goto err;
     }
 
-    if (kvm_is_virtcca_cvm_type(type)) {
-        virtcca_cvm_allowed = true;
-    }
-
     do {
         ret = kvm_ioctl(s, KVM_CREATE_VM, type);
     } while (ret == -EINTR);

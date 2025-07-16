@@ -3876,6 +3876,7 @@ static int virt_kvm_type(MachineState *ms, const char *type_str)
 
         if (!strcmp(kvm_type, "cvm")) {
             virtcca_cvm_type = VIRTCCA_CVM_TYPE;
+            virtcca_cvm_allowed = true;
         }
     }
     int rme_vm_type = kvm_arm_rme_vm_type(ms), type;
