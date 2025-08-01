@@ -10,10 +10,9 @@
 #include "qemu/log.h"
 #include "hw/irq.h"
 #include "hw/intc/loongarch_pch_pic.h"
-#include "system/kvm.h"
+#include "sysemu/kvm.h"
 #include "trace.h"
 #include "qapi/error.h"
-#include "sysemu/kvm.h"
 
 static void pch_pic_update_irq(LoongArchPICCommonState *s, uint64_t mask,
                                int level)
@@ -26,11 +25,7 @@ static void pch_pic_update_irq(LoongArchPICCommonState *s, uint64_t mask,
         if (val) {
             irq = ctz64(val);
             s->intisr |= MAKE_64BIT_MASK(irq, 1);
-            if (kvm_enabled() && kvm_irqchip_in_kernel()) {
-                kvm_set_irq(kvm_state, s->htmsi_vector[irq], !!level);
-            } else {
-                qemu_set_irq(s->parent_irq[s->htmsi_vector[irq]], 1);
-            }
+            qemu_set_irq(s->parent_irq[s->htmsi_vector[irq]], 1);
 	}
     } else {
         /*
@@ -41,11 +36,7 @@ static void pch_pic_update_irq(LoongArchPICCommonState *s, uint64_t mask,
         if (val) {
             irq = ctz64(val);
             s->intisr &= ~MAKE_64BIT_MASK(irq, 1);
-            if (kvm_enabled() && kvm_irqchip_in_kernel()) {
-                kvm_set_irq(kvm_state, s->htmsi_vector[irq], !!level);
-            } else {
-                qemu_set_irq(s->parent_irq[s->htmsi_vector[irq]], 0);
-            }
+            qemu_set_irq(s->parent_irq[s->htmsi_vector[irq]], 0);
 	}
     }
 }
@@ -119,10 +110,10 @@ static uint64_t pch_pic_read(void *opaque, hwaddr addr, uint64_t field_mask)
         val = s->int_polarity;
         break;
     case PCH_PIC_HTMSI_VEC ... PCH_PIC_HTMSI_VEC_END:
-        val = *(uint64_t *)(s->htmsi_vector + addr - PCH_PIC_HTMSI_VEC);
+        val = ldq_le_p(&s->htmsi_vector[addr - PCH_PIC_HTMSI_VEC]);
         break;
     case PCH_PIC_ROUTE_ENTRY ... PCH_PIC_ROUTE_ENTRY_END:
-        val = *(uint64_t *)(s->route_entry + addr - PCH_PIC_ROUTE_ENTRY);
+        val = ldq_le_p(&s->route_entry[addr - PCH_PIC_ROUTE_ENTRY]);
         break;
     default:
         qemu_log_mask(LOG_GUEST_ERROR,
@@ -138,7 +129,8 @@ static void pch_pic_write(void *opaque, hwaddr addr, uint64_t value,
 {
     LoongArchPICCommonState *s = LOONGARCH_PIC_COMMON(opaque);
     uint32_t offset;
-    uint64_t old, mask, data, *ptemp;
+    uint64_t old, mask, data;
+    void *ptemp;
 
     offset = addr & 7;
     addr -= offset;
@@ -177,12 +169,12 @@ static void pch_pic_write(void *opaque, hwaddr addr, uint64_t value,
         s->int_polarity = (s->int_polarity & ~mask) | data;
         break;
     case PCH_PIC_HTMSI_VEC ... PCH_PIC_HTMSI_VEC_END:
-        ptemp = (uint64_t *)(s->htmsi_vector + addr - PCH_PIC_HTMSI_VEC);
-        *ptemp = (*ptemp & ~mask) | data;
+        ptemp = &s->htmsi_vector[addr - PCH_PIC_HTMSI_VEC];
+        stq_le_p(ptemp, (ldq_le_p(ptemp) & ~mask) | data);
         break;
     case PCH_PIC_ROUTE_ENTRY ... PCH_PIC_ROUTE_ENTRY_END:
-        ptemp = (uint64_t *)(s->route_entry + addr - PCH_PIC_ROUTE_ENTRY);
-        *ptemp = (*ptemp & ~mask) | data;
+        ptemp = (uint64_t *)&s->route_entry[addr - PCH_PIC_ROUTE_ENTRY];
+        stq_le_p(ptemp, (ldq_le_p(ptemp) & ~mask) | data);
         break;
     default:
         qemu_log_mask(LOG_GUEST_ERROR,
