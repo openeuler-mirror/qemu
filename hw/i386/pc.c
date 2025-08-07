@@ -838,6 +838,7 @@ static void mem2_init(MachineState *ms, MemoryRegion *system_memory)
 
         sprintf(mr_name, "mem2-%d", i);
         memory_region_init_ram_ptr(mem2_mr, NULL, mr_name, HUGEPAGE_SIZE, ram);
+        vmstate_register_ram_global(mem2_mr);
         memory_region_add_subregion(system_memory, ms->ram2_base + (i * HUGEPAGE_SIZE), mem2_mr);
     }
 
