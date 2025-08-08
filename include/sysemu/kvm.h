@@ -604,4 +604,7 @@ int kvm_load_user_data(hwaddr loader_start, hwaddr image_end, hwaddr initrd_star
 int kvm_create_shadow_device(PCIDevice *dev);
 int kvm_delete_shadow_device(PCIDevice *dev);
 #endif
+
+void kvm_mark_guest_state_protected(void);
+
 #endif

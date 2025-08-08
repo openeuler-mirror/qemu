@@ -260,6 +260,11 @@ static bool cpu_type_valid(const char *cpu)
     return false;
 }
 
+static bool virt_machine_is_confidential(VirtMachineState *vms)
+{
+    return MACHINE(vms)->cgs;
+}
+
 static void create_randomness(MachineState *ms, const char *node)
 {
     struct {
@@ -276,6 +281,7 @@ static void create_randomness(MachineState *ms, const char *node)
 
 static void create_fdt(VirtMachineState *vms)
 {
+    bool dtb_randomness = true;
     MachineState *ms = MACHINE(vms);
     int nb_numa_nodes = ms->numa_state->num_nodes;
     void *fdt = create_device_tree(&vms->fdt_size);
@@ -283,6 +289,16 @@ static void create_fdt(VirtMachineState *vms)
     if (!fdt) {
         error_report("create_device_tree() failed");
         exit(1);
+    }
+
+    /*
+     * Including random data in the DTB causes random intial measurement on CCA,
+     * so disable it for confidential VMs.
+     */
+    if (vms->dtb_randomness == ON_OFF_AUTO_OFF ||
+        (vms->dtb_randomness == ON_OFF_AUTO_AUTO &&
+         virt_machine_is_confidential(vms))) {
+        dtb_randomness = false;
     }
 
     ms->fdt = fdt;
@@ -301,7 +317,7 @@ static void create_fdt(VirtMachineState *vms)
         kvm_type = object_property_get_str(OBJECT(current_machine),
                                            "kvm-type", &error_abort);
     }
-    if (vms->dtb_randomness) {
+    if (dtb_randomness) {
         if (!(kvm_type && !strcmp(kvm_type, "cvm"))) {
             create_randomness(ms, "/chosen");
         }
@@ -309,7 +325,7 @@ static void create_fdt(VirtMachineState *vms)
 
     if (vms->secure) {
         qemu_fdt_add_subnode(fdt, "/secure-chosen");
-        if (vms->dtb_randomness) {
+        if (dtb_randomness) {
             create_randomness(ms, "/secure-chosen");
         }
     }
@@ -1391,6 +1407,10 @@ static PFlashCFI01 *virt_flash_create1(VirtMachineState *vms,
 
 static void virt_flash_create(VirtMachineState *vms)
 {
+    if (virt_machine_is_confidential(vms)) {
+        return;
+    }
+
     vms->flash[0] = virt_flash_create1(vms, "virt.flash0", "pflash0");
     vms->flash[1] = virt_flash_create1(vms, "virt.flash1", "pflash1");
 }
@@ -1429,6 +1449,10 @@ static void virt_flash_map(VirtMachineState *vms,
     hwaddr flashsize = vms->memmap[VIRT_FLASH].size / 2;
     hwaddr flashbase = vms->memmap[VIRT_FLASH].base;
 
+    if (virt_machine_is_confidential(vms)) {
+        return;
+    }
+
     virt_flash_map1(vms->flash[0], flashbase, flashsize,
                     secure_sysmem);
     virt_flash_map1(vms->flash[1], flashbase + flashsize, flashsize,
@@ -1444,7 +1468,7 @@ static void virt_flash_fdt(VirtMachineState *vms,
     MachineState *ms = MACHINE(vms);
     char *nodename;
 
-    if (virtcca_cvm_enabled()) {
+    if (virtcca_cvm_enabled() || virt_machine_is_confidential(vms)) {
         return;
     }
 
@@ -1507,6 +1531,15 @@ static bool virt_firmware_init(VirtMachineState *vms,
     int i;
     const char *bios_name;
     BlockBackend *pflash_blk0;
+
+    /*
+     * For a confidential VM, the firmware image and any boot information,
+     * including EFI variables, are stored in RAM in order to be measurable and
+     * private. Create a RAM region and load the firmware image there.
+     */
+    if (virt_machine_is_confidential(vms)) {
+        return virt_confidential_firmware_init(vms, sysmem);
+    }
 
     /* Map legacy -drive if=pflash to machine properties */
     for (i = 0; i < ARRAY_SIZE(vms->flash); i++) {
@@ -1956,6 +1989,11 @@ void virt_machine_done(Notifier *notifier, void *data)
         exit(1);
     }
 
+    if (vms->event_log) {
+        object_property_set_uint(vms->event_log, "load-addr",
+                                 vms->bootinfo.log_paddr, &error_fatal);
+    }
+
     fw_cfg_add_extra_pci_roots(vms->bus, vms->fw_cfg);
 
     virt_acpi_setup(vms);
@@ -2365,6 +2403,21 @@ static void virt_cpu_post_init(VirtMachineState *vms, MemoryRegion *sysmem)
     }
 }
 
+static void create_measurement_log(VirtMachineState *vms)
+{
+    Error *err = NULL;
+
+    vms->event_log = kvm_arm_rme_get_measurement_log();
+    if (vms->event_log == NULL) {
+        return;
+    }
+    vms->bootinfo.log_size = object_property_get_uint(vms->event_log,
+                                                      "max-size", &err);
+    if (err != NULL) {
+        error_report_err(err);
+    }
+}
+
 static void virt_cpu_set_properties(Object *cpuobj, const CPUArchId *cpu_slot,
                                     Error **errp)
 {
@@ -2556,6 +2609,7 @@ static void machvirt_init(MachineState *machine)
     }
 
     finalize_gic_version(vms);
+    virt_flash_create(vms);
 
     possible_cpus = mc->possible_cpu_arch_ids(machine);
 
@@ -2610,10 +2664,12 @@ static void machvirt_init(MachineState *machine)
      * if the guest has EL2 then we will use SMC as the conduit,
      * and otherwise we will use HVC (for backwards compatibility and
      * because if we're using KVM then we must use HVC).
+     * Realm guests must also use SMC.
      */
     if (vms->secure && firmware_loaded) {
         vms->psci_conduit = QEMU_PSCI_CONDUIT_DISABLED;
-    } else if (vms->virt || virtcca_cvm_enabled()) {
+    } else if (vms->virt || virtcca_cvm_enabled() ||
+		    virt_machine_is_confidential(vms)) {
         vms->psci_conduit = QEMU_PSCI_CONDUIT_SMC;
     } else {
         vms->psci_conduit = QEMU_PSCI_CONDUIT_HVC;
@@ -2862,6 +2918,10 @@ static void machvirt_init(MachineState *machine)
                                vms->fw_cfg, OBJECT(vms));
     }
 
+    kvm_arm_rme_init_gpa_space(vms->highest_gpa, vms->bus);
+
+    create_measurement_log(vms);
+
     vms->bootinfo.ram_size = machine->ram_size;
     vms->bootinfo.board_id = -1;
     vms->bootinfo.loader_start = vms->memmap[VIRT_MEM].base;
@@ -2872,6 +2932,8 @@ static void machvirt_init(MachineState *machine)
     vms->bootinfo.firmware_max_size = vms->memmap[VIRT_FLASH].size;
     vms->bootinfo.confidential = virtcca_cvm_enabled();
     vms->bootinfo.psci_conduit = vms->psci_conduit;
+    vms->bootinfo.confidential = virt_machine_is_confidential(vms);
+    vms->bootinfo.skip_bootloader = vms->bootinfo.confidential;
     arm_load_kernel(ARM_CPU(first_cpu), machine, &vms->bootinfo);
 
     vms->machine_done.notify = virt_machine_done;
@@ -2991,18 +3053,21 @@ static void virt_set_its(Object *obj, bool value, Error **errp)
     vms->its = value;
 }
 
-static bool virt_get_dtb_randomness(Object *obj, Error **errp)
+static void virt_get_dtb_randomness(Object *obj, Visitor *v, const char *name,
+                                    void *opaque, Error **errp)
 {
     VirtMachineState *vms = VIRT_MACHINE(obj);
+    OnOffAuto dtb_randomness = vms->dtb_randomness;
 
-    return vms->dtb_randomness;
+    visit_type_OnOffAuto(v, name, &dtb_randomness, errp);
 }
 
-static void virt_set_dtb_randomness(Object *obj, bool value, Error **errp)
+static void virt_set_dtb_randomness(Object *obj, Visitor *v, const char *name,
+                                    void *opaque, Error **errp)
 {
     VirtMachineState *vms = VIRT_MACHINE(obj);
 
-    vms->dtb_randomness = value;
+    visit_type_OnOffAuto(v, name, &vms->dtb_randomness, errp);
 }
 
 static char *virt_get_oem_id(Object *obj, Error **errp)
@@ -3811,17 +3876,29 @@ static int virt_kvm_type(MachineState *ms, const char *type_str)
 
         if (!strcmp(kvm_type, "cvm")) {
             virtcca_cvm_type = VIRTCCA_CVM_TYPE;
+            virtcca_cvm_allowed = true;
         }
     }
+    int rme_vm_type = kvm_arm_rme_vm_type(ms), type;
     int max_vm_pa_size, requested_pa_size;
+    int rme_reserve_bit = 0;
     bool fixed_ipa;
 
-    max_vm_pa_size = kvm_arm_get_max_vm_ipa_size(ms, &fixed_ipa);
+    if (rme_vm_type) {
+        /*
+         * With RME, the upper GPA bit differentiates Realm from NS memory.
+         * Reserve the upper bit to ensure that highmem devices will fit.
+         */
+        rme_reserve_bit = 1;
+    }
+
+    max_vm_pa_size = kvm_arm_get_max_vm_ipa_size(ms, &fixed_ipa) -
+                     rme_reserve_bit;
 
     /* we freeze the memory map to compute the highest gpa */
     virt_set_memmap(vms, max_vm_pa_size);
 
-    requested_pa_size = 64 - clz64(vms->highest_gpa);
+    requested_pa_size = 64 - clz64(vms->highest_gpa) + rme_reserve_bit;
 
     /*
      * KVM requires the IPA size to be at least 32 bits.
@@ -3830,11 +3907,11 @@ static int virt_kvm_type(MachineState *ms, const char *type_str)
         requested_pa_size = 32;
     }
 
-    if (requested_pa_size > max_vm_pa_size) {
+    if (requested_pa_size > max_vm_pa_size + rme_reserve_bit) {
         error_report("-m and ,maxmem option values "
                      "require an IPA range (%d bits) larger than "
                      "the one supported by the host (%d bits)",
-                     requested_pa_size, max_vm_pa_size);
+                     requested_pa_size, max_vm_pa_size + rme_reserve_bit);
         return -1;
     }
     /*
@@ -3842,9 +3919,12 @@ static int virt_kvm_type(MachineState *ms, const char *type_str)
      * the implicit legacy 40b IPA setting, in which case the kvm_type
      * must be 0.
      */
-    return strcmp(type_str, "cvm") == 0 ?
-        ((fixed_ipa ? 0 : requested_pa_size) | virtcca_cvm_type) :
-        (fixed_ipa ? 0 : requested_pa_size);
+    type = strcmp(type_str, "cvm") == 0 ? virtcca_cvm_type : 0;
+    if (fixed_ipa) {
+        return type;
+    }
+
+    return requested_pa_size | rme_vm_type | type;
 }
 
 static void virt_machine_class_init(ObjectClass *oc, void *data)
@@ -3985,16 +4065,16 @@ static void virt_machine_class_init(ObjectClass *oc, void *data)
                                           "Set on/off to enable/disable "
                                           "ITS instantiation");
 
-    object_class_property_add_bool(oc, "dtb-randomness",
-                                   virt_get_dtb_randomness,
-                                   virt_set_dtb_randomness);
+    object_class_property_add(oc, "dtb-randomness", "OnOffAuto",
+                              virt_get_dtb_randomness, virt_set_dtb_randomness,
+                              NULL, NULL);
     object_class_property_set_description(oc, "dtb-randomness",
                                           "Set off to disable passing random or "
                                           "non-deterministic dtb nodes to guest");
 
-    object_class_property_add_bool(oc, "dtb-kaslr-seed",
-                                   virt_get_dtb_randomness,
-                                   virt_set_dtb_randomness);
+    object_class_property_add(oc, "dtb-kaslr-seed", "OnOffAuto",
+                              virt_get_dtb_randomness, virt_set_dtb_randomness,
+                              NULL, NULL);
     object_class_property_set_description(oc, "dtb-kaslr-seed",
                                           "Deprecated synonym of dtb-randomness");
 
@@ -4081,12 +4161,7 @@ static void virt_instance_init(Object *obj)
     /* MTE is disabled by default.  */
     vms->mte = false;
 
-    /* Supply kaslr-seed and rng-seed by default */
-    vms->dtb_randomness = true;
-
     vms->irqmap = a15irqmap;
-
-    virt_flash_create(vms);
 
     vms->oem_id = g_strndup(ACPI_BUILD_APPNAME6, 6);
     vms->oem_table_id = g_strndup(ACPI_BUILD_APPNAME8, 8);

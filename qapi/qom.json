@@ -953,6 +953,45 @@
             '*measurement-algo': 'TmmGuestMeasurementAlgo' } }
 
 ##
+# @RmeGuestMeasurementAlgorithm:
+#
+# @sha256: Use the SHA256 algorithm
+#
+# @sha512: Use the SHA512 algorithm
+#
+# Algorithm to use for realm measurements
+#
+# Since: 10.0
+##
+{ 'enum': 'RmeGuestMeasurementAlgorithm',
+  'data': ['sha256', 'sha512'] }
+
+##
+# @RmeGuestProperties:
+#
+# Properties for rme-guest objects.
+#
+# @personalization-value: a base64 string encoding a 64-byte (512-bit) value.
+#     This optional parameter allows to uniquely identify the VM instance
+#     during attestation. (default: all-zero)
+#
+# @measurement-algorithm: Realm measurement algorithm
+#     (default: sha512)
+#
+# @measurement-log: Enable a measurement log for the Realm. All events
+#     that contribute to the Realm Initial Measurement (RIM) are added
+#     to a log in TCG TPM2 format, which is itself loaded into Realm
+#     memory (unmeasured) and can then be read by a verifier to
+#     reconstruct the RIM.
+#
+# Since: 10.0
+##
+{ 'struct': 'RmeGuestProperties',
+  'data': { '*personalization-value': 'str',
+            '*measurement-algorithm': 'RmeGuestMeasurementAlgorithm',
+            '*measurement-log': 'bool'} }
+
+##
 # @ObjectType:
 #
 # Features:
@@ -999,6 +1038,7 @@
     { 'name': 'pr-manager-helper',
       'if': 'CONFIG_LINUX' },
     'qtest',
+    'rme-guest',
     'rng-builtin',
     'rng-egd',
     { 'name': 'rng-random',
@@ -1069,6 +1109,7 @@
       'pr-manager-helper':          { 'type': 'PrManagerHelperProperties',
                                       'if': 'CONFIG_LINUX' },
       'qtest':                      'QtestProperties',
+      'rme-guest':                  'RmeGuestProperties',
       'rng-builtin':                'RngProperties',
       'rng-egd':                    'RngEgdProperties',
       'rng-random':                 { 'type': 'RngRandomProperties',

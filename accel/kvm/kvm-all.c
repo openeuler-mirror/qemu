@@ -2363,13 +2363,13 @@ static int kvm_recommended_vcpus(KVMState *s)
 
 static int kvm_max_vcpus(KVMState *s)
 {
-    int ret = kvm_check_extension(s, KVM_CAP_MAX_VCPUS);
+    int ret = kvm_vm_check_extension(s, KVM_CAP_MAX_VCPUS);
     return (ret) ? ret : kvm_recommended_vcpus(s);
 }
 
 static int kvm_max_vcpu_id(KVMState *s)
 {
-    int ret = kvm_check_extension(s, KVM_CAP_MAX_VCPU_ID);
+    int ret = kvm_vm_check_extension(s, KVM_CAP_MAX_VCPU_ID);
     return (ret) ? ret : kvm_max_vcpus(s);
 }
 
@@ -2489,10 +2489,6 @@ static int kvm_init(MachineState *ms)
     if (type < 0) {
         ret = -EINVAL;
         goto err;
-    }
-
-    if (kvm_is_virtcca_cvm_type(type)) {
-        virtcca_cvm_allowed = true;
     }
 
     do {
@@ -2625,7 +2621,7 @@ static int kvm_init(MachineState *ms)
 
 #ifdef KVM_CAP_SET_GUEST_DEBUG
     kvm_has_guest_debug =
-        (kvm_check_extension(s, KVM_CAP_SET_GUEST_DEBUG) > 0);
+        (kvm_vm_check_extension(s, KVM_CAP_SET_GUEST_DEBUG) > 0);
 #endif
 
     kvm_sstep_flags = 0;
@@ -2782,7 +2778,7 @@ bool kvm_cpu_check_are_resettable(void)
 
 static void do_kvm_cpu_synchronize_state(CPUState *cpu, run_on_cpu_data arg)
 {
-    if (!cpu->vcpu_dirty) {
+    if (!cpu->vcpu_dirty && !kvm_state->guest_state_protected) {
         int ret = kvm_arch_get_registers(cpu);
         if (ret) {
             error_report("Failed to get registers: %s", strerror(-ret));
@@ -2796,7 +2792,7 @@ static void do_kvm_cpu_synchronize_state(CPUState *cpu, run_on_cpu_data arg)
 
 void kvm_cpu_synchronize_state(CPUState *cpu)
 {
-    if (!cpu->vcpu_dirty) {
+    if (!cpu->vcpu_dirty && !kvm_state->guest_state_protected) {
         run_on_cpu(cpu, do_kvm_cpu_synchronize_state, RUN_ON_CPU_NULL);
     }
 }
@@ -2831,7 +2827,13 @@ static void do_kvm_cpu_synchronize_post_init(CPUState *cpu, run_on_cpu_data arg)
 
 void kvm_cpu_synchronize_post_init(CPUState *cpu)
 {
-    run_on_cpu(cpu, do_kvm_cpu_synchronize_post_init, RUN_ON_CPU_NULL);
+    if (!kvm_state->guest_state_protected) {
+        /*
+         * This runs before the machine_init_done notifiers, and is the last
+         * opportunity to synchronize the state of confidential guests.
+         */
+        run_on_cpu(cpu, do_kvm_cpu_synchronize_post_init, RUN_ON_CPU_NULL);
+    }
 }
 
 static void do_kvm_cpu_synchronize_pre_loadvm(CPUState *cpu, run_on_cpu_data arg)
@@ -4222,4 +4224,9 @@ void query_stats_schemas_cb(StatsSchemaList **result, Error **errp)
         stats_args.errp = errp;
         query_stats_schema_vcpu(first_cpu, &stats_args);
     }
+}
+
+void kvm_mark_guest_state_protected(void)
+{
+    kvm_state->guest_state_protected = true;
 }

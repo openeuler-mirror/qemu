@@ -118,7 +118,7 @@ static int tmm_configure_one(TmmGuest *guest, uint32_t cfg, Error **errp)
             g_assert_not_reached();
     }
  
-    ret = kvm_vm_enable_cap(kvm_state, KVM_CAP_ARM_TMM, 0,
+    ret = kvm_vm_enable_cap(kvm_state, KVM_CAP_ARM_RME, 0,
                             KVM_CAP_ARM_TMM_CONFIG_CVM, (intptr_t)&args);
     if (ret) {
         error_setg_errno(errp, -ret, "TMM: failed to configure %s", cfg_str);
@@ -167,7 +167,7 @@ static void tmm_populate_region(gpointer data, gpointer unused)
         return;
     }
 
-    ret = kvm_vm_enable_cap(kvm_state, KVM_CAP_ARM_TMM, 0,
+    ret = kvm_vm_enable_cap(kvm_state, KVM_CAP_ARM_RME, 0,
                             KVM_CAP_ARM_TMM_POPULATE_CVM,
                             (intptr_t)&populate_args);
     if (ret) {
@@ -179,7 +179,7 @@ static void tmm_populate_region(gpointer data, gpointer unused)
 
 static int tmm_create_rd(Error **errp)
 {
-    int ret = kvm_vm_enable_cap(kvm_state, KVM_CAP_ARM_TMM, 0,
+    int ret = kvm_vm_enable_cap(kvm_state, KVM_CAP_ARM_RME, 0,
                                 KVM_CAP_ARM_TMM_CREATE_RD);
     if (ret) {
         error_setg_errno(errp, -ret, "TMM: failed to create tmm Descriptor");
@@ -200,14 +200,14 @@ static void tmm_vm_state_change(void *opaque, bool running, RunState state)
     g_slist_free_full(g_steal_pointer(&tmm_guest->ram_regions), g_free);
 
     CPU_FOREACH(cs) {
-        ret = kvm_arm_vcpu_finalize(cs, KVM_ARM_VCPU_TEC);
+        ret = kvm_arm_vcpu_finalize(cs, KVM_ARM_VCPU_REC);
         if (ret) {
             error_report("TMM: failed to finalize vCPU: %s", strerror(-ret));
             exit(1);
         }
     }
 
-    ret = kvm_vm_enable_cap(kvm_state, KVM_CAP_ARM_TMM, 0,
+    ret = kvm_vm_enable_cap(kvm_state, KVM_CAP_ARM_RME, 0,
                             KVM_CAP_ARM_TMM_ACTIVATE_CVM);
     if (ret) {
         error_report("TMM: failed to activate cvm: %s", strerror(-ret));
@@ -224,7 +224,7 @@ int kvm_arm_tmm_init(ConfidentialGuestSupport *cgs, Error **errp)
         return -ENODEV;
     }
  
-    if (!kvm_check_extension(kvm_state, KVM_CAP_ARM_TMM)) {
+    if (!kvm_check_extension(kvm_state, KVM_CAP_ARM_RME)) {
         error_setg(errp, "KVM does not support TMM");
         return -ENODEV;
     }

@@ -225,7 +225,7 @@ struct VirtMachineState {
     bool cpu_hotplug_enabled;
     bool ras;
     bool mte;
-    bool dtb_randomness;
+    OnOffAuto dtb_randomness;
     bool pmu;
     int smmu_accel_count;
     OnOffAuto acpi;
@@ -254,6 +254,7 @@ struct VirtMachineState {
     char *oem_table_id;
     char *kvm_type;
     NotifierList cpuhp_notifiers;
+    Object *event_log;
 };
 
 #define VIRT_ECAM_ID(high) (high ? VIRT_HIGH_PCIE_ECAM : VIRT_PCIE_ECAM)
