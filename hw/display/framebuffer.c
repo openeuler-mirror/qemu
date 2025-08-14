@@ -99,6 +99,10 @@ void framebuffer_update_display(
     src += i * src_width;
     dest += i * dest_row_pitch;
 
+    addr += (uint64_t)i * src_width;
+    src += (uint64_t)i * src_width;
+    dest += (uint64_t)i * dest_row_pitch;
+
     snap = memory_region_snapshot_and_clear_dirty(mem, addr, src_width * rows,
                                                   DIRTY_MEMORY_VGA);
     for (; i < rows; i++) {
