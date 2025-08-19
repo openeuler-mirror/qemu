@@ -2930,9 +2930,9 @@ static void machvirt_init(MachineState *machine)
     vms->bootinfo.firmware_loaded = firmware_loaded;
     vms->bootinfo.firmware_base = vms->memmap[VIRT_FLASH].base;
     vms->bootinfo.firmware_max_size = vms->memmap[VIRT_FLASH].size;
-    vms->bootinfo.confidential = virtcca_cvm_enabled();
     vms->bootinfo.psci_conduit = vms->psci_conduit;
-    vms->bootinfo.confidential = virt_machine_is_confidential(vms);
+    vms->bootinfo.confidential = virt_machine_is_confidential(vms) ||
+                                 virtcca_cvm_enabled();
     vms->bootinfo.skip_bootloader = vms->bootinfo.confidential;
     arm_load_kernel(ARM_CPU(first_cpu), machine, &vms->bootinfo);
 
