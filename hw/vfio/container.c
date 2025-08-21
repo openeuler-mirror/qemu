@@ -736,13 +736,13 @@ static int vfio_connect_container(VFIOGroup *group, AddressSpace *as,
     group->container = container;
     QLIST_INSERT_HEAD(&container->group_list, group, container_next);
 
+    bcontainer->listener = vfio_memory_listener;
     if (kvm_csv3_enabled()) {
         shared_memory_listener_register(&bcontainer->listener,
                                         bcontainer->space->as);
+    } else {
+        memory_listener_register(&bcontainer->listener, bcontainer->space->as);
     }
-
-    bcontainer->listener = vfio_memory_listener;
-    memory_listener_register(&bcontainer->listener, bcontainer->space->as);
 
     if (bcontainer->error) {
         ret = -1;
