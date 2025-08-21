@@ -180,6 +180,7 @@ extern bool kvm_csv3_allowed;
 #define kvm_msi_devid_required() (false)
 #define kvm_csv3_enabled() (false)
 #define kvm_csv3_should_set_priv_mem() (false)
+extern bool virtcca_cvm_allowed;
 
 #endif  /* CONFIG_KVM_IS_POSSIBLE */
 
