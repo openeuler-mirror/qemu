@@ -1474,6 +1474,7 @@ static void virt_cpu_unplug(HotplugHandler *hotplug_dev,
     LoongArchVirtMachineState *lvms = LOONGARCH_VIRT_MACHINE(hotplug_dev);
 
     hhc = HOTPLUG_HANDLER_GET_CLASS(lvms->acpi_ged);
+    qemu_unregister_reset(reset_load_elf, cpu);
     hhc->unplug(HOTPLUG_HANDLER(lvms->acpi_ged), dev, &local_err);
     if (local_err) {
         error_propagate(errp, local_err);
@@ -1501,7 +1502,7 @@ static void virt_cpu_plug(HotplugHandler *hotplug_dev,
         env = &(cpu->env);
         env->address_space_iocsr = &lvms->as_iocsr;
 
-        qemu_register_reset(reset_load_elf, LOONGARCH_CPU(qemu_get_cpu(cs->cpu_index)));
+        qemu_register_reset(reset_load_elf, cpu);
         env->ipistate = lvms->ipi;
         if (!(kvm_enabled() && kvm_irqchip_in_kernel())) {
             /* connect ipi irq to cpu irq, logic cpu index used here */
