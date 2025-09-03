@@ -70,13 +70,19 @@ struct RISCVCPUConfig {
     bool ext_zihintntl;
     bool ext_zihintpause;
     bool ext_zihpm;
+    bool ext_zimop;
+    bool ext_zcmop;
+    bool ext_ztso;
     bool ext_smstateen;
     bool ext_sstc;
     bool ext_svadu;
     bool ext_svinval;
     bool ext_svnapot;
     bool ext_svpbmt;
+    bool ext_svvptc;
     bool ext_zdinx;
+    bool ext_zacas;
+    bool ext_zabha;
     bool ext_zawrs;
     bool ext_zfa;
     bool ext_zfbfmin;
@@ -113,12 +119,18 @@ struct RISCVCPUConfig {
     bool ext_ssaia;
     bool ext_sscofpmf;
     bool ext_smepmp;
+    bool ext_ssnpm;
+    bool ext_smnpm;
+    bool ext_smmpm;
     bool rvv_ta_all_1s;
     bool rvv_ma_all_1s;
 
     uint32_t mvendorid;
     uint64_t marchid;
     uint64_t mimpid;
+
+    bool ext_svade;
+    bool ext_ziccrse;
 
     /* Vendor-specific custom extensions */
     bool ext_xtheadba;
