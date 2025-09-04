@@ -1228,17 +1228,18 @@ static void arm_setup_confidential_firmware_boot(ARMCPU *cpu,
     uint64_t tmi_version = 0;
     int ret = -1;
 
-    if (kvm_enabled()) {
+    if (kvm_enabled() && virtcca_cvm_enabled()) {
         ret = kvm_ioctl(kvm_state, KVM_GET_TMI_VERSION, &tmi_version);
+        if (ret < 0) {
+            error_report("please check the kernel version!");
+            exit(EXIT_FAILURE);
+        }
+        if (tmi_version < MIN_TMI_VERSION_FOR_UEFI_BOOTED_CVM) {
+            error_report("please check the tmi version!");
+            exit(EXIT_FAILURE);
+        }
     }
-    if (ret < 0) {
-        error_report("please check the kernel version!");
-        exit(EXIT_FAILURE);
-    }
-    if (tmi_version < MIN_TMI_VERSION_FOR_UEFI_BOOTED_CVM) {
-        error_report("please check the tmi version!");
-        exit(EXIT_FAILURE);
-    }
+
     ssize_t fw_size;
     const char *fname;
     AddressSpace *as = arm_boot_address_space(cpu, info);
@@ -1273,7 +1274,7 @@ static void arm_setup_firmware_boot(ARMCPU *cpu, struct arm_boot_info *info, con
          * DTB to the base of RAM for the bootloader to pick up.
          */
         info->dtb_start = info->loader_start;
-        if (info->confidential)
+        if (info->confidential && virtcca_cvm_enabled())
             tmm_add_ram_region(UEFI_LOADER_START, UEFI_MAX_SIZE, info->dtb_start, DTB_MAX , true);
     }
 
@@ -1317,9 +1318,11 @@ static void arm_setup_firmware_boot(ARMCPU *cpu, struct arm_boot_info *info, con
 
     if (info->confidential) {
         arm_setup_confidential_firmware_boot(cpu, info, firmware_filename);
-        virtcca_kvm_get_mmio_addr(&mmio_start, &mmio_size);
-        kvm_load_user_data(info->loader_start, DTB_MAX, mmio_start, mmio_size, info->ram_size,
-	        (struct kvm_numa_info *)info->numa_info);
+        if (virtcca_cvm_enabled()) {
+            virtcca_kvm_get_mmio_addr(&mmio_start, &mmio_size);
+            kvm_load_user_data(info->loader_start, DTB_MAX, mmio_start, mmio_size, info->ram_size,
+                (struct kvm_numa_info *)info->numa_info);
+        }
     }
     /*
      * We will start from address 0 (typically a boot ROM image) in the
