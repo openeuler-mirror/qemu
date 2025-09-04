@@ -1,7 +1,7 @@
 #!/bin/sh -e
 #
 # SPDX-License-Identifier: GPL-2.0-or-later
-# Update target/arm/cpu-sysregs.h
+# Update target/arm/cpu-sysreg-properties.c and target/arm/cpu-sysregs.h
 # from a linux source tree (arch/arm64/tools/sysreg)
 #
 # Copyright Red Hat, Inc. 2024
@@ -30,3 +30,6 @@ fi
 
 awk -f $scripts/arm-gen-cpu-sysregs-header.awk \
     $linux/arch/arm64/tools/sysreg > $output/target/arm/cpu-sysregs.h.inc
+
+awk -f $scripts/gen-cpu-sysreg-properties.awk \
+    $linux/arch/arm64/tools/sysreg > $output/target/arm/cpu-sysreg-properties.c
