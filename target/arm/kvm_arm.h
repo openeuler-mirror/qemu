@@ -461,6 +461,8 @@ void kvm_arm_rme_init_gpa_space(hwaddr highest_gpa, PCIBus *pci_bus);
  */
 Object *kvm_arm_rme_get_measurement_log(void);
 
+int kvm_arm_get_writable_id_regs(ARMCPU *cpu, IdRegMap *idregmap);
+
 #else
 
 /*
@@ -499,6 +501,11 @@ static inline void kvm_arm_rme_init_gpa_space(hwaddr highest_gpa,
 static inline Object *kvm_arm_rme_get_measurement_log(void)
 {
     return NULL;
+}
+
+static inline int kvm_arm_get_writable_id_regs(ARMCPU *cpu, IdRegMap *idregmap)
+{
+    return -ENOSYS;
 }
 
 /*
