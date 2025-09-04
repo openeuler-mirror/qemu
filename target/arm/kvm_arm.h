@@ -471,6 +471,8 @@ Object *kvm_arm_rme_get_measurement_log(void);
 
 int kvm_arm_get_writable_id_regs(ARMCPU *cpu, IdRegMap *idregmap);
 
+void kvm_arm_writable_idregs_to_cpreg_list(ARMCPU *cpu);
+
 #else
 
 /*
@@ -516,6 +518,10 @@ static inline int kvm_arm_get_writable_id_regs(ARMCPU *cpu, IdRegMap *idregmap)
     return -ENOSYS;
 }
 
+void kvm_arm_writable_idregs_to_cpreg_list(ARMCPU *cpu)
+{
+    g_assert_not_reached();
+}
 /*
  * These functions should never actually be called without KVM support.
  */
