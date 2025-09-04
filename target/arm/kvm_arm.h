@@ -21,6 +21,12 @@
 #define KVM_REG_ARM_ID_AA64DFR0_EL1     ARM64_SYS_REG(3, 0, 0, 5, 0)
 #define KVM_REG_ARM_PMCR_EL0            ARM64_SYS_REG(3, 3, 9, 12, 0)
 
+#define MAX_TARGET_IMPL_CPUS    8
+typedef struct TargetImplCpu {
+     uint32_t midr;
+     uint32_t revidr;
+} TargetImplCpu;
+
 /**
  * kvm_arm_init_debug() - initialize guest debug capabilities
  * @s: KVMState
