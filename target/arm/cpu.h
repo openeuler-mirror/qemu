@@ -1078,7 +1078,10 @@ struct ArchCPU {
      * on KVM custom vcpu model realize
      */
     ARMIdRegsState writable_id_regs;
-    
+
+    /* ID reg writable bitmask (KVM only) */
+    IdRegMap *writable_map;
+      
     /* Specify the number of cores in this CPU cluster. Used for the L2CTLR
      * register.
      */
