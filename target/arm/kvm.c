@@ -696,7 +696,7 @@ static void kvm_arm_configure_aa64dfr0(ARMCPU *cpu)
         return;
     }
 
-    newval = cpu->isar.id_aa64dfr0;
+    newval = GET_IDREG(&cpu->isar, ID_AA64DFR0);
     if (cpu->num_bps) {
         uint64_t ctx_cmps = FIELD_EX64(newval, ID_AA64DFR0, CTX_CMPS);
 

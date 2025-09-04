@@ -602,7 +602,7 @@ static void arm_cpu_get_num_wps(Object *obj, Visitor *v, const char *name,
 
     val = cpu->num_wps;
     if (val == 0) {
-        val = FIELD_EX64(cpu->isar.id_aa64dfr0, ID_AA64DFR0, WRPS) + 1;
+        val = FIELD_EX64_IDREG(&cpu->isar, ID_AA64DFR0, WRPS) + 1;
     }
 
     visit_type_uint8(v, name, &val, errp);
@@ -613,7 +613,7 @@ static void arm_cpu_set_num_wps(Object *obj, Visitor *v, const char *name,
 {
     uint8_t val;
     ARMCPU *cpu = ARM_CPU(obj);
-    uint8_t max_wps = FIELD_EX64(cpu->isar.id_aa64dfr0, ID_AA64DFR0, WRPS) + 1;
+    uint8_t max_wps = FIELD_EX64_IDREG(&cpu->isar, ID_AA64DFR0, WRPS) + 1;
 
     if (!visit_type_uint8(v, name, &val, errp)) {
         return;
@@ -635,7 +635,7 @@ static void arm_cpu_get_num_bps(Object *obj, Visitor *v, const char *name,
 
     val = cpu->num_bps;
     if (val == 0) {
-        val = FIELD_EX64(cpu->isar.id_aa64dfr0, ID_AA64DFR0, BRPS) + 1;
+        val = FIELD_EX64_IDREG(&cpu->isar, ID_AA64DFR0, BRPS) + 1;
     }
 
     visit_type_uint8(v, name, &val, errp);
@@ -646,7 +646,7 @@ static void arm_cpu_set_num_bps(Object *obj, Visitor *v, const char *name,
 {
     uint8_t val;
     ARMCPU *cpu = ARM_CPU(obj);
-    uint8_t max_bps = FIELD_EX64(cpu->isar.id_aa64dfr0, ID_AA64DFR0, BRPS) + 1;
+    uint8_t max_bps = FIELD_EX64_IDREG(&cpu->isar, ID_AA64DFR0, BRPS) + 1;
 
     if (!visit_type_uint8(v, name, &val, errp)) {
         return;
@@ -769,7 +769,7 @@ static void aarch64_a57_initfn(Object *obj)
     cpu->isar.id_isar5 = 0x00011121;
     cpu->isar.id_isar6 = 0;
     SET_IDREG(isar, ID_AA64PFR0, 0x00002222);
-    cpu->isar.id_aa64dfr0 = 0x10305106;
+    SET_IDREG(isar, ID_AA64DFR0, 0x10305106);
     SET_IDREG(isar, ID_AA64ISAR0, 0x00011120);
     SET_IDREG(isar, ID_AA64MMFR0, 0x00001124);
     cpu->isar.dbgdidr = 0x3516d000;
@@ -827,7 +827,7 @@ static void aarch64_a53_initfn(Object *obj)
     cpu->isar.id_isar5 = 0x00011121;
     cpu->isar.id_isar6 = 0;
     SET_IDREG(isar, ID_AA64PFR0, 0x00002222);
-    cpu->isar.id_aa64dfr0 = 0x10305106;
+    SET_IDREG(isar, ID_AA64DFR0, 0x10305106);
     SET_IDREG(isar, ID_AA64ISAR0, 0x00011120);
     SET_IDREG(isar, ID_AA64MMFR0, 0x00001122); /* 40 bit physical addr */
     cpu->isar.dbgdidr = 0x3516d000;
@@ -883,7 +883,7 @@ static void aarch64_a72_initfn(Object *obj)
     cpu->isar.id_isar4 = 0x00011142;
     cpu->isar.id_isar5 = 0x00011121;
     SET_IDREG(&cpu->isar, ID_AA64PFR0, 0x00002222);
-    cpu->isar.id_aa64dfr0 = 0x10305106;
+    SET_IDREG(&cpu->isar, ID_AA64DFR0, 0x10305106);
     SET_IDREG(&cpu->isar, ID_AA64ISAR0, 0x00011120);
     SET_IDREG(&cpu->isar, ID_AA64MMFR0, 0x00001124);
     cpu->isar.dbgdidr = 0x3516d000;
@@ -912,7 +912,7 @@ static void aarch64_kunpeng_920_initfn(Object *obj)
     cpu->midr = 0x480fd010;
     cpu->ctr = 0x84448004;
     SET_IDREG(&cpu->isar, ID_AA64PFR0, 0x11001111);
-    cpu->isar.id_aa64dfr0 = 0x110305408;
+    SET_IDREG(&cpu->isar, ID_AA64DFR0, 0x110305408);
     SET_IDREG(&cpu->isar, ID_AA64ISAR0, 0x10211120);
     SET_IDREG(&cpu->isar, ID_AA64MMFR0, 0x101125);
 }
