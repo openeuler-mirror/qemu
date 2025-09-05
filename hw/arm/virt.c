@@ -1407,10 +1407,10 @@ static PFlashCFI01 *virt_flash_create1(VirtMachineState *vms,
 
 static void virt_flash_create(VirtMachineState *vms)
 {
-    if (virt_machine_is_confidential(vms)) {
-        return;
-    }
-
+    /* Always create pflash objects and register properties for QOM
+     * even in confidential mode, to satisfy qemu_apply_machine_options.
+     * This fixes the "Property 'virt-8.2-machine.pflash0' not found" error.
+     */
     vms->flash[0] = virt_flash_create1(vms, "virt.flash0", "pflash0");
     vms->flash[1] = virt_flash_create1(vms, "virt.flash1", "pflash1");
 }
@@ -1448,10 +1448,6 @@ static void virt_flash_map(VirtMachineState *vms,
      */
     hwaddr flashsize = vms->memmap[VIRT_FLASH].size / 2;
     hwaddr flashbase = vms->memmap[VIRT_FLASH].base;
-
-    if (virt_machine_is_confidential(vms)) {
-        return;
-    }
 
     virt_flash_map1(vms->flash[0], flashbase, flashsize,
                     secure_sysmem);
@@ -1532,15 +1528,6 @@ static bool virt_firmware_init(VirtMachineState *vms,
     const char *bios_name;
     BlockBackend *pflash_blk0;
 
-    /*
-     * For a confidential VM, the firmware image and any boot information,
-     * including EFI variables, are stored in RAM in order to be measurable and
-     * private. Create a RAM region and load the firmware image there.
-     */
-    if (virt_machine_is_confidential(vms)) {
-        return virt_confidential_firmware_init(vms, sysmem);
-    }
-
     /* Map legacy -drive if=pflash to machine properties */
     for (i = 0; i < ARRAY_SIZE(vms->flash); i++) {
         pflash_cfi01_legacy_drive(vms->flash[i],
@@ -1551,7 +1538,12 @@ static bool virt_firmware_init(VirtMachineState *vms,
 
     pflash_blk0 = pflash_cfi01_get_blk(vms->flash[0]);
 
-    if (virtcca_cvm_enabled()) {
+    /*
+     * For a confidential VM, the firmware image and any boot information,
+     * including EFI variables, are stored in RAM in order to be measurable and
+     * private. Create a RAM region and load the firmware image there.
+     */
+    if (virtcca_cvm_enabled() || virt_machine_is_confidential(vms)) {
         return virt_confidential_firmware_init(vms, sysmem);
     }
 
@@ -2609,7 +2601,6 @@ static void machvirt_init(MachineState *machine)
     }
 
     finalize_gic_version(vms);
-    virt_flash_create(vms);
 
     possible_cpus = mc->possible_cpu_arch_ids(machine);
 
@@ -4162,6 +4153,8 @@ static void virt_instance_init(Object *obj)
     vms->mte = false;
 
     vms->irqmap = a15irqmap;
+
+    virt_flash_create(vms);
 
     vms->oem_id = g_strndup(ACPI_BUILD_APPNAME6, 6);
     vms->oem_table_id = g_strndup(ACPI_BUILD_APPNAME8, 8);
