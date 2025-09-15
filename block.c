@@ -696,7 +696,7 @@ out:
 }
 
 int coroutine_fn bdrv_co_create_file(const char *filename, QemuOpts *opts,
-                                     Error **errp)
+                                     bool allow_protocol_prefix, Error **errp)
 {
     QemuOpts *protocol_opts;
     BlockDriver *drv;
@@ -705,7 +705,7 @@ int coroutine_fn bdrv_co_create_file(const char *filename, QemuOpts *opts,
 
     GLOBAL_STATE_CODE();
 
-    drv = bdrv_find_protocol(filename, true, errp);
+    drv = bdrv_find_protocol(filename, allow_protocol_prefix, errp);
     if (drv == NULL) {
         return -ENOENT;
     }
