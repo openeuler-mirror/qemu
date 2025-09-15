@@ -3890,7 +3890,7 @@ static int coroutine_fn qcow2_co_create_opts(BlockDriver *drv,
     /* Create and open an external data file (protocol layer) */
     val = qdict_get_try_str(qdict, BLOCK_OPT_DATA_FILE);
     if (val) {
-        ret = bdrv_create_file(val, opts, true, errp);
+        ret = bdrv_create_file(val, opts, false, errp);
         if (ret < 0) {
             goto finish;
         }
