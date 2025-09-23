@@ -891,6 +891,7 @@
 #                      support on Hygon CPUs (since 8.2)
 # @secret-file: the file guest owner's secret, only support on Hygon
 #               CPUs (since 8.2)
+# @host-data: the host supplied data (encoded with base64) (since 8.2)
 #
 # Since: 2.12
 ##
@@ -905,7 +906,8 @@
             '*kernel-hashes': 'bool',
             '*user-id': 'str',
             '*secret-header-file': 'str',
-            '*secret-file': 'str' } }
+            '*secret-file': 'str',
+            '*host-data': 'str' } }
 
 ##
 # @ThreadContextProperties:
