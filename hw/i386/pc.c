@@ -80,6 +80,7 @@
 
 GlobalProperty pc_compat_8_1[] = {
     { TYPE_X86_CPU, "x-vendor-cpuid-only-v2", "false" },
+    { TYPE_X86_CPU, "x-pdcm-on-even-without-pmu", "true" },
 };
 
 const size_t pc_compat_8_1_len = G_N_ELEMENTS(pc_compat_8_1);

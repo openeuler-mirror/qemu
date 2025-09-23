@@ -7242,6 +7242,11 @@ void cpu_x86_cpuid(CPUX86State *env, uint32_t index, uint32_t count,
             /* Fixup overflow: max value for bits 23-16 is 255. */
             *ebx |= MIN(num, 255) << 16;
         }
+        if (cpu->pdcm_on_even_without_pmu) {
+            if (!cpu->enable_pmu) {
+                *ecx &= ~CPUID_EXT_PDCM;
+            }
+        }
         break;
     case 2: { /* cache info: needed for Pentium Pro compatibility */
         const CPUCaches *caches;
@@ -9364,6 +9369,8 @@ static Property x86_cpu_properties[] = {
                      true),
     DEFINE_PROP_BOOL("x-l1-cache-per-thread", X86CPU, l1_cache_per_core, true),
     DEFINE_PROP_BOOL("x-force-cpuid-0x1f", X86CPU, force_cpuid_0x1f, false),
+    DEFINE_PROP_BOOL("x-pdcm-on-even-without-pmu", X86CPU,
+                     pdcm_on_even_without_pmu, false),
     DEFINE_PROP_END_OF_LIST()
 };
 
