@@ -119,6 +119,7 @@ extern struct Csv3GuestState csv3_guest;
 extern struct ConfidentialGuestMemoryEncryptionOps csv3_memory_encryption_ops;
 extern int csv3_init(uint32_t policy, int fd, void *state, struct sev_ops *ops);
 extern int csv3_launch_encrypt_vmcb(void);
+void csv3_launch_finish_ex(char *host_data);
 
 int csv3_load_data(uint64_t gpa, uint8_t *ptr, uint64_t len, Error **errp);
 

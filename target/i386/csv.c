@@ -12,6 +12,7 @@
  */
 
 #include "qemu/osdep.h"
+#include "qemu/base64.h"
 #include "qemu/error-report.h"
 #include "qapi/error.h"
 #include "sysemu/kvm.h"
@@ -196,6 +197,45 @@ csv3_launch_encrypt_vmcb(void)
 
 err:
     return ret;
+}
+
+void
+csv3_launch_finish_ex(char *host_data)
+{
+    int ret, fw_error;
+    g_autofree guchar *blob = NULL;
+    gsize len;
+    struct kvm_csv3_launch_finish_ex *finish_ex = NULL;
+
+    if (!host_data) {
+        exit(1);
+    }
+
+    blob = qbase64_decode(host_data, -1, &len, NULL);
+
+    if (!blob) {
+        exit(1);
+    }
+
+    if (len != KVM_CSV3_HOST_DATA_SIZE) {
+        error_report("%s: host_data length of %" G_GSIZE_FORMAT
+                     " not equal to %d",
+                     __func__, len, KVM_CSV3_HOST_DATA_SIZE);
+        exit(1);
+    }
+
+    finish_ex = g_malloc0(sizeof(struct kvm_csv3_launch_finish_ex));
+    memcpy(finish_ex->host_data, blob, len);
+
+    trace_kvm_csv3_launch_finish_ex(host_data);
+    ret = csv3_ioctl(KVM_CSV3_LAUNCH_FINISH_EX, finish_ex, &fw_error);
+    if (ret) {
+        error_report("%s: CSV3 LAUNCH_FINISH_EX ret=%d fw_error=%d '%s'",
+                     __func__, ret, fw_error, fw_error_to_str(fw_error));
+        exit(1);
+    }
+
+    g_free(finish_ex);
 }
 
 int csv3_shared_region_dma_map(uint64_t start, uint64_t end)

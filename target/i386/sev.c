@@ -1049,6 +1049,13 @@ sev_launch_finish(SevGuestState *sev)
 {
     int ret, error;
 
+    if (csv3_enabled() &&
+        sev->host_data &&
+        (kvm_hygon_coco_ext_inuse & KVM_CAP_HYGON_COCO_EXT_CSV3_LFINISH_EX)) {
+         csv3_launch_finish_ex(sev->host_data);
+         goto common_finish;
+    }
+
     trace_kvm_sev_launch_finish();
     ret = sev_ioctl(sev->sev_fd, KVM_SEV_LAUNCH_FINISH, 0, &error);
     if (ret) {
@@ -1057,6 +1064,7 @@ sev_launch_finish(SevGuestState *sev)
         exit(1);
     }
 
+common_finish:
     sev_set_guest_state(sev, SEV_STATE_RUNNING);
 
     /* add migration blocker */

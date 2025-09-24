@@ -30,6 +30,11 @@ int csv3_launch_encrypt_vmcb(void)
     g_assert_not_reached();
 }
 
+void csv3_launch_finish_ex(char *host_data)
+{
+    g_assert_not_reached();
+}
+
 int csv3_shared_region_dma_map(uint64_t start, uint64_t end)
 {
     return 0;
