@@ -193,8 +193,8 @@ const VMStateDescription vmstate_loongarch_cpu = {
     .version_id = 4,
     .minimum_version_id = 4,
     .fields = (const VMStateField[]) {
-        VMSTATE_UINTTL_ARRAY(env.gpr, LoongArchCPU, 32),
-        VMSTATE_UINTTL(env.pc, LoongArchCPU),
+        VMSTATE_UINT64_ARRAY(env.gpr, LoongArchCPU, 32),
+        VMSTATE_UINT64(env.pc, LoongArchCPU),
 
         /* PV time */
         VMSTATE_UINT64(env.st.guest_addr, LoongArchCPU),
