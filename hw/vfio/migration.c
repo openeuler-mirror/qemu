@@ -720,7 +720,7 @@ static void vfio_vmstate_change_prepare(void *opaque, bool running,
 static void vfio_vmstate_change(void *opaque, bool running, RunState state)
 {
     VFIODevice *vbasedev = opaque;
-    enum vfio_device_mig_state new_state;
+    enum vfio_device_mig_state new_state, pre_state;
     int ret;
 
     if (running) {
@@ -732,6 +732,8 @@ static void vfio_vmstate_change(void *opaque, bool running, RunState state)
                 VFIO_DEVICE_STATE_STOP_COPY :
                 VFIO_DEVICE_STATE_STOP;
     }
+
+    pre_state = vbasedev->migration->device_state;
 
     /*
      * If setting the device in new_state fails, the device should be reset.
@@ -746,6 +748,10 @@ static void vfio_vmstate_change(void *opaque, bool running, RunState state)
          */
         if (migrate_get_current()->to_dst_file) {
             qemu_file_set_error(migrate_get_current()->to_dst_file, ret);
+        }
+
+        if (pre_state == VFIO_DEVICE_STATE_RESUMING) {
+            exit(EXIT_FAILURE);
         }
     }
 
