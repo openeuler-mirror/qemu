@@ -12,8 +12,12 @@
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
+#include <sys/socket.h>
+#include <sys/un.h>
 #include <fcntl.h>
 #include <fnmatch.h>
+#include <sys/shm.h>
+#include <sys/file.h>
 
 #include "qemu/osdep.h"
 #include "qemu/queue.h"
@@ -28,6 +32,180 @@
 #include "qemu/error-report.h"
 #include "qapi/error.h"
 #include "hw/qdev-properties.h"
+
+// ======================== g_id API ====================
+
+#define HCT_DIV_ROUND_UP(n, d)  (((n) + (d) - 1) / (d))
+#define HCT_BITMAP_SIZE(nr) HCT_DIV_ROUND_UP(nr, CHAR_BIT * sizeof(unsigned long))
+
+static unsigned long g_id = 0;
+
+enum {
+    BITS_PER_WORD = sizeof(unsigned long) * CHAR_BIT
+};
+#define WORD_OFFSET(b) ((b) / BITS_PER_WORD)
+#define BIT_OFFSET(b)  ((b) % BITS_PER_WORD)
+
+#ifndef MAX_PATH
+#define MAX_PATH 4096
+#endif
+
+/*
+ * Each HCT and QEMU process allocates a unique GID through the shared memory hct_gid_bitmap.
+ * The HCT process uses bits 0-1023 of the bitmap, while the QEMU process uses bits 1024-2047.
+ * After a QEMU process allocates a bit_pos from the bitmap, it first locks the range of bytes
+ * from bit_pos * 8 to (bit_pos + 1) * 8 in the shared memory hct_gid_locks. Then it calculates
+ * the GID:
+ *   bit_pos is incremented by 1 (since GID cannot be 0), then subtracted by 1024 (to correct
+ *   for the starting offset of the bitmap), resulting in a number in the range of 1-1024.
+ *   This number is then left-shifted by HCT_QEMU_GIDS_SHIFT_BITS (18) to obtain the final GID.
+ */
+#define HCT_GID_BITMAP_SHM_NAME   "hct_gid_bitmap"
+#define HCT_GID_LOCK_FILE         "hct_gid_locks"
+
+#define HCT_QEMU_GIDS_BITMAP_MAX_BIT	2048
+#define HCT_QEMU_GIDS_BITMAP_MIN_BIT	1024
+#define HCT_QEMU_GIDS_SHIFT_BITS		18
+#define HCT_GIDS_PER_BLOCK				8
+
+static void hct_clear_bit(unsigned long *bitmap, int n);
+static uint32_t hct_get_bit(unsigned long *bitmap, int n);
+
+/**
+ * File-based bitmap structure for multi-process shared g_id allocation
+ */
+struct hct_gid_bitmap {
+    char name[MAX_PATH];
+    unsigned int len;
+    unsigned long *bitmap;
+    int shm_fd;
+    int lock_fd;
+};
+
+/// Global bitmap instance for g_id management
+struct hct_gid_bitmap *g_hct_gid_bitmap;
+
+/**
+ * @brief Allocate a new hct_gid_bitmap structure with shared memory storage
+ * @details Creates shared memory if not exists, or opens existing one
+ * @return pointer to allocated hct_gid_bitmap on success, NULL on failure
+ */
+static struct hct_gid_bitmap* hct_gid_bitmap_alloc(void);
+
+/**
+ * @brief Free hct_gid_bitmap structure and cleanup resources
+ * @param bitmap pointer to hct_gid_bitmap to free
+ */
+static void hct_gid_bitmap_free(struct hct_gid_bitmap *bitmap);
+
+/**
+ * @brief Allocate a g_id from the 1024-bit bitmap, left-shift by 8 bits
+ * @param bitmap pointer to hct_gid_bitmap structure
+ * @param gid pointer to store allocated g_id
+ * @return 0 on success, -EINVAL on failure
+ */
+static int hct_g_ids_alloc(struct hct_gid_bitmap *bitmap, unsigned long *gid);
+
+/**
+ * @brief Free a g_id and clear corresponding bit in bitmap
+ * @param bitmap pointer to hct_gid_bitmap structure
+ * @param gid g_id to free
+ */
+static void hct_g_ids_free(struct hct_gid_bitmap *bitmap, unsigned long gid);
+
+/**
+ * @brief Check if g_id is locked by trying to acquire exclusive lock on its file region
+ * @param bitmap pointer to hct_gid_bitmap structure
+ * @param gid g_id to check lock status
+ * @return 0 if can lock (process dead), -EINVAL if cannot lock (process alive)
+ */
+static int hct_g_ids_lock_state_lock(struct hct_gid_bitmap *bitmap, unsigned long gid);
+
+/**
+ * @brief Walk through bitmap and check for abnormally exited processes
+ * @details Clean up orphaned g_ids by checking file locks
+ * @param bitmap pointer to hct_gid_bitmap structure
+ */
+static void hct_g_ids_lock_state_walk(struct hct_gid_bitmap *bitmap);
+
+// ======================== g_id API end ====================
+
+
+// ======================== HCT IPC API ====================
+
+// HCT IPC TLV field type definitions
+#define HCT_IPC_FIELD_COMMAND		1   /* command */
+#define HCT_IPC_FIELD_CONTAINER_FD	2   /* container fd */
+#define HCT_IPC_FIELD_GROUP_FD		3   /* group fd */
+#define HCT_IPC_FIELD_DEVICE_FD		4   /* device fd */
+#define HCT_IPC_FIELD_GROUP_INFO	5   /* group info */
+#define HCT_IPC_FIELD_DEVICE_INFO	6   /* device info */
+#define HCT_IPC_FIELD_DEVICE_NAMES	7   /* device names */
+#define HCT_IPC_FIELD_VCCP_PATH		9   /* vccp device file path */
+#define HCT_IPC_FIELD_VCCP_CONTENT	10  /* vccp device file content */
+#define HCT_IPC_FIELD_ERROR_REASON	11  /* request failed reason */
+
+// Error code definitions
+#define HCT_SUCCESS				0		/* success */
+#define HCT_ERROR_CONNECT		(-1)   /* connect error */
+#define HCT_ERROR_RECEIVE		(-2)   /* receive error */
+#define HCT_ERROR_INVALID_DATA	(-3)   /* invalid data */
+
+// Constants
+#define HCT_DAEMON_PID_FILE		"/var/run/hctd.pid"		/* daemon pid file */
+#define HCT_DAEMON_SOCK_PATH	"/var/run/hctd.sock"	/* daemon socket path */
+
+#define PCI_ADDR_MAX			20   /* pci address max length */
+#define DEVICE_NAME_MAX			32   /* device name max length */
+
+// daemon client command type
+enum hct_daemon_req_cmd {
+    HCT_CMD_GET_ALL_DEVICES = 0x01,		/* libhct request: get all devices information */
+    HCT_CMD_GET_DEVICE_BY_NAME  = 0x02,	/* qemu request: get device info via vccp file */
+};
+
+typedef struct hct_vccp_req {
+    const char *path;
+    const char *content;
+} hct_vccp_req;
+
+// TLV structure
+typedef struct {
+    uint16_t type;
+    uint16_t length;
+    void *value;
+} hct_tlv_t;
+
+// CCP device management structure
+typedef struct {
+    char pci_addr[PCI_ADDR_MAX];	/* PCI address (e.g., 0000:01:00.0) */
+    int group_id;					/* VFIO group ID */
+    int group_fd;					/* VFIO group FD */
+    int device_fd;					/* VFIO device FD */
+    int group_index;				/* Index in group array of the group this device belongs to */
+} hct_ccp_device_t;
+
+// Group information structure
+typedef struct {
+    int group_id;
+    int group_fd;
+    int device_count;    /* Number of devices in this group */
+} hct_group_info_t;
+
+// Overall client device information container
+typedef struct {
+    int container_fd;			/* VFIO container file descriptor */
+    hct_group_info_t *groups;	/* VFIO group information array */
+    int group_count;			/* Number of groups */
+    hct_ccp_device_t *devices;	/* VFIO device information array */
+    int device_count;			/* Number of devices */
+} hct_client_info_t;
+
+// Internal constants for client implementation
+#define MAX_TLV_BUFFER_SIZE 2048	/* max tlv buffer size */
+#define MAX_FD_COUNT 128			/* max fd count */
+
+// ======================== HCT IPC API end ====================
 
 #define MAX_CCP_CNT                  48
 #define DEF_CCP_CNT_MAX              16
@@ -44,6 +222,10 @@
 
 #define VFIO_DEVICE_CCP_SET_MODE     _IO(VFIO_TYPE, VFIO_BASE + 32)
 #define VFIO_DEVICE_CCP_GET_MODE     _IO(VFIO_TYPE, VFIO_BASE + 33)
+
+#define SHM_DIR						"/dev/shm/"
+#define HCT_GLOBAL_SHARE_SHM_NAME	"hct_global_share"
+#define HCT_GLOBAL_SHARE_SHM_PATH SHM_DIR HCT_GLOBAL_SHARE_SHM_NAME
 
 #define HCT_SHARE_DEV                "/dev/hct_share"
 #define CCP_SHARE_DEV                "/dev/ccp_share"
@@ -78,6 +260,8 @@
 static volatile struct hct_data {
     int init;
     int hct_fd;
+    int hct_shm_fd;
+    int vfio_container_fd;
     unsigned long pasid;
     unsigned long hct_shared_size;
     uint8_t *pasid_memory;
@@ -102,6 +286,10 @@ typedef struct HctDevState {
     uint64_t map_size[PCI_NUM_REGIONS];
     void *maps[PCI_NUM_REGIONS];
     char *ccp_dev_path;
+    int container_fd;   /* vfio container fd */
+    int group_fd;       /* vfio group fd */
+    int group_id;       /* vfio group id */
+    int lock_fd;        /* vccp flock fd for this device only */
 } HCTDevState;
 
 struct hct_dev_ctrl {
@@ -134,7 +322,36 @@ enum hct_ccp_driver_mode_type {
     HCT_CCP_DRV_MOD_UNINIT = 0,
     HCT_CCP_DRV_MOD_HCT,
     HCT_CCP_DRV_MOD_CCP,
+    HCT_CCP_DRV_MOD_VFIO_PCI,
 };
+
+
+/* @brief vfio-pci mapping function */
+static int vfio_hct_dma_map_vfio_pci(int container_fd, void *vaddr, uint64_t iova, uint64_t size);
+
+/* @brief vfio-pci unmapping function */
+static int vfio_hct_dma_unmap_vfio_pci(int container_fd, uint64_t iova, uint64_t size);
+
+/* @brief vfio-pci init from daemon  function */
+static int vfio_hct_init_from_daemon(HCTDevState *state);
+
+/* @brief hct data uninit function */
+static void hct_data_uninit(HCTDevState *state);
+
+/* @brief hct get error string function */
+static const char *hct_get_error_string(int error_code);
+
+/* @brief hct find device by pci addr function */
+static hct_ccp_device_t* hct_find_device_by_pci_addr(hct_client_info_t *client_info, const char *pci_addr);
+
+/* @brief hct client cleanup function */
+static void hct_client_cleanup(hct_client_info_t *client_info);
+
+/* @brief hct client send cmd function */
+static int hct_client_send_cmd(const char *socket_path, hct_client_info_t *client_info, enum hct_daemon_req_cmd cmd, void *req_data);
+
+/* @brief hct create user shared memory function */
+static int hct_create_user_shared_memory(const char *name, size_t size);
 
 static int hct_get_sysfs_value(const char *path, int *val)
 {
@@ -172,31 +389,26 @@ static int hct_get_sysfs_value(const char *path, int *val)
 static int pasid_get_and_init(HCTDevState *state)
 {
     void *base = (void *)hct_data.pasid_memory;
-    struct hct_dev_ctrl ctrl;
     unsigned long *gid = NULL;
     int ret = 0;
 
-    ctrl.op = HCT_SHARE_OP_GET_PASID;
-    ret = ioctl(hct_data.hct_fd, HCT_SHARE_OP, &ctrl);
-    if (ret < 0) {
-        ret = -errno;
-        error_report("get pasid fail, errno: %d.", errno);
-        goto out;
-    }
-
-    hct_data.pasid = (unsigned long)ctrl.pasid;
-    *(unsigned long *)base = (unsigned long)ctrl.pasid;
-
-    ctrl.op = HCT_SHARE_OP_GET_ID;
-    ret = ioctl(hct_data.hct_fd, HCT_SHARE_OP, &ctrl);
-    if (ret < 0) {
-        ret = -errno;
-        error_report("get gid fail, errno: %d", errno);
+    g_hct_gid_bitmap = hct_gid_bitmap_alloc();
+    if (!g_hct_gid_bitmap) {
+        error_report("Failed to allocate hct_gid_bitmap");
         goto out;
     }
 
     gid = (unsigned long *)((unsigned long)base + HCT_PASID_MEM_GID_OFFSET);
-    *(unsigned long *)gid = (unsigned long)ctrl.id;
+    ret = hct_g_ids_alloc(g_hct_gid_bitmap, &g_id);
+	*gid = g_id;
+    if (ret < 0) {
+        error_report("Failed to allocate g_id, ret=%d", ret);
+        goto out;
+    } else {
+        hct_data.pasid = *gid >> HCT_QEMU_GIDS_SHIFT_BITS;
+        *(unsigned long *)base = (unsigned long)hct_data.pasid;
+        return 0;
+    }
 
 out:
     return ret;
@@ -227,15 +439,34 @@ static void vfio_hct_exit(PCIDevice *dev)
         qemu_close(hct_data.hct_fd);
         hct_data.hct_fd = 0;
     }
+
     if (state->vdev.fd) {
         qemu_close(state->vdev.fd);
         state->vdev.fd = 0;
+    }
+
+    /* Release vccp file lock */
+    if (state->lock_fd >= 0) {
+        flock(state->lock_fd, LOCK_UN);
+        close(state->lock_fd);
+        state->lock_fd = -1;
+    }
+
+    if (hct_data.driver == HCT_CCP_DRV_MOD_VFIO_PCI) {
+        state->container_fd = -1;
+        state->group_fd = -1;
+    }
+
+    hct_data.ccp_cnt--;
+
+    if (hct_data.ccp_cnt == 0) {
+        hct_data_uninit(state);
     }
 }
 
 static Property vfio_hct_properties[] = {
     DEFINE_PROP_STRING("sysfsdev", HCTDevState, vdev.sysfsdev),
-    DEFINE_PROP_STRING("path", HCTDevState, ccp_dev_path),
+    DEFINE_PROP_STRING("dev", HCTDevState, ccp_dev_path),
     DEFINE_PROP_END_OF_LIST(),
 };
 
@@ -317,34 +548,19 @@ static int hct_check_duplicated_index(int index)
     return 0;
 }
 
-static int hct_ccp_dev_get_index(HCTDevState *state)
+static int hct_ccp_set_mode(HCTDevState *state)
 {
     char fpath[PATH_MAX] = {0};
-    char *ptr = NULL;
     uint32_t loops= 0;
     uint32_t max_loops = 10000;
-    int ccp_idx;
     int fd;
     int ret;
 
-    if (!state->ccp_dev_path) {
-        error_report("state->ccp_dev_path is NULL.");
+    if (state->vdev.fd <= 0) {
+        error_report("fail to get device fd %d.", state->vdev.fd);
         return -1;
     }
-
-    ptr = strstr(state->ccp_dev_path, "ccp");
-    if (!ptr)
-        return -1;
-
-    ccp_idx = atoi(ptr + strlen("ccp"));
-    if (hct_check_duplicated_index(ccp_idx))
-        return -1;
-
-    fd = qemu_open_old(state->ccp_dev_path, O_RDWR);
-    if (fd < 0) {
-        error_report("fail to open %s, errno %d.", fpath, errno);
-        return -1;
-    }
+    fd = state->vdev.fd;
 
     while ((ret = ioctl(fd, VFIO_DEVICE_CCP_SET_MODE, _USER_SPACE_USED)) < 0
                                         && errno == EAGAIN) {
@@ -360,47 +576,76 @@ static int hct_ccp_dev_get_index(HCTDevState *state)
         return -1;
     }
 
-    state->vdev.fd = fd;
-    state->sdev.shared_memory_offset = ccp_idx;
     return 0;
 }
 
 static int hct_get_ccp_index(HCTDevState *state)
 {
     char path[PATH_MAX] = {0};
-    int mdev_used, index;
+    char vccp_content[256] = {0};
+    FILE *fp = NULL;
+    int mdev_used = 0, index = 0;
 
     if (hct_data.driver == HCT_CCP_DRV_MOD_CCP)
-        return hct_ccp_dev_get_index(state);
-
-    if (!state->vdev.sysfsdev) {
-        error_report("state->vdev.sysfsdev is NULL.");
-        return -1;
-    }
-
-    if (memcmp((void *)hct_data.hct_version, HCT_VERSION_STR_06,
-                                 sizeof(HCT_VERSION_STR_06)) >= 0) {
-        snprintf(path, PATH_MAX, "%s/vendor/use", state->vdev.sysfsdev);
-        if (hct_get_sysfs_value(path, &mdev_used)) {
-            error_report("get %s sysfs value fail.\n", path);
-            return -1;
-        } else if (mdev_used != MDEV_USED_FOR_VM) {
-            error_report("The value of file node(%s) is %d, should be MDEV_USED_FOR_VM(%d), pls check.\n",
-			    path, mdev_used, MDEV_USED_FOR_VM);
+        if(hct_ccp_set_mode(state)) {
             return -1;
         }
+
+    if (hct_data.driver == HCT_CCP_DRV_MOD_HCT) {
+        if (!state->vdev.sysfsdev) {
+            error_report("state->vdev.sysfsdev is NULL.");
+            return -1;
+        }
+
+        if (memcmp((void *)hct_data.hct_version, HCT_VERSION_STR_06,
+                                     sizeof(HCT_VERSION_STR_06)) >= 0) {
+            snprintf(path, PATH_MAX, "%s/vendor/use", state->vdev.sysfsdev);
+            if (hct_get_sysfs_value(path, &mdev_used)) {
+                error_report("get %s sysfs value fail.\n", path);
+                return -1;
+            } else if (mdev_used != MDEV_USED_FOR_VM) {
+                error_report("The value of file node(%s) is %d, should be MDEV_USED_FOR_VM(%d), pls check.\n",
+                    path, mdev_used, MDEV_USED_FOR_VM);
+                return -1;
+            }
+        }
+
+        snprintf(path, PATH_MAX, "%s/vendor/id", state->vdev.sysfsdev);
+        if (hct_get_sysfs_value(path, &index)) {
+            error_report("get %s sysfs value fail.\n", path);
+            return -1;
+        }
+
+        if (hct_check_duplicated_index(index))
+            return -1;
+
+        state->sdev.shared_memory_offset = index;
+    } else if (hct_data.driver == HCT_CCP_DRV_MOD_CCP || hct_data.driver == HCT_CCP_DRV_MOD_VFIO_PCI) {
+        fp = fopen(state->ccp_dev_path, "r");
+        if (!fp) {
+            error_report("Failed to open vccp file %s to get index: %s", state->ccp_dev_path, strerror(errno));
+            return -1;
+        }
+        if (fgets(vccp_content, sizeof(vccp_content), fp) == NULL) {
+            error_report("Failed to read content from vccp file %s", state->ccp_dev_path);
+            fclose(fp);
+            return -1;
+        }
+        fclose(fp);
+
+        if (sscanf(state->ccp_dev_path, "/dev/hct/vccp%*d_%d", &index) != 1) {
+            error_report("Invalid vccp filename format for vfio-pci: %s", state->ccp_dev_path);
+            return -1;
+        }
+        state->sdev.shared_memory_offset = index;
+        if (hct_check_duplicated_index(index)) {
+            return -1;
+        }
+    } else {
+            error_report("Invalid driver mode %d, vccp path %s.\n", hct_data.driver, state->ccp_dev_path);
+            return -1;
     }
 
-    snprintf(path, PATH_MAX, "%s/vendor/id", state->vdev.sysfsdev);
-    if (hct_get_sysfs_value(path, &index)) {
-        error_report("get %s sysfs value fail.\n", path);
-        return -1;
-    }
-
-    if (hct_check_duplicated_index(index))
-        return -1;
-
-    state->sdev.shared_memory_offset = index;
     return 0;
 }
 
@@ -436,7 +681,7 @@ static int hct_shared_memory_init(void)
 
     hct_data.hct_shared_memory = mmap(NULL, hct_data.hct_shared_size,
                                      PROT_READ | PROT_WRITE, MAP_SHARED,
-                                     hct_data.hct_fd, 0);
+                                     hct_data.hct_shm_fd, 0);
     if (hct_data.hct_shared_memory == MAP_FAILED) {
         ret = -errno;
         error_report("map hct shared memory fail\n");
@@ -474,13 +719,24 @@ static void hct_listener_region_add(MemoryListener *listener,
             (iova - section->offset_within_address_space);
     llsize = int128_sub(llend, int128_make64(iova));
 
-    ctrl.op = HCT_SHARE_OP_DMA_MAP;
-    ctrl.iova = iova | (hct_data.pasid << PASID_OFFSET);
-    ctrl.vaddr = (uint64_t)vaddr;
-    ctrl.size = llsize;
-    ret = ioctl(hct_data.hct_fd, HCT_SHARE_OP, &ctrl);
-    if (ret < 0)
-        error_report("VFIO_MAP_DMA: %d, iova=%lx", -errno, iova);
+    /* according to host running mode to select different DMA mapping mode */
+    if (hct_data.driver == HCT_CCP_DRV_MOD_VFIO_PCI) {
+        iova = iova | (hct_data.pasid << PASID_OFFSET);
+        ret = vfio_hct_dma_map_vfio_pci(hct_data.vfio_container_fd, vaddr, iova, llsize);
+        if (ret < 0) {
+            error_report("VFIO_PCI_MAP_DMA: %d, iova=%lx", ret, iova);
+        }
+    } else {
+        /* host running hct/ccp mdev mode: use hct/ccp module mapping */
+        ctrl.op = HCT_SHARE_OP_DMA_MAP;
+        ctrl.iova = iova | (hct_data.pasid << PASID_OFFSET);
+        ctrl.vaddr = (uint64_t)vaddr;
+        ctrl.size = llsize;
+        ret = ioctl(hct_data.hct_fd, HCT_SHARE_OP, &ctrl);
+        if (ret < 0) {
+            error_report("HCT_MAP_DMA: %d, iova=%lx", -errno, iova);
+        }
+    }
 }
 
 static void hct_listener_region_del(MemoryListener *listener,
@@ -506,12 +762,24 @@ static void hct_listener_region_del(MemoryListener *listener,
 
     llsize = int128_sub(llend, int128_make64(iova));
 
-    ctrl.op = HCT_SHARE_OP_DMA_UNMAP;
-    ctrl.iova = iova | (hct_data.pasid << PASID_OFFSET);
-    ctrl.size = llsize;
-    ret = ioctl(hct_data.hct_fd, HCT_SHARE_OP, &ctrl);
-    if (ret < 0)
-        error_report("VFIO_UNMAP_DMA: %d", -errno);
+    /* according to host running mode to select different DMA unmapping mode */
+    if (hct_data.driver == HCT_CCP_DRV_MOD_VFIO_PCI) {
+        /* use vfio-pci directly unmapping */
+        iova = iova | ((uint64_t)hct_data.pasid << PASID_OFFSET);
+        ret = vfio_hct_dma_unmap_vfio_pci(hct_data.vfio_container_fd, iova, llsize);
+        if (ret < 0) {
+            error_report("VFIO_PCI_UNMAP_DMA: %d", ret);
+        }
+    } else {
+        /* host running hct/ccp mdev mode: use hct/ccp module unmapping */
+        ctrl.op = HCT_SHARE_OP_DMA_UNMAP;
+        ctrl.iova = iova | (hct_data.pasid << PASID_OFFSET);
+        ctrl.size = llsize;
+        ret = ioctl(hct_data.hct_fd, HCT_SHARE_OP, &ctrl);
+        if (ret < 0) {
+            error_report("HCT_UNMAP_DMA: %d", -errno);
+        }
+    }
 }
 
 static MemoryListener hct_memory_listener = {
@@ -551,16 +819,26 @@ static void hct_data_uninit(HCTDevState *state)
         hct_data.hct_fd = 0;
     }
 
-    if (state->vdev.fd) {
-        qemu_close(state->vdev.fd);
-        state->vdev.fd = 0;
+    if (hct_data.driver == HCT_CCP_DRV_MOD_HCT) {
+        if (state->vdev.fd) {
+            qemu_close(state->vdev.fd);
+            state->vdev.fd = 0;
+        }
     }
 
+    if (hct_data.hct_shm_fd) {
+        qemu_close(hct_data.hct_shm_fd);
+        hct_data.hct_shm_fd = 0;
+    }
     if (hct_data.pasid) {
         hct_data.pasid = 0;
     }
 
     if (hct_data.pasid_memory) {
+        if (g_id) {
+            hct_g_ids_free(g_hct_gid_bitmap, g_id);
+            g_id = 0;
+        }
         munmap(hct_data.pasid_memory, PAGE_SIZE);
         hct_data.pasid_memory = NULL;
     }
@@ -571,43 +849,118 @@ static void hct_data_uninit(HCTDevState *state)
     }
 
     memory_listener_unregister(&hct_memory_listener);
+
+    hct_data.init = 0;
+    hct_data.driver = HCT_CCP_DRV_MOD_UNINIT;
 }
 
 static int hct_data_init(HCTDevState *state)
 {
+
     const char *hct_shr_name = NULL;
-    int ret;
+    int ret = 0;
 
     if (hct_data.init == 0) {
+        /*
+         * Check driver type based on parameters.
+         * sysfsdev: mdev mode (hct or ccp)
+         * dev(ccp_dev_path): vfio-pci or ccp mode (via vccp files)
+         */
+        if (state->ccp_dev_path) {
+            FILE *fp = fopen(state->ccp_dev_path, "r");
+            if (fp) {
+                int type_char = fgetc(fp);
+                fclose(fp);
+                if (type_char == 'v') {
+                    hct_data.driver = HCT_CCP_DRV_MOD_VFIO_PCI;
+                } else if (type_char == 'c') {
+                    hct_data.driver = HCT_CCP_DRV_MOD_CCP;
+                } else {
+                    error_report("hct: invalid vccp file content in %s", state->ccp_dev_path);
+                    return -EINVAL;
+                }
+            } else {
+                error_report("hct: cannot open vccp file %s", state->ccp_dev_path);
+                return -EIO;
+            }
+         } else {
+             /* Default to legacy mdev mode check if no params given */
+             ret = hct_get_used_driver_walk(PCI_DRV_HCT_DIR);
+             if (ret == 0) {
+                 hct_data.driver = HCT_CCP_DRV_MOD_HCT;
+                 hct_shr_name = HCT_SHARE_DEV;
+                 hct_data.hct_fd = qemu_open_old(hct_shr_name, O_RDWR);
+                 if (hct_data.hct_fd < 0) {
+                     error_report("fail to open %s, errno %d.", hct_shr_name, errno);
+                     goto out;
+                 }
 
-        ret = hct_get_used_driver_walk(PCI_DRV_HCT_DIR);
-        if (ret == 0) {
-            hct_data.driver = HCT_CCP_DRV_MOD_HCT;
-            hct_shr_name = HCT_SHARE_DEV;
-        } else {
-            hct_data.driver = HCT_CCP_DRV_MOD_CCP;
-            hct_shr_name = CCP_SHARE_DEV;
+                 /* The hct.ko version number needs not to be less than 0.2. */
+                 ret = hct_api_version_check();
+                 if (ret) {
+                     goto out;
+                 }
+                 /* close fd for ioctl in kernel module and open the real share memory file below. */
+                 qemu_close(hct_data.hct_fd);
+
+            } else {
+                /* This case is now handled by the unified logic below, assuming vccp path */
+                error_report("hct: sysfsdev is only supported hct driver mode.");
+            }
+         }
+    }
+    if (hct_data.driver == HCT_CCP_DRV_MOD_VFIO_PCI || hct_data.driver == HCT_CCP_DRV_MOD_CCP) {
+        /* host running vfio-pci/ccp mode: get device information from daemon via vccp file */
+        ret = vfio_hct_init_from_daemon(state);
+        if (ret < 0) {
+            error_report("Failed to initialize device info %d", ret);
+            return ret;
         }
-
-        hct_data.hct_fd = qemu_open_old(hct_shr_name, O_RDWR);
-        if (hct_data.hct_fd < 0) {
-            error_report("fail to open %s, errno %d.", hct_shr_name, errno);
-            ret = -errno;
-            goto out;
+    }
+    if (hct_data.init == 0) {
+        hct_shr_name = HCT_GLOBAL_SHARE_SHM_PATH;
+        hct_data.hct_shm_fd = qemu_open_old(hct_shr_name, O_RDWR);
+        if (hct_data.hct_shm_fd < 0) {
+            if (errno == 2) {
+                ret = hct_create_user_shared_memory(HCT_GLOBAL_SHARE_SHM_NAME, HCT_SHARED_MEMORY_SIZE);
+                if (!ret) {
+                    hct_data.hct_shm_fd = qemu_open_old(hct_shr_name, O_RDWR);
+                    if (hct_data.hct_shm_fd < 0) {
+                        ret = -errno;
+                    }
+                }
+            } else {
+                ret = -errno;
+            }
+            if (ret < 0) {
+                error_report("fail to open %s, errno %d.", hct_shr_name, errno);
+                goto out;
+            }
         }
-
-        /* The hct.ko version number needs not to be less than 0.2. */
-        ret = hct_api_version_check();
-        if (ret)
-            goto out;
+        hct_data.hct_shared_size = HCT_SHARED_MEMORY_SIZE;
 
         /* assign a page to the virtual BAR3 of each CCP. */
         ret = hct_shared_memory_init();
         if (ret)
             goto out;
 
+        /* Open fd for ioctl */
+        if (hct_data.driver == HCT_CCP_DRV_MOD_HCT) {
+            hct_data.hct_fd = qemu_open_old(HCT_SHARE_DEV, O_RDWR);
+            if (hct_data.hct_fd < 0) {
+                error_report("fail to open %s, errno %d.", HCT_SHARE_DEV, errno);
+                goto unmap_shared_memory_exit;
+            }
+        } else if (hct_data.driver == HCT_CCP_DRV_MOD_CCP) {
+            hct_data.hct_fd = qemu_open_old(CCP_SHARE_DEV, O_RDWR);
+            if (hct_data.hct_fd < 0) {
+                error_report("fail to open %s, errno %d.", CCP_SHARE_DEV, errno);
+                goto unmap_shared_memory_exit;
+            }
+        }
+
         hct_data.pasid_memory = mmap(NULL, PAGE_SIZE, PROT_READ | PROT_WRITE,
-                                     MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+                       MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
         if (hct_data.pasid_memory < 0)
             goto unmap_shared_memory_exit;
 
@@ -616,8 +969,7 @@ static int hct_data_init(HCTDevState *state)
         if (ret < 0)
             goto unmap_pasid_memory_exit;
 
-        /* perform DMA_MAP and DMA_UNMAP operations on all memories of the
-         * virtual machine. */
+        /* perform DMA_MAP and DMA_UNMAP operations on all memories of the virtual machine. */
         memory_listener_register(&hct_memory_listener, &address_space_memory);
 
         hct_data.init = 1;
@@ -635,13 +987,65 @@ out:
     return ret;
 }
 
+#define VFIO_GET_REGION_ADDR(x) ((uint64_t) x << 40ULL)
+
+/* @brief set bus master to avoid ccp stuck in vfio-pci mode */
+static int pci_vfio_set_bus_master(int dev_fd)
+{
+    uint16_t reg = 0;
+    int ret = 0;
+
+    ret = pread(dev_fd, &reg, sizeof(reg),
+            VFIO_GET_REGION_ADDR(VFIO_PCI_CONFIG_REGION_INDEX) +
+            PCI_COMMAND);
+    if (ret != sizeof(reg)) {
+        error_report("Cannot read command from PCI config space!\n");
+        return -1;
+    }
+
+    reg |= PCI_COMMAND_MASTER;
+
+    ret = pwrite(dev_fd, &reg, sizeof(reg),
+            VFIO_GET_REGION_ADDR(VFIO_PCI_CONFIG_REGION_INDEX) +
+            PCI_COMMAND);
+
+    if (ret != sizeof(reg)) {
+        error_report("Cannot write command to PCI config space!\n");
+        return -1;
+    }
+
+    return 0;
+}
+
 /* When device is loaded */
 static void vfio_hct_realize(PCIDevice *pci_dev, Error **errp)
 {
-    int ret;
+    int ret = 0;
     char *mdevid;
     Error *err = NULL;
     HCTDevState *state = PCI_HCT_DEV(pci_dev);
+
+    state->lock_fd = -1;
+
+    /*
+     * In vfio-pci/ccp mode, lock this device's vccp file to prevent
+     * multiple QEMU instances from using the same vccp group.
+     */
+    if (state->ccp_dev_path && !state->vdev.sysfsdev) {
+        state->lock_fd = open(state->ccp_dev_path, O_RDONLY | O_CLOEXEC);
+        if (state->lock_fd < 0) {
+            error_setg(errp, "hct: cannot open vccp file %s: %s",
+                      state->ccp_dev_path, strerror(errno));
+            return;
+        }
+        if (flock(state->lock_fd, LOCK_EX | LOCK_NB) != 0) {
+            error_setg(errp, "hct: cannot lock vccp file %s, another QEMU may be using this vccp group.",
+                      state->ccp_dev_path);
+            close(state->lock_fd);
+            state->lock_fd = -1;
+            return;
+        }
+    }
 
     ret = hct_data_init(state);
     if (ret < 0) {
@@ -664,6 +1068,8 @@ static void vfio_hct_realize(PCIDevice *pci_dev, Error **errp)
         state->vdev.ops = &vfio_ccp_ops;
         state->vdev.dev = &state->sdev.dev.qdev;
         g_free(state->vdev.name);
+    } else if(hct_data.driver == HCT_CCP_DRV_MOD_VFIO_PCI) {
+        pci_vfio_set_bus_master(state->vdev.fd);
     }
 
     ret = vfio_hct_region_mmap(state);
@@ -720,3 +1126,955 @@ static void hct_register_types(void) {
 }
 
 type_init(hct_register_types);
+
+/* @brief vfio-pci mode DMA mapping function */
+static int vfio_hct_dma_map_vfio_pci(int container_fd, void *vaddr,  uint64_t iova, uint64_t size)
+{
+    struct vfio_iommu_type1_dma_map dma_map = { 0 };
+    int ret = 0;
+
+    if (container_fd < 0) {
+        error_report("Invalid container fd for vfio-pci mapping");
+        return -1;
+    }
+
+    if (!vaddr || !size) {
+        error_report("Invalid parameters for vfio-pci mapping");
+        return -1;
+    }
+
+    dma_map.argsz = sizeof(dma_map);
+    dma_map.vaddr = (uint64_t)vaddr;
+    dma_map.size = size;
+    dma_map.iova = (uint64_t)iova;
+    dma_map.flags = VFIO_DMA_MAP_FLAG_READ | VFIO_DMA_MAP_FLAG_WRITE;
+
+    ret = ioctl(container_fd, VFIO_IOMMU_MAP_DMA, &dma_map);
+    if (ret) {
+        if (errno == EEXIST) {
+            error_report("Memory segment is already mapped in vfio-pci mode, container_fd=%d, iova=%lx, size=%lx", container_fd, iova, size);
+            ret = 0;
+        } else {
+            error_report("Cannot set up DMA remapping in vfio-pci mode, error %i (%s)",
+                        errno, strerror(errno));
+        }
+    }
+
+    return ret;
+}
+
+static int vfio_hct_dma_unmap_vfio_pci(int container_fd, uint64_t iova, uint64_t size)
+{
+    struct vfio_iommu_type1_dma_unmap dma_unmap = { 0 };
+    int ret = 0;
+
+    if (container_fd < 0) {
+        error_report("Invalid container fd for vfio-pci unmapping");
+        return -1;
+    }
+
+    if (!iova || !size) {
+        error_report("Invalid parameters for vfio-pci unmapping, iova %lu, size %lu\n", iova, size);
+        return -1;
+    }
+
+    dma_unmap.argsz = sizeof(dma_unmap);
+    dma_unmap.size = size;
+    dma_unmap.iova = (uint64_t)iova;
+
+    ret = ioctl(container_fd, VFIO_IOMMU_UNMAP_DMA, &dma_unmap);
+    if (ret < 0) {
+        error_report("Cannot unmap DMA in vfio-pci mode, error %i (%s)",
+                    errno, strerror(errno));
+    }
+
+    return ret;
+}
+
+/* @brief get vfio file descriptor from daemon */
+static int vfio_hct_init_from_daemon(HCTDevState *state)
+{
+    hct_client_info_t client_info;
+    hct_vccp_req req_data;
+    hct_ccp_device_t *device_info = NULL;
+    hct_group_info_t *group_info = NULL;
+    char vccp_content[256] = {0};
+    char bdf[PCI_ADDR_MAX] = {0};
+    FILE *fp = NULL;
+    int ret = 0;
+    char type_char = 'c';
+
+    fp = fopen(state->ccp_dev_path, "r");
+    if (!fp) {
+        error_report("Failed to open vccp file %s: %s", state->ccp_dev_path, strerror(errno));
+        return -EINVAL;
+    }
+
+    if (fgets(vccp_content, sizeof(vccp_content), fp) == NULL) {
+        error_report("Failed to read content from vccp file %s", state->ccp_dev_path);
+        fclose(fp);
+        return -EINVAL;
+    }
+    fclose(fp);
+
+    vccp_content[strcspn(vccp_content, "\n")] = '\0';
+
+    if (sscanf(vccp_content, "%c", &type_char) != 1) {
+        error_report("Invalid vccp file format %s", state->ccp_dev_path);
+        return -EINVAL;
+    }
+
+    if (type_char == 'v') {
+        if (sscanf(vccp_content, "v %*d %*d %15s", bdf) != 1) {
+            error_report("Invalid vfio-pci vccp file %s", state->ccp_dev_path);
+            return -EINVAL;
+        }
+    }
+
+    req_data.path = state->ccp_dev_path;
+    req_data.content = vccp_content;
+    ret = hct_client_send_cmd(HCT_DAEMON_SOCK_PATH, &client_info, HCT_CMD_GET_DEVICE_BY_NAME, &req_data);
+    if (ret != HCT_SUCCESS) {
+        error_report("Failed to send command: %s", hct_get_error_string(ret));
+        return ret;
+    }
+
+    /* find specified CCP device */
+    if (hct_data.driver == HCT_CCP_DRV_MOD_CCP) {
+        if (client_info.device_count != 1 || !client_info.devices) {
+            error_report("CCP mode: Expected 1 device, but received %d",
+                         client_info.device_count);
+            hct_client_cleanup(&client_info);
+            return -ENODEV;
+        }
+        device_info = &client_info.devices[0];
+
+        state->vdev.fd = device_info->device_fd;
+    } else { /* VFIO-PCI mode */
+        device_info = hct_find_device_by_pci_addr(&client_info, bdf);
+        if (!device_info) {
+            error_report("Device %s not found", bdf);
+            hct_client_cleanup(&client_info);
+            return -ENODEV;
+        }
+        /* get corresponding group information */
+        group_info = &client_info.groups[device_info->group_index];
+
+        /* use returned file descriptor */
+        state->container_fd = client_info.container_fd;
+        state->group_fd = group_info->group_fd;
+        state->vdev.fd = device_info->device_fd;
+        state->group_id = group_info->group_id;
+        hct_data.vfio_container_fd = state->container_fd;
+    }
+
+
+    /* note: do not call hct_client_cleanup, because we need to keep FD open */
+    /* only clean up dynamic allocated memory, do not close FD */
+    if (client_info.groups) {
+        free(client_info.groups);
+    }
+    if (client_info.devices) {
+        free(client_info.devices);
+    }
+
+    return 0;
+}
+
+/**
+ * @brief Parse single TLV record
+ * @param buffer The buffer to parse
+ * @param buffer_len The length of the buffer
+ * @param offset The offset to parse
+ * @param tlv The TLV to parse
+ * @return 0 on success, -1 on failure
+ */
+static int hct_parse_tlv(const char *buffer, size_t buffer_len, size_t *offset, hct_tlv_t *tlv)
+{
+    if (*offset + sizeof(uint16_t) * 2 > buffer_len) {
+        return -1;
+    }
+
+    memcpy(&tlv->type, buffer + *offset, sizeof(uint16_t));
+    *offset += sizeof(uint16_t);
+
+    memcpy(&tlv->length, buffer + *offset, sizeof(uint16_t));
+    *offset += sizeof(uint16_t);
+
+    if (*offset + tlv->length > buffer_len) {
+        return -1;
+    }
+
+    if (tlv->length > 0) {
+        tlv->value = malloc(tlv->length);
+        if (!tlv->value) {
+            return -1;
+        }
+        memcpy(tlv->value, buffer + *offset, tlv->length);
+        *offset += tlv->length;
+    } else {
+        tlv->value = NULL;
+    }
+
+    return 0;
+}
+
+/**
+ * @brief Add a TLV to the buffer
+ * @param buffer The buffer to add the TLV to
+ * @param current_len The current length of the buffer
+ * @param max_len The maximum length of the buffer
+ * @param type The type of the TLV
+ * @param value The value of the TLV
+ * @param length The length of the TLV
+ * @return 0 on success, -1 on failure
+ */
+static int hct_add_tlv_to_buffer(char *buffer, size_t *current_len, size_t max_len, uint16_t type, const void *value, uint16_t length)
+{
+    if (*current_len + sizeof(type) + sizeof(length) + length > max_len) {
+        error_report("Buffer overflow in TLV add\n");
+        return -1;
+    }
+
+    memcpy(buffer + *current_len, &type, sizeof(type));
+    *current_len += sizeof(type);
+
+    memcpy(buffer + *current_len, &length, sizeof(length));
+    *current_len += sizeof(length);
+
+    if (length > 0 && value) {
+        memcpy(buffer + *current_len, value, length);
+        *current_len += length;
+    }
+
+    return 0;
+}
+
+/**
+ * @brief Send command to daemon
+ * @param sock The socket to send to
+ * @param cmd The command to send
+ * @param device_names Array of device names (for HCT_CMD_GET_DEVICE_BY_NAME)
+ * @param device_count Number of device names
+ * @return 0 on success, -1 on failure
+ */
+static int hct_send_command(int sock, enum hct_daemon_req_cmd cmd, void *req_data)
+{
+    char buffer[2048] = {0};
+    size_t buffer_len = 0;
+    struct hct_vccp_req *vccp_req = NULL;
+
+    /* add command TLV */
+    if (hct_add_tlv_to_buffer(buffer, &buffer_len, sizeof(buffer),
+                              HCT_IPC_FIELD_COMMAND, &cmd, sizeof(cmd)) < 0) {
+        error_report("Failed to add command TLV\n");
+        return -1;
+    }
+
+    /* add device names TLV if present */
+    if (cmd == HCT_CMD_GET_DEVICE_BY_NAME) {
+        vccp_req = req_data;
+        if (hct_add_tlv_to_buffer(buffer, &buffer_len, sizeof(buffer),
+                                  HCT_IPC_FIELD_VCCP_PATH, vccp_req->path,
+                                  strlen(vccp_req->path) + 1) < 0) {
+            error_report("Failed to add vccp path TLV\n");
+            return -1;
+        }
+        if (hct_add_tlv_to_buffer(buffer, &buffer_len, sizeof(buffer),
+                                  HCT_IPC_FIELD_VCCP_CONTENT, vccp_req->content,
+                                  strlen(vccp_req->content) + 1) < 0) {
+            error_report("Failed to add vccp content TLV\n");
+            return -1;
+        }
+    }
+
+    /* send command */
+    if (send(sock, buffer, buffer_len, 0) < 0) {
+        error_report("Failed to send command: %s\n", strerror(errno));
+        return -1;
+    }
+
+    return 0;
+}
+
+/**
+ * @brief Send command request to HCT daemon and get response
+ * @param socket_path The path to the socket
+ * @param client_info The client information
+ * @param cmd The command to send
+ * @param device_names Array of device names (for HCT_CMD_GET_DEVICE_BY_NAME)
+ * @param device_count Number of device names
+ * @return 0 on success, -1 on failure
+ */
+static int hct_client_send_cmd(const char *socket_path, hct_client_info_t *client_info,
+                               enum hct_daemon_req_cmd cmd, void *req_data)
+{
+    char cmsgbuf[CMSG_SPACE(sizeof(int) * MAX_FD_COUNT)] = {0};
+    char buffer[MAX_TLV_BUFFER_SIZE];
+    char error_reason[256] = {0};
+    int fds[MAX_FD_COUNT] = {0};
+    struct sockaddr_un addr;
+    struct msghdr msg;
+    struct iovec iov;
+    hct_tlv_t tlv;
+    struct cmsghdr *cmsg = NULL;
+    int *fdptr = NULL;
+    ssize_t received = 0;
+    size_t offset = 0;
+    size_t fd_size = 0;
+    int current_group_index = 0;
+    int fd_index = 0;
+    int sock = 0;
+    int has_pending_group_info = 0;
+    int has_pending_device_info = 0;
+    int device_index = 0;
+
+    /* Temporary variables to hold info before FD */
+    struct {
+        int group_id;
+        int device_count;
+    } pending_group_info = {0};
+    struct {
+        char pci_addr[16];
+        int group_id;
+    } pending_device_info = {0};
+
+
+    if (!socket_path || !client_info) {
+        return HCT_ERROR_INVALID_DATA;
+    }
+
+    memset(client_info, 0, sizeof(hct_client_info_t));
+    sock = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (sock < 0) {
+        error_report("Failed to create socket: %s\n", strerror(errno));
+        return HCT_ERROR_CONNECT;
+    }
+
+    memset(&addr, 0, sizeof(addr));
+    addr.sun_family = AF_UNIX;
+    strncpy(addr.sun_path, socket_path, sizeof(addr.sun_path) - 1);
+
+    if (connect(sock, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+        error_report("Failed to connect to %s: %s\n", socket_path, strerror(errno));
+        close(sock);
+        return HCT_ERROR_CONNECT;
+    }
+
+    if (hct_send_command(sock, cmd, req_data) < 0) {
+        error_report("[HCT] Failed to send command");
+        close(sock);
+        return HCT_ERROR_CONNECT;
+    }
+
+    memset(&msg, 0, sizeof(msg));
+    iov.iov_base = buffer;
+    iov.iov_len = sizeof(buffer);
+
+    msg.msg_iov = &iov;
+    msg.msg_iovlen = 1;
+    msg.msg_control = cmsgbuf;
+    msg.msg_controllen = sizeof(cmsgbuf);
+
+    received = recvmsg(sock, &msg, 0);
+    if (received <= 0) {
+        error_report("Failed to receive message: %s\n", strerror(errno));
+        close(sock);
+        return HCT_ERROR_RECEIVE;
+    }
+
+    /* Extract file descriptors from control message */
+    for (cmsg = CMSG_FIRSTHDR(&msg); cmsg != NULL; cmsg = CMSG_NXTHDR(&msg, cmsg)) {
+        if (cmsg->cmsg_level == SOL_SOCKET && cmsg->cmsg_type == SCM_RIGHTS) {
+            fd_size = cmsg->cmsg_len - CMSG_LEN(0);
+            fdptr = (int *)CMSG_DATA(cmsg);
+            memcpy(fds, fdptr, fd_size);
+        }
+    }
+
+    offset = 0;
+    fd_index = 0;
+    current_group_index = -1;
+
+    while (offset < received) {
+        memset(&tlv, 0, sizeof(tlv));
+        if (hct_parse_tlv(buffer, received, &offset, &tlv) < 0) {
+            error_report("[HCT] Failed to parse TLV data");
+            hct_client_cleanup(client_info);
+            close(sock);
+            return HCT_ERROR_INVALID_DATA;
+        }
+
+        /* Process different TLV types according to order */
+        switch (tlv.type) {
+            case HCT_IPC_FIELD_CONTAINER_FD:
+                client_info->container_fd = fds[fd_index];
+                fd_index++;
+                break;
+
+            case HCT_IPC_FIELD_GROUP_INFO:
+                /* Store group info for next group FD */
+                if (tlv.length == sizeof(pending_group_info)) {
+                    memcpy(&pending_group_info, tlv.value, sizeof(pending_group_info));
+                    has_pending_group_info = 1;
+                } else {
+                    error_report("Invalid group info size\n");
+                }
+                break;
+
+            case HCT_IPC_FIELD_GROUP_FD:
+                if (!has_pending_group_info) {
+                    error_report("Received group FD without group info");
+                    break;
+                }
+
+                /* New group detected, allocate space */
+                current_group_index++;
+                client_info->group_count = current_group_index + 1;
+
+                /* Reallocate groups array */
+                client_info->groups = realloc(client_info->groups, sizeof(hct_group_info_t) * client_info->group_count);
+                if (!client_info->groups) {
+                    error_report("Failed to allocate memory for groups");
+                    hct_client_cleanup(client_info);
+                    close(sock);
+                    return HCT_ERROR_INVALID_DATA;
+                }
+
+                /* Initialize new group with real group_id */
+                memset(&client_info->groups[current_group_index], 0, sizeof(hct_group_info_t));
+                client_info->groups[current_group_index].group_id = pending_group_info.group_id;
+                client_info->groups[current_group_index].group_fd = fds[fd_index];
+                client_info->groups[current_group_index].device_count = 0;
+
+                fd_index++;
+                has_pending_group_info = 0; /* Clear pending info */
+                break;
+
+            case HCT_IPC_FIELD_DEVICE_INFO:
+                /* Store device info for next device FD */
+                if (tlv.length == sizeof(pending_device_info)) {
+                    memcpy(&pending_device_info, tlv.value, sizeof(pending_device_info));
+                    has_pending_device_info = 1;
+                } else {
+                    error_report("Invalid device info size\n");
+                }
+                break;
+
+            case HCT_IPC_FIELD_DEVICE_FD:
+                /* In CCP mode, we only receive DEVICE_FD, no preceding INFO TLVs */
+                if (hct_data.driver == HCT_CCP_DRV_MOD_VFIO_PCI) {
+                    if (!has_pending_device_info) {
+                        error_report("VFIO mode: Received device FD without device info");
+                        break;
+                    }
+                    if (current_group_index < 0) {
+                        error_report("Received device FD without group context");
+                        break;
+                    }
+                }
+
+                /* Allocate space for new device */
+                client_info->device_count++;
+                client_info->devices = realloc(client_info->devices, sizeof(hct_ccp_device_t) * client_info->device_count);
+                if (!client_info->devices) {
+                    error_report("Failed to allocate memory for devices");
+                    hct_client_cleanup(client_info);
+                    close(sock);
+                    return HCT_ERROR_INVALID_DATA;
+                }
+
+                /* Initialize new device with real pci_addr */
+                device_index = client_info->device_count - 1;
+                memset(&client_info->devices[device_index], 0, sizeof(hct_ccp_device_t));
+                client_info->devices[device_index].device_fd = fds[fd_index];
+
+                if (hct_data.driver != HCT_CCP_DRV_MOD_CCP) {
+                    client_info->devices[device_index].group_index = current_group_index;
+
+                    /* Use real pci_addr from device info */
+                    strncpy(client_info->devices[device_index].pci_addr,
+                            pending_device_info.pci_addr,
+                            sizeof(client_info->devices[device_index].pci_addr) - 1);
+                    client_info->devices[device_index].pci_addr[
+                        sizeof(client_info->devices[device_index].pci_addr) - 1] = '\0';
+
+                    /* Update group device count */
+                    client_info->groups[current_group_index].device_count++;
+                }
+
+                fd_index++;
+                has_pending_device_info = 0; /* Clear pending info */
+                break;
+            case HCT_IPC_FIELD_ERROR_REASON:
+                error_report("IPC return error");
+                break;
+
+            default:
+                error_report("Unknown TLV type: %d", tlv.type);
+                break;
+        }
+
+        if (tlv.value) {
+            free(tlv.value);
+        }
+    }
+
+    if (error_reason[0] != '\0') {
+        error_report("Rejected request");
+        hct_client_cleanup(client_info);
+        close(sock);
+        return HCT_ERROR_INVALID_DATA;
+    }
+
+    close(sock);
+
+    return HCT_SUCCESS;
+}
+
+/**
+ * @brief Cleanup HCT client resources
+ * @param client_info The client information
+ */
+static void hct_client_cleanup(hct_client_info_t *client_info)
+{
+    if (!client_info) {
+        return;
+    }
+
+    if (client_info->devices) {
+        free(client_info->devices);
+        client_info->devices = NULL;
+    }
+
+    if (client_info->groups) {
+        free(client_info->groups);
+        client_info->groups = NULL;
+    }
+
+    if (client_info->container_fd >= 0) {
+        client_info->container_fd = -1;
+    }
+
+    client_info->device_count = 0;
+    client_info->group_count = 0;
+}
+
+/**
+ * @brief Get error description string
+ * @param error_code The error code
+ * @return The error description string
+ */
+static const char *hct_get_error_string(int error_code)
+{
+    switch (error_code) {
+        case HCT_SUCCESS:
+            return "Success";
+        case HCT_ERROR_CONNECT:
+            return "Failed to connect";
+        case HCT_ERROR_RECEIVE:
+            return "Failed to receive data";
+        case HCT_ERROR_INVALID_DATA:
+            return "Invalid data received";
+        default:
+            return "Unknown error";
+    }
+}
+
+/**
+ * @brief Find device by PCI address
+ * @param client_info The client information
+ * @param pci_addr The PCI address of the device
+ * @return The device information
+ */
+static hct_ccp_device_t* hct_find_device_by_pci_addr(hct_client_info_t *client_info, const char *pci_addr)
+{
+    int i = 0;
+
+    if (!client_info || !pci_addr || !client_info->devices) {
+        return NULL;
+    }
+
+    for (i = 0; i < client_info->device_count; i++) {
+        if (strcmp(client_info->devices[i].pci_addr, pci_addr) == 0) {
+            return &client_info->devices[i];
+        }
+    }
+
+    return NULL;
+}
+
+/**
+ * @brief Allocate a global bitmap instance for g_id management
+ * @return The allocated bitmap instance, or NULL on failure
+ */
+static struct hct_gid_bitmap* hct_gid_bitmap_alloc(void)
+{
+    struct hct_gid_bitmap *gid_bitmap = NULL;
+    mode_t oldmod = 0;
+    size_t total_size = 0;
+    int shm_fd = -1;
+    int lock_fd = -1;
+
+    gid_bitmap = (struct hct_gid_bitmap *)calloc(1, sizeof(struct hct_gid_bitmap));
+    if (!gid_bitmap) {
+        error_report("Failed to allocate hct_gid_bitmap structure\n");
+        return NULL;
+    }
+
+    strncpy(gid_bitmap->name, HCT_GID_BITMAP_SHM_NAME, MAX_PATH - 1);
+    gid_bitmap->name[MAX_PATH - 1] = '\0';
+    gid_bitmap->shm_fd = -1;
+    gid_bitmap->lock_fd = -1;
+
+    total_size = HCT_BITMAP_SIZE(HCT_QEMU_GIDS_BITMAP_MAX_BIT) * sizeof(unsigned long);
+    gid_bitmap->len = total_size;
+
+    oldmod = umask(0);
+    shm_fd = shm_open(HCT_GID_BITMAP_SHM_NAME, O_CREAT | O_EXCL | O_RDWR | O_CLOEXEC, 0666);
+    umask(oldmod);
+
+    if (shm_fd < 0 && errno == EEXIST) {
+        // Shared memory already exists, try to open it
+        shm_fd = shm_open(HCT_GID_BITMAP_SHM_NAME, O_RDWR | O_CLOEXEC, 0666);
+    }
+
+    if (shm_fd < 0) {
+        error_report("Failed to create/open shared memory %s, errno %d\n", HCT_GID_BITMAP_SHM_NAME, errno);
+        goto cleanup;
+    }
+
+    gid_bitmap->shm_fd = shm_fd;
+    if (ftruncate(shm_fd, total_size) != 0) {
+        error_report("Failed to set shared memory size, errno %d\n", errno);
+        goto cleanup;
+    }
+
+    gid_bitmap->bitmap = (unsigned long *)mmap(NULL, total_size, PROT_READ | PROT_WRITE,
+                MAP_SHARED, shm_fd, 0);
+    if (gid_bitmap->bitmap == MAP_FAILED) {
+        error_report("Failed to mmap shared memory, errno %d\n", errno);
+        goto cleanup;
+    }
+
+    lock_fd = shm_open(HCT_GID_LOCK_FILE, O_CREAT | O_EXCL | O_RDWR, 0666);
+    if (lock_fd < 0) {
+        if (errno == EEXIST) {
+            lock_fd = shm_open(HCT_GID_LOCK_FILE, O_RDWR, 0);
+            if (lock_fd == -1) {
+                error_report("Failed to shm_open lock file %s, errno %d\n", HCT_GID_LOCK_FILE, errno);
+                goto cleanup;
+            }
+        } else {
+            error_report("Failed to shm_open lock file %s, errno %d\n", HCT_GID_LOCK_FILE, errno);
+            goto cleanup;
+        }
+    } else {
+        if (ftruncate(lock_fd, HCT_QEMU_GIDS_BITMAP_MAX_BIT * 8) != 0) {
+            error_report("Failed to ftruncate lock shm %s, errno %d\n", HCT_GID_LOCK_FILE, errno);
+            goto cleanup;
+        }
+        if (fchmod(lock_fd, 0666) == -1) {
+            error_report("fchmod failed\n");
+        }
+    }
+
+    gid_bitmap->lock_fd = lock_fd;
+    g_hct_gid_bitmap = gid_bitmap;
+
+    return gid_bitmap;
+
+cleanup:
+    hct_gid_bitmap_free(gid_bitmap);
+    return NULL;
+}
+
+/**
+ * @brief Free a global bitmap instance for g_id management
+ * @param bitmap The bitmap instance to free
+ */
+static void hct_gid_bitmap_free(struct hct_gid_bitmap *bitmap)
+{
+    if (!bitmap)
+        return;
+
+    if (bitmap->bitmap && bitmap->bitmap != MAP_FAILED) {
+        munmap(bitmap->bitmap, bitmap->len);
+    }
+
+    if (bitmap->shm_fd >= 0) {
+        close(bitmap->shm_fd);
+    }
+
+    if (bitmap->lock_fd >= 0) {
+        close(bitmap->lock_fd);
+    }
+
+    if (g_hct_gid_bitmap == bitmap) {
+        g_hct_gid_bitmap = NULL;
+    }
+
+    free(bitmap);
+}
+
+/**
+ * @brief Allocate a g_id from the 1024-bit bitmap, left-shift by 8 bits
+ * @param bitmap The bitmap instance to allocate from
+ * @return The allocated g_id, or -1 if no g_id is available
+ */
+static inline int _hct_gid_bitmap_try_alloc(struct hct_gid_bitmap *bitmap) {
+    unsigned long bit_pos = 0;
+    unsigned long old_val = 0, new_val = 0;
+    volatile unsigned long *word_ptr = NULL;
+    unsigned long mask = 0;
+
+    for (bit_pos = HCT_QEMU_GIDS_BITMAP_MIN_BIT; bit_pos < HCT_QEMU_GIDS_BITMAP_MAX_BIT; bit_pos++) {
+        if (!hct_get_bit(bitmap->bitmap, bit_pos)) {
+            word_ptr = &bitmap->bitmap[WORD_OFFSET(bit_pos)];
+            mask = 1UL << BIT_OFFSET(bit_pos);
+            old_val = *word_ptr;
+            if (!(old_val & mask)) {
+                new_val = old_val | mask;
+                if (__atomic_compare_exchange_n(word_ptr, &old_val, new_val,
+                    false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
+                    return bit_pos;
+                }
+            }
+        }
+    }
+    return -1;
+}
+
+/**
+ * @brief Allocate a g_id from the 1024-bit bitmap, left-shift by 8 bits
+ * @param bitmap The bitmap instance to allocate from
+ * @param gid The allocated g_id
+ * @return 0 on success, -1 if no g_id is available
+ */
+static int hct_g_ids_alloc(struct hct_gid_bitmap *bitmap, unsigned long *gid)
+{
+    unsigned long id = 0;
+    int bit_pos = -1;
+    int try_count = 0;
+    int max_try = 2;
+    int lock_ret = 0;
+
+    if (!bitmap || !bitmap->bitmap || !gid) {
+        error_report("Invalid parameters\n");
+        return -EINVAL;
+    }
+
+    while (try_count < max_try) {
+        bit_pos = _hct_gid_bitmap_try_alloc(bitmap);
+        if (bit_pos >= 0) {
+            id = bit_pos + 1 - 1024; // g_id can't be 0
+            *gid = id << HCT_QEMU_GIDS_SHIFT_BITS;
+            lock_ret = hct_g_ids_lock_state_lock(bitmap, *gid);
+            if (lock_ret == 0) {
+                return 0;
+            } else {
+                continue;
+            }
+        } else if (try_count == 0) {
+            // try to clean up orphaned g_ids
+            error_report("try to clean up orphaned g_ids\n");
+            hct_g_ids_lock_state_walk(bitmap);
+        }
+        try_count++;
+    }
+
+    error_report("No available g_id in bitmap or all locks busy after cleanup\n");
+    return -EINVAL;
+}
+
+/**
+ * @brief Free a g_id from the 1024-bit bitmap, left-shift by 8 bits
+ * @param bitmap The bitmap instance to free from
+ * @param gid The g_id to free
+ */
+static void hct_g_ids_free(struct hct_gid_bitmap *bitmap, unsigned long gid)
+{
+    unsigned long id = 0;
+    unsigned long bit_pos = 0;
+    off_t offset = 0;
+    struct flock lock;
+
+    if (!bitmap || !bitmap->bitmap) {
+        error_report("Invalid bitmap parameters\n");
+        return;
+    }
+
+    if (gid == 0) {
+        error_report("Invalid g_id=0\n");
+        return;
+    }
+
+    // Extract original id from g_id
+    id = gid >> HCT_QEMU_GIDS_SHIFT_BITS;
+    if (id == 0 || id > HCT_QEMU_GIDS_BITMAP_MAX_BIT) {
+        error_report("Invalid g_id=0x%lx, extracted id=%lu\n", gid, id);
+        return;
+    }
+
+    bit_pos = id - 1 + 1024;  // Convert back to bit position
+
+    offset = bit_pos * HCT_GIDS_PER_BLOCK;
+    lock.l_type = F_UNLCK;
+    lock.l_whence = SEEK_SET;
+    lock.l_start = offset;
+    lock.l_len = HCT_GIDS_PER_BLOCK;
+    if (bitmap->lock_fd >= 0)
+        fcntl(bitmap->lock_fd, F_SETLK, &lock);
+
+    hct_clear_bit(bitmap->bitmap, bit_pos);
+}
+
+/**
+ * @brief Lock a g_id
+ * @param bitmap The bitmap instance to lock
+ * @param gid The g_id to lock
+ * @return 0 on success, -1 if the g_id is not locked
+ */
+static int hct_g_ids_lock_state_lock(struct hct_gid_bitmap *bitmap, unsigned long gid)
+{
+    struct flock lock;
+    unsigned long id = 0;
+    off_t offset = 0;
+    int ret = 0;
+
+    if (!bitmap || !bitmap->bitmap || bitmap->lock_fd < 0) {
+        error_report("Invalid bitmap\n");
+        return -EINVAL;
+    }
+
+    if (gid == 0) {
+        error_report("Invalid g_id=0\n");
+        return -EINVAL;
+    }
+
+    // Extract original id from g_id
+    id = gid >> HCT_QEMU_GIDS_SHIFT_BITS;
+    if (id == 0 || id > HCT_QEMU_GIDS_BITMAP_MAX_BIT) {
+        error_report("Invalid g_id=0x%lx, extracted id=%lu\n", gid, id);
+        return -EINVAL;
+    }
+
+    // Calculate file offset for this g_id's lock region
+    offset = (id + 1024 - 1) * HCT_GIDS_PER_BLOCK;
+
+    // Set up exclusive lock
+    lock.l_type = F_WRLCK;
+    lock.l_whence = SEEK_SET;
+    lock.l_start = offset;
+    lock.l_len = HCT_GIDS_PER_BLOCK;
+
+    // Try to acquire lock (non-blocking)
+    if (fcntl(bitmap->lock_fd, F_SETLK, &lock) == 0) {
+        ret = 0;
+    } else {
+        error_report("Failed to lock g_id=0x%lx, offset%lx, errno=%d\n", gid, offset, errno);
+        ret = -EINVAL;
+    }
+
+    return ret;
+}
+
+/**
+ * @brief Walk the bitmap to detect orphaned g_ids
+ * @param bitmap The bitmap instance to walk
+ */
+static void hct_g_ids_lock_state_walk(struct hct_gid_bitmap *bitmap)
+{
+    struct flock lock;
+    unsigned long bit_pos = 0;
+    unsigned long gid = 0;
+    off_t offset = 0;
+
+    if (!bitmap || !bitmap->bitmap || bitmap->lock_fd < 0) {
+        error_report("Invalid bitmap parameters\n");
+        return;
+    }
+
+    // Walk through all allocated bits in bitmap
+    for (bit_pos = HCT_QEMU_GIDS_BITMAP_MIN_BIT; bit_pos < HCT_QEMU_GIDS_BITMAP_MAX_BIT; bit_pos++) {
+        if (hct_get_bit(bitmap->bitmap, bit_pos)) {
+            gid = (bit_pos + 1) << HCT_QEMU_GIDS_SHIFT_BITS;
+            if (gid == *(unsigned long *)((unsigned long)(hct_data.pasid_memory) + HCT_PASID_MEM_GID_OFFSET)) {
+                continue;
+            }
+            if (gid >> HCT_QEMU_GIDS_SHIFT_BITS == 0) {
+                continue;
+            }
+            offset = bit_pos * HCT_GIDS_PER_BLOCK;
+
+            // Try to acquire exclusive lock for this g_id
+            lock.l_type = F_WRLCK;
+            lock.l_whence = SEEK_SET;
+            lock.l_start = offset;
+            lock.l_len = HCT_GIDS_PER_BLOCK;
+
+            if (fcntl(bitmap->lock_fd, F_GETLK, &lock) == -1) {
+                error_report("Failed to get lock file status.\n");
+                return;
+            }
+            if (lock.l_type == F_UNLCK) {
+                info_report("Detected orphaned g_id=0x%lx, cleaning up\n", gid);
+                hct_clear_bit(bitmap->bitmap, bit_pos);
+            }
+        }
+    }
+}
+
+static void hct_clear_bit(unsigned long *bitmap, int n)
+{
+    __atomic_fetch_and(&bitmap[WORD_OFFSET(n)], ~(1UL << BIT_OFFSET(n)), __ATOMIC_RELEASE);
+}
+
+static uint32_t hct_get_bit(unsigned long *bitmap, int n)
+{
+    return ((bitmap[WORD_OFFSET(n)] & (0x1UL << BIT_OFFSET(n))) != 0);
+}
+
+static int hct_create_user_shared_memory(const char *name, size_t size)
+{
+    mode_t oldmod;
+    void *addr = NULL;
+    int shm_fd = -1;
+    int new_mem = 0;
+
+    oldmod = umask(0);
+    shm_fd = shm_open(name, O_CREAT | O_EXCL | O_RDWR | O_CLOEXEC, 0666);
+    umask(oldmod);
+
+    if (shm_fd < 0) {
+        if (errno == EEXIST) {
+            error_report("Shared memory %s already exists, trying to open existing one\n", name);
+            return 0;
+        } else {
+            error_report("Failed to create/open shared memory %s, errno %d (%s)\n", name, errno, strerror(errno));
+            return -1;
+        }
+    } else {
+        new_mem = 1;
+    }
+
+    if (ftruncate(shm_fd, size) != 0) {
+        error_report("Failed to set shared memory size %zu, errno %d (%s)\n", size, errno, strerror(errno));
+        close(shm_fd);
+        return -1;
+    }
+
+    if (new_mem) {
+        addr = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
+        if (addr == MAP_FAILED) {
+            error_report("Failed to mmap shared memory %s, errno %d (%s)\n", name, errno, strerror(errno));
+            close(shm_fd);
+            return -1;
+        }
+        memset(addr, 0, size);
+        munmap(addr, size);
+    }
+
+    close(shm_fd);
+    return 0;
+}
