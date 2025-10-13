@@ -12,7 +12,6 @@
 #include "hw/loader.h"
 #include "hw/loongarch/virt.h"
 #include "hw/pci-host/gpex.h"
-#include "hw/pci-host/ls7a.h"
 #include "sysemu/device_tree.h"
 #include "sysemu/reset.h"
 #include "target/loongarch/cpu.h"
