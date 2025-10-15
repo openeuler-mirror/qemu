@@ -18,6 +18,8 @@
 #include <fnmatch.h>
 #include <sys/shm.h>
 #include <sys/file.h>
+#include <sys/socket.h>
+#include <linux/vm_sockets.h>
 
 #include "qemu/osdep.h"
 #include "qemu/queue.h"
@@ -32,6 +34,10 @@
 #include "qemu/error-report.h"
 #include "qapi/error.h"
 #include "hw/qdev-properties.h"
+#include "hw/virtio/vhost-vsock.h"
+#include "migration/migration.h"
+#include "migration/vmstate.h"
+#include "migration/misc.h"
 
 // ======================== g_id API ====================
 
@@ -216,6 +222,7 @@ typedef struct {
 #define TYPE_HCT_DEV                 "hct"
 #define PCI_HCT_DEV(obj)             OBJECT_CHECK(HCTDevState, (obj), TYPE_HCT_DEV)
 #define HCT_MAX_PASID                (1 << 8)
+#define HCT_MIGRATE_VERSION          1
 
 #define PCI_VENDOR_ID_HYGON_CCP      0x1d94
 #define PCI_DEVICE_ID_HYGON_CCP      0x1468
@@ -257,6 +264,20 @@ typedef struct {
 #define PASID_OFFSET                 40
 #define HCT_PASID_MEM_GID_OFFSET     1024
 
+/* for migration */
+#define HCT_MIG_PROTOCOL_VER         1
+#define HCT_MIG_MSG_MAGIC            0x76484354
+#define HCT_VMADDR_CID_HOST          2
+#define HCT_VSOCK_PORT               12345
+#define HCT_MIG_STATE_ONLINE         0x00
+#define HCT_MIG_STATE_RESTRICTED     0x01
+#define HCT_MIG_STATE_STOPPED        0x02
+#define HCT_MIGRATION_START          0x01
+#define HCT_CHECK_VM_READINESS       0x02
+#define HCT_MIGRATION_DONE           0x03
+#define HCT_MIG_MSG_ACK              0x01
+#define HCT_MIG_MSG_ERR              0x02
+
 static volatile struct hct_data {
     int init;
     int hct_fd;
@@ -283,9 +304,15 @@ typedef struct HctDevState {
     MemoryRegion mmio;
     MemoryRegion shared;
     MemoryRegion pasid;
+    NotifierWithReturn precopy_notifier;
+    QEMUTimer *migrate_load_timer;
     uint64_t map_size[PCI_NUM_REGIONS];
+    uint32_t guest_cid;
+    uint32_t migrate_support;
+    int client_fd;
     void *maps[PCI_NUM_REGIONS];
     char *ccp_dev_path;
+    char *vsock_device;
     int container_fd;   /* vfio container fd */
     int group_fd;       /* vfio group fd */
     int group_id;       /* vfio group id */
@@ -467,6 +494,7 @@ static void vfio_hct_exit(PCIDevice *dev)
 static Property vfio_hct_properties[] = {
     DEFINE_PROP_STRING("sysfsdev", HCTDevState, vdev.sysfsdev),
     DEFINE_PROP_STRING("dev", HCTDevState, ccp_dev_path),
+    DEFINE_PROP_STRING("vsock-device", HCTDevState, vsock_device),
     DEFINE_PROP_END_OF_LIST(),
 };
 
@@ -812,6 +840,255 @@ static int hct_get_used_driver_walk(const char *path)
     return ret;
 }
 
+static int hct_get_vsock_guest_cid(HCTDevState *state)
+{
+    Object *dev = NULL;
+    gchar *path = NULL;
+    uint32_t cid;
+
+    if (!state->vsock_device) {
+        dev = object_resolve_path_type("", TYPE_VHOST_VSOCK, NULL);
+        if (!dev) {
+            error_report("get Object for %s failed.", TYPE_VHOST_VSOCK);
+            return -1;
+        }
+    } else {
+        path = g_strdup_printf("/machine/peripheral/%s", state->vsock_device);
+        dev = object_resolve_path(path, NULL);
+        g_free(path);
+        if (!dev) {
+            error_report("get Object for %s failed.", path);
+            return -1;
+        }
+    }
+
+    cid = object_property_get_uint(dev, "guest-cid", NULL);
+    if (cid <= HCT_VMADDR_CID_HOST) {
+        error_report("cid = %u, invalid.", cid);
+        return -1;
+    }
+
+    state->guest_cid = cid;
+    return 0;
+}
+
+static int hct_client_vsock_connect_op(HCTDevState *state)
+{
+    struct sockaddr_vm host_addr;
+    int sock_fd;
+
+    if (state->guest_cid <= HCT_VMADDR_CID_HOST) {
+        error_report("state->guest_cid = %u, invalid.", state->guest_cid);
+        return -1;
+    }
+
+    sock_fd = socket(AF_VSOCK, SOCK_STREAM, 0);
+    if (sock_fd < 0) {
+        perror("socket creation failed");
+        return -1;
+    }
+
+    memset(&host_addr, 0, sizeof(host_addr));
+    host_addr.svm_family = AF_VSOCK;
+    host_addr.svm_cid = state->guest_cid;
+    host_addr.svm_port = HCT_VSOCK_PORT;
+
+    if (connect(sock_fd, (struct sockaddr*)&host_addr, sizeof(host_addr)) < 0) {
+        perror("connect failed");
+        close(sock_fd);
+        return -EAGAIN;
+    }
+
+    state->client_fd = sock_fd;
+    return 0;
+}
+
+static int hct_client_vsock_send_msg(int sock_fd, char *buf, size_t len)
+{
+    struct msghdr msg;
+    struct iovec iov;
+
+    memset(&msg, 0, sizeof(msg));
+    iov.iov_base = buf;
+    iov.iov_len = len;
+    msg.msg_iov = &iov;
+    msg.msg_iovlen = 1;
+    return sendmsg(sock_fd, &msg, 0);
+}
+
+static int hct_client_vsock_recv_msg(int sock_fd, char *buf, size_t len)
+{
+    struct msghdr msg;
+    struct iovec iov;
+
+    memset(&msg, 0, sizeof(msg));
+    iov.iov_base = buf;
+    iov.iov_len = len;
+    msg.msg_iov = &iov;
+    msg.msg_iovlen = 1;
+    return recvmsg(sock_fd, &msg, 0);
+}
+
+static int hct_client_send_msg(HCTDevState *state, char *buf, size_t len, int mloop)
+{
+    int loops = 0;
+    int ret = -1;
+
+    while ((ret = hct_client_vsock_connect_op(state)) != 0 && ret == -EAGAIN) {
+        if (!mloop) {
+            return -EAGAIN;
+        }
+        if (++loops > mloop) {
+            error_report("loops = %d, connect failed.", loops);
+            return -1;
+        }
+        usleep(20 * 1000);
+    }
+
+    if (hct_client_vsock_send_msg(state->client_fd, (char *)buf, len) < 0) {
+        error_report("hct_client_vsock_send_msg failed.");
+        goto exit;
+    }
+
+    memset((void *)buf, 0, len);
+    if (hct_client_vsock_recv_msg(state->client_fd, (char *)buf, len) < 0) {
+        error_report("hct_client_vsock_recv_msg failed.");
+        goto exit;
+    }
+
+    ret = 0;
+
+exit:
+    close(state->client_fd);
+    return ret;
+}
+
+static int hct_migrate_precopy_notifier(NotifierWithReturn *notifier, void *data)
+{
+    HCTDevState *state = container_of(notifier, HCTDevState, precopy_notifier);
+    MigrationState *ms = migrate_get_current();
+    PrecopyNotifyData *pnd = data;
+    int msg[16];
+    int MAX_CONNECT_LOOPS = 10;
+    int MAX_CHECK_LOOPS = 20;
+    int loops = 0;
+    int ret = -1;
+
+    if (pnd->reason != PRECOPY_NOTIFY_SETUP)
+        return 0;
+
+    qemu_mutex_unlock_iothread();
+
+    /* [0]:magic [1]:version [2]:op [3]:sync_state */
+    msg[0] = HCT_MIG_MSG_MAGIC;
+    msg[1] = HCT_MIG_PROTOCOL_VER;
+    msg[2] = HCT_MIGRATION_START;
+    msg[3] = 0;
+    ret = hct_client_send_msg(state, (char *)msg, sizeof(msg), MAX_CONNECT_LOOPS);
+    if (ret != 0 || msg[0] != HCT_MIG_MSG_MAGIC) {
+        /* Perform live migration addording to a regular virtual machine. */
+        error_report("ret:%d msg[0]:0x%x, please install a newer hct.ko"
+			" for the virtual machine.", ret, msg[0]);
+        state->migrate_support = 0;
+        ret = 0;
+        goto exit;
+    } else if (msg[3] != HCT_MIG_MSG_ACK) {
+        /* We believe that the virtual machine is not ready,
+         * so terminate the live migration.
+         */
+        error_setg(pnd->errp, "%s[%u] msg[3]:0x%02x, invalid.\n",
+                              __func__, __LINE__, msg[3]);
+        ms->state = MIGRATION_STATUS_CANCELLED;
+        goto exit;
+    }
+
+    while (++loops <= MAX_CHECK_LOOPS) {
+        msg[0] = HCT_MIG_MSG_MAGIC;
+        msg[1] = HCT_MIG_PROTOCOL_VER;
+        msg[2] = HCT_CHECK_VM_READINESS;
+        msg[3] = 0;
+        ret = hct_client_send_msg(state, (char *)msg, sizeof(msg), MAX_CONNECT_LOOPS);
+        if (ret != 0 || msg[0] != HCT_MIG_MSG_MAGIC) {
+            error_setg(pnd->errp, "ret:%d msg[0]:0x%x, invalid.", ret, msg[0]);
+            ms->state = MIGRATION_STATUS_CANCELLED;
+            goto exit;
+        } else if (msg[3] == HCT_MIG_STATE_STOPPED) {
+            break;
+        }
+        sleep(1);
+    }
+    if (loops > MAX_CHECK_LOOPS) {
+        error_setg(pnd->errp, "%s[%u] loops:%d > MAX_CHECK_LOOPS:%d, will cancel.\n",
+                              __func__, __LINE__, loops, MAX_CHECK_LOOPS);
+        ms->state = MIGRATION_STATUS_CANCELLED;
+        goto exit;
+    }
+
+    info_report("%s: recieved HCT_MIG_MSG_ACK.", __func__);
+    ret = 0;
+
+exit:
+    qemu_mutex_lock_iothread();
+    return ret;
+}
+
+static void hct_client_connect_timer_cb(void *opaque)
+{
+    HCTDevState *state = opaque;
+    int msg[16];
+    int MAX_LOOP_TIMES = 10;
+    static int loops = 0;
+    int ret;
+
+    /* [0]:magic [1]:version [2]:op [3]:sync_state */
+    msg[0] = HCT_MIG_MSG_MAGIC;
+    msg[1] = HCT_MIG_PROTOCOL_VER;
+    msg[2] = HCT_MIGRATION_DONE;
+    msg[3] = 0;
+    ret = hct_client_send_msg(state, (char *)msg, sizeof(msg), 0);
+    if (ret == -EAGAIN) {
+        if (++loops > MAX_LOOP_TIMES) {
+            error_report("%s: loops = %d, connect failed.", __func__, loops);
+            goto exit;
+        }
+        timer_mod(state->migrate_load_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) +
+                            NANOSECONDS_PER_SECOND * 2); /* 2s */
+        return;
+    }
+
+    if (ret != 0 || msg[0] != HCT_MIG_MSG_MAGIC || msg[3] != HCT_MIG_MSG_ACK) {
+        error_report("ret:%d msg[0]:0x%x msg[3]:0x%x, invalid.\n", ret, msg[0], msg[3]);
+        goto exit;
+    }
+    info_report("%s: recieved HCT_MIG_MSG_ACK.", __func__);
+
+exit:
+    timer_free(state->migrate_load_timer);
+    state->migrate_load_timer = NULL;
+    close(state->client_fd);
+    loops = 0;
+}
+
+static int hct_dev_post_load(void *opaque, int version_id)
+{
+    HCTDevState *state = opaque;
+
+    if (!state->migrate_support)
+        return 0;
+
+    /* When there are multiple ccp devices, each device will
+     * execute the post_load function once.
+     * We only hope that the first device can set the timer.
+     */
+    state->migrate_support = 0;
+    state->migrate_load_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL,
+                        hct_client_connect_timer_cb, state);
+    timer_mod(state->migrate_load_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) +
+                        NANOSECONDS_PER_SECOND * 5); /* 5s */
+
+    return 0;
+}
+
 static void hct_data_uninit(HCTDevState *state)
 {
     if (hct_data.hct_fd) {
@@ -849,6 +1126,7 @@ static void hct_data_uninit(HCTDevState *state)
     }
 
     memory_listener_unregister(&hct_memory_listener);
+    precopy_remove_notifier(&state->precopy_notifier);
 
     hct_data.init = 0;
     hct_data.driver = HCT_CCP_DRV_MOD_UNINIT;
@@ -968,6 +1246,15 @@ static int hct_data_init(HCTDevState *state)
         ret = pasid_get_and_init(state);
         if (ret < 0)
             goto unmap_pasid_memory_exit;
+
+        ret = hct_get_vsock_guest_cid(state);
+        if (ret < 0)
+            error_report("get the guest_cid of vsock device fail.");
+
+        state->precopy_notifier.notify = hct_migrate_precopy_notifier;
+        precopy_add_notifier(&state->precopy_notifier);
+        state->migrate_load_timer = NULL;
+        state->migrate_support = 1;
 
         /* perform DMA_MAP and DMA_UNMAP operations on all memories of the virtual machine. */
         memory_listener_register(&hct_memory_listener, &address_space_memory);
@@ -1091,12 +1378,24 @@ out:
     return;
 }
 
+static const VMStateDescription vfio_hct_vmstate = {
+    .name = "vfio-hct-dev",
+    .version_id = HCT_MIGRATE_VERSION,
+    .minimum_version_id = HCT_MIGRATE_VERSION,
+    .post_load = hct_dev_post_load,
+    .fields = (VMStateField[]) {
+        VMSTATE_UINT32(migrate_support, HCTDevState),
+        VMSTATE_END_OF_LIST()
+    }
+};
+
 static void hct_dev_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     PCIDeviceClass *pdc = PCI_DEVICE_CLASS(klass);
 
     dc->desc = "HCT Device";
+    dc->vmsd = &vfio_hct_vmstate;
     device_class_set_props(dc, vfio_hct_properties);
 
     pdc->realize = vfio_hct_realize;
