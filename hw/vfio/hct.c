@@ -377,9 +377,6 @@ static void hct_client_cleanup(hct_client_info_t *client_info);
 /* @brief hct client send cmd function */
 static int hct_client_send_cmd(const char *socket_path, hct_client_info_t *client_info, enum hct_daemon_req_cmd cmd, void *req_data);
 
-/* @brief hct create user shared memory function */
-static int hct_create_user_shared_memory(const char *name, size_t size);
-
 static int hct_get_sysfs_value(const char *path, int *val)
 {
     FILE *fp = NULL;
@@ -705,19 +702,42 @@ static int hct_api_version_check(void)
 
 static int hct_shared_memory_init(void)
 {
-    int ret = 0;
+    const char *name = HCT_GLOBAL_SHARE_SHM_NAME;
+    size_t size = HCT_SHARED_MEMORY_SIZE;
+    void *vaddr = NULL;
+    int shm_fd = -1;
+    mode_t oldmod;
 
-    hct_data.hct_shared_memory = mmap(NULL, hct_data.hct_shared_size,
-                                     PROT_READ | PROT_WRITE, MAP_SHARED,
-                                     hct_data.hct_shm_fd, 0);
-    if (hct_data.hct_shared_memory == MAP_FAILED) {
-        ret = -errno;
-        error_report("map hct shared memory fail\n");
-        goto out;
+    oldmod = umask(0);
+    shm_fd = shm_open(name, O_RDWR | O_CREAT | O_EXCL | O_CLOEXEC, 0666);
+    umask(oldmod);
+    if (shm_fd < 0 && errno == EEXIST)
+        shm_fd = shm_open(name, O_RDWR | O_CLOEXEC, 0666);
+    if (shm_fd < 0) {
+        error_report("Failed to open file %s, errno: %d.\n", name, errno);
+        return -1;
     }
 
-out:
-    return ret;
+    if (ftruncate(shm_fd, size) != 0) {
+        error_report("Failed to ftruncate file %s, errno: %d\n", name, errno);
+        close(shm_fd);
+        return -1;
+    }
+
+    vaddr = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
+    if (vaddr == MAP_FAILED) {
+        error_report("map hct shared memory fail\n");
+        close(shm_fd);
+        return -ENOMEM;
+    }
+
+    if (flock(shm_fd, LOCK_EX | LOCK_NB) == 0)
+        memset(vaddr, 0, size);
+
+    hct_data.hct_shm_fd = shm_fd;
+    hct_data.hct_shared_size = size;
+    hct_data.hct_shared_memory = vaddr;
+    return flock(shm_fd, LOCK_SH);
 }
 
 static void hct_listener_region_add(MemoryListener *listener,
@@ -1104,7 +1124,7 @@ static void hct_data_uninit(HCTDevState *state)
     }
 
     if (hct_data.hct_shm_fd) {
-        qemu_close(hct_data.hct_shm_fd);
+        close(hct_data.hct_shm_fd);
         hct_data.hct_shm_fd = 0;
     }
     if (hct_data.pasid) {
@@ -1196,27 +1216,6 @@ static int hct_data_init(HCTDevState *state)
         }
     }
     if (hct_data.init == 0) {
-        hct_shr_name = HCT_GLOBAL_SHARE_SHM_PATH;
-        hct_data.hct_shm_fd = qemu_open_old(hct_shr_name, O_RDWR);
-        if (hct_data.hct_shm_fd < 0) {
-            if (errno == 2) {
-                ret = hct_create_user_shared_memory(HCT_GLOBAL_SHARE_SHM_NAME, HCT_SHARED_MEMORY_SIZE);
-                if (!ret) {
-                    hct_data.hct_shm_fd = qemu_open_old(hct_shr_name, O_RDWR);
-                    if (hct_data.hct_shm_fd < 0) {
-                        ret = -errno;
-                    }
-                }
-            } else {
-                ret = -errno;
-            }
-            if (ret < 0) {
-                error_report("fail to open %s, errno %d.", hct_shr_name, errno);
-                goto out;
-            }
-        }
-        hct_data.hct_shared_size = HCT_SHARED_MEMORY_SIZE;
-
         /* assign a page to the virtual BAR3 of each CCP. */
         ret = hct_shared_memory_init();
         if (ret)
@@ -2332,48 +2331,4 @@ static void hct_clear_bit(unsigned long *bitmap, int n)
 static uint32_t hct_get_bit(unsigned long *bitmap, int n)
 {
     return ((bitmap[WORD_OFFSET(n)] & (0x1UL << BIT_OFFSET(n))) != 0);
-}
-
-static int hct_create_user_shared_memory(const char *name, size_t size)
-{
-    mode_t oldmod;
-    void *addr = NULL;
-    int shm_fd = -1;
-    int new_mem = 0;
-
-    oldmod = umask(0);
-    shm_fd = shm_open(name, O_CREAT | O_EXCL | O_RDWR | O_CLOEXEC, 0666);
-    umask(oldmod);
-
-    if (shm_fd < 0) {
-        if (errno == EEXIST) {
-            error_report("Shared memory %s already exists, trying to open existing one\n", name);
-            return 0;
-        } else {
-            error_report("Failed to create/open shared memory %s, errno %d (%s)\n", name, errno, strerror(errno));
-            return -1;
-        }
-    } else {
-        new_mem = 1;
-    }
-
-    if (ftruncate(shm_fd, size) != 0) {
-        error_report("Failed to set shared memory size %zu, errno %d (%s)\n", size, errno, strerror(errno));
-        close(shm_fd);
-        return -1;
-    }
-
-    if (new_mem) {
-        addr = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
-        if (addr == MAP_FAILED) {
-            error_report("Failed to mmap shared memory %s, errno %d (%s)\n", name, errno, strerror(errno));
-            close(shm_fd);
-            return -1;
-        }
-        memset(addr, 0, size);
-        munmap(addr, size);
-    }
-
-    close(shm_fd);
-    return 0;
 }
