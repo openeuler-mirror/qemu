@@ -12,6 +12,7 @@
 #include "qemu/queue.h"
 #include "hw/block/flash.h"
 #include "hw/loongarch/boot.h"
+#include "hw/pci-host/gpex.h"
 
 /* IOCSR region */
 #define VERSION_REG             0x0
@@ -120,7 +121,7 @@ struct LoongArchVirtMachineState {
     uint64_t misc_status;
     DeviceState *dintc;
     hwaddr ram_end;
-    PCIBus       *pci_bus;
+    struct GPEXConfig gpex;
     PFlashCFI01  *flash[2];
     MemoryRegion system_iocsr;
     MemoryRegion iocsr_mem;
