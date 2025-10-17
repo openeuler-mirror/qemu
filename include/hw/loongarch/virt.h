@@ -122,6 +122,7 @@ struct LoongArchVirtMachineState {
     DeviceState *dintc;
     hwaddr ram_end;
     struct GPEXConfig gpex;
+    bool highmem_mmio;
     PFlashCFI01  *flash[2];
     MemoryRegion system_iocsr;
     MemoryRegion iocsr_mem;
