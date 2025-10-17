@@ -119,6 +119,7 @@ struct LoongArchVirtMachineState {
     uint64_t misc_feature;
     uint64_t misc_status;
     DeviceState *dintc;
+    hwaddr ram_end;
     PCIBus       *pci_bus;
     PFlashCFI01  *flash[2];
     MemoryRegion system_iocsr;
