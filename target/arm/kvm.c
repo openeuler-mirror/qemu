@@ -263,6 +263,10 @@ static void kvm_update_ipiv_cap(KVMState *s)
 {
     int ret;
 
+    if (!s->ipiv) {
+        return;
+    }
+
     if (!kvm_check_extension(s, KVM_CAP_ARM_HISI_IPIV)) {
         return;
     }
@@ -1364,6 +1368,20 @@ static void kvm_arch_set_eager_split_size(Object *obj, Visitor *v,
     s->kvm_eager_split_size = value;
 }
 
+static bool virt_get_ipiv(Object *obj, Error **errp)
+{
+    KVMState *s = KVM_STATE(obj);
+
+    return s->ipiv;
+}
+
+static void virt_set_ipiv(Object *obj, bool value, Error **errp)
+{
+    KVMState *s = KVM_STATE(obj);
+
+    s->ipiv = value;
+}
+
 void kvm_arch_accel_class_init(ObjectClass *oc)
 {
     object_class_property_add(oc, "eager-split-size", "size",
@@ -1372,4 +1390,10 @@ void kvm_arch_accel_class_init(ObjectClass *oc)
 
     object_class_property_set_description(oc, "eager-split-size",
         "Eager Page Split chunk size for hugepages. (default: 0, disabled)");
+
+    object_class_property_add_bool(oc, "ipiv",
+                                  virt_get_ipiv,
+                                  virt_set_ipiv);
+    object_class_property_set_description(oc, "ipiv",
+                                          "Set on/off to enable/disable IPIV");
 }
