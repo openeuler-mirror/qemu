@@ -34,7 +34,6 @@
 #include "hw/irq.h"
 #include "qapi/visitor.h"
 #include "qemu/log.h"
-#include "hw/arm/virt.h"
 
 const KVMCapabilityInfo kvm_arch_required_capabilities[] = {
     KVM_CAP_LAST_INFO
@@ -260,14 +259,9 @@ int kvm_arch_get_default_type(MachineState *ms)
     return fixed_ipa ? 0 : size;
 }
 
-static void kvm_update_ipiv_cap(MachineState *ms, KVMState *s)
+static void kvm_update_ipiv_cap(KVMState *s)
 {
-    VirtMachineState *vms = VIRT_MACHINE(ms);
     int ret;
-
-    if (!vms->ipiv) {
-        return;
-    }
 
     if (!kvm_check_extension(s, KVM_CAP_ARM_HISI_IPIV)) {
         return;
@@ -355,7 +349,7 @@ int kvm_arch_init(MachineState *ms, KVMState *s)
     }
 
     kvm_arm_init_debug(s);
-    kvm_update_ipiv_cap(ms, s);
+    kvm_update_ipiv_cap(s);
 
     ret = kvm_arm_rme_init(ms);
     if (ret) {
