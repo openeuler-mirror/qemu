@@ -10,6 +10,7 @@
 #include "qom/object.h"
 #include "hw/sysbus.h"
 #include "hw/loongarch/virt.h"
+#include "exec/memory.h"
 
 #define LS3A_INTC_IP                 8
 #define EXTIOI_IRQS                  (256)
@@ -56,7 +57,6 @@
 #define  EXTIOI_ENABLE_CPU_ENCODE    (3)
 #define EXTIOI_VIRT_COREMAP_START    (0x40)
 #define EXTIOI_VIRT_COREMAP_END      (0x240)
-#define EXTIOI_SW_COREMAP_FLAG       (1 << 0)
 
 #define TYPE_LOONGARCH_EXTIOI_COMMON "loongarch_extioi_common"
 OBJECT_DECLARE_TYPE(LoongArchExtIOICommonState,
