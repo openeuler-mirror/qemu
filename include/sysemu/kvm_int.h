@@ -122,6 +122,7 @@ struct KVMState
     uint32_t xen_caps;
     uint16_t xen_gnttab_max_frames;
     uint16_t xen_evtchn_max_pirq;
+    bool ipiv;
 };
 
 void kvm_memory_listener_register(KVMState *s, KVMMemoryListener *kml,

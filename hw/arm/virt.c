@@ -3044,20 +3044,6 @@ static void virt_set_its(Object *obj, bool value, Error **errp)
     vms->its = value;
 }
 
-static bool virt_get_ipiv(Object *obj, Error **errp)
-{
-    VirtMachineState *vms = VIRT_MACHINE(obj);
-
-    return vms->ipiv;
-}
-
-static void virt_set_ipiv(Object *obj, bool value, Error **errp)
-{
-    VirtMachineState *vms = VIRT_MACHINE(obj);
-
-    vms->ipiv = value;
-}
-
 static void virt_get_dtb_randomness(Object *obj, Visitor *v, const char *name,
                                     void *opaque, Error **errp)
 {
@@ -4100,11 +4086,6 @@ static void virt_machine_class_init(ObjectClass *oc, void *data)
                                           "in ACPI table header."
                                           "The string may be up to 8 bytes in size");
 
-    object_class_property_add_bool(oc, "ipiv",
-                                   virt_get_ipiv,
-                                   virt_set_ipiv);
-    object_class_property_set_description(oc, "ipiv",
-                                          "Set on/off to enable/disable IPIV");
 }
 
 static char *virt_get_kvm_type(Object *obj, Error **errp G_GNUC_UNUSED)
