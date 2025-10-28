@@ -37,6 +37,51 @@
 #include "qapi/visitor.h"
 #include "qemu/log.h"
 
+/*
+ * SMMCC KVM Vendor hypercall definitions.
+ * ToDo: Include using update-linux-headers.sh
+ */
+#define ARM_SMCCC_FAST_CALL             _AC(1,U)
+#define ARM_SMCCC_TYPE_SHIFT            31
+
+#define ARM_SMCCC_SMC_32                0
+#define ARM_SMCCC_SMC_64                1
+#define ARM_SMCCC_CALL_CONV_SHIFT       30
+
+#define ARM_SMCCC_OWNER_MASK            0x3F
+#define ARM_SMCCC_OWNER_SHIFT           24
+
+#define ARM_SMCCC_FUNC_MASK             0xFFFF
+
+#define ARM_SMCCC_OWNER_VENDOR_HYP      6
+
+
+#define ARM_SMCCC_KVM_FUNC_DISCOVER_IMPL_VER    64
+#define ARM_SMCCC_KVM_FUNC_DISCOVER_IMPL_CPUS   65
+
+#define ARM_SMCCC_CALL_VAL(type, calling_convention, owner, func_num) \
+        (((type) << ARM_SMCCC_TYPE_SHIFT) | \
+        ((calling_convention) << ARM_SMCCC_CALL_CONV_SHIFT) | \
+        (((owner) & ARM_SMCCC_OWNER_MASK) << ARM_SMCCC_OWNER_SHIFT) | \
+        ((func_num) & ARM_SMCCC_FUNC_MASK))
+
+#define ARM_SMCCC_VENDOR_HYP_KVM_DISCOVER_IMPL_VER_FUNC_ID              \
+        ARM_SMCCC_CALL_VAL(ARM_SMCCC_FAST_CALL,                         \
+                           ARM_SMCCC_SMC_64,                            \
+                           ARM_SMCCC_OWNER_VENDOR_HYP,                  \
+                           ARM_SMCCC_KVM_FUNC_DISCOVER_IMPL_VER)
+
+#define ARM_SMCCC_VENDOR_HYP_KVM_DISCOVER_IMPL_CPUS_FUNC_ID             \
+        ARM_SMCCC_CALL_VAL(ARM_SMCCC_FAST_CALL,                         \
+                           ARM_SMCCC_SMC_64,                            \
+                           ARM_SMCCC_OWNER_VENDOR_HYP,                  \
+                           ARM_SMCCC_KVM_FUNC_DISCOVER_IMPL_CPUS)
+
+#define SMCCC_RET_SUCCESS                       0
+#define SMCCC_RET_NOT_SUPPORTED                 -1
+#define SMCCC_RET_NOT_REQUIRED                  -2
+#define SMCCC_RET_INVALID_PARAMETER             -3
+
 const KVMCapabilityInfo kvm_arch_required_capabilities[] = {
     KVM_CAP_LAST_INFO
 };
@@ -392,6 +437,16 @@ int kvm_arch_init(MachineState *ms, KVMState *s)
     ret = kvm_arm_rme_init(ms);
     if (ret) {
         error_report("Failed to enable RME: %s", strerror(-ret));
+    }
+    
+    if (kvm_arm_set_smccc_filter(ARM_SMCCC_VENDOR_HYP_KVM_DISCOVER_IMPL_VER_FUNC_ID,
+                                 KVM_SMCCC_FILTER_FWD_TO_USER)) {
+        error_report("ARM_SMCCC_KVM_FUNC_DISCOVER_IMPL_VER fwd filter install failed");
+    }
+
+    if (kvm_arm_set_smccc_filter(ARM_SMCCC_VENDOR_HYP_KVM_DISCOVER_IMPL_CPUS_FUNC_ID,
+                                 KVM_SMCCC_FILTER_FWD_TO_USER)) {
+        error_report("ARM_SMCCC_KVM_FUNC_DISCOVER_IMPL_CPUS fwd filter install failed");
     }
 
     return ret;
@@ -1131,6 +1186,55 @@ void kvm_arm_vm_state_change(void *opaque, bool running, RunState state)
     }
 }
 
+static bool arm_handle_smcc_kvm_vendor_hypercall(ARMCPU *cpu)
+{
+    MachineState *ms = MACHINE(qdev_get_machine());
+    CPUARMState *env = &cpu->env;
+    uint64_t param[4];
+    int idx;
+    int i;
+
+    for (i = 0; i < 4; i++) {
+        /*
+         * All PSCI functions take explicit 32-bit or native int sized
+         * arguments so we can simply zero-extend all arguments regardless
+         * of which exact function we are about to call.
+         */
+        param[i] = is_a64(env) ? env->xregs[i] : env->regs[i];
+    }
+
+    if (is_a64(env)) {
+        TargetImplCpu *target = ms->target_ipml_cpu;
+
+        switch (param[0]) {
+        case ARM_SMCCC_VENDOR_HYP_KVM_DISCOVER_IMPL_VER_FUNC_ID:
+            if (!ms->target_ipml_cpu_num) {
+                env->xregs[0] = SMCCC_RET_NOT_SUPPORTED;
+                break;
+            }
+            env->xregs[0] = SMCCC_RET_SUCCESS;
+            env->xregs[1] = PSCI_VERSION(1, 0);
+            env->xregs[2] = ms->target_ipml_cpu_num;
+            break;
+        case ARM_SMCCC_VENDOR_HYP_KVM_DISCOVER_IMPL_CPUS_FUNC_ID:
+            idx = param[1];
+            if (idx >= ms->target_ipml_cpu_num) {
+                env->xregs[0] = SMCCC_RET_INVALID_PARAMETER;
+                break;
+            }
+            env->xregs[0] = SMCCC_RET_SUCCESS;
+            env->xregs[1] = target[idx].midr;
+            env->xregs[2] = target[idx].revidr;
+            break;
+        default:
+        return false;
+        }
+    } else {
+        return false;
+    }
+    return true;
+}
+
 /**
  * kvm_arm_handle_dabt_nisv:
  * @cs: CPUState
@@ -1193,9 +1297,12 @@ static int kvm_arm_handle_hypercall(CPUState *cs, struct kvm_run *run)
         env->exception.syndrome = syn_aa64_hvc(0);
     }
     env->exception.target_el = 1;
-    qemu_mutex_lock_iothread();
-    arm_cpu_do_interrupt(cs);
-    qemu_mutex_unlock_iothread();
+
+    if (!arm_handle_smcc_kvm_vendor_hypercall(cpu)) {
+        qemu_mutex_lock_iothread();
+        arm_cpu_do_interrupt(cs);
+        qemu_mutex_unlock_iothread();
+    }
 
     /*
      * For PSCI, exit the kvm_run loop and process the work. Especially
@@ -1220,7 +1327,7 @@ int kvm_arch_handle_exit(CPUState *cs, struct kvm_run *run)
                                        run->arm_nisv.fault_ipa);
         break;
     case KVM_EXIT_HYPERCALL:
-          ret = kvm_arm_handle_hypercall(cs, run);
+        ret = kvm_arm_handle_hypercall(cs, run);
         break;
     default:
         qemu_log_mask(LOG_UNIMP, "%s: un-handled exit reason %d\n",
