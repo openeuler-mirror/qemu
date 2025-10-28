@@ -267,8 +267,9 @@ static int rme_log_realm_create(Error **errp)
         params.flags |= REALM_PARAMS_FLAG_SVE;
         params.sve_vl = cpu->sve_max_vq - 1;
     }
-    params.num_bps = FIELD_EX64(cpu->isar.id_aa64dfr0, ID_AA64DFR0, BRPS);
-    params.num_wps = FIELD_EX64(cpu->isar.id_aa64dfr0, ID_AA64DFR0, WRPS);
+
+    params.num_bps = FIELD_EX64_IDREG(&cpu->isar, ID_AA64DFR0, BRPS);
+    params.num_wps = FIELD_EX64_IDREG(&cpu->isar, ID_AA64DFR0, WRPS);
 
     switch (rme_guest->measurement_algo) {
     case RME_GUEST_MEASUREMENT_ALGORITHM_SHA256:

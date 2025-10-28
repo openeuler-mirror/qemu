@@ -2680,6 +2680,13 @@ static int kvm_init(MachineState *ms)
                             query_stats_schemas_cb);
     }
 
+    if (kvm_check_extension(kvm_state, KVM_CAP_ARM_WRITABLE_IMP_ID_REGS)) {
+        ret = kvm_vm_enable_cap(kvm_state, KVM_CAP_ARM_WRITABLE_IMP_ID_REGS, 0);
+        if (ret) {
+            fprintf(stderr, "Could not enable KVM_CAP_ARM_WRITABLE_IMP_ID_REGS: %d\n", ret);
+        }
+    }
+
     return 0;
 
 err:

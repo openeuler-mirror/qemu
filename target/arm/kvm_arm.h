@@ -237,14 +237,18 @@ typedef struct ARMHostCPUFeatures {
 
 /**
  * kvm_arm_get_host_cpu_features:
+ * @cpu: cpu object
  * @ahcf: ARMHostCPUClass to fill in
- *
+ * @exhaustive: if true, all the feature ID regs are queried instead of
+ *              a subset
+ 
  * Probe the capabilities of the host kernel's preferred CPU and fill
  * in the ARMHostCPUClass struct accordingly.
  *
  * Returns true on success and false otherwise.
  */
-bool kvm_arm_get_host_cpu_features(ARMHostCPUFeatures *ahcf);
+bool kvm_arm_get_host_cpu_features(ARMCPU *cpu, ARMHostCPUFeatures *ahcf,
+                              bool exhaustive);
 
 /**
  * kvm_arm_sve_get_vls:
@@ -262,8 +266,12 @@ uint32_t kvm_arm_sve_get_vls(CPUState *cs);
  *
  * Set up the ARMCPU struct fields up to match the information probed
  * from the host CPU.
+ *
+ * @cpu: cpu object
+ * @exhaustive: if true, all the feature ID regs are queried instead of
+ *              a subset
  */
-void kvm_arm_set_cpu_features_from_host(ARMCPU *cpu);
+void kvm_arm_set_cpu_features_from_host(ARMCPU *cpu, bool exhaustive);
 
 /**
  * kvm_arm_add_vcpu_properties:
@@ -273,6 +281,16 @@ void kvm_arm_set_cpu_features_from_host(ARMCPU *cpu);
  * are the CPU properties with "kvm-" prefixed names.
  */
 void kvm_arm_add_vcpu_properties(Object *obj);
+
+typedef struct ARM64SysReg ARM64SysReg;
+/**
+ * kvm_arm_expose_idreg_properties:
+ * @cpu: The CPU object to generate the properties for
+ * @reg: registers from the host
+ *
+ * analyze the writable mask and generate properties for writable fields
+ */
+void kvm_arm_expose_idreg_properties(ARMCPU *cpu, ARM64SysReg *regs);
 
 /**
  * @cs: CPUState
@@ -461,6 +479,10 @@ void kvm_arm_rme_init_gpa_space(hwaddr highest_gpa, PCIBus *pci_bus);
  */
 Object *kvm_arm_rme_get_measurement_log(void);
 
+int kvm_arm_get_writable_id_regs(ARMCPU *cpu, IdRegMap *idregmap);
+
+void kvm_arm_writable_idregs_to_cpreg_list(ARMCPU *cpu);
+
 #else
 
 /*
@@ -501,10 +523,20 @@ static inline Object *kvm_arm_rme_get_measurement_log(void)
     return NULL;
 }
 
+static inline int kvm_arm_get_writable_id_regs(ARMCPU *cpu, IdRegMap *idregmap)
+{
+    return -ENOSYS;
+}
+
+void kvm_arm_writable_idregs_to_cpreg_list(ARMCPU *cpu)
+{
+    g_assert_not_reached();
+}
 /*
  * These functions should never actually be called without KVM support.
  */
-static inline void kvm_arm_set_cpu_features_from_host(ARMCPU *cpu)
+static inline void kvm_arm_set_cpu_features_from_host(ARMCPU *cpu,
+                                                      bool exhaustive)
 {
     g_assert_not_reached();
 }
