@@ -13,6 +13,7 @@ enum {
     CSRFL_READONLY = (1 << 0),
     CSRFL_EXITTB   = (1 << 1),
     CSRFL_IO       = (1 << 2),
+    CSRFL_UNUSED   = (1 << 3),
 };
 
 typedef struct {
