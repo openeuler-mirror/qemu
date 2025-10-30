@@ -534,7 +534,7 @@ static inline int kvm_arm_get_writable_id_regs(ARMCPU *cpu, IdRegMap *idregmap)
     return -ENOSYS;
 }
 
-void kvm_arm_writable_idregs_to_cpreg_list(ARMCPU *cpu)
+static inline void kvm_arm_writable_idregs_to_cpreg_list(ARMCPU *cpu)
 {
     g_assert_not_reached();
 }
