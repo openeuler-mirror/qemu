@@ -317,6 +317,7 @@ typedef struct HctDevState {
     int group_fd;       /* vfio group fd */
     int group_id;       /* vfio group id */
     int lock_fd;        /* vccp flock fd for this device only */
+    bool migrate_abort_err;
 } HCTDevState;
 
 struct hct_dev_ctrl {
@@ -492,6 +493,7 @@ static Property vfio_hct_properties[] = {
     DEFINE_PROP_STRING("sysfsdev", HCTDevState, vdev.sysfsdev),
     DEFINE_PROP_STRING("dev", HCTDevState, ccp_dev_path),
     DEFINE_PROP_STRING("vsock-device", HCTDevState, vsock_device),
+    DEFINE_PROP_BOOL("migrate-abort-on-error", HCTDevState, migrate_abort_err, false),
     DEFINE_PROP_END_OF_LIST(),
 };
 
@@ -507,7 +509,7 @@ struct VFIODeviceOps vfio_ccp_ops = {
 /* create BAR2, BAR3 and BAR4 space for the virtual machine. */
 static int vfio_hct_region_mmap(HCTDevState *state)
 {
-    int ret;
+    int ret = 0;
     int i;
     struct vfio_region_info *info;
 
@@ -579,7 +581,7 @@ static int hct_ccp_set_mode(HCTDevState *state)
     uint32_t loops= 0;
     uint32_t max_loops = 10000;
     int fd;
-    int ret;
+    int ret = 0;
 
     if (state->vdev.fd <= 0) {
         error_report("fail to get device fd %d.", state->vdev.fd);
@@ -677,7 +679,7 @@ static int hct_get_ccp_index(HCTDevState *state)
 static int hct_api_version_check(void)
 {
     struct hct_dev_ctrl ctrl;
-    int ret;
+    int ret = 0;
 
     ctrl.op = HCT_SHARE_OP_GET_VERSION;
     memcpy(ctrl.version, DEF_VERSION_STRING, sizeof(DEF_VERSION_STRING));
@@ -747,7 +749,7 @@ static void hct_listener_region_add(MemoryListener *listener,
     hwaddr iova;
     Int128 llend, llsize;
     void *vaddr;
-    int ret;
+    int ret = 0;
 
     iova = REAL_HOST_PAGE_ALIGN(section->offset_within_address_space);
     llend = int128_make64(section->offset_within_address_space);
@@ -793,7 +795,7 @@ static void hct_listener_region_del(MemoryListener *listener,
     struct hct_dev_ctrl ctrl;
     hwaddr iova;
     Int128 llend, llsize;
-    int ret;
+    int ret = 0;
 
     iova = REAL_HOST_PAGE_ALIGN(section->offset_within_address_space);
     llend = int128_make64(section->offset_within_address_space);
@@ -1008,7 +1010,7 @@ static int hct_migrate_precopy_notifier(NotifierWithReturn *notifier, void *data
     if (ret != 0 || msg[0] != HCT_MIG_MSG_MAGIC) {
         /* Perform live migration addording to a regular virtual machine. */
         error_report("ret:%d msg[0]:0x%x, please install a newer hct.ko"
-			" for the virtual machine.", ret, msg[0]);
+                     " for the virtual machine.", ret, msg[0]);
         state->migrate_support = 0;
         ret = 0;
         goto exit;
@@ -1016,10 +1018,18 @@ static int hct_migrate_precopy_notifier(NotifierWithReturn *notifier, void *data
         /* We believe that the virtual machine is not ready,
          * so terminate the live migration.
          */
-        error_setg(pnd->errp, "%s[%u] msg[3]:0x%02x, invalid.\n",
-                              __func__, __LINE__, msg[3]);
-        ms->state = MIGRATION_STATUS_CANCELLED;
-        goto exit;
+        if (state->migrate_abort_err) {
+            error_setg(pnd->errp, "%s[%u] msg[3]:0x%02x invalid, notifier fail.\n",
+                                  __func__, __LINE__, msg[3]);
+            ms->state = MIGRATION_STATUS_CANCELLED;
+            goto exit;
+        } else {
+            error_report("%s[%u] msg[3]:0x%02x invalid, notifier fail.\n",
+                         __func__, __LINE__, msg[3]);
+            state->migrate_support = 0;
+            ret = 0;
+            goto exit;
+        }
     }
 
     while (++loops <= MAX_CHECK_LOOPS) {
@@ -1029,19 +1039,37 @@ static int hct_migrate_precopy_notifier(NotifierWithReturn *notifier, void *data
         msg[3] = 0;
         ret = hct_client_send_msg(state, (char *)msg, sizeof(msg), MAX_CONNECT_LOOPS);
         if (ret != 0 || msg[0] != HCT_MIG_MSG_MAGIC) {
-            error_setg(pnd->errp, "ret:%d msg[0]:0x%x, invalid.", ret, msg[0]);
-            ms->state = MIGRATION_STATUS_CANCELLED;
-            goto exit;
+            if (state->migrate_abort_err) {
+                error_setg(pnd->errp, "%s[%u] ret:%d msg[0]:0x%x invalid, notifier fail.\n",
+                                      __func__, __LINE__, ret, msg[0]);
+                ms->state = MIGRATION_STATUS_CANCELLED;
+                goto exit;
+            } else {
+                error_report("%s[%u] ret:%d msg[0]:0x%x invalid, notifier fail.\n",
+                             __func__, __LINE__, ret, msg[0]);
+                state->migrate_support = 0;
+                ret = 0;
+                goto exit;
+            }
         } else if (msg[3] == HCT_MIG_STATE_STOPPED) {
             break;
         }
         sleep(1);
     }
     if (loops > MAX_CHECK_LOOPS) {
-        error_setg(pnd->errp, "%s[%u] loops:%d > MAX_CHECK_LOOPS:%d, will cancel.\n",
-                              __func__, __LINE__, loops, MAX_CHECK_LOOPS);
-        ms->state = MIGRATION_STATUS_CANCELLED;
-        goto exit;
+        if (state->migrate_abort_err) {
+            error_setg(pnd->errp, "%s[%u] loops:%d > MAX_CHECK_LOOPS:%d,"
+                                  " the live migration will be canceled.\n",
+                                  __func__, __LINE__, loops, MAX_CHECK_LOOPS);
+            ms->state = MIGRATION_STATUS_CANCELLED;
+            goto exit;
+        } else {
+            error_report("%s[%u] loops:%d > MAX_CHECK_LOOPS:%d, hct live migration fail.\n",
+                         __func__, __LINE__, loops, MAX_CHECK_LOOPS);
+            state->migrate_support = 0;
+            ret = 0;
+            goto exit;
+        }
     }
 
     info_report("%s: recieved HCT_MIG_MSG_ACK.", __func__);
@@ -1058,7 +1086,7 @@ static void hct_client_connect_timer_cb(void *opaque)
     int msg[16];
     int MAX_LOOP_TIMES = 10;
     static int loops = 0;
-    int ret;
+    int ret = 0;
 
     /* [0]:magic [1]:version [2]:op [3]:sync_state */
     msg[0] = HCT_MIG_MSG_MAGIC;
