@@ -374,3 +374,6 @@ option('qemu_ga_version', type: 'string', value: '',
 
 option('hexagon_idef_parser', type : 'boolean', value : true,
        description: 'use idef-parser to automatically generate TCG code for the Hexagon frontend')
+
+option('mbind_by_proportion', type: 'feature', value: 'auto',
+       description: ' support of one guest numa node alloc memory from multi host nodes')

@@ -624,6 +624,7 @@
 { 'struct': 'MemoryBackendProperties',
   'data': { '*dump': 'bool',
             '*host-nodes': ['uint16'],
+            '*host-nodes-propertion': 'str',
             '*merge': 'bool',
             '*policy': 'HostMemPolicy',
             '*prealloc': 'bool',
