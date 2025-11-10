@@ -23,6 +23,8 @@ global_dirty_changed(unsigned int bitmask) "bitmask 0x%"PRIx32
 
 # cpus.c
 vm_stop_flush_all(int ret) "ret %d"
+all_vcpus_paused(void) ""
+all_vcpus_prepared(void) ""
 
 # vl.c
 vm_state_notify(int running, int reason, const char *reason_str) "running %d reason %d (%s)"
