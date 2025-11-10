@@ -87,6 +87,13 @@
 #include "hw/char/pl011.h"
 #include "qemu/guest-random.h"
 #include "qapi/qmp/qdict.h"
+#include "qemu/log.h"
+#ifdef CONFIG_UB
+#include "hw/ub/ub.h"
+#include "hw/ub/ub_ubc.h"
+#include "hw/ub/hisi/ubc.h"
+#include "hw/ub/hisi/ub_fm.h"
+#endif // CONFIG_UB
 
 #define DEFINE_VIRT_MACHINE_LATEST(major, minor, latest) \
     static void virt_##major##_##minor##_class_init(ObjectClass *oc, \
@@ -1714,7 +1721,17 @@ static void create_virtio_iommu_dt_bindings(VirtMachineState *vms)
                            0x0, vms->iommu_phandle, 0x0, bdf,
                            bdf + 1, vms->iommu_phandle, bdf + 1, 0xffff - bdf);
 }
+#ifdef CONFIG_UB
+static void create_ub(VirtMachineState *vms)
+{
+    DeviceState *ubc;
 
+    ubc = qdev_new(TYPE_BUS_CONTROLLER);
+    qdev_prop_set_uint32(ubc, "ub-bus-controller-msgq-reg-size", UBC_MSGQ_REG_SIZE);
+    qdev_prop_set_uint32(ubc, "ub-bus-controller-fm-msgq-reg-size", FM_MSGQ_REG_SIZE);
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(ubc), &error_fatal);
+}
+#endif // CONFIG_UB
 static void create_pcie(VirtMachineState *vms)
 {
     hwaddr base_mmio = vms->memmap[VIRT_PCIE_MMIO].base;
@@ -2874,6 +2891,9 @@ static void machvirt_init(MachineState *machine)
     create_rtc(vms);
 
     create_pcie(vms);
+#ifdef CONFIG_UB
+    create_ub(vms);
+#endif // CONFIG_UB
 
     if (!has_ged) {
         create_gpio_devices(vms, VIRT_GPIO, sysmem);
