@@ -358,21 +358,12 @@ static void ub_init_wmask(UBDevice *ub_dev)
     cfg1_int_type2_wmask->interrupt_mask = ~0;
     cfg1_int_type2_wmask->interrupt_enable = ~0;
 
-    /* port basic */
-    // set after port_info is initialized
-
-    /* port cap */
-    //  not support yet
-
     /* route table */
     emulated_offset = ub_cfg_offset_to_emulated_offset(UB_ROUTE_TABLE_START, true);
     route_table_wmask = (UbRouteTable *)(ub_dev->wmask + emulated_offset);
     memset(route_table_wmask, 0xff, UB_CFG_SLICE_SIZE);
     route_table_wmask->entry_num = 0;
     route_table_wmask->ers = 0;
-
-    /* route table entry */
-    // not support yet
 }
 
 static void ub_init_w1cmask(UBDevice *ub_dev)
@@ -427,7 +418,7 @@ static uint64_t ub_er_address(UBDevice *dev, uint8_t ers, uint64_t size)
     UbCfg1Basic *cfg1_basic;
     uint64_t emulated_offset;
 
-    if (ers > UB_NUM_REGIONS) {
+    if (ers >= UB_NUM_REGIONS) {
         qemu_log("invalid ers %u\n", ers);
         return UB_ER_UNMAPPED;
     }

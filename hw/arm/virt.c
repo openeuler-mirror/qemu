@@ -1766,8 +1766,8 @@ static void create_ub(VirtMachineState *vms)
     }
 
     ubc = qdev_new(TYPE_BUS_CONTROLLER);
-    qdev_prop_set_uint32(ubc, "ub-bus-controller-msgq-reg-size", UBC_MSGQ_REG_SIZE);
-    qdev_prop_set_uint32(ubc, "ub-bus-controller-fm-msgq-reg-size", FM_MSGQ_REG_SIZE);
+    qdev_prop_set_uint32(ubc, "ub-msgq-reg-size", UBC_MSGQ_REG_SIZE);
+    qdev_prop_set_uint32(ubc, "ub-fm-msgq-reg-size", FM_MSGQ_REG_SIZE);
     sysbus_realize_and_unref(SYS_BUS_DEVICE(ubc), &error_fatal);
 
     /* in ub_bus_controller_realize will call sysbus_init_mmio init memory_region in order,
@@ -1801,7 +1801,7 @@ static void create_ub(VirtMachineState *vms)
         ummu = qdev_new(TYPE_UB_UMMU);
         ubc_state = BUS_CONTROLLER(ubc);
         object_property_set_link(OBJECT(ummu), "primary-bus", OBJECT(ubc_state->bus), &error_abort);
-        /* default set ummu nestd */
+        /* default set ummu nested */
         object_property_set_bool(OBJECT(ummu), "nested", true, &error_abort);
         qdev_prop_set_uint64(ummu, "ub-ummu-reg-size", UMMU_REG_SIZE);
         sysbus_realize_and_unref(SYS_BUS_DEVICE(ummu), &error_fatal);

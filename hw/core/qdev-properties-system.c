@@ -1435,7 +1435,7 @@ static void ub_dev_set_port_num(Object *obj, Visitor *v, const char *name,
         return;
     }
     if ((port_num <= 0) || (port_num > UB_DEV_MAX_NUM_OF_PORT)) {
-        error_setg(&local_err, "illegal port num: %d, set port num bettwen 1 to %u",
+        error_setg(&local_err, "illegal port num: %d, set port num between 1 to %u",
                    port_num, UB_DEV_MAX_NUM_OF_PORT);
         error_propagate(errp, local_err);
     }
