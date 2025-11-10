@@ -25,6 +25,162 @@
 #define WORD_SIZE 2
 #define DWORD_SIZE 4
 
+#define UINT16_MASK 0x0000FFFF
+
+#define UB_DEV_NAME_LEN 64
+#define UB_NUM_REGIONS (VFIO_UB_NUM_REGIONS - 1) /* Exclude the config region */
+#define UB_SUPPORT_MIN_EID 1
+#define UB_SUPPORT_MAX_EID 0xFFFFF
+#define UB_GUID_BASE_CODE_MASK 0x00FF
+
+typedef struct UBIORegion {
+    uint64_t addr; /* current UB mapping address. -1 means not mapped */
+#define UB_ER_UNMAPPED (~(uint64_t)0)
+    uint64_t size;
+    MemoryRegion *memory;
+    MemoryRegion *address_space;
+} UBIORegion;
+
+#define GUID_STR_EXAMPLE "e0fc-a120-0-2-000000-0000000000000000" \
+        "(Vendor-DeviceId-Version-Type-Rsv-SequenceNumber)"
+typedef struct __attribute__ ((__packed__)) UbGuid {
+    unsigned long seq_num : 64;
+    unsigned long rsv : 24;
+    unsigned int type : 4;
+    unsigned int version : 4;
+    unsigned int device_id : 16;
+    unsigned int vendor : 16;
+} UbGuid;
+#define UB_DEV_GUID_STRING_LENGTH   37
+void ub_device_get_str_from_guid(UbGuid *guid, char *guid_str, uint32_t str_len);
+bool ub_device_get_guid_from_str(UbGuid *guid, char *guid_str);
+
+typedef struct UBHostDeviceAddress {
+    UbGuid guid;
+} UBHostDeviceAddress;
+
+enum UbGUIDType {
+    UB_GUID_TYPE_UNINIT = -1,
+    UB_GUID_TYPE_BUS_INSTANCE = 0x0,
+    UB_GUID_TYPE_BUS_CONTROLLER = 0x1,
+    UB_GUID_TYPE_IBUS_CONTROLLER = 0x2,
+    UB_GUID_TYPE_SWITCH = 0x3,
+    UB_GUID_TYPE_ISWITCH = 0x4,
+};
+
+enum UbGUIDBaseCode {
+    UB_GUID_BASE_INSTANCE = 0,
+    UB_GUID_BASE_SWITCH = 4,
+};
+
+enum UbDeviceType {
+    UB_TYPE_UNINIT = -1,
+    UB_TYPE_BUS_INSTANCE,
+    UB_TYPE_DEVICE,
+    UB_TYPE_IDEVICE,
+    UB_TYPE_SWITCH,
+    UB_TYPE_ISWITCH,
+    UB_TYPE_IBUS_CONTROLLER,
+};
+
+static inline const char *ub_dev_get_type_str(enum UbDeviceType type)
+{
+    switch (type) {
+    case UB_TYPE_UNINIT:
+        return "type_uninit";
+    case UB_TYPE_BUS_INSTANCE:
+        return "type_businstance";
+    case UB_TYPE_DEVICE:
+        return "type_device";
+    case UB_TYPE_IDEVICE:
+        return "type_idevice";
+    case UB_TYPE_SWITCH:
+        return "type_switch";
+    case UB_TYPE_ISWITCH:
+        return "type_iswitch";
+    case UB_TYPE_IBUS_CONTROLLER:
+        return "type_ibus_controller";
+    default:
+        return "type_unknown";
+    }
+}
+
+/*
+ * the reserved address space in config space supports a maximum of 4094 ports,
+ * current ubus driver support max 256 ports.
+ * */
+#define UB_DEV_MAX_NUM_OF_PORT                  256
+#define UB_DEV_CONFIG_SPACE_PORT_SIZE           0x40000UL     // 256KiB
+#define UB_DEV_NUM_OF_CFG                       0x2UL
+#define UB_DEV_CONFIG_SPACE_CFG_SIZE            0x40000UL     // 256KiB
+#define UB_DEV_CONFIG_SPACE_ROUTE_TABLE_SIZE    0x40000000UL  // 1GiB
+#define UB_DEV_CONFIG_SPACE_ROUTE_TABLE_START   0x3C0000000UL  // 1GiB
+#define UB_DEV_CONFIG_SPACE_TOTAL_SIZE \
+    (UB_DEV_CONFIG_SPACE_ROUTE_TABLE_START + UB_DEV_CONFIG_SPACE_ROUTE_TABLE_SIZE) // according to frontend code
+
+#define UB_DEV_ID_LEN 64
+typedef struct NeighborInfo {
+    union {
+        char neighbor_id[UB_DEV_ID_LEN];
+        UBDevice *neighbor_dev;
+    };
+    uint32_t local_port_idx;
+    uint32_t neighbor_port_idx;
+} NeighborInfo;
+
+typedef struct UbPortInfo {
+    uint32_t port_num;
+    char *neighbors_cmd;
+    NeighborInfo *neighbors;
+    bool port_info_exist;
+} UbPortInfo;
+
+typedef void UBConfigReadFunc(UBDevice *dev, uint64_t offset,
+                              uint32_t *val, uint32_t dw_mask);
+typedef void UBConfigWriteFunc(UBDevice *dev, uint64_t offset,
+                               uint32_t *val, uint32_t dw_mask);
+
+struct UBDevice {
+    DeviceState qdev;
+    /* UB config space */
+    uint8_t *config;
+    /* UB config space right mask */
+    uint8_t *wmask;
+    uint8_t *w1cmask;
+    enum UbDeviceType dev_type;
+    char name[UB_DEV_NAME_LEN];
+    uint32_t eid;
+    uint32_t bus_instance_eid;
+    uint32_t cna;
+    uint32_t ue_idx;
+    uint32_t rst_cnt;
+    bool host_dev;
+    UbGuid guid;
+    UbPortInfo port;
+    UBIORegion io_regions[UB_NUM_REGIONS];
+    UBConfigReadFunc *config_read;
+    UBConfigWriteFunc *config_write;
+    int (* bus_instance_verify)(UBDevice *dev, Error **errp);
+
+    QLIST_ENTRY(UBDevice) node;
+};
+
+typedef void UBUnregisterFunc(UBDevice *dev);
+
+typedef struct UBDeviceClass {
+    DeviceClass parent_class;
+
+    void (*realize)(UBDevice *dev, Error **errp);
+    UBUnregisterFunc *exit;
+    UBConfigReadFunc *config_read;
+    UBConfigWriteFunc *config_write;
+} UBDeviceClass;
+
+#define TYPE_UB_DEVICE "ub-device"
+DECLARE_OBJ_CHECKERS(UBDevice, UBDeviceClass,
+                     UB_DEVICE, TYPE_UB_DEVICE)
+
+
 static inline void ub_set_byte(uint8_t *config, uint8_t val)
 {
     *config = val;

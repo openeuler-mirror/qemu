@@ -138,6 +138,9 @@ typedef struct Visitor Visitor;
 typedef struct VMChangeStateEntry VMChangeStateEntry;
 typedef struct VMStateDescription VMStateDescription;
 
+/* UB typedef */
+typedef struct UBDevice UBDevice;
+
 /*
  * Pointer types
  * Such typedefs should be limited to cases where the typedef's users
