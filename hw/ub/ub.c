@@ -1147,7 +1147,7 @@ int ub_device_set_iommu_device(UBDevice *dev, HostIOMMUDevice *hoid, Error **err
     UBBus *bus = ub_get_bus(dev);
 
     if (bus->iommu_ops && bus->iommu_ops->set_iommu_device) {
-        return bus->iommu_ops->set_iommu_device(bus, bus->iommu_opaque, dev->eid, hoid, errp);
+        return !bus->iommu_ops->set_iommu_device(bus, bus->iommu_opaque, dev->eid, hoid, errp);
     }
 
     return 0;
