@@ -1792,7 +1792,7 @@ static void create_ub(VirtMachineState *vms)
                                 mmio_alias);
 
     mmio_alias = g_new0(MemoryRegion, 1);
-    memory_region_init_alias(mmio_alias, OBJECT(ubc), "ub-idev-fers-as",
+    memory_region_init_alias(mmio_alias, OBJECT(ubc), "ub-idev-ers-as",
                              mmio_reg, vms->memmap[VIRT_UB_IDEV_ERS].base,
                              vms->memmap[VIRT_UB_IDEV_ERS].size);
     memory_region_add_subregion(get_system_memory(),
