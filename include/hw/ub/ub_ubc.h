@@ -52,6 +52,7 @@ struct BusControllerState {
     MemoryRegion io_mmio; /* ub mmio hpa memory region */
     uint32_t mmio_size;
     bool mig_enabled;
+    HiMsgqInfo msgq;
     BusControllerDev *ubc_dev;
     UBBus *bus;
     QLIST_ENTRY(BusControllerState) node;

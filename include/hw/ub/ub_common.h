@@ -413,4 +413,7 @@ typedef struct MsgPktHeader { /* TODO, check byte order */
 } MsgPktHeader;
 #define MSG_PKT_HEADER_SIZE 32
 
+uint32_t fill_rq(BusControllerState *s, void *rsp, uint32_t rsp_size);
+uint32_t fill_cq(BusControllerState *s, HiMsgCqe *cqe);
+
 #endif

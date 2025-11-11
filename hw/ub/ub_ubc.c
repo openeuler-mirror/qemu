@@ -75,6 +75,27 @@ static void ub_msgq_reg_write(void *opaque, hwaddr addr, uint64_t val, unsigned 
         qemu_log("invalid argument len 0x%x val 0x%lx\n", len, val);
         return;
     }
+
+    /* only support 1 queue */
+    switch (addr) {
+    case SQ_PI:
+        msgq_process_task(s, val);
+        break;
+    case SQ_ADDR_H:
+        msgq_sq_init(s);
+        break;
+    case CQ_ADDR_H:
+        msgq_cq_init(s);
+        break;
+    case RQ_ADDR_H:
+        msgq_rq_init(s);
+        break;
+    case MSGQ_RST:
+        msgq_handle_rst(s);
+        break;
+    default:
+        break;
+    }
 }
 
 static const MemoryRegionOps ub_msgq_reg_ops = {

@@ -131,3 +131,7 @@ uint64_t ub_cfg_offset_to_emulated_offset(uint64_t offset, bool check_success)
 
     return emulate_offset;
 }
+
+void handle_msg_cfg(void *opaque, HiMsgSqe *sqe, void *payload)
+{
+}
