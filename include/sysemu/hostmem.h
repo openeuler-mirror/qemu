@@ -70,6 +70,9 @@ struct HostMemoryBackend {
     ThreadContext *prealloc_context;
     DECLARE_BITMAP(host_nodes, MAX_NODES + 1);
     HostMemPolicy policy;
+#ifdef CONFIG_MBIND_PROPORTION
+    char *propertion;
+#endif
 
     MemoryRegion mr;
 };

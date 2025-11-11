@@ -20,6 +20,12 @@
 #include "qom/object_interfaces.h"
 #include "qemu/mmap-alloc.h"
 #include "qemu/madvise.h"
+#ifdef CONFIG_MBIND_PROPORTION
+#include "qemu/option.h"
+#include "sysemu/sysemu.h"
+#include "qemu/log.h"
+#include "qemu/units.h"
+#endif
 
 #ifdef CONFIG_NUMA
 #include <numaif.h>
@@ -32,6 +38,12 @@ QEMU_BUILD_BUG_ON(HOST_MEM_POLICY_DEFAULT != MPOL_DEFAULT);
 QEMU_BUILD_BUG_ON(HOST_MEM_POLICY_PREFERRED != MPOL_PREFERRED);
 QEMU_BUILD_BUG_ON(HOST_MEM_POLICY_BIND != MPOL_BIND);
 QEMU_BUILD_BUG_ON(HOST_MEM_POLICY_INTERLEAVE != MPOL_INTERLEAVE);
+
+#ifdef CONFIG_MBIND_PROPORTION
+#define PROPORTION_MAX_NUM 11
+#define PER_PROPORTION_MAX_LENGTH 32
+#define PROPORTION_MAX_LENGTH 512
+#endif
 #endif
 
 char *
@@ -136,6 +148,22 @@ out:
     error_setg(errp, "NUMA node binding are not supported by this QEMU");
 #endif
 }
+
+#ifdef CONFIG_MBIND_PROPORTION
+static void
+host_memory_backend_set_propertion(Object *obj, Visitor *v, const char *name,
+                                   void *opaque, Error **errp)
+{
+#ifdef CONFIG_NUMA
+    HostMemoryBackend *backend = MEMORY_BACKEND(obj);
+    char *pro;
+    visit_type_str(v, name, &pro, errp);
+    backend->propertion = pro;
+#else
+    error_setg(errp, "NUMA node binding are not supported by this QEMU");
+#endif
+}
+#endif
 
 static int
 host_memory_backend_get_policy(Object *obj, Error **errp G_GNUC_UNUSED)
@@ -319,6 +347,95 @@ size_t host_memory_backend_pagesize(HostMemoryBackend *memdev)
     return pagesize;
 }
 
+#ifdef CONFIG_MBIND_PROPORTION
+static int mbind_by_proportions(void *ptr, const char *bind_proportions, uint64_t sz)
+{
+    char proportion_str[PROPORTION_MAX_LENGTH];
+    char proportions[PROPORTION_MAX_NUM][PER_PROPORTION_MAX_LENGTH];
+    int proportions_num, i;
+    char *token;
+    uint64_t size = 0;
+    long mbind_ret = -1;
+    uint64_t size_total = 0;
+
+    if (strlen(bind_proportions) >= PROPORTION_MAX_LENGTH) {
+        qemu_log("the lenth of bind_proportions is too long, max len is %d\n", PROPORTION_MAX_LENGTH);
+        return -1;
+    }
+    if (memcpy(proportion_str, bind_proportions, strlen(bind_proportions) + 1) == NULL) {
+        qemu_log("failed to copy bind_proportions\n");
+        return -1;
+    }
+    proportions_num = 0;
+    token = strtok(proportion_str, ":");
+    while (token != NULL) {
+        if (strlen(token) + 1 >= PER_PROPORTION_MAX_LENGTH ) {
+            qemu_log("bind_proportions token is too long, max len is %d\n", PER_PROPORTION_MAX_LENGTH);
+            return -1;
+        }
+        if (memcpy(proportions[proportions_num], token, strlen(token) + 1) == NULL) {
+            qemu_log("failed to copy token\n");
+            return -1;
+        }
+        proportions_num++;
+        if (proportions_num >= PROPORTION_MAX_NUM) {
+            qemu_log("invalid proportions number, max is %d\n", PROPORTION_MAX_NUM);
+            return -1;
+        }
+        token = strtok(NULL, ":");
+    }
+
+    for (i = 0; i < proportions_num; i++) {
+        unsigned long tmp_lastbit, tmp_maxnode;
+        char prop[PROPORTION_MAX_LENGTH];
+        char *end, *prop_token, *pos;
+        long int node_id;
+        long size_token;
+        DECLARE_BITMAP(tmp_host_nodes, MAX_NODES + 1) = {0};
+
+        ptr = (void*)((char*)ptr + size);
+        if (memcpy(prop, proportions[i], strlen(proportions[i]) + 1) == NULL) {
+            qemu_log("failed to copy propertion");
+            return -1;
+        }
+        prop_token = strtok(prop, "-");
+        if (prop_token == NULL) {
+            return -1;
+        }
+        size_token = strtol(prop_token, &end, 10);
+        if (*end != '\0') {
+            return -1;
+        }
+        size = size_token * MiB;
+        size_total += size;
+        prop_token = strtok(NULL, "-");
+        pos = strstr(prop_token, "node");
+        pos += strlen("node");
+        node_id = strtol(pos, &end, 10);
+        if (*end != '\0') {
+            perror("failed to convert node_id from string to number");
+            return -1;
+        }
+        bitmap_set(tmp_host_nodes, node_id, 1);
+        tmp_lastbit = find_last_bit(tmp_host_nodes, MAX_NODES);
+        tmp_maxnode = (tmp_lastbit + 1) % (MAX_NODES + 1);
+        qemu_log("mbind args: addr %p, size  '%" PRIu64 "', node: %ld, \n", ptr, size, node_id);
+        mbind_ret = mbind(ptr, size, MPOL_BIND, tmp_host_nodes, tmp_maxnode + 1,
+            MPOL_MF_STRICT | MPOL_MF_MOVE);
+        if (mbind_ret < 0) {
+            perror("failed to mbind address to host node");
+            return -1;
+        }
+    }
+    if (size_total != sz) {
+        qemu_log("invalid proportion config, length %" PRIu64 " is not same as "
+            "all tokens '%" PRIu64 "'", sz, size_total);
+            return -1;
+    }
+    return 0;
+}
+#endif
+
 static void
 host_memory_backend_memory_complete(UserCreatable *uc, Error **errp)
 {
@@ -352,6 +469,17 @@ host_memory_backend_memory_complete(UserCreatable *uc, Error **errp)
          * this doesn't catch hugepage case. */
         unsigned flags = MPOL_MF_STRICT | MPOL_MF_MOVE;
         int mode = backend->policy;
+#ifdef CONFIG_MBIND_PROPORTION
+        const char *proportion = backend->propertion;
+        if (proportion != NULL) {
+            if (mbind_by_proportions(ptr, proportion, sz) < 0) {
+                error_setg(errp, "failed to mbind_by_proportions");
+                return;
+            }
+            free(backend->propertion);
+            goto prealloc;
+        }
+#endif
 
         /* check for invalid host-nodes and policies and give more verbose
          * error messages than mbind(). */
@@ -398,6 +526,9 @@ host_memory_backend_memory_complete(UserCreatable *uc, Error **errp)
          * This is necessary to guarantee memory is allocated with
          * specified NUMA policy in place.
          */
+#ifdef CONFIG_MBIND_PROPORTION
+prealloc:
+#endif
         if (backend->prealloc) {
             qemu_prealloc_mem(memory_region_get_fd(&backend->mr), ptr, sz,
                               backend->prealloc_threads,

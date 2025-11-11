@@ -566,6 +566,13 @@ have_tpm = get_option('tpm') \
   .require(targetos != 'windows', error_message: 'TPM emulation only available on POSIX systems') \
   .allowed()
 
+# mbind_proportion
+have_mbind_proportion = get_option('mbind_by_proportion') \
+  .require(targetos == 'linux', error_message: 'mbind_by_proportion is supported only on Linux') \
+  .allowed()
+
+config_host_data.set('CONFIG_MBIND_PROPORTION', have_mbind_proportion)
+
 # vhost
 have_vhost_user = get_option('vhost_user') \
   .disable_auto_if(targetos != 'linux') \
@@ -4487,6 +4494,7 @@ summary_info += {'libudev':           libudev}
 summary_info += {'FUSE lseek':        fuse_lseek.found()}
 summary_info += {'selinux':           selinux}
 summary_info += {'libdw':             libdw}
+summary_info += {'mbind proportion':  have_mbind_proportion}
 summary(summary_info, bool_yn: true, section: 'Dependencies')
 
 if host_arch == 'unknown'

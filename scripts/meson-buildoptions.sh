@@ -225,6 +225,9 @@ meson_options_help() {
   printf "%s\n" '  zstd            zstd compression support'
   printf "%s\n" '  qpl             Query Processing Library support'
   printf "%s\n" '  uadk            UADK Library support'
+  printf "%s\n" '  mbind-by-proportion'
+  printf "%s\n" '                  support of one guest numa node alloc memory from multi'
+  printf "%s\n" '                  host nodes'
 }
 _meson_option_parse() {
   case $1 in
@@ -571,6 +574,8 @@ _meson_option_parse() {
     --disable-qpl) printf "%s" -Dqpl=disabled ;;
     --enable-uadk) printf "%s" -Duadk=enabled ;;
     --disable-uadk) printf "%s" -Duadk=disabled ;;
+    --enable-mbind-by-proportion) printf "%s" -Dmbind_by_proportion=enabled ;;
+    --disable-mbind-by-proportion) printf "%s" -Dmbind_by_proportion=disabled ;;
     *) return 1 ;;
   esac
 }
