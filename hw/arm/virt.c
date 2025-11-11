@@ -98,6 +98,7 @@
 #include "hw/ub/hisi/ub_fm.h"
 #include "hw/ub/ub_ummu.h"
 #include "hw/ub/ub_common.h"
+#include "hw/ub/ub_config.h"
 #endif // CONFIG_UB
 
 #define DEFINE_VIRT_MACHINE_LATEST(major, minor, latest) \
@@ -1756,6 +1757,11 @@ static void create_ub(VirtMachineState *vms)
     DeviceState *ubc;
     MemoryRegion *mmio_reg;
     MemoryRegion *mmio_alias;
+
+    if (ub_cfg_addr_map_table_init() < 0) {
+        qemu_log("failed to init ub cfg addr map table\n");
+        exit(1);
+    }
 
     ubc = qdev_new(TYPE_BUS_CONTROLLER);
     qdev_prop_set_uint32(ubc, "ub-bus-controller-msgq-reg-size", UBC_MSGQ_REG_SIZE);

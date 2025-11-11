@@ -314,5 +314,103 @@
     (((~0ULL) - (1ULL << (l)) + 1) & \
       (~0ULL >> (BITS_PER_LONG_LONG - 1 - (h))))
 #define DASH_SZ 3
+/* The caller is responsible for free memory. */
+char *line_generator(uint8_t len);
+enum UbMsgType {
+    MSG_REQ = 0,
+    MSG_RSP = 1
+};
+
+enum UbMsgCode {
+    UB_MSG_CODE_RAS  =  0,
+    UB_MSG_CODE_LINK =  1,
+    UB_MSG_CODE_CFG  =  2,
+    UB_MSG_CODE_VDM  =  3,
+    UB_MSG_CODE_EXCH =  4,
+    UB_MSG_CODE_SEC  =  5,
+    UB_MSG_CODE_POOL =  6,
+    UB_MSG_CODE_MAX  =  7
+};
+
+struct UbLinkHeader {
+    uint32_t plen : 14;
+    uint32_t rm : 2;
+    uint32_t cfg : 4;
+    uint32_t rsvd1 : 1;
+    uint32_t vl : 4;
+    uint32_t rsvd0 : 1;
+    uint32_t crd_vl : 4;
+    uint32_t ack : 1;
+    uint32_t crd : 1;
+};
+#define UB_CLAN_LINK_CFG 6
+
+struct ClanNetworkHeader {
+    /* DW0 */
+    uint32_t dcna : 16;
+    uint32_t scna : 16;
+    /* DW1 */
+#define NTH_NLP_WITH_TPH 0
+#define NTH_NLP_WITHOUT_TPH 1
+    uint32_t nth_nlp : 3;
+    uint32_t mgmt : 1;
+    uint32_t sl : 4;
+    uint32_t lb : 8;
+    uint32_t cc : 16;
+};
+
+typedef struct MsgExtendedHeader {
+    uint32_t plen : 12;
+    uint32_t rsvd : 4;
+    uint32_t rsp_status : 8;
+    union {
+        struct {
+            uint8_t type : 1;
+            uint8_t msg_code : 3;
+            uint8_t sub_msg_code : 4;
+        };
+        uint8_t code;
+    };
+} MsgExtendedHeader;
+
+typedef struct MsgPktHeader { /* TODO, check byte order */
+    /* DW0 */
+    struct UbLinkHeader ulh;
+    /* DW1-DW2 */
+    struct ClanNetworkHeader nth;
+    /* DW3 */
+    uint32_t seid_h : 8;
+    uint32_t upi : 16;
+#define CTPH_NLP_UPI_40BITS_UEID 2
+    uint32_t ctph_nlp : 4; /* tp header */
+    uint32_t pad : 2;
+#define CTPH_OPCODE_NOT_CNP 0
+    uint32_t tp_opcode : 2;
+    /* DW4 */
+    uint32_t deid : 20;
+    uint32_t seid_l : 12;
+    /* DW5 */
+    uint32_t src_tassn : 16;
+    uint32_t taver : 3;
+    uint32_t tk_vld : 1;
+    uint32_t udf : 4;
+#define TAH_OPCODE_MSG 0x14
+    uint32_t ta_opcode : 8;
+    /* DW6 */
+    uint32_t sjetty : 20;
+    uint32_t sjt_type : 2;
+    uint32_t rsv0 : 3;
+    uint32_t retry : 1;
+    uint32_t se : 1;
+    uint32_t jetty_en : 1;
+    uint32_t rsv1 : 1;
+    uint32_t odr : 3;
+    /* DW7 */
+    struct MsgExtendedHeader msgetah;
+
+    /* DW8~DW11 */
+    char payload[0]; /* payload */
+} MsgPktHeader;
+#define MSG_PKT_HEADER_SIZE 32
 
 #endif
