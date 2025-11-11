@@ -513,6 +513,11 @@ static int kvm_mem_flags(MemoryRegion *mr)
     if (readonly && kvm_readonly_mem_allowed) {
         flags |= KVM_MEM_READONLY;
     }
+#ifdef CONFIG_HUGEPAGE_POD
+    if (memory_region_is_huge_pod(mr)) {
+        flags |= KVM_MEM_HUGE_POD;
+    }
+#endif
     return flags;
 }
 
@@ -4232,6 +4237,41 @@ void query_stats_schemas_cb(StatsSchemaList **result, Error **errp)
         query_stats_schema_vcpu(first_cpu, &stats_args);
     }
 }
+
+#ifdef CONFIG_HUGEPAGE_POD
+int kvm_update_touched_log(void)
+{
+    return kvm_vm_ioctl(kvm_state, KVM_POD_TOUCHED_LOG, NULL);
+}
+
+int kvm_clear_slot_dirty_bitmap(void *ram)
+{
+    KVMState *s = kvm_state;
+    KVMMemoryListener *kml;
+    int i;
+    int ret = -1;
+
+    if (!s)
+        return ret;
+
+    kml = &s->memory_listener;
+    kvm_slots_lock();
+    for (i = 0; i < s->nr_slots; i++) {
+        KVMSlot *mem = &kml->slots[i];
+
+        if (ram >= mem->ram && ram < mem->ram + mem->memory_size) {
+            kvm_slot_reset_dirty_pages(mem);
+            ret = 0;
+
+            qemu_log("Reset kvm slot dirty bitmap for ram %p", ram);
+            break;
+        }
+    }
+    kvm_slots_unlock();
+
+    return ret;
+}
+#endif
 
 void kvm_mark_guest_state_protected(void)
 {

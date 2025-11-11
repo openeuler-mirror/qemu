@@ -67,6 +67,10 @@
 #include "options.h"
 #include "sysemu/dirtylimit.h"
 #include "qemu/sockets.h"
+#ifdef CONFIG_HUGEPAGE_POD
+#include "qemu/log-for-trace.h"
+#include "sysemu/kvm.h"
+#endif
 
 #define DEFAULT_FD_MAX 4096
 
@@ -3777,3 +3781,33 @@ static void register_migration_types(void)
 }
 
 type_init(register_migration_types);
+
+#ifdef CONFIG_HUGEPAGE_POD
+#define TOUCHED_LOG_TRY_TIME_MAX 3
+int ram_init_touched_log(void)
+{
+    int ret;
+    int try_times = 0;
+
+    qemu_log("start init touched log\n");
+    while(try_times < TOUCHED_LOG_TRY_TIME_MAX) {
+        ret = kvm_update_touched_log();
+        if (!ret) {
+            qemu_log("end init touched log\n");
+            return ret;
+        }
+        if (ret == -EINTR) {
+            try_times++;
+            continue;
+        }
+        if (ret) {
+            if (ret == -ENOSYS) {
+                qemu_log("kvm not support touched log\n");
+            }
+            qemu_log("touched log failed (%d)\n", ret);
+            return ret;
+        }
+    }
+    return -EINTR;
+}
+#endif

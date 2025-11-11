@@ -77,6 +77,10 @@
 #include "qemu/userfaultfd.h"
 #endif /* defined(__linux__) */
 
+#ifdef CONFIG_HUGEPAGE_POD
+#include "sysemu/kvm.h"
+#endif
+
 /***********************************************************/
 /* ram save/restore */
 
@@ -3255,6 +3259,10 @@ static void ram_init_bitmaps(RAMState *rs)
     migration_bitmap_clear_discarded_pages(rs);
 }
 
+#ifdef CONFIG_HUGEPAGE_POD
+static int ram_init_touched_bitmap(RAMState *rs);
+#endif
+
 static int ram_init_all(RAMState **rsp)
 {
     if (ram_state_init(rsp)) {
@@ -3267,6 +3275,11 @@ static int ram_init_all(RAMState **rsp)
     }
 
     ram_init_bitmaps(*rsp);
+#ifdef CONFIG_HUGEPAGE_POD
+    if (ram_init_touched_bitmap(*rsp)) {
+        return -1;
+    }
+#endif
 
     return 0;
 }
@@ -4794,3 +4807,54 @@ void ram_mig_init(void)
     register_savevm_live("ram", 0, 4, &savevm_ram_handlers, &ram_state);
     ram_block_notifier_add(&ram_mig_ram_notifier);
 }
+
+#ifdef CONFIG_HUGEPAGE_POD
+static int ram_init_touched_bitmap(RAMState *rs)
+{
+    RAMBlock *block;
+    bool has_pod = false;
+
+    qemu_mutex_lock_ramlist();
+    rcu_read_lock();
+    RAMBLOCK_FOREACH_NOT_IGNORED(block) {
+        if (!memory_region_is_huge_pod(block->mr)) {
+            continue;
+        }
+
+        kvm_clear_slot_dirty_bitmap(block->host);
+        has_pod = true;
+    }
+    rcu_read_unlock();
+    qemu_mutex_unlock_ramlist();
+
+    if (!has_pod) {
+        return 0;
+    }
+
+    if (ram_init_touched_log()) {
+        error_report("POD: Init touched log failed\n");
+        return -1;
+    }
+
+    info_report("Start update touched log bitmaps\n");
+    qemu_mutex_lock_ramlist();
+    rcu_read_lock();
+    RAMBLOCK_FOREACH_NOT_IGNORED(block) {
+        if (!memory_region_is_huge_pod(block->mr)) {
+            continue;
+        }
+
+        ram_state->migration_dirty_pages -=
+                  bitmap_count_one_with_offset(block->bmap, 0,
+                                               block->used_length >> TARGET_PAGE_BITS);
+        bitmap_clear(block->bmap, 0, block->used_length >> TARGET_PAGE_BITS);
+    }
+    migration_bitmap_sync_precopy(rs, false);
+    rcu_read_unlock();
+    qemu_mutex_unlock_ramlist();
+
+    info_report("End update touched log bitmaps, touched pages %lu\n",
+            (unsigned long)ram_state->migration_dirty_pages);
+    return 0;
+}
+#endif

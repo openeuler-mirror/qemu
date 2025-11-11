@@ -573,6 +573,13 @@ have_mbind_proportion = get_option('mbind_by_proportion') \
 
 config_host_data.set('CONFIG_MBIND_PROPORTION', have_mbind_proportion)
 
+# hugepage pod
+have_hugepage_pod = get_option('hugepage_pod') \
+  .require(targetos == 'linux', error_message: 'hugepage_pod is supported only on Linux') \
+  .allowed()
+
+config_host_data.set('CONFIG_HUGEPAGE_POD', have_hugepage_pod)
+
 # vhost
 have_vhost_user = get_option('vhost_user') \
   .disable_auto_if(targetos != 'linux') \
@@ -4495,6 +4502,7 @@ summary_info += {'FUSE lseek':        fuse_lseek.found()}
 summary_info += {'selinux':           selinux}
 summary_info += {'libdw':             libdw}
 summary_info += {'mbind proportion':  have_mbind_proportion}
+summary_info += {'hugepage pod':      have_hugepage_pod}
 summary(summary_info, bool_yn: true, section: 'Dependencies')
 
 if host_arch == 'unknown'
