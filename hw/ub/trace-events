@@ -1,3 +1,7 @@
+# ub.c
+ub_update_mappings(int i, uint64_t region_size, uint64_t old_addr, uint64_t new_addr) "region[%d], size: 0x%lx, old_addr: 0x%lx, new_addr: 0x%lx"
+ub_update_mappings_add(uint64_t new_addr) "commit region addr to 0x%lx"
+
 # ub_enum.c
 enum_query_set_rsp_port_num(uint32_t num) "tlv total num ports is %u"
 handle_enum_query_request(uint32_t hops, uint32_t opcode, uint32_t idx_start, uint32_t num_ports, uint32_t max_num_ports, char *guid) "hops: %u, opcode: %u, port_idx_start:%u, rsp_num_ports:%u, max_num_ports:%u guid %s"
