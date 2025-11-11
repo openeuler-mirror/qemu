@@ -24,7 +24,11 @@
 #include "hw/qdev-properties.h"
 #include "hw/qdev-properties-system.h"
 #include "hw/ub/ub.h"
+#include "hw/ub/ub_bus.h"
 #include "hw/ub/ub_ubc.h"
+#include "hw/ub/ub_config.h"
+#include "hw/ub/hisi/ubc.h"
+#include "hw/ub/hisi/ub_mem.h"
 #include "migration/vmstate.h"
 
 static uint64_t ub_msgq_reg_read(void *opaque, hwaddr addr, unsigned len)
@@ -205,6 +209,170 @@ static const TypeInfo ub_bus_controller_type_info = {
     .class_init = ub_bus_controller_class_init,
 };
 
+static void ub_bus_controller_cfg0_route_table_init(UBDevice *ub_dev)
+{
+    uint64_t emulated_offset = ub_cfg_offset_to_emulated_offset(UB_ROUTE_TABLE_START, true);
+    UbRouteTable *route_table = (UbRouteTable *)(ub_dev->config + emulated_offset);
+
+    /* The prerequisite is that each device uses only one port.
+     * The Ub controller own a CNA, each port own a CNA, and each device own a CNA. */
+    route_table->entry_num = UB_DEV_MAX_NUM_OF_PORT * 2 + 1;
+    route_table->ers = 1;  /* support exact route */
+}
+
+static void ub_bus_controller_space_cfg0_init(UBDevice *ub_dev)
+{
+    UbCfg0Basic *cfg0_basic;
+    Cfg0SupportFeature *support_feature;
+    UbCfg0ShpCap *shp_cap;
+    UbSlotInfo *slot_info;
+    uint64_t emulated_offset;
+
+    emulated_offset = ub_cfg_offset_to_emulated_offset(UB_CFG0_BASIC_START, true);
+    cfg0_basic = (UbCfg0Basic *)(ub_dev->config + emulated_offset);
+    cfg0_basic->header.slice_version = UB_SLICE_VERSION;
+    cfg0_basic->header.slice_used_size = UB_CFG0_BASIC_SLICE_USED_SIZE;
+    cfg0_basic->total_num_of_port = ub_dev->port.port_num & UINT16_MASK;
+    cfg0_basic->total_num_of_ue = 1;
+    cfg0_basic->cap_bitmap[CFG0_CAP2_SHP_INDEX / BITS_PER_BYTE] =
+        1 << (CFG0_CAP2_SHP_INDEX % BITS_PER_BYTE);
+    support_feature = &cfg0_basic->support_feature;
+    support_feature->bits.entity_available = 1;
+    support_feature->bits.mtu_supported = 1;
+    support_feature->bits.route_table_supported = SUPPORTED;
+    support_feature->bits.upi_supported = SUPPORTED;
+    support_feature->bits.broker_supported = NOT_SUPPORTED;
+    support_feature->bits.switch_supported = SUPPORTED;
+    support_feature->bits.cc_supported = NOT_SUPPORTED;
+    /* SHP CAP */
+    emulated_offset = ub_cfg_offset_to_emulated_offset(UB_CFG0_CAP2_SHP_START, true);
+    shp_cap = (UbCfg0ShpCap *)(ub_dev->config + emulated_offset);
+    shp_cap->slot_num = 1;
+    shp_cap->header.slice_version = UB_SLICE_VERSION;
+    shp_cap->header.slice_used_size = (shp_cap->slot_num * sizeof(UbSlotInfo) + sizeof(UbCfg0ShpCap)) / DWORD_SIZE;
+    for (int i = 0; i < shp_cap->slot_num; ++i) {
+        slot_info = (UbSlotInfo *)((uint8_t *)shp_cap->slot_info + i * sizeof(UbSlotInfo));
+        slot_info->start_port_idx = 0;
+        slot_info->end_port_idx = cfg0_basic->total_num_of_port - 1;
+        slot_info->pp_ctrl = 1;
+        slot_info->ms_ctrl = 1;
+        slot_info->pd_ctrl = 1;
+        slot_info->pds_ctrl = 1;
+    }
+    ub_bus_controller_cfg0_route_table_init(ub_dev);
+}
+
+static void ub_bus_controller_space_cfg1_init(UBDevice *ub_dev)
+{
+    UbCfg1Basic *cfg1_basic;
+    Cfg1SupportFeature *support_feature;
+    UbCfg1DecoderCap *dec_cap;
+    uint64_t emulated_offset;
+
+    /* basic */
+    emulated_offset = ub_cfg_offset_to_emulated_offset(UB_CFG1_BASIC_START, true);
+    cfg1_basic = (UbCfg1Basic *)(ub_dev->config + emulated_offset);
+    cfg1_basic->header.slice_version = UB_SLICE_VERSION;
+    cfg1_basic->header.slice_used_size = UB_CFG1_BASIC_SLICE_USED_SIZE;
+
+    cfg1_basic->cap_bitmap[CFG1_DECODER_CAP_INDEX / BITS_PER_BYTE] |=
+        1 << (CFG1_DECODER_CAP_INDEX % BITS_PER_BYTE);
+
+    support_feature = &cfg1_basic->support_feature;
+    support_feature->bits.mgs = SUPPORTED;
+    support_feature->bits.ubbas = NOT_SUPPORTED;
+    support_feature->bits.ers0s = SUPPORTED;
+    support_feature->bits.ers1s = NOT_SUPPORTED;
+    support_feature->bits.ers2s = SUPPORTED;
+    support_feature->bits.cdmas = SUPPORTED;
+    support_feature->bits.matt_juris = UB_DRIVE;
+    cfg1_basic->ers_space_size[0] = UBC_ERS0_SPACE_SIZE;
+    cfg1_basic->ers_space_size[1] = UBC_ERS1_SPACE_SIZE;
+    cfg1_basic->ers_space_size[2] = UBC_ERS2_SPACE_SIZE;
+    cfg1_basic->ers_start_addr[0] = UBC_ERS0_SPACE_ADDR;
+    cfg1_basic->ers_start_addr[1] = UBC_ERS1_SPACE_ADDR;
+    cfg1_basic->ers_start_addr[2] = UBC_ERS2_SPACE_ADDR;
+    cfg1_basic->eid_upi_ten = UBC_EID_UPI_TEN_DEFAULT_VAL;
+    cfg1_basic->class_code = UBC_CLASS_CODE;
+    /* decoder cap */
+    emulated_offset = ub_cfg_offset_to_emulated_offset(UB_CFG1_CAP1_DECODER, true);
+    dec_cap = (UbCfg1DecoderCap *)(ub_dev->config + emulated_offset);
+    dec_cap->header.slice_version = UB_SLICE_VERSION;
+    dec_cap->header.slice_used_size = sizeof(UbCfg1DecoderCap) / DWORD_SIZE;
+    dec_cap->decoder.event_size_sup = DECODER_CAP_EVENT_SIZE;
+    dec_cap->decoder.cmd_size_sup = DECODER_CAP_CMD_SIZE;
+    dec_cap->decoder.mmio_size_sup = DECODER_CAP_MMIO_SIZE;
+}
+
+static void ub_bus_controller_wmask_init(UBDevice *ub_dev)
+{
+    UbCfg1DecoderCap *dec_cap_mask;
+    UbCfg0ShpCap *cfg0_shp_wmask, *cfg0_shp;
+    uint64_t emulated_offset;
+
+    /* cfg0 cap */
+    emulated_offset = ub_cfg_offset_to_emulated_offset(UB_CFG0_CAP2_SHP_START, true);
+    cfg0_shp_wmask = (UbCfg0ShpCap *)(ub_dev->wmask + emulated_offset);
+    cfg0_shp = (UbCfg0ShpCap *)(ub_dev->config + emulated_offset);
+    memset(cfg0_shp_wmask, 0, UB_SLICE_SZ);
+    for (int i = 0; i < cfg0_shp->slot_num; ++i) {
+        cfg0_shp_wmask->slot_info[i].pp_ctrl = ~0;
+        cfg0_shp_wmask->slot_info[i].wl_ctrl = ~0;
+        cfg0_shp_wmask->slot_info[i].pl_ctrl = ~0;
+        cfg0_shp_wmask->slot_info[i].ms_ctrl = ~0;
+        cfg0_shp_wmask->slot_info[i].pd_ctrl = ~0;
+        cfg0_shp_wmask->slot_info[i].pds_ctrl = ~0;
+        cfg0_shp_wmask->slot_info[i].pw_ctrl = ~0;
+    }
+
+    /* cfg1 cap */
+    emulated_offset = ub_cfg_offset_to_emulated_offset(UB_CFG1_CAP1_DECODER, true);
+    dec_cap_mask = (UbCfg1DecoderCap *)(ub_dev->wmask + emulated_offset);
+    memset(dec_cap_mask, 0, sizeof(UbCfg1DecoderCap));
+    dec_cap_mask->decoder_ctrl.decoder_en = ~0;
+    memset(&dec_cap_mask->dec_matt_ba, 0xff, sizeof(dec_cap_mask->dec_matt_ba));
+    memset(&dec_cap_mask->dec_mmio_ba, 0xff, sizeof(dec_cap_mask->dec_mmio_ba));
+    memset(&dec_cap_mask->dev_usi_idx, 0xff, sizeof(dec_cap_mask->dev_usi_idx));
+    dec_cap_mask->decoder_cmdq_cfg.cmdq_en = ~0;
+    dec_cap_mask->decoder_cmdq_cfg.cmdq_size_use = ~0;
+    dec_cap_mask->decoder_cmdq_prod.cmdq_wr_idx = ~0;
+    dec_cap_mask->decoder_cmdq_prod.cmdq_err_resp = ~0;
+    dec_cap_mask->decoder_cmdq_cons.cmdq_rd_idx = ~0;
+    dec_cap_mask->decoder_cmdq_cons.cmdq_err = ~0;
+    dec_cap_mask->decoder_cmdq_cons.cmdq_err_res = ~0;
+    dec_cap_mask->decoder_cmdq_ba.cmdq_ba = ~0;
+    dec_cap_mask->decoder_evtq_cfg.evtq_en = ~0;
+    dec_cap_mask->decoder_evtq_cfg.evtq_size_use = ~0;
+    dec_cap_mask->decoder_evtq_prod.evtq_wr_idx = ~0;
+    dec_cap_mask->decoder_evtq_cons.evtq_rd_idx = ~0;
+    dec_cap_mask->decoder_evtq_ba.evtq_ba = ~0;
+}
+
+static void ub_bus_controller_w1cmask_init(UBDevice *ub_dev)
+{
+    UbCfg0ShpCap *cfg0_shp_w1cmask, *cfg0_shp;
+    uint64_t emulated_offset;
+
+    /* cfg0 cap */
+    emulated_offset = ub_cfg_offset_to_emulated_offset(UB_CFG0_CAP2_SHP_START, true);
+    cfg0_shp_w1cmask = (UbCfg0ShpCap *)(ub_dev->w1cmask + emulated_offset);
+    cfg0_shp = (UbCfg0ShpCap *)(ub_dev->config + emulated_offset);
+    memset(cfg0_shp_w1cmask, 0, UB_SLICE_SZ);
+    for (int i = 0; i < cfg0_shp->slot_num; ++i) {
+        cfg0_shp_w1cmask->slot_info[i].pp_st = ~0;
+        cfg0_shp_w1cmask->slot_info[i].pd_st = ~0;
+        cfg0_shp_w1cmask->slot_info[i].pdsc_st = ~0;
+    }
+}
+
+static void ub_bus_controller_dev_config_space_init(UBDevice *dev)
+{
+    ub_bus_controller_space_cfg0_init(dev);
+    ub_bus_controller_space_cfg1_init(dev);
+    ub_bus_controller_wmask_init(dev);
+    ub_bus_controller_w1cmask_init(dev);
+}
+
 static bool ub_ubc_is_empty(UBBus *bus)
 {
     UBDevice *dev;
@@ -240,6 +408,7 @@ static void ub_bus_controller_dev_realize(UBDevice *dev, Error **errp)
     }
 
     dev->dev_type = UB_TYPE_IBUS_CONTROLLER;
+    ub_bus_controller_dev_config_space_init(dev);
 }
 
 static Property ub_bus_controller_dev_properties[] = {

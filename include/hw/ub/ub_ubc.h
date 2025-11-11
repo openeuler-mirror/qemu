@@ -61,6 +61,15 @@ struct BusControllerClass {
     SysBusDeviceClass parent_class;
 };
 
+#define UBC_ERS0_SPACE_SIZE 0x2
+#define UBC_ERS1_SPACE_SIZE 0x10001
+#define UBC_ERS2_SPACE_SIZE 0x20
+#define UBC_ERS0_SPACE_ADDR 0x2c00000000
+#define UBC_ERS1_SPACE_ADDR 0x2d00000000
+#define UBC_ERS2_SPACE_ADDR 0x2e00000000
+#define UBC_EID_UPI_TEN_DEFAULT_VAL 1024
+#define UBC_CLASS_CODE 0x0
+
 void ub_save_ubc_list(BusControllerState *s);
 BusControllerState *container_of_ubbus(UBBus *bus);
 #endif
