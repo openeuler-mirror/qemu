@@ -20,6 +20,16 @@
 
 #include "hw/ub/ub.h"
 
+enum EnumTlvType { /* M: Mandatory , O: optional */
+    TLV_SLICE_INFO = 0, /* M */
+    TLV_PORT_NUM = 1, /* M */
+    TLV_PORT_INFO = 2, /* M */
+    TLV_RSV0 = 3, /* O */
+    TLV_CAP_INFO = 4, /* M */
+    TLV_RSV1 = 5, /* O */
+    TLV_RSV2 = 6, /* O */
+};
+
 struct UBBusClass {
     /* < private > */
     BusClass parent_class;

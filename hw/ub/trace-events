@@ -1,3 +1,7 @@
+# ub_enum.c
+enum_query_set_rsp_port_num(uint32_t num) "tlv total num ports is %u"
+handle_enum_query_request(uint32_t hops, uint32_t opcode, uint32_t idx_start, uint32_t num_ports, uint32_t max_num_ports, char *guid) "hops: %u, opcode: %u, port_idx_start:%u, rsp_num_ports:%u, max_num_ports:%u guid %s"
+
 # ub_cna_mgmt.c
 handle_enum_cna_config_request(char *guid, uint32_t port_idx, uint32_t cmd, uint32_t opcode) "guid %s port_idx %u cmd %u opcode %u"
 enum_set_cna_config_space_port(char *guid, uint32_t port_idx, uint32_t cna) "guid: %s, port_idx: %u, cna: %u"
