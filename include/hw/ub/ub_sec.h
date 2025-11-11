@@ -20,6 +20,39 @@
 #include "hw/ub/hisi/ubc.h"
 #include "hw/qdev-core.h"
 #include "hw/ub/ub_common.h"
+enum UbSecSubMsgCode {
+    UB_DEV_ATTESTATION = 0,
+    UB_DEV_AUTH = 1,
+    UB_DEV_TOKEN_GET = 2,
+    UB_DEV_TOKEN_SET = 3,
+    UB_DEV_KEY_EXCHANGE = 4,
+    UB_DEV_TOKEN_GET_RSP = 10,
+    UB_DEV_TOKEN_SET_RSP = 11,
+};
+
+typedef struct QueryTokenMsgPldRsp {
+    uint32_t token_check_support : 1;
+    uint32_t encode_decode_support : 1;
+    uint32_t reserved : 14;
+    uint32_t token_id : 16;
+    uint32_t token_value;
+} QueryTokenMsgPldRsp;
+#define QUERY_TOKEN_MSG_PLD_RSP_LEN sizeof(QueryTokenMsgPldRsp)
+
+typedef struct QueryTokenMsgPld {
+    union {
+        /* request payload is NULL */
+        struct QueryTokenMsgPldRsp rsp;
+    };
+} QueryTokenMsgPld;
+#define QUERY_TOKEN_MSG_PLD_SIZE sizeof(QueryTokenMsgPld)
+
+typedef struct QueryTokenMsgPkt {
+    struct MsgPktHeader header;
+    struct QueryTokenMsgPld pld;
+} QueryTokenMsgPkt;
+
+#define MSG_SEC_QUERY_TOKEN_MSG_PKT_SIZE (MSG_PKT_HEADER_SIZE + QUERY_TOKEN_MSG_PLD_SIZE)
 
 void handle_msg_sec(void *opaque, HiMsgSqe *sqe, void *payload);
 
