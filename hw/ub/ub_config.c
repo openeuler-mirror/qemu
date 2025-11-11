@@ -132,6 +132,168 @@ uint64_t ub_cfg_offset_to_emulated_offset(uint64_t offset, bool check_success)
     return emulate_offset;
 }
 
+static uint32_t ub_dev_get_cna(UBDevice *dev)
+{
+    uint64_t emulated_offset = ub_cfg_offset_to_emulated_offset(UB_CFG0_BASIC_NA_INFO_START, true);
+    ConfigNetAddrInfo *net_addr_info = (ConfigNetAddrInfo *)(dev->config + emulated_offset);
+    uint32_t dev_cna = net_addr_info->primary_cna;
+    return dev_cna;
+}
+
+static UBDevice *ub_find_device_by_cna(UBBus *bus, uint32_t dcna)
+{
+    UBDevice *dev;
+
+    QLIST_FOREACH(dev, &bus->devices, node) {
+        if (ub_dev_get_cna(dev) == dcna) {
+            return dev;
+        }
+    }
+
+    return NULL;
+}
+
+static void ub_cfg_msg_fill_cq_rq(BusControllerState *s, HiMsgSqe *sqe, MsgPktHeader *header,
+                                  CfgMsgPkt *rsp_pkt)
+{
+    HiMsgCqe cqe;
+    uint32_t pi;
+
+    memset(&cqe, 0, sizeof(cqe));
+    cqe.type = MSG_RSP;
+    cqe.msg_code = UB_MSG_CODE_CFG;
+    cqe.sub_msg_code = header->msgetah.sub_msg_code;
+    rsp_pkt->header.msgetah.type = MSG_RSP;
+    rsp_pkt->header.msgetah.sub_msg_code = header->msgetah.sub_msg_code;
+
+    rsp_pkt->header.nth.scna = header->nth.dcna;
+    rsp_pkt->header.nth.dcna = header->nth.scna;
+    rsp_pkt->header.deid = EID_GEN(header->seid_h, header->seid_l);
+    rsp_pkt->header.seid_h = EID_HIGH(header->deid);
+    rsp_pkt->header.seid_l = EID_LOW(header->deid);
+    cqe.msn = sqe->msn;
+    cqe.p_len = MSG_CFG_PKT_SIZE;
+    pi = fill_rq(s, rsp_pkt, sizeof(CfgMsgPkt));
+    if (pi == UINT32_MAX) {
+        qemu_log("fill rq failed!\n");
+        return;
+    }
+    cqe.status = CQE_SUCCESS;
+    cqe.rq_pi = pi;
+    (void)fill_cq(s, &cqe);
+}
+
+static uint32_t get_dw_mask(uint8_t byte_enable)
+{
+    uint32_t dw_mask = 0;
+    uint32_t bt_mask = 0xff;
+
+    byte_enable &= 0x0f; // for dword, only lower four bits are valid
+    while (byte_enable) {
+        if (byte_enable & 0x1) {
+            dw_mask |= bt_mask;
+        }
+        bt_mask <<= BITS_PER_BYTE;
+        byte_enable >>= 1;
+    }
+    return dw_mask;
+}
+
+static void ub_cfg_rw(BusControllerState *s, HiMsgSqe *sqe,
+                      MsgPktHeader *header)
+{
+    CfgMsgPldReq *payload = (CfgMsgPldReq *)header->payload;
+    CfgMsgPkt rsp_pkt;
+    uint32_t local = sqe->local;
+    uint64_t cfg_offset = (uint64_t)payload->req_addr * DWORD_SIZE;
+    uint32_t entity = payload->entity_idx;
+    uint32_t dcna = header->nth.dcna;
+    UBDevice *ub_dev = NULL;
+    uint32_t dw_mask;
+    uint64_t emulated_offset;
+
+    if (header->msgetah.plen != CFG_MSG_PLD_SIZE) {
+        qemu_log("invalid len %u, please check driver inside guestos\n",
+                 header->msgetah.plen);
+        return;
+    }
+    memset(&rsp_pkt, 0, sizeof(CfgMsgPkt));
+    memcpy(&rsp_pkt.header, header, sizeof(MsgPktHeader));
+
+    /* vm support only FE0(entity_idx = 0) */
+    if (entity) {
+        qemu_log("vm support only FE0, entity idx: %u\n", entity);
+        rsp_pkt.header.msgetah.rsp_status = UB_MSG_RSP_REG_ATTR_MISMATCH;
+        goto fill_rq_cq;
+    }
+    /*
+     * TODO: Check whether dcna is the unique identifier of the device when the configuration space is read or written.
+     * local = 1: ubc or idev, dcna = 0: default to ubc
+     * local = 0: ub devices
+     */
+    if (local && !dcna) {
+        ub_dev = UB_DEVICE(s->ubc_dev);
+        if (!ub_dev) {
+            qemu_log("ubc not config?\n");
+            return;
+        }
+    } else {
+        ub_dev = ub_find_device_by_cna(s->bus, dcna);
+        if (!ub_dev) {
+            qemu_log("device not found. dcna %u\n", dcna);
+            return;
+        }
+    }
+
+    rsp_pkt.header.msgetah.rsp_status = UB_MSG_RSP_SUCCESS;
+    if (cfg_offset >= ub_config_size()) {
+        rsp_pkt.header.msgetah.rsp_status = UB_MSG_RSP_INVALID_ADDR;
+        goto fill_rq_cq;
+    }
+    dw_mask = get_dw_mask(payload->byte_enable);
+    switch (header->msgetah.sub_msg_code) {
+    case UB_CFG0_READ:
+    case UB_CFG1_READ:
+        if (ub_dev->config_read) {
+            ub_dev->config_read(ub_dev, cfg_offset, &rsp_pkt.pld.rsp.read_data, dw_mask);
+        } else {
+            qemu_log("dev: %s read config func NULL\n", ub_dev->qdev.id);
+        }
+        break;
+    case UB_CFG0_WRITE:
+    case UB_CFG1_WRITE:
+        emulated_offset = ub_cfg_offset_to_emulated_offset(cfg_offset, false);
+        if (emulated_offset != UINT64_MAX && !*((uint32_t *)(&ub_dev->wmask[emulated_offset]))) {
+            rsp_pkt.header.msgetah.rsp_status = UB_MSG_RSP_REG_ATTR_MISMATCH;
+            qemu_log("register cannot be written.\n");
+            goto fill_rq_cq;
+        }
+        if (ub_dev->config_write) {
+            ub_dev->config_write(ub_dev, cfg_offset, &payload->write_data, dw_mask);
+        } else {
+            qemu_log("dev: %s write config func NULL\n", ub_dev->qdev.id);
+        }
+        break;
+    default:
+        break;
+    }
+fill_rq_cq:
+    ub_cfg_msg_fill_cq_rq(s, sqe, header, &rsp_pkt);
+}
+
 void handle_msg_cfg(void *opaque, HiMsgSqe *sqe, void *payload)
 {
+    BusControllerState *s = opaque;
+    MsgPktHeader *header = (MsgPktHeader *)payload;
+    MsgExtendedHeader *msgetah = &header->msgetah;
+
+    if (msgetah->msg_code != UB_MSG_CODE_CFG ||
+        msgetah->sub_msg_code >= UB_CFG_MAX_SUB_MSG_CODE) {
+        qemu_log("invalid msg code %u or sub msg code %u, "
+                 "please check the driver inside guestos\n",
+                 msgetah->msg_code, msgetah->sub_msg_code);
+        return;
+    }
+
+    ub_cfg_rw(s, sqe, header);
 }
