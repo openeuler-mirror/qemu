@@ -39,6 +39,7 @@
 #include "sysemu/kvm.h"
 #include "hw/intc/arm_gicv3_common.h"
 #include "qom/object.h"
+#include "hw/ub/ub_bus.h"
 
 #define NUM_GICV2M_SPIS       64
 #define NUM_VIRTIO_TRANSPORTS 32
@@ -219,6 +220,9 @@ struct VirtMachineState {
     bool highmem_ecam;
     bool highmem_mmio;
     bool highmem_redists;
+#ifdef CONFIG_UB
+    UBBus *ub_bus;
+#endif // CONFIG_UB
     bool its;
     bool tcg_its;
     bool virt;

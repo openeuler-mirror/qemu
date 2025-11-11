@@ -249,3 +249,17 @@ bool ub_device_get_guid_from_str(UbGuid *guid, char *guid_str)
     guid->seq_num = seq_num & 0xFFFFFFFFFFFFFFFF;
     return true;
 }
+
+/* container_of cannot be used here because 'bus' is a pointer member. */
+BusControllerState *container_of_ubbus(UBBus *bus)
+{
+    BusControllerState *ubc = NULL;
+
+    QLIST_FOREACH(ubc, &ub_bus_controllers, node) {
+        if (bus == ubc->bus) {
+            return ubc;
+        }
+    }
+
+    return NULL;
+}
