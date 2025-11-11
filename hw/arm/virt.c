@@ -2070,7 +2070,11 @@ void virt_machine_done(Notifier *notifier, void *data)
     }
 
     fw_cfg_add_extra_pci_roots(vms->bus, vms->fw_cfg);
-
+#ifdef CONFIG_UB
+    if (ub_dev_finally_setup(vms, &error_fatal) < 0) {
+        exit(1);
+    }
+#endif // CONFIG_UB
     virt_acpi_setup(vms);
     virt_build_smbios(vms);
 }

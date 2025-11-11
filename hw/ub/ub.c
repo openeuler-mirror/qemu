@@ -27,6 +27,7 @@
 #include "hw/ub/ub_config.h"
 #include "hw/ub/ub_bus.h"
 #include "hw/ub/ub_ubc.h"
+#include "hw/ub/ub_acpi.h"
 #include "qemu/log.h"
 #include "qapi/error.h"
 #include "hw/ub/ub_bus.h"
@@ -515,6 +516,24 @@ BusControllerState *container_of_ubbus(UBBus *bus)
     return NULL;
 }
 
+UBDevice *ub_find_device_by_id(const char *id)
+{
+    BusControllerState *ubc = NULL;
+    UBDevice *dev = NULL;
+
+    QLIST_FOREACH(ubc, &ub_bus_controllers, node) {
+        if (!ubc->bus->qbus.num_children) {
+            continue;
+        }
+        QLIST_FOREACH(dev, &ubc->bus->devices, node) {
+            if (dev && !strcmp(id, dev->qdev.id)) {
+                return dev;
+            }
+        }
+    }
+    return NULL;
+}
+
 UBDevice *ub_find_device_by_guid(UbGuid *guid)
 {
     BusControllerState *ubc = NULL;
@@ -531,4 +550,261 @@ UBDevice *ub_find_device_by_guid(UbGuid *guid)
         }
     }
     return NULL;
+}
+
+// #pragma GCC push_options
+// #pragma GCC optimize ("O0")
+static void ub_config_set_port_basic(NeighborInfo *info, UBDevice *dev)
+{
+    uint32_t port_idx = info->local_port_idx;
+    uint64_t emulated_offset;
+    ConfigPortBasic *port_basic = NULL;
+    ConfigPortBasic *port_basic_wmask = NULL;
+    ConfigPortBasic *port_basic_w1cmask = NULL;
+
+    emulated_offset = ub_cfg_offset_to_emulated_offset(UB_PORT_SLICE_START + port_idx * UB_PORT_SZ, true);
+    port_basic = (ConfigPortBasic *)(dev->config + emulated_offset);
+    port_basic_wmask = (ConfigPortBasic *)(dev->wmask + emulated_offset);
+    port_basic_w1cmask = (ConfigPortBasic *)(dev->w1cmask + emulated_offset);
+    memset(port_basic, 0, sizeof(ConfigPortBasic));
+    memset(port_basic_wmask, 0, sizeof(ConfigPortBasic));
+    memset(port_basic_w1cmask, 0, sizeof(ConfigPortBasic));
+    /* slice header */
+    port_basic->header.slice_version = UB_SLICE_VERSION;
+    port_basic->header.slice_used_size = UB_PORT_BASIC_SLICE_USED_SIZE;
+    /* port info */
+    port_basic->port_info.port_type = 0; // physical port
+    port_basic->port_info.port_idx = port_idx & UINT16_MASK;
+    /* neighbor port info */
+    port_basic->neighbor_port_info.neighbor_port_idx = info->neighbor_port_idx & UINT16_MASK;
+    port_basic->neighbor_port_info.neighbot_port_guid = info->neighbor_dev->guid;
+    port_basic->port_reset = 0;
+
+    /* set wmask */
+    port_basic_wmask->port_cna = ~0;
+    port_basic_wmask->port_reset = ~0;
+}
+// #pragma GCC pop_options
+
+static int ub_dev_set_neighbor_dev_neighbor_info(uint32_t local_port_idx,
+                                                 uint32_t neighbor_port_idx, UBDevice *local_dev,
+                                                 UBDevice *neighbor_dev, Error **errp)
+{
+    UbPortInfo *neighbor_port = &neighbor_dev->port;
+
+    if (neighbor_port->port_num <= neighbor_port_idx) {
+        qemu_log("invalid neighbor port idx %u %u\n",
+                 neighbor_port->port_num, neighbor_port_idx);
+
+        error_setg(errp, "invalid neighbor port idx %u %u\n",
+                   neighbor_port->port_num, neighbor_port_idx);
+        return -1;
+    }
+
+    if (neighbor_port->neighbors[neighbor_port_idx].neighbor_dev) {
+        if (neighbor_port->neighbors[neighbor_port_idx].neighbor_dev != local_dev ||
+            neighbor_port->neighbors[neighbor_port_idx].local_port_idx != neighbor_port_idx ||
+            neighbor_port->neighbors[neighbor_port_idx].neighbor_port_idx != local_port_idx) {
+            qemu_log("The neighbor information of the two devices does not match "
+                     "each other. \nPlease check your command line parameter port info:\n"
+                     "%s set (%s:%u = %s:%u) BUT neighbor %s already set (%s:%u = %s:%u)\n",
+                     local_dev->qdev.id, local_dev->qdev.id, local_port_idx,
+                     neighbor_dev->qdev.id, neighbor_port_idx,
+                     neighbor_dev->qdev.id, neighbor_dev->qdev.id, neighbor_port_idx,
+                     neighbor_port->neighbors[neighbor_port_idx].neighbor_dev->qdev.id,
+                     neighbor_port->neighbors[neighbor_port_idx].neighbor_port_idx);
+
+            error_setg(errp, "The neighbor information of the two devices does not match "
+                       "each other. \nPlease check your command line parameter port info:\n"
+                       "%s set (%s:%u = %s:%u) BUT neighbor %s already set (%s:%u = %s:%u)\n",
+                       local_dev->qdev.id, local_dev->qdev.id, local_port_idx,
+                       neighbor_dev->qdev.id, neighbor_port_idx,
+                       neighbor_dev->qdev.id, neighbor_dev->qdev.id, neighbor_port_idx,
+                       neighbor_port->neighbors[neighbor_port_idx].neighbor_dev->qdev.id,
+                       neighbor_port->neighbors[neighbor_port_idx].neighbor_port_idx);
+            return -1;
+        }
+    }
+    neighbor_port->neighbors[neighbor_port_idx].local_port_idx = neighbor_port_idx;
+    neighbor_port->neighbors[neighbor_port_idx].neighbor_port_idx = local_port_idx;
+    neighbor_port->neighbors[neighbor_port_idx].neighbor_dev = local_dev;
+    neighbor_port->port_info_exist = true;
+    ub_config_set_port_basic(&neighbor_port->neighbors[neighbor_port_idx], neighbor_dev);
+    return 0;
+}
+
+static int ub_dev_set_neighbor_info(UBDevice *dev, Error **errp)
+{
+    char *neighbor_info_str;
+    char neighbor_id[UB_DEV_ID_LEN] = {0};
+    uint32_t local_port_idx;
+    uint32_t neighbor_port_idx;
+    UBDevice *neighbor_dev;
+
+    neighbor_info_str = strtok(dev->port.neighbors_cmd, "+");
+    while (neighbor_info_str != NULL) {
+        int ret = sscanf(neighbor_info_str, "%u:%[^:]:%u",
+                         &local_port_idx, neighbor_id, &neighbor_port_idx);
+        neighbor_info_str = strtok(NULL, "+");
+        if (ret < 3) {
+            qemu_log("port info format is incorrect %s\n", neighbor_info_str);
+            error_setg(errp, "port info format is incorrect %s\n", neighbor_info_str);
+            g_free(dev->port.neighbors_cmd);
+            dev->port.neighbors_cmd = NULL;
+            return -1;
+        }
+        if (local_port_idx >= dev->port.port_num) {
+            qemu_log("%s local port info is illegal, port idx:%u port num %u\n",
+                     dev->qdev.id, local_port_idx, dev->port.port_num);
+            error_setg(errp, "%s local port info is illegal, port idx:%u port num %u\n",
+                       dev->qdev.id, local_port_idx, dev->port.port_num);
+            g_free(dev->port.neighbors_cmd);
+            dev->port.neighbors_cmd = NULL;
+            return -1;
+        }
+
+        neighbor_dev = ub_find_device_by_id(neighbor_id);
+        if (neighbor_dev == NULL) {
+            qemu_log("%s:%u neighbor_dev not exist %s\n",
+                     dev->qdev.id, local_port_idx, neighbor_id);
+            error_setg(errp, "%s:%u neighbor_dev not exist %s\n",
+                       dev->qdev.id, local_port_idx, neighbor_id);
+            g_free(dev->port.neighbors_cmd);
+            dev->port.neighbors_cmd = NULL;
+            return -1;
+        }
+        if (neighbor_dev == dev) {
+            qemu_log("%s can not connect to itself\n", dev->qdev.id);
+            error_setg(errp, "%s can not connect to itself\n", dev->qdev.id);
+            g_free(dev->port.neighbors_cmd);
+            dev->port.neighbors_cmd = NULL;
+            return -1;
+        }
+        if (neighbor_port_idx >= neighbor_dev->port.port_num) {
+            qemu_log("%s neighbor port info is illegal, port idx:%u port num %u\n",
+                     dev->qdev.id, neighbor_port_idx, neighbor_dev->port.port_num);
+            error_setg(errp, "%s neighbor port info is illegal, port idx:%u port num %u\n",
+                       dev->qdev.id, neighbor_port_idx, neighbor_dev->port.port_num);
+            g_free(dev->port.neighbors_cmd);
+            dev->port.neighbors_cmd = NULL;
+            return -1;
+        }
+        /* ub device can only connect with ub controller or ub switch */
+        if ((dev->dev_type & UB_TYPE_DEVICE) &&
+            !(neighbor_dev->dev_type & (UB_TYPE_SWITCH | UB_TYPE_ISWITCH | UB_TYPE_IBUS_CONTROLLER))) {
+            qemu_log("%s can not connect with %s, ub device can only connect with "
+                     "ub controller or ub switch\n", dev->qdev.id, neighbor_dev->qdev.id);
+            error_setg(errp,"%s can not connect with %s ub device can only connect with "
+                       "ub controller or ub switch\n", dev->qdev.id, neighbor_dev->qdev.id);
+            g_free(dev->port.neighbors_cmd);
+            dev->port.neighbors_cmd = NULL;
+            return -1;
+        }
+        /* Check whether the neighbor information of the two ends matches. */
+        if (dev->port.neighbors[local_port_idx].neighbor_dev) {
+            if (dev->port.neighbors[local_port_idx].neighbor_dev != neighbor_dev ||
+                dev->port.neighbors[local_port_idx].local_port_idx != local_port_idx ||
+                dev->port.neighbors[local_port_idx].neighbor_port_idx != neighbor_port_idx) {
+                qemu_log("The neighbor information of the two devices does not match "
+                         "each other. \nPlease check your command line parameter port info:\n"
+                         "%s set (%s:%u = %s:%u) BUT %s set (%s:%u = %s:%u)\n",
+                         dev->qdev.id, dev->qdev.id, local_port_idx,
+                         neighbor_dev->qdev.id, neighbor_port_idx,
+                         dev->port.neighbors[local_port_idx].neighbor_dev->qdev.id,
+                         dev->port.neighbors[local_port_idx].neighbor_dev->qdev.id,
+                         dev->port.neighbors[local_port_idx].neighbor_port_idx,
+                         dev->qdev.id,
+                         dev->port.neighbors[local_port_idx].local_port_idx);
+
+                error_setg(errp, "The neighbor information of the two devices does not match "
+                           "each other. \nPlease check your command line parameter port info:\n"
+                           "%s set (%s:%u = %s:%u) BUT %s set (%s:%u = %s:%u)\n",
+                           dev->qdev.id, dev->qdev.id, local_port_idx,
+                           neighbor_dev->qdev.id, neighbor_port_idx,
+                           dev->port.neighbors[local_port_idx].neighbor_dev->qdev.id,
+                           dev->port.neighbors[local_port_idx].neighbor_dev->qdev.id,
+                           dev->port.neighbors[local_port_idx].neighbor_port_idx,
+                           dev->qdev.id,
+                           dev->port.neighbors[local_port_idx].local_port_idx);
+
+                g_free(dev->port.neighbors_cmd);
+                dev->port.neighbors_cmd = NULL;
+                return -1;
+            }
+        }
+        dev->port.neighbors[local_port_idx].local_port_idx = local_port_idx;
+        dev->port.neighbors[local_port_idx].neighbor_port_idx = neighbor_port_idx;
+        dev->port.neighbors[local_port_idx].neighbor_dev = neighbor_dev;
+        dev->port.port_info_exist = true;
+        /* set remote neighbor_dev */
+        if (ub_dev_set_neighbor_dev_neighbor_info(local_port_idx, neighbor_port_idx, dev,
+                                                  neighbor_dev, errp) < 0) {
+            g_free(dev->port.neighbors_cmd);
+            dev->port.neighbors_cmd = NULL;
+            return -1;
+        }
+        ub_config_set_port_basic(&dev->port.neighbors[local_port_idx], dev);
+    }
+    g_free(dev->port.neighbors_cmd);
+    dev->port.neighbors_cmd = NULL;
+    return 0;
+}
+
+static int ub_dev_init_port_info_by_cmd(Error **errp)
+{
+    BusControllerState *ubc = NULL;
+    UBDevice *dev = NULL;
+
+    QLIST_FOREACH(ubc, &ub_bus_controllers, node) {
+        if (!ubc->bus->qbus.num_children) {
+            continue;
+        }
+
+        QLIST_FOREACH(dev, &ubc->bus->devices, node) {
+            if (dev && dev->port.neighbors_cmd) {
+                if (ub_dev_set_neighbor_info(dev, errp) < 0) {
+                    return -1;
+                }
+                qemu_log("finish set_neighbor_info, eid:%u\n", dev->eid);
+            }
+        }
+    }
+    /* Check whether any device port info does not exist */
+    QLIST_FOREACH(ubc, &ub_bus_controllers, node) {
+        if (!ubc->bus->qbus.num_children) {
+            continue;
+        }
+        QLIST_FOREACH(dev, &ubc->bus->devices, node) {
+            if (dev->dev_type != UB_TYPE_DEVICE && dev->dev_type != UB_TYPE_IDEVICE) {
+                continue;
+            }
+
+            if (dev && !dev->port.port_info_exist) {
+                qemu_log("%s port info does not exist.\n", dev->qdev.id);
+                error_setg(errp, "%s port info does not exist.\n", dev->qdev.id);
+                return -1;
+            }
+        }
+    }
+    return 0;
+}
+
+/*
+ * now all ub device add, finally setup for all ub device.
+ * 1. check ub device bus instance type
+ * 2. init the port info
+ * */
+int ub_dev_finally_setup(VirtMachineState *vms, Error **errp)
+{
+    /*
+     * Initialize the port information of all UB devices according
+     * to the input information after all UB devices are constructed.
+     */
+    if (ub_dev_init_port_info_by_cmd(errp) < 0) {
+        return -1;
+    }
+
+    ub_set_ubinfo_in_ubc_table(vms);
+
+    return 0;
 }

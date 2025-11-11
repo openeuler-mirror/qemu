@@ -140,6 +140,7 @@ typedef struct VMStateDescription VMStateDescription;
 
 /* UB typedef */
 typedef struct UBDevice UBDevice;
+typedef struct UBBus UBBus;
 
 /*
  * Pointer types
