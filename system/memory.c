@@ -3727,6 +3727,26 @@ void memory_region_init_rom_device(MemoryRegion *mr,
     vmstate_register_ram(mr, owner_dev);
 }
 
+void memory_region_add_reservation_with_ram(MemoryRegion *mr,
+                                            Object *owner,
+                                            const char *name,
+                                            hwaddr offset,
+                                            uint64_t size)
+{
+    Error *local_err = NULL;
+    uint32_t ram_flags = 0;
+    MemoryRegion *resved = g_malloc(sizeof(*resved));
+    char *mrname = g_strdup_printf("%s-reservedmemory", name ? name : "(none)");
+
+    memory_region_init_ram_flags_nomigrate(resved, owner, mrname, size, ram_flags, &local_err);
+
+    memory_region_add_subregion(mr, offset, resved);
+    g_free(mrname);
+    if (local_err) {
+        error_report_err(local_err);
+    }
+}
+
 /*
  * Support system builds with CONFIG_FUZZ using a weak symbol and a stub for
  * the fuzz_dma_read_cb callback

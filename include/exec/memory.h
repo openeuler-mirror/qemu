@@ -269,6 +269,12 @@ extern uint64_t virtcca_cvm_gpa_start;
 
 extern uint64_t virtcca_cvm_ram_size;
 
+void memory_region_add_reservation_with_ram(MemoryRegion *mr,
+                                            Object *owner,
+                                            const char *name,
+                                            hwaddr offset,
+                                            uint64_t size);
+
 static inline void iommu_notifier_init(IOMMUNotifier *n, IOMMUNotify fn,
                                        IOMMUNotifierFlag flags,
                                        hwaddr start, hwaddr end,
