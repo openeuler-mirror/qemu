@@ -31,6 +31,7 @@
 #include "qapi/error.h"
 #include "qapi/util.h"
 #include "qapi/qmp/qstring.h"
+#include "hw/ub/hisi/ub_mem.h"
 #include "hw/ub/hisi/ub_fm.h"
 #include "hw/acpi/aml-build.h"
 
