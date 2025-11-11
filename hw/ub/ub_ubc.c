@@ -29,6 +29,7 @@
 #include "hw/ub/ub_config.h"
 #include "hw/ub/hisi/ubc.h"
 #include "hw/ub/hisi/ub_mem.h"
+#include "hw/ub/hisi/ub_fm.h"
 #include "migration/vmstate.h"
 
 static uint64_t ub_msgq_reg_read(void *opaque, hwaddr addr, unsigned len)
@@ -83,7 +84,9 @@ static const MemoryRegionOps ub_msgq_reg_ops = {
 };
 
 static const MemoryRegionOps ub_fm_msgq_reg_ops = {
-
+    .read = ub_fm_msgq_reg_read,
+    .write = ub_fm_msgq_reg_write,
+    .endianness = DEVICE_LITTLE_ENDIAN,
 };
 
 static void ub_reg_alloc(DeviceState *dev)
