@@ -6,6 +6,7 @@ ub_ss.add(files(
   'ub_acpi.c',
   'ub_enum.c',
   'ub_common.c',
+  'ub_cna_mgmt.c',
   'ub_sec.c',
 ))
 system_ss.add_all(when: 'CONFIG_HW_UB', if_true: ub_ss)

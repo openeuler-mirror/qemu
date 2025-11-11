@@ -28,6 +28,7 @@
 #include "hw/ub/hisi/ubc.h"
 #include "trace.h"
 #include "sysemu/dma.h"
+#include "hw/ub/ub_cna_mgmt.h"
 
 static void (*msgq_pool_handlers[])(BusControllerState *s, HiMsgSqe *sqe,
                                     MsgPktHeader *header) = {
@@ -133,7 +134,7 @@ static void handle_task_type_enum(BusControllerState *s, HiMsgSqe *sqe)
         g_free(scan_header);
         return;
     }
-    header_size = ENUM_PKT_HEADER_SIZE + calc_enum_pld_header_size(scan_header, true) + ENUM_TOPO_QUERY_REQ_SIZE;
+    header_size = ENUM_PKT_HEADER_SIZE + calc_enum_pld_header_size(scan_header, true) + ENUM_NA_CFG_REQ_SIZE;
     g_free(scan_header);
     payload = g_malloc0(header_size);
     if (dma_memory_read(&address_space_memory, s->msgq.sq_base_addr_gpa + p_addr,

@@ -1,0 +1,7 @@
+# ub_cna_mgmt.c
+handle_enum_cna_config_request(char *guid, uint32_t port_idx, uint32_t cmd, uint32_t opcode) "guid %s port_idx %u cmd %u opcode %u"
+enum_set_cna_config_space_port(char *guid, uint32_t port_idx, uint32_t cna) "guid: %s, port_idx: %u, cna: %u"
+enum_set_cna_config_space_device(char *guid, uint32_t primary_cna) "guid: %s, primary_cna %u"
+
+handle_enum_cna_query_request(char *guid, uint32_t port_idx, uint32_t cmd, uint32_t opcode) "guid %s port_idx %u cmd %u opcode %u"
+handle_enum_cna_query_request_rsp(char *guid, uint32_t cna) "guid %s return cna %u"
