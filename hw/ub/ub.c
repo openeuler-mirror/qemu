@@ -24,6 +24,7 @@
 #include "hw/qdev-properties-system.h"
 #include "hw/ub/ub_common.h"
 #include "hw/ub/ub.h"
+#include "hw/ub/ub_config.h"
 #include "hw/ub/ub_bus.h"
 #include "hw/ub/ub_ubc.h"
 #include "qemu/log.h"
@@ -117,13 +118,250 @@ static const TypeInfo ub_bus_info = {
     .class_init = ub_bus_class_init,
 };
 
+static void ub_config_alloc(UBDevice *ub_dev)
+{
+    size_t config_size = ub_emulated_config_size();
+    ub_dev->config = g_malloc0(config_size);
+    ub_dev->wmask = g_malloc0(config_size);
+    ub_dev->w1cmask = g_malloc0(config_size);
+}
+
+static void ub_port_info_alloc(UBDevice *ub_dev)
+{
+    ub_dev->port.neighbors = g_malloc0(sizeof(NeighborInfo) *
+                                   ub_dev->port.port_num);
+    ub_dev->port.port_info_exist = false;
+}
+
+static void ub_config_free(UBDevice *ub_dev)
+{
+    g_free(ub_dev->config);
+    g_free(ub_dev->wmask);
+    g_free(ub_dev->w1cmask);
+}
+
+static void ub_port_info_free(UBDevice *ub_dev)
+{
+    if (ub_dev->port.neighbors_cmd) {
+        g_free(ub_dev->port.neighbors_cmd);
+    }
+    if (ub_dev->port.neighbors) {
+        g_free(ub_dev->port.neighbors);
+    }
+}
+
+static void ub_config_set_guid(UBDevice *ub_dev)
+{
+    uint64_t offset = ub_cfg_offset_to_emulated_offset(UB_CFG0_BASIC_GUID_START, true);
+    uint8_t *ub_config_guid_ptr = ub_dev->config + offset;
+    char guid_str[UB_DEV_GUID_STRING_LENGTH + 1] = {0};
+
+    ub_device_get_str_from_guid(&ub_dev->guid, guid_str,
+                                UB_DEV_GUID_STRING_LENGTH + 1);
+    memcpy(ub_config_guid_ptr, &ub_dev->guid, sizeof(UbGuid));
+}
+
+static void ub_init_wmask(UBDevice *ub_dev)
+{
+    UbCfg0Basic *cfg0_basic_wmask;
+    UbCfg0EmqCap *cfg0_emq_cap_wmask;
+    UbCfg1Basic *cfg1_basic_wmask;
+    UbCfg1IntType1Cap *cfg1_int_type1_wmask;
+    UbCfg1IntType2Cap *cfg1_int_type2_wmask;
+    UbRouteTable *route_table_wmask;
+    uint64_t emulated_offset;
+
+    /* cfg0 basic */
+    emulated_offset = ub_cfg_offset_to_emulated_offset(UB_CFG0_BASIC_START, true);
+    cfg0_basic_wmask = (UbCfg0Basic *)(ub_dev->wmask + emulated_offset);
+    memset(cfg0_basic_wmask, 0, sizeof(UbCfg0Basic));
+    memset(&cfg0_basic_wmask->eid, 0xff, sizeof(UbEid));
+    memset(&cfg0_basic_wmask->fm_eid, 0xff, sizeof(UbEid));
+    cfg0_basic_wmask->net_addr_info.primary_cna = 0xffffff;
+    cfg0_basic_wmask->upi = ~0;
+    cfg0_basic_wmask->dev_rst = ~0;
+    cfg0_basic_wmask->mtu_cfg = ~0;
+    cfg0_basic_wmask->cc_en = ~0;
+    cfg0_basic_wmask->th_en = ~0;
+    cfg0_basic_wmask->fm_cna = ~0;
+    cfg0_basic_wmask->ueid_low = ~0UL;
+    cfg0_basic_wmask->ueid_high = ~0UL;
+    cfg0_basic_wmask->ucna = ~0;
+
+    /* cfg0 emq cap */
+    emulated_offset = ub_cfg_offset_to_emulated_offset(UB_CFG0_EMQ_CAP_START, true);
+    cfg0_emq_cap_wmask = (UbCfg0EmqCap *)(ub_dev->wmask + emulated_offset);
+    memset(cfg0_emq_cap_wmask, 0, sizeof(UbCfg0EmqCap));
+    cfg0_emq_cap_wmask->error_msg_que_ctrlr.correctable_err_report_enable = ~0;
+    cfg0_emq_cap_wmask->error_msg_que_ctrlr.uncorrectable_nonfatal_err_report_enable = ~0;
+    cfg0_emq_cap_wmask->error_msg_que_ctrlr.uncorrectable_fatal_err_report_enable = ~0;
+    cfg0_emq_cap_wmask->error_msg_que_ctrlr.interrupt_generation_enable = ~0;
+
+    /* cfg1 basic */
+    emulated_offset = ub_cfg_offset_to_emulated_offset(UB_CFG1_BASIC_START, true);
+    cfg1_basic_wmask = (UbCfg1Basic *)(ub_dev->wmask + emulated_offset);
+    memset(cfg1_basic_wmask, 0, sizeof(UbCfg1Basic));
+    cfg1_basic_wmask->elr = ~0;
+    cfg1_basic_wmask->mig_ctrl = ~0;
+    cfg1_basic_wmask->sys_pgs = ~0;
+    cfg1_basic_wmask->eid_upi_tab = ~0UL;
+    cfg1_basic_wmask->ctp_tb_bypass = ~0;
+    cfg1_basic_wmask->crystal_dma_en = ~0;
+    cfg1_basic_wmask->dev_token_id = ~0;
+    cfg1_basic_wmask->bus_access_en = ~0;
+    cfg1_basic_wmask->dev_rs_access_en = ~0;
+
+    /* cfg1 int type1 cap */
+    emulated_offset = ub_cfg_offset_to_emulated_offset(UB_CFG1_CAP3_INT_TYPE1, true);
+    cfg1_int_type1_wmask = (UbCfg1IntType1Cap *)(ub_dev->wmask + emulated_offset);
+    memset(cfg1_int_type1_wmask, 0, sizeof(UbCfg1IntType1Cap));
+    cfg1_int_type1_wmask->interrupt_enable = ~0;
+    cfg1_int_type1_wmask->interrupt_enable_num = ~0;
+    cfg1_int_type1_wmask->interrupt_data = ~0U;
+    cfg1_int_type1_wmask->interrupt_address = ~0UL;
+    cfg1_int_type1_wmask->interrupt_id = ~0U;
+    cfg1_int_type1_wmask->interrupt_mask = ~0U;
+
+    /* cfg1 int type2 cap */
+    emulated_offset = ub_cfg_offset_to_emulated_offset(UB_CFG1_CAP4_INT_TYPE2, true);
+    cfg1_int_type2_wmask = (UbCfg1IntType2Cap *)(ub_dev->wmask + emulated_offset);
+    memset(cfg1_int_type2_wmask, 0, sizeof(UbCfg1IntType2Cap));
+    cfg1_int_type2_wmask->interrupt_id = ~0U;
+    cfg1_int_type2_wmask->interrupt_mask = ~0;
+    cfg1_int_type2_wmask->interrupt_enable = ~0;
+
+    /* port basic */
+    // set after port_info is initialized
+
+    /* port cap */
+    //  not support yet
+
+    /* route table */
+    emulated_offset = ub_cfg_offset_to_emulated_offset(UB_ROUTE_TABLE_START, true);
+    route_table_wmask = (UbRouteTable *)(ub_dev->wmask + emulated_offset);
+    memset(route_table_wmask, 0xff, UB_CFG_SLICE_SIZE);
+    route_table_wmask->entry_num = 0;
+    route_table_wmask->ers = 0;
+
+    /* route table entry */
+    // not support yet
+}
+
+static void ub_init_w1cmask(UBDevice *ub_dev)
+{
+    UbCfg0Basic *cfg0_basic_w1cmask;
+    UbCfg1Basic *cfg1_basic_w1cmask;
+    uint64_t emulated_offset;
+
+    /* cfg0 basic */
+    emulated_offset = ub_cfg_offset_to_emulated_offset(UB_CFG0_BASIC_START, true);
+    cfg0_basic_w1cmask = (UbCfg0Basic *)(ub_dev->w1cmask + emulated_offset);
+    memset(cfg0_basic_w1cmask, 0, sizeof(UbCfg0Basic));
+    cfg0_basic_w1cmask->dev_rst = ~0;
+
+    /* cfg1 basic */
+    emulated_offset = ub_cfg_offset_to_emulated_offset(UB_CFG1_BASIC_START, true);
+    cfg1_basic_w1cmask = (UbCfg1Basic *)(ub_dev->w1cmask + emulated_offset);
+    memset(cfg1_basic_w1cmask, 0, sizeof(UbCfg1Basic));
+    cfg1_basic_w1cmask->elr = ~0;
+
+    /* port cap */
+    // not support yet
+}
+
+static void ub_config_space_init(UBDevice *ub_dev)
+{
+    ub_config_set_guid(ub_dev);
+    ub_init_wmask(ub_dev);
+    ub_init_w1cmask(ub_dev);
+}
+
+void ub_default_read_config(UBDevice *dev, uint64_t offset,
+                            uint32_t *val, uint32_t dw_mask)
+{
+    uint32_t read_data;
+    uint64_t emulated_offset = ub_cfg_offset_to_emulated_offset(offset, false);
+
+    if (emulated_offset == UINT64_MAX) {
+        *val = 0;
+        qemu_log("ub default read config out of emulated range, offset "
+                 "is 0x%lx\n", offset);
+        return;
+    }
+
+    memcpy(&read_data, dev->config + emulated_offset, DWORD_SIZE);
+    *val = read_data & dw_mask;
+}
+
+void ub_default_write_config(UBDevice *dev, uint64_t offset,
+                             uint32_t *val, uint32_t dw_mask)
+{
+    uint32_t write_data = *val;
+    uint32_t dw_wmask, dw_w1cmask;
+    uint64_t emulated_offset;
+    uint32_t *dst_data = NULL;
+
+    emulated_offset = ub_cfg_offset_to_emulated_offset(offset, false);
+    if (emulated_offset == UINT64_MAX) {
+        qemu_log("ub default write config out of emulated range, offset "
+                 "is 0x%lx\n", offset);
+        return;
+    }
+
+    dst_data = (uint32_t *)(dev->config + emulated_offset);
+    dw_wmask = *(uint32_t *)(dev->wmask + emulated_offset) & dw_mask;
+    dw_w1cmask = *(uint32_t *)(dev->w1cmask + emulated_offset) & dw_mask;
+    *dst_data = (*dst_data & ~dw_wmask) | (write_data & dw_wmask);
+    *dst_data &= ~(write_data & dw_w1cmask);
+}
+
 static UBDevice *do_ub_register_device(UBDevice *ub_dev, const char *name, Error **errp)
 {
-    return NULL;
+    UBBus *bus = ub_get_bus(ub_dev);
+    UBDeviceClass *uc = UB_DEVICE_GET_CLASS(ub_dev);
+    UBConfigReadFunc *config_read = uc->config_read;
+    UBConfigWriteFunc *config_write = uc->config_write;
+
+    if (ub_dev->eid < UB_SUPPORT_MIN_EID || ub_dev->eid > UB_SUPPORT_MAX_EID) {
+        qemu_log("expect eid val is [0x%x, 0x%x], but current eid val is 0x%x\n",
+                 UB_SUPPORT_MIN_EID, UB_SUPPORT_MAX_EID, ub_dev->eid);
+        error_setg(errp, "expect eid val is [0x%x, 0x%x], but current eid val is 0x%x\n",
+                   UB_SUPPORT_MIN_EID, UB_SUPPORT_MAX_EID, ub_dev->eid);
+        return NULL;
+    }
+    if (ub_find_device_by_guid(&ub_dev->guid)) {
+        qemu_log("%s guid already exists.\n", ub_dev->qdev.id);
+        error_setg(errp, "%s guid already exists.\n", ub_dev->qdev.id);
+        return NULL;
+    }
+    if (ub_find_device_by_eid(bus, ub_dev->eid)) {
+        qemu_log("%s eid already exists.\n", ub_dev->qdev.id);
+        error_setg(errp, "%s eid already exists.\n", ub_dev->qdev.id);
+        return NULL;
+    }
+    pstrcpy(ub_dev->name, sizeof(ub_dev->name), name);
+    QLIST_INSERT_HEAD(&bus->devices, ub_dev, node);
+
+    /* allocate memory for ub device config space */
+    ub_config_alloc(ub_dev);
+    ub_config_space_init(ub_dev);
+    /* allocate memory for ub device port info */
+    ub_port_info_alloc(ub_dev);
+
+    if (!config_read)
+        config_read = ub_default_read_config;
+    if (!config_write)
+        config_write = ub_default_write_config;
+    ub_dev->config_read = config_read;
+    ub_dev->config_write = config_write;
+
+    return ub_dev;
 }
 
 static void do_ub_unregister_device(UBDevice *ub_dev)
 {
+    ub_config_free(ub_dev);
+    ub_port_info_free(ub_dev);
 }
 
 static void ub_qdev_realize(DeviceState *qdev, Error **errp)
@@ -167,6 +405,19 @@ static Property ub_props[] = {
     LOOP(DECLARE_PORT_INFO, 255)
     DEFINE_PROP_END_OF_LIST()
 };
+
+UBDevice *ub_find_device_by_eid(UBBus *bus, uint32_t eid)
+{
+    UBDevice *dev;
+
+    QLIST_FOREACH(dev, &bus->devices, node) {
+        if (dev->eid == eid) {
+            return dev;
+        }
+    }
+
+    return NULL;
+}
 
 static void ub_device_class_init(ObjectClass *klass, void *data)
 {
@@ -261,5 +512,23 @@ BusControllerState *container_of_ubbus(UBBus *bus)
         }
     }
 
+    return NULL;
+}
+
+UBDevice *ub_find_device_by_guid(UbGuid *guid)
+{
+    BusControllerState *ubc = NULL;
+    UBDevice *dev = NULL;
+
+    QLIST_FOREACH(ubc, &ub_bus_controllers, node) {
+        if (!ubc->bus->qbus.num_children) {
+            continue;
+        }
+        QLIST_FOREACH(dev, &ubc->bus->devices, node) {
+            if (dev && !memcmp(guid, &dev->guid, sizeof(UbGuid))) {
+                return dev;
+            }
+        }
+    }
     return NULL;
 }
