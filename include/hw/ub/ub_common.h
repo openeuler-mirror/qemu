@@ -285,4 +285,34 @@
 #define LOOP_HELPER(macro, n) LOOP##n(macro)
 #define LOOP(macro, n) LOOP_HELPER(macro, n)
 
+#define for_each_set_bit(bit, addr, size) \
+    for ((bit) = find_first_bit((addr), (size));        \
+         (bit) < (size);                    \
+         (bit) = find_next_bit((addr), (size), (bit) + 1))
+
+#define for_each_set_bit_from(bit, addr, size) \
+    for ((bit) = find_next_bit((addr), (size), (bit));    \
+         (bit) < (size);                    \
+         (bit) = find_next_bit((addr), (size), (bit) + 1))
+
+#define EID_HIGH(eid) (((eid) >> 12) & 0xff)
+#define EID_LOW(eid) ((eid) & 0xfff)
+#define EID_GEN(eid_h, eid_l) ((eid_h) << 12 | (eid_l))
+
+#define UB_ALIGNMENT 64
+
+/* Round number down to multiple */
+#define ALIGN_DOWN(n, m) ((n) / (m) * (m))
+
+/* Round number up to multiple */
+#define ALIGN_UP(n, m) ALIGN_DOWN((n) + (m) - 1, (m))
+#define GENMASK(h, l) \
+    (((~0UL) - (1UL << (l)) + 1) & (~0UL >> (BITS_PER_LONG - 1 - (h))))
+
+#define BITS_PER_LONG_LONG 64
+#define GENMASK_ULL(h, l) \
+    (((~0ULL) - (1ULL << (l)) + 1) & \
+      (~0ULL >> (BITS_PER_LONG_LONG - 1 - (h))))
+#define DASH_SZ 3
+
 #endif

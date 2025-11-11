@@ -155,6 +155,14 @@ enum {
     VIRT_HIGH_GIC_REDIST2 =  VIRT_LOWMEMMAP_LAST,
     VIRT_HIGH_PCIE_ECAM,
     VIRT_HIGH_PCIE_MMIO,
+#ifdef CONFIG_UB
+    VIRT_HIGH_UB_MMIO,
+    VIRT_UB_IDEV_ERS,
+    VIRT_UBC_BASE_REG,
+    VIRT_UBIOS_INFO_TABLE,
+    VIRT_UB_MEM_CC,
+    VIRT_UB_MEM_NC,
+#endif // CONFIG_UB
 };
 
 typedef enum VirtIOMMUType {
@@ -221,6 +229,15 @@ struct VirtMachineState {
     bool highmem_mmio;
     bool highmem_redists;
 #ifdef CONFIG_UB
+    bool highmem_ub_mmio;
+    bool highmem_idev_ers;
+    bool highmem_ubc_base_reg;
+    bool highmem_ubios_info_table;
+    bool highmem_ub_mem_cc;
+    bool highmem_ub_mem_nc;
+    bool ummu;
+    bool ub_cluster_mode;
+    bool fm_deployment;
     UBBus *ub_bus;
 #endif // CONFIG_UB
     bool its;

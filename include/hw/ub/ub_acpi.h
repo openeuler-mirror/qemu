@@ -27,6 +27,8 @@
 #define DTS_TABLE_HEADER_RESERVE_LEN 3
 #define DTS_ROOT_TABLE_RESERVE_LEN 6
 #define DTS_TABLE_HEADER_NAME_LEN 16
+/* ummu reserved tid num , don't modify */
+#define UMMU_RESERVED_TID_NUM 64
 typedef struct DtsTableHeader {
     char name[DTS_TABLE_HEADER_NAME_LEN];
     uint32_t total_size;
@@ -172,4 +174,10 @@ typedef struct AcpiUbrtTable {
                           UBIOS_UMMU_TABLE_SIZE(UBIOS_UMMU_TABLE_CNT) + \
                           UBIOS_RSV_MEM_TABLE_SIZE(UBIOS_UMMU_TABLE_CNT))
 
+void ub_init_ubios_info_table(VirtMachineState *vms, uint64_t total_size);
+void ub_set_gpa_bits(uint8_t bits);
+void build_ubrt(GArray *table_data, BIOSLinker *linker, VirtMachineState *vms);
+void ub_set_ubinfo_in_ubc_table(VirtMachineState *vms);
+void acpi_dsdt_add_ub(Aml *scope);
+void acpi_iort_add_ub(GArray *table_data);
 #endif

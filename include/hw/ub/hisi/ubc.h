@@ -45,4 +45,143 @@
 #define UBC_INTERRUPT_ID_CNT        0x1000
 #define VENDER_ID_HUAWEI            0xCC08
 
+/*
+ *   Local Register layout
+ *
+ *   +-----------------------------+
+ *   |        rsv  15M             |
+ *   +-----------------------------+
+ *   |        16th 1M CCUM         |
+ *   +-----------------------------+ 0xf00_0000
+ *   |        15th 16M UMMU        |
+ *   +-----------------------------+ 0xe00_0000
+ *   |        14th 16M NL4         |
+ *   +-----------------------------+ 0xd00_0000
+ *   |        13th 16M BA4         |
+ *   +-----------------------------+ 0xc00_0000
+ *   |        12th 16M NL3         |
+ *   +-----------------------------+ 0xb00_0000
+ *   |        11th 16M BA3         |
+ *   +-----------------------------+ 0xa00_0000
+ *   |        10th 16M NL2         |
+ *   +-----------------------------+ 0x900_0000
+ *   |         9th 16M BA2         |
+ *   +-----------------------------+ 0x800_000
+ *   |         8th 16M NL1         |
+ *   +-----------------------------+ 0x700_0000
+ *   |         7th 16M BA1         |
+ *   +-----------------------------+ 0x600_0000
+ *   |         6th 16M NL0         |
+ *   +-----------------------------+ 0x500_0000
+ *   |         5th 16M TA          |
+ *   +-----------------------------+ 0x400_0000
+ *   |         4th 16M BA0         |
+ *   +-----------------------------+ 0x300_0000
+ *   |         3th 16M TP          |
+ *   +-----------------------------+ 0x200_0000
+ *   |         2rd 16M MISC        |
+ *   +-----------------------------+ 0x100_0000
+ *   |         1st 16M             |
+ *   +-----------------------------+ 0x000_0000
+ */
+#define FST_OFFSET  0x0000000
+#define MISC_OFFSET 0x1000000
+#define TP_OFFSET   0x2000000
+#define BA0_OFFSET  0x3000000
+#define TA_OFFSET   0x4000000
+#define NL0_OFFSET  0x5000000
+#define BA1_OFFSET  0x6000000
+#define NL1_OFFSET  0x7000000
+#define BA2_OFFSET  0x8000000
+#define NL2_OFFSET  0x9000000
+#define BA3_OFFSET  0xa000000
+#define NL3_OFFSET  0xb000000
+#define BA4_OFFSET  0xc000000
+#define NL4_OFFSET  0xd000000
+#define UMMU_OFFSET 0xe000000
+#define CCUM_OFFSET 0xf000000
+#define LOCAL_REG_TYPE_SHIFT 24
+#define LOCAL_REG_TYPE_MASK GENMASK_ULL(27, 24)
+#define LOCAL_REG_MEMBER_MASK GENMASK_ULL(23, 0)
+#define LOCAL_REG_ADDR_2_TYPE(addr)  (((addr) & LOCAL_REG_TYPE_MASK) >> LOCAL_REG_TYPE_SHIFT)
+#define BA_REG_MEMBER_MASK GENMASK_ULL(19, 16)
+#define BA_REG_DATA_MASK GENMASK_ULL(15, 0)
+#define TOP_REG_OFFSET    (0x00 * 64 * KiB)
+#define RXDMA_OFFSET      (0x01 * 64 * KiB)
+#define TXDMA_OFFSET      (0x02 * 64 * KiB)
+#define MASTER_OFFSET     (0x03 * 64 * KiB)
+#define LSAD_OFFSET       (0x04 * 64 * KiB)
+#define SMAP_OFFSET       (0x0a * 64 * KiB)
+#define P2P_OFFSET        (0x0c * 64 * KiB)
+#define MAR_OFFSET        (0x0d * 64 * KiB)
+#define MAR_DECODE_OFFSET (0x0e * 64 * KiB) /* mem decoder table */
+#define UB_RAS_OFFSET     (0x12 * 64 * KiB)
+#define CCUA_OFFSET       (0x14 * 64 * KiB)
+
+/* references LinQuickCV100_UBOMMU_nManager */
+#define TP_UBOMMU0_OFFSET 0x180000
+#define TP_UBOMMU1_OFFSET 0x190000
+#define TP_UBOMMU2_OFFSET 0x1c0000
+#define TP_UBOMMU3_OFFSET 0x1d0000
+#define TP_UBOMMU4_OFFSET 0x1e0000
+#define TP_UBOMMU5_OFFSET 0x1f0000
+#define TP_UBOMMU0_SELF_REG_OFFSET 0
+#define TP_UBOMMU0_PMCG_OFFSET     0x3000
+#define TP_UBOMMU0_PROTOCOL_OFFSET 0x4000
+#define TP_UBOMMU0_CMDQ_OFFSET     0xc000
+#define TP_UBOMMU0_EVENTQ_OFFSET   0xe000
+#define SELF_ICG_CFG_OFFSET     0x0
+#define UBOMMU_MEM_INIT_OFFSET  0x1804
+#define DECODER_REG_BASE (TP_OFFSET + TP_UBOMMU0_OFFSET + \
+                          TP_UBOMMU0_SELF_REG_OFFSET)         /* 0x2180000 */
+#define CMDQ_BASE_ADDR (TP_OFFSET + TP_UBOMMU0_OFFSET + \
+                        TP_UBOMMU0_CMDQ_OFFSET)               /* 0x218c000 */
+#define EVTQ_BASE_ADDR (TP_OFFSET + TP_UBOMMU0_OFFSET + \
+                        TP_UBOMMU0_EVENTQ_OFFSET)             /* 0x218e000 */
+
+#define DECODER_SELF_ICG_CFG_OFFSET (DECODER_REG_BASE + \
+                                      SELF_ICG_CFG_OFFSET) /* 0x2180000 */
+#define DECODER_SELF_MEM_INIT_OFFSET (DECODER_REG_BASE + \
+                                      UBOMMU_MEM_INIT_OFFSET) /* 0x2181804 */
+#define DECODER_MEM_INIT_DONE_VAL 0x3F
+#define DECODER_MEM_INIT_DONE_SHIFT 16
+
+#define SQ_ADDR_L 0x0
+#define SQ_ADDR_H 0x4
+#define SQ_PI 0x8
+#define SQ_CI 0xc
+#define SQ_DEPTH 0x10
+#define SQ_STATUS 0x14
+#define RQ_ADDR_L 0x40
+#define RQ_ADDR_H 0x44
+#define RQ_PI 0x48
+#define RQ_CI 0x4c
+#define RQ_DEPTH 0x50
+#define RQ_ENTRY_SIZE 0x54
+#define RQ_STATUS 0x58
+#define CQ_ADDR_L 0x70
+#define CQ_ADDR_H 0x74
+#define CQ_PI 0x78
+#define CQ_CI 0x7c
+#define CQ_DEPTH 0x80
+#define CQ_STATUS 0x84
+#define CQ_INT_MASK 0x88
+#define CQ_INT_STATUS 0x8c
+#define CQ_INT_RO 0x90
+#define CQ_INT_SET 0x94
+#define MSGQ_RST 0xB0
+
+#define HI_MSG_SQE_PLD_SIZE 0x800 /* 2K */
+#define HI_MSG_RQE_SIZE 0x800     /* 2K */
+#define HI_MSGQ_DEPTH 16
+#define HI_SQ_CFG_DEPTH HI_MSGQ_DEPTH
+#define HI_RQ_CFG_DEPTH HI_MSGQ_DEPTH
+#define HI_CQ_CFG_DEPTH HI_MSGQ_DEPTH
+#define HI_FM_MSG_ID_MIN 128
+#define HI_FM_MSG_ID_MAX 191
+#define MAP_COMMAND_MASK 0xff
+#define HI_FM_MSG_MAX (HI_SQ_CFG_DEPTH - 1)
+#define HI_MSGQ_MAX_DEPTH 1024
+#define HI_MSGQ_MIN_DEPTH 4
+
 #endif
