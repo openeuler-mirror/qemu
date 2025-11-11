@@ -28,6 +28,94 @@
 #include "hw/ub/ub_ubc.h"
 #include "qemu/log.h"
 #include "qapi/error.h"
+#include "hw/ub/ub_bus.h"
+#include "hw/ub/ub_ubc.h"
+#include "migration/vmstate.h"
+
+
+QLIST_HEAD(, BusControllerState) ub_bus_controllers;
+
+static void ubbus_dev_print(Monitor *mon, DeviceState *dev, int indent)
+{
+}
+
+static char *ubbus_get_dev_path(DeviceState *dev)
+{
+    return NULL;
+}
+
+static char *ubbus_get_fw_dev_path(DeviceState *dev)
+{
+    return NULL;
+}
+
+static const VMStateDescription vmstate_ubbus = {
+    .name = TYPE_UB_BUS,
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .fields = (VMStateField[]) {
+        VMSTATE_END_OF_LIST()
+    }
+};
+
+static void ub_bus_realize(BusState *qbus, Error **errp)
+{
+    UBBus *bus = UB_BUS(qbus);
+
+    vmstate_register(NULL, VMSTATE_INSTANCE_ID_ANY, &vmstate_ubbus, bus);
+}
+
+void ub_save_ubc_list(BusControllerState *s)
+{
+    QLIST_INSERT_HEAD(&ub_bus_controllers, s, node);
+}
+
+static void ub_bus_unrealize(BusState *qbus)
+{
+    UBBus *bus = UB_BUS(qbus);
+
+    vmstate_unregister(NULL, &vmstate_ubbus, bus);
+}
+
+static void ubbus_reset(BusState *qbus)
+{
+}
+
+UBBus *ub_register_root_bus(DeviceState *parent, const char *name,
+                            MemoryRegion *io_mmio)
+{
+    UBBus *bus;
+
+    bus = UB_BUS(qbus_new(TYPE_UB_BUS, parent, name));
+    bus->address_space_mem = io_mmio;
+
+    return bus;
+}
+
+void ub_unregister_root_bus(UBBus *bus)
+{
+    qbus_unrealize(BUS(bus));
+}
+
+static void ub_bus_class_init(ObjectClass *klass, void *data)
+{
+    BusClass *k = BUS_CLASS(klass);
+
+    k->print_dev = ubbus_dev_print;
+    k->get_dev_path = ubbus_get_dev_path;
+    k->get_fw_dev_path = ubbus_get_fw_dev_path;
+    k->realize = ub_bus_realize;
+    k->unrealize = ub_bus_unrealize;
+    k->reset = ubbus_reset;
+}
+
+static const TypeInfo ub_bus_info = {
+    .name = TYPE_UB_BUS,
+    .parent = TYPE_BUS,
+    .instance_size = sizeof(UBBus),
+    .class_size = sizeof(UBBusClass),
+    .class_init = ub_bus_class_init,
+};
 
 static UBDevice *do_ub_register_device(UBDevice *ub_dev, const char *name, Error **errp)
 {
@@ -101,6 +189,7 @@ static const TypeInfo ub_device_type_info = {
 
 static void ub_register_types(void)
 {
+    type_register_static(&ub_bus_info);
     type_register_static(&ub_device_type_info);
 }
 

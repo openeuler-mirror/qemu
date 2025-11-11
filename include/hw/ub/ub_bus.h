@@ -36,4 +36,12 @@ struct UBBus {
 #define TYPE_UB_BUS "UB_BUS"
 OBJECT_DECLARE_TYPE(UBBus, UBBusClass, UB_BUS)
 
+UBBus *ub_register_root_bus(DeviceState *parent, const char *name,
+                            MemoryRegion *io_mmio);
+void ub_unregister_root_bus(UBBus *bus);
+UBDevice *ub_find_device_by_eid(UBBus *bus, uint32_t eid);
+static inline UBBus *ub_get_bus(const UBDevice *dev)
+{
+    return UB_BUS(qdev_get_parent_bus(DEVICE(dev)));
+}
 #endif

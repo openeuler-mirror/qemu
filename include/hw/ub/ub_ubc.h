@@ -20,6 +20,8 @@
 
 #include "hw/sysbus.h"
 #include "qom/object.h"
+#include "hw/ub/hisi/ubc.h"
+#include "hw/ub/ub_bus.h"
 
 #define TYPE_BUS_CONTROLLER "ub-bus-controller"
 OBJECT_DECLARE_TYPE(BusControllerState, BusControllerClass, BUS_CONTROLLER)
@@ -37,6 +39,7 @@ struct BusControllerState {
     MemoryRegion io_mmio; /* ub mmio hpa memory region */
     uint32_t mmio_size;
     bool mig_enabled;
+    UBBus *bus;
     QLIST_ENTRY(BusControllerState) node;
 };
 
@@ -44,4 +47,5 @@ struct BusControllerClass {
     SysBusDeviceClass parent_class;
 };
 
+void ub_save_ubc_list(BusControllerState *s);
 #endif

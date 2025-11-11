@@ -123,6 +123,8 @@ static void ub_bus_controller_realize(DeviceState *dev, Error **errp)
     memory_region_init(&s->io_mmio, OBJECT(s), "UB_MMIO", UINT64_MAX);
     sysbus_init_mmio(sysdev, &s->io_mmio);
 
+    s->bus = ub_register_root_bus(dev, name, &s->io_mmio);
+    ub_save_ubc_list(s);
     g_free(name);
 }
 
@@ -132,6 +134,7 @@ static void ub_bus_controller_unrealize(DeviceState *dev)
     SysBusDevice *sysdev = SYS_BUS_DEVICE(dev);
     g_free(sysdev->parent_obj.id);
     QLIST_REMOVE(s, node);
+    ub_unregister_root_bus(s->bus);
     ub_reg_free(dev);
 }
 
