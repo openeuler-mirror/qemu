@@ -228,6 +228,7 @@ meson_options_help() {
   printf "%s\n" '  mbind-by-proportion'
   printf "%s\n" '                  support of one guest numa node alloc memory from multi'
   printf "%s\n" '                  host nodes'
+  printf "%s\n" '  hugepage-pod    support of hugepage use on demand'
 }
 _meson_option_parse() {
   case $1 in
@@ -576,6 +577,8 @@ _meson_option_parse() {
     --disable-uadk) printf "%s" -Duadk=disabled ;;
     --enable-mbind-by-proportion) printf "%s" -Dmbind_by_proportion=enabled ;;
     --disable-mbind-by-proportion) printf "%s" -Dmbind_by_proportion=disabled ;;
+    --enable-hugepage-pod) printf "%s" -Dhugepage_pod=enabled ;;
+    --disable-hugepage-pod) printf "%s" -Dhugepage_pod=disabled ;;
     *) return 1 ;;
   esac
 }

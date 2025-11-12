@@ -2109,6 +2109,17 @@ static inline bool memory_region_is_nonvolatile(MemoryRegion *mr)
     return mr->nonvolatile;
 }
 
+#ifdef CONFIG_HUGEPAGE_POD
+/**
+ * memory_region_is_huge_pod: check whether a memory region is POD hugepage
+ *
+ * Returns %true if a memory region is POD hugepage.
+ *
+ * @mr: the memory region being queried
+ */
+bool memory_region_is_huge_pod(MemoryRegion *mr);
+#endif
+
 /**
  * memory_region_get_fd: Get a file descriptor backing a RAM memory region.
  *

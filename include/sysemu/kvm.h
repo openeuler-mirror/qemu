@@ -606,6 +606,11 @@ int kvm_create_shadow_device(PCIDevice *dev);
 int kvm_delete_shadow_device(PCIDevice *dev);
 #endif
 
+#ifdef CONFIG_HUGEPAGE_POD
+int kvm_update_touched_log(void);
+int kvm_clear_slot_dirty_bitmap(void *ram);
+#endif
+
 void kvm_mark_guest_state_protected(void);
 
 #endif

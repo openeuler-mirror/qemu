@@ -555,4 +555,8 @@ void migrate_fd_cancel(MigrationState *s);
 
 bool memcrypt_enabled(void);
 
+#ifdef CONFIG_HUGEPAGE_POD
+int ram_init_touched_log(void);
+#endif
+
 #endif

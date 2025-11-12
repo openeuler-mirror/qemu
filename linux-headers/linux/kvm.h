@@ -104,6 +104,9 @@ struct kvm_userspace_memory_region {
  */
 #define KVM_MEM_LOG_DIRTY_PAGES	(1UL << 0)
 #define KVM_MEM_READONLY	(1UL << 1)
+#ifdef CONFIG_HUGEPAGE_POD
+#define KVM_MEM_HUGE_POD	(1UL << 9)
+#endif
 
 /* for KVM_IRQ_LINE */
 struct kvm_irq_level {
@@ -1784,6 +1787,9 @@ struct kvm_enc_region {
 
 /* Available with KVM_CAP_ARM_SVE */
 #define KVM_ARM_VCPU_FINALIZE	  _IOW(KVMIO,  0xc2, int)
+
+/* Available always */
+#define KVM_POD_TOUCHED_LOG	  _IO(KVMIO,  0xfe)
 
 /* Available with  KVM_CAP_S390_VCPU_RESETS */
 #define KVM_S390_NORMAL_RESET	_IO(KVMIO,   0xc3)

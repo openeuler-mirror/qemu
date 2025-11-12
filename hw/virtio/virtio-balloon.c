@@ -39,6 +39,162 @@
 
 #define BALLOON_PAGE_SIZE  (1 << VIRTIO_BALLOON_PFN_SHIFT)
 
+#ifdef CONFIG_HUGEPAGE_POD
+#define ULONGS_PER_HUGEPAGE 8 /* Number of unsigned longs per huge page in the bitmap */
+static bool guest_enabled_fpr = false;
+
+/* Set if guest support and enabled free-page-reporting */
+static void set_guest_enabled_fpr(bool enabled) {
+    guest_enabled_fpr = enabled;
+}
+
+/* Represent of a RAMBlock */
+typedef struct GlobalBalloonedPage {
+    void *base_hva;  /* start HVA of a RAMBlock */
+    size_t page_nr;  /* total 4KiB page count of a RAMBlock */
+    unsigned long *freed_page_bitmap;  /* every set bit represent a freed 4KiB page */
+    int *hugepage_freed_pages;  /* every element represent freed subpages count in a hugepage */
+} GlobalBalloonedPage;
+
+#define PAGES_IN_HUGEPAGE 512
+#define HUGEPAGE_SHIFT 21
+#define GBP_LIST_LENGTH 8
+GlobalBalloonedPage *gbp_list[GBP_LIST_LENGTH] = { 0 };
+
+static GlobalBalloonedPage *find_gbp_by_addr(void *base_hva)
+{
+    int i;
+
+    for (i = 0; i < GBP_LIST_LENGTH; i++) {
+        GlobalBalloonedPage *gbp = gbp_list[i];
+        if (gbp == NULL) {
+            continue;
+        }
+
+        if (gbp->base_hva == base_hva) {
+            return gbp;
+        }
+    }
+    return NULL;
+}
+
+static GlobalBalloonedPage *alloc_new_gbp(void *base_hva, ram_addr_t length)
+{
+    int i;
+
+    for (i = 0; i < GBP_LIST_LENGTH; i++) {
+        GlobalBalloonedPage *gbp = gbp_list[i];
+        if (gbp == NULL) {
+            gbp = g_malloc0(sizeof(GlobalBalloonedPage));
+            if (gbp == NULL) {
+                error_report("alloc memory for GlobalBalloonedPage failed");
+                return NULL;
+            }
+            gbp->base_hva = base_hva;
+            gbp->page_nr = length >> VIRTIO_BALLOON_PFN_SHIFT;
+            gbp->freed_page_bitmap = bitmap_new(gbp->page_nr);
+            gbp->hugepage_freed_pages = g_malloc0(gbp->page_nr/PAGES_IN_HUGEPAGE * sizeof(int));
+
+            gbp_list[i] = gbp;
+            return gbp;
+        }
+    }
+    warn_report("gbp list is full, max length: %d", GBP_LIST_LENGTH);
+
+    return NULL;
+}
+
+static void free_gbp(void)
+{
+    int i;
+
+    for (i = 0; i < GBP_LIST_LENGTH; i++) {
+        GlobalBalloonedPage *gbp = gbp_list[i];
+        if (gbp == NULL) {
+            continue;
+        }
+
+        g_free(gbp->freed_page_bitmap);
+        g_free(gbp->hugepage_freed_pages);
+        g_free(gbp);
+
+        gbp_list[i] = NULL;
+    }
+}
+
+static inline void clear_subpages_in_hugepage(GlobalBalloonedPage *gbp, unsigned long hugepage_index)
+{
+    if (hugepage_index * ULONGS_PER_HUGEPAGE < gbp->page_nr) {
+        bitmap_zero(&gbp->freed_page_bitmap[hugepage_index * ULONGS_PER_HUGEPAGE], PAGES_IN_HUGEPAGE);
+    }
+}
+
+static inline bool all_subpages_in_hugepage_freed(GlobalBalloonedPage *gbp, unsigned long hugepage_index)
+{
+    if (hugepage_index * ULONGS_PER_HUGEPAGE < gbp->page_nr) {
+        return bitmap_full(&gbp->freed_page_bitmap[hugepage_index * ULONGS_PER_HUGEPAGE], PAGES_IN_HUGEPAGE);
+    }
+}
+
+static void mark_freed_subpage(RAMBlock *rb, ram_addr_t rb_offset)
+{
+    void *base_hva = qemu_ram_get_host_addr(rb);
+    ram_addr_t length = qemu_ram_get_max_length(rb);
+    ram_addr_t rb_page_size = qemu_ram_pagesize(rb);
+    ram_addr_t rb_aligned_offset = QEMU_ALIGN_DOWN(rb_offset, rb_page_size);
+    unsigned long page_index = rb_offset >> VIRTIO_BALLOON_PFN_SHIFT;
+    unsigned long hugepage_index = rb_offset >> HUGEPAGE_SHIFT;
+    GlobalBalloonedPage *gbp = find_gbp_by_addr(base_hva);
+    if (gbp == NULL) {
+        gbp = alloc_new_gbp(base_hva, length);
+        if (gbp == NULL) {
+            return;
+        }
+    }
+
+    /* When one subpage released by balloon, set the bit of this page */
+    if (page_index < gbp->page_nr && !test_and_set_bit(page_index, gbp->freed_page_bitmap)) {
+        if (hugepage_index < (gbp->page_nr / PAGES_IN_HUGEPAGE)) {
+            gbp->hugepage_freed_pages[hugepage_index]++;
+            /*
+            * All bits have been set meaning that all subpages of a hugepage is freed
+            * by balloon, So we can release this hugepage back to Host.
+            */
+            if (gbp->hugepage_freed_pages[hugepage_index] == PAGES_IN_HUGEPAGE) {
+                clear_subpages_in_hugepage(gbp, hugepage_index);
+                gbp->hugepage_freed_pages[hugepage_index] = 0;
+
+                /* Release this hugepage back to Host */
+                ram_block_discard_range(rb, rb_aligned_offset, rb_page_size);
+            }
+        }
+    }
+}
+
+static void mark_used_subpage(RAMBlock *rb, ram_addr_t rb_offset)
+{
+    void *base_hva = qemu_ram_get_host_addr(rb);
+    unsigned long page_index = rb_offset >> VIRTIO_BALLOON_PFN_SHIFT;
+    unsigned long hugepage_index = rb_offset >> HUGEPAGE_SHIFT;
+    GlobalBalloonedPage *gbp = find_gbp_by_addr(base_hva);
+    if (gbp == NULL) {
+        warn_report("Couldn't find gbp of rb_offset 0x%lx\n", rb_offset);
+        return;
+    }
+
+    /*
+     * When one subpage deflated back to the Guest, clear the bit of this page.
+     * This means that this subpage could be used by Guest, so we cannot
+     * release to Host by mark_freed_subpage.
+     */
+    if (page_index < gbp->page_nr && test_and_clear_bit(page_index, gbp->freed_page_bitmap)) {
+        if (hugepage_index < (gbp->page_nr / PAGES_IN_HUGEPAGE)) {
+            gbp->hugepage_freed_pages[hugepage_index]--;
+        }
+    }
+}
+#endif
+
 typedef struct PartiallyBalloonedPage {
     ram_addr_t base_gpa;
     unsigned long *bitmap;
@@ -91,6 +247,14 @@ static void balloon_inflate_page(VirtIOBalloon *balloon,
      * host address? */
     rb = qemu_ram_block_from_host(addr, false, &rb_offset);
     rb_page_size = qemu_ram_pagesize(rb);
+
+#ifdef CONFIG_HUGEPAGE_POD
+    if (rb_page_size == (1 << HUGEPAGE_SHIFT)) {
+        /* 2M pagesize case */
+        mark_freed_subpage(rb, rb_offset);
+        return;
+    }
+#endif
 
     if (rb_page_size == BALLOON_PAGE_SIZE) {
         /* Easy case */
@@ -156,6 +320,14 @@ static void balloon_deflate_page(VirtIOBalloon *balloon,
      * host address? */
     rb = qemu_ram_block_from_host(addr, false, &rb_offset);
     rb_page_size = qemu_ram_pagesize(rb);
+
+#ifdef CONFIG_HUGEPAGE_POD
+    if (rb_page_size == (1 << HUGEPAGE_SHIFT)) {
+        /* 2M pagesize case */
+        mark_used_subpage(rb, rb_offset);
+        return;
+    }
+#endif
 
     host_addr = (void *)((uintptr_t)addr & ~(rb_page_size - 1));
 
@@ -257,6 +429,14 @@ static void balloon_stats_get_all(Object *obj, Visitor *v, const char *name,
         goto out_end;
     }
     for (i = 0; i < VIRTIO_BALLOON_S_NR; i++) {
+#ifdef CONFIG_HUGEPAGE_POD
+        if (guest_enabled_fpr && i == VIRTIO_BALLOON_S_CACHES) {
+            if (i < VIRTIO_BALLOON_S_NR) {
+                s->stats[i] |= 1024;
+            }
+        }
+#endif
+
         if (!visit_type_uint64(v, balloon_stat_names[i], &s->stats[i], errp)) {
             goto out_nested;
         }
@@ -378,6 +558,10 @@ static void virtio_balloon_handle_report(VirtIODevice *vdev, VirtQueue *vq)
 
             ram_block_discard_range(rb, ram_offset, size);
         }
+
+#ifdef CONFIG_HUGEPAGE_POD
+        set_guest_enabled_fpr(true);
+#endif
 
 skip_element:
         virtqueue_push(vq, elem, 0);
@@ -923,6 +1107,9 @@ static void virtio_balloon_device_unrealize(DeviceState *dev)
         virtio_delete_queue(s->reporting_vq);
     }
     virtio_cleanup(vdev);
+#ifdef CONFIG_HUGEPAGE_POD
+    free_gbp();
+#endif
 }
 
 static void virtio_balloon_device_reset(VirtIODevice *vdev)
@@ -940,6 +1127,9 @@ static void virtio_balloon_device_reset(VirtIODevice *vdev)
     }
 
     s->poison_val = 0;
+#ifdef CONFIG_HUGEPAGE_POD
+    set_guest_enabled_fpr(false);
+#endif
 }
 
 static void virtio_balloon_set_status(VirtIODevice *vdev, uint8_t status)

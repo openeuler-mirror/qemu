@@ -3786,3 +3786,28 @@ static void memory_register_types(void)
 }
 
 type_init(memory_register_types)
+
+#ifdef CONFIG_HUGEPAGE_POD
+#define HUGEPAGESIZE (1 << 21)
+bool memory_region_is_huge_pod(MemoryRegion *mr)
+{
+    HostMemoryBackend *backend;
+
+    rcu_read_lock();
+    while (mr->alias) {
+        mr = mr->alias;
+    }
+    backend = (HostMemoryBackend *)object_dynamic_cast(mr->owner, TYPE_MEMORY_BACKEND);
+    rcu_read_unlock();
+
+    if (backend == NULL || backend->prealloc) {
+        return false;
+    }
+
+    if (host_memory_backend_pagesize(backend) != HUGEPAGESIZE) {
+        return false;
+    }
+
+    return true;
+}
+#endif
