@@ -119,4 +119,6 @@ struct UMMUBaseClass {
     SysBusDeviceClass parent_class;
 };
 
+UMMUState *ummu_find_by_bus_num(uint8_t bus_num);
+int ummu_associating_with_ubc(BusControllerState *ubc);
 #endif

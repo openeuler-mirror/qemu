@@ -26,6 +26,7 @@
 #include "hw/ub/ub.h"
 #include "hw/ub/ub_bus.h"
 #include "hw/ub/ub_ubc.h"
+#include "hw/ub/ub_ummu.h"
 #include "hw/ub/ub_config.h"
 #include "hw/ub/hisi/ubc.h"
 #include "hw/ub/hisi/ub_mem.h"
@@ -433,6 +434,9 @@ static void ub_bus_controller_dev_realize(UBDevice *dev, Error **errp)
 
     dev->dev_type = UB_TYPE_IBUS_CONTROLLER;
     ub_bus_controller_dev_config_space_init(dev);
+    if (0 > ummu_associating_with_ubc(ubc)) {
+        qemu_log("failed to associating ubc with ummu. %s\n", dev->name);
+    }
 }
 
 static Property ub_bus_controller_dev_properties[] = {
