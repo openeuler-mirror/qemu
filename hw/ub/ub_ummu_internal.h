@@ -955,4 +955,7 @@ static inline void ummu_plib_usr_va_to_pibi_os_va(MAPTCmd *mapt_cmd, UMMUMcmdqCm
     mcmd_cmd->word[4] = deposit32(mcmd_cmd->word[4], 0, 16, tag);
 }
 
+void ummu_dev_uninstall_nested_tecte(UMMUDevice *ummu_dev);
+int ummu_dev_install_nested_tecte(UMMUDevice *sdev, uint32_t data_type,
+                                  uint32_t data_len, void *data);
 #endif

@@ -450,6 +450,164 @@ static void mcmdq_cmd_delete_kvtbl(UMMUState *u, UMMUMcmdqCmd *cmd, uint8_t mcmd
     }
 }
 
+static gboolean ummu_invalid_tecte(gpointer key, gpointer value, gpointer user_data)
+{
+    UMMUDevice *ummu_dev = (UMMUDevice *)key;
+    UMMUTransCfg *cfg = (UMMUTransCfg *)value;
+    UMMUTecteRange *range = (UMMUTecteRange *)user_data;
+
+    if (range->invalid_all ||
+        (cfg->tecte_tag >= range->start && cfg->tecte_tag <= range->end)) {
+        qemu_log("ummu start invalidate udev(%s) cached config.\n", ummu_dev->udev->qdev.id);
+        return true;
+    }
+
+    return false;
+}
+
+static void ummu_invalid_single_tecte(UMMUState *u, uint32_t tecte_tag)
+{
+    UMMUTecteRange tecte_range = { .invalid_all = false, };
+
+    trace_ummu_invalid_single_tecte(tecte_tag);
+    tecte_range.start = tecte_tag;
+    tecte_range.end = tecte_tag;
+    g_hash_table_foreach_remove(u->configs, ummu_invalid_tecte, &tecte_range);
+}
+
+static void ummu_uninstall_nested_tecte(gpointer key, gpointer value, gpointer opaque)
+{
+    UMMUDevice *ummu_dev = (UMMUDevice *)value;
+
+    ummu_dev_uninstall_nested_tecte(ummu_dev);
+}
+
+/* V | ST_MODE(.CONFIG) | TCRC_SEL(.STRW) */
+#define INSTALL_TECTE0_WORD0_MASK (GENMASK(0, 0) | GENMASK(1, 3) | GENMASK(22, 21))
+#define INSTALL_TECTE0_WORD1_MASK 0
+/* TCT_MAXNUM(.S1CDMax) |  TCT_PTR[31:6](.S1ContextPtr) */
+#define INSTALL_TECTE1_WORD0_MASK (GENMASK(4, 0) | GENMASK(31, 6))
+/* TCT_PTR[51:32](.S1ContextPtr) | TCT_FMT(.S1Fmt) | TCT_STALL_EN(.S1STALLD) |
+ * TCT_Ptr_MD0(.S1CIR) | TCT_Ptr_MD1(.S1COR) | TCT_Ptr_MSD(.S1CSH) */
+#define INSTALL_TECTE1_WORD1_MASK (GENMASK(19, 0)  | \
+                                   GENMASK(21, 20) | \
+                                   GENMASK(24, 24) | \
+                                   GENMASK(27, 26) | \
+                                   GENMASK(29, 28) | \
+                                   GENMASK(31, 30))
+
+static void ummu_install_nested_tecte(gpointer key, gpointer value, gpointer opaque)
+{
+    UMMUDevice *ummu_dev = (UMMUDevice *)value;
+    TECTE *tecte = (TECTE *)opaque;
+    struct iommu_hwpt_ummu iommu_config = {};
+    int ret;
+
+    if (ummu_dev->udev->dev_type != UB_TYPE_DEVICE &&
+        ummu_dev->udev->dev_type != UB_TYPE_IDEVICE) {
+        return;
+    }
+
+    if (!ummu_dev->vdev && ummu_dev->idev && ummu_dev->viommu) {
+        UMMUVdev *vdev = g_new0(UMMUVdev, 1);
+        /* default use eid as virt_id */
+        vdev->core = iommufd_backend_alloc_vdev(ummu_dev->idev, ummu_dev->viommu->core, ummu_dev->udev->eid);
+        if (!vdev->core) {
+            error_report("failed to allocate a vDEVICE");
+            g_free(vdev);
+            return;
+        }
+        ummu_dev->vdev = vdev;
+    }
+
+    iommu_config.tecte[0] = (uint64_t)tecte->word[0] & INSTALL_TECTE0_WORD0_MASK;
+    iommu_config.tecte[0] |= ((uint64_t)tecte->word[1] & INSTALL_TECTE0_WORD1_MASK) << 32;
+    iommu_config.tecte[1] = (uint64_t)tecte->word[2] & INSTALL_TECTE1_WORD0_MASK;
+    iommu_config.tecte[1] |= ((uint64_t)tecte->word[3] & INSTALL_TECTE1_WORD1_MASK) << 32;
+    trace_ummu_install_nested_tecte(iommu_config.tecte[0], iommu_config.tecte[1]);
+    ret = ummu_dev_install_nested_tecte(ummu_dev, IOMMU_HWPT_DATA_UMMU,
+                                        sizeof(iommu_config), &iommu_config);
+    if (ret && ret != -ENOENT) {
+        error_report("Unable to alloc Stage-1 HW Page Table: %d", ret);
+    } else if (ret == 0) {
+        qemu_log("install nested tecte success.\n");
+    }
+}
+
+static int ummu_find_tecte(UMMUState *ummu, uint32_t tecte_tag, TECTE *tecte);
+static void ummu_config_tecte(UMMUState *u, uint32_t tecte_tag)
+{
+    TECTE tecte;
+    int ret;
+
+    ret = ummu_find_tecte(u, tecte_tag, &tecte);
+    if (ret) {
+        qemu_log("failed to find tecte\n");
+        return;
+    }
+
+    trace_ummu_config_tecte(TECTE_VALID(&tecte), TECTE_ST_MODE(&tecte));
+    if (!TECTE_VALID(&tecte) || TECTE_ST_MODE(&tecte) != TECTE_ST_MODE_S1) {
+        g_hash_table_foreach(u->ummu_devs, ummu_uninstall_nested_tecte, NULL);
+        return;
+    }
+
+    g_hash_table_foreach(u->ummu_devs, ummu_install_nested_tecte, &tecte);
+    if (u->tecte_tag_num >= UMMU_TECTE_TAG_MAX_NUM) {
+        qemu_log("unexpect tecte tag num over %u\n", UMMU_TECTE_TAG_MAX_NUM);
+        return;
+    } else {
+        u->tecte_tag_cache[u->tecte_tag_num++] = tecte_tag;
+    }
+}
+
+static void ummu_invalidate_cache(UMMUState *u, UMMUMcmdqCmd *cmd);
+static void mcmdq_cmd_cfgi_tect_handler(UMMUState *u, UMMUMcmdqCmd *cmd, uint8_t mcmdq_idx)
+{
+    uint32_t tecte_tag = CMD_TECTE_TAG(cmd);
+
+    trace_mcmdq_cmd_cfgi_tect_handler(mcmdq_idx, tecte_tag);
+
+    ummu_invalid_single_tecte(u, tecte_tag);
+    ummu_config_tecte(u, tecte_tag);
+    ummu_invalidate_cache(u, cmd);
+}
+
+static void ummu_viommu_invalidate_cache(IOMMUFDViommu *viommu, uint32_t type, UMMUMcmdqCmd *cmd)
+{
+    int ret;
+    uint32_t tecte_tag = CMD_TECTE_TAG(cmd);
+    uint32_t ncmds = 1;
+
+    if (!viommu) {
+        return;
+    }
+
+    ret = iommufd_viommu_invalidate_cache(viommu->iommufd, viommu->viommu_id,
+                                          type, sizeof(*cmd), &ncmds, cmd);
+    if (ret) {
+        qemu_log("failed to invalidate cache for ummu, tecte_tag = %u, ret = %d\n", tecte_tag, ret);
+    }
+}
+
+static void ummu_invalidate_cache(UMMUState *u, UMMUMcmdqCmd *cmd)
+{
+    IOMMUFDViommu *viommu = NULL;
+    UMMUDevice *ummu_dev = NULL;
+
+    if (!u->viommu) {
+        return;
+    }
+
+    ummu_dev = QLIST_FIRST(&u->viommu->device_list);
+    if (!ummu_dev || !ummu_dev->vdev) {
+        return;
+    }
+
+    viommu = u->viommu->core;
+    ummu_viommu_invalidate_cache(viommu, IOMMU_VIOMMU_INVALIDATE_DATA_UMMU, cmd);
+}
+
 static void mcmdq_cmd_plbi_x_process(UMMUState *u, UMMUMcmdqCmd *cmd, uint8_t mcmdq_idx)
 {
     trace_mcmdq_cmd_plbi_x_process(mcmdq_idx, mcmdq_cmd_strings[CMD_TYPE(cmd)]);
@@ -527,7 +685,7 @@ static void (*mcmdq_cmd_handlers[])(UMMUState *u, UMMUMcmdqCmd *cmd, uint8_t mcm
     [CMD_SYNC]                 = mcmdq_cmd_sync_handler,
     [CMD_STALL_RESUME]         = NULL,
     [CMD_PREFET_CFG]           = mcmdq_cmd_prefet_cfg,
-    [CMD_CFGI_TECT]            = NULL,
+    [CMD_CFGI_TECT]            = mcmdq_cmd_cfgi_tect_handler,
     [CMD_CFGI_TECT_RANGE]      = NULL,
     [CMD_CFGI_TCT]             = NULL,
     [CMD_CFGI_TCT_ALL]         = NULL,
@@ -1410,6 +1568,7 @@ static void ummu_base_realize(DeviceState *dev, Error **errp)
         error_setg(errp, "UMMU is not attached to any UB bus!");
     }
 
+    u->tecte_tag_num = 0;
     if (u->nested) {
         memory_region_init(&u->stage2, OBJECT(u), "stage2", UINT64_MAX);
         memory_region_init_alias(&u->sysmem, OBJECT(u),
@@ -1479,8 +1638,149 @@ static const TypeInfo ummu_base_info = {
     .class_init    = ummu_base_class_init,
 };
 
+static int ummu_get_tecte(UMMUState *ummu, dma_addr_t addr, TECTE *tecte)
+{
+    int ret, i;
+
+    ret = dma_memory_read(&address_space_memory, addr, tecte, sizeof(*tecte),
+                          MEMTXATTRS_UNSPECIFIED);
+    if (ret != MEMTX_OK) {
+        qemu_log("Cannot fetch tecte at address=0x%lx\n", addr);
+        return -EINVAL;
+    }
+
+    for (i = 0; i < ARRAY_SIZE(tecte->word); i++) {
+        le32_to_cpus(&tecte->word[i]);
+    }
+
+    return 0;
+}
+
+static int ummu_find_tecte(UMMUState *ummu, uint32_t tecte_tag, TECTE *tecte)
+{
+    dma_addr_t tect_base_addr = TECT_BASE_ADDR(ummu->tect_base);
+    dma_addr_t tecte_addr;
+    int ret;
+    int i;
+
+    if (ummu_tect_fmt_2level(ummu)) {
+        int l1_tecte_offset, l2_tecte_offset;
+        uint32_t split;
+        dma_addr_t l1ptr, l2ptr;
+        TECTEDesc l1_tecte_desc;
+
+        split = ummu_tect_split(ummu);
+        l1_tecte_offset = tecte_tag >> split;
+        l2_tecte_offset = tecte_tag & ((1 << split) - 1);
+        l1ptr = (dma_addr_t)(tect_base_addr + l1_tecte_offset * sizeof(l1_tecte_desc));
+
+        ret = dma_memory_read(&address_space_memory, l1ptr, &l1_tecte_desc,
+                              sizeof(l1_tecte_desc), MEMTXATTRS_UNSPECIFIED);
+        if (ret != MEMTX_OK) {
+            qemu_log("dma read failed for tecte level1 desc.\n");
+            return -EINVAL;
+        }
+
+        for (i = 0; i < ARRAY_SIZE(l1_tecte_desc.word); i++) {
+            le32_to_cpus(&l1_tecte_desc.word[i]);
+        }
+
+        if (TECT_DESC_V(&l1_tecte_desc) == 0) {
+            qemu_log("tecte desc is invalid\n");
+            return -EINVAL;
+        }
+
+        l2ptr = TECT_L2TECTE_PTR(&l1_tecte_desc);
+        tecte_addr = l2ptr + l2_tecte_offset * sizeof(*tecte);
+    } else {
+        qemu_log("liner table process not support\n");
+        return -EINVAL;
+    }
+
+    if (ummu_get_tecte(ummu, tecte_addr, tecte)) {
+        qemu_log("failed to get tecte.\n");
+        return -EINVAL;
+    }
+
+    return 0;
+}
+
+void ummu_dev_uninstall_nested_tecte(UMMUDevice *ummu_dev)
+{
+    HostIOMMUDeviceIOMMUFD *idev = ummu_dev->idev;
+    UMMUS1Hwpt *s1_hwpt = ummu_dev->s1_hwpt;
+    uint32_t hwpt_id;
+
+    if (!s1_hwpt || !ummu_dev->viommu) {
+        return;
+    }
+
+    hwpt_id = ummu_dev->viommu->s2_hwpt->hwpt_id;
+    if (!host_iommu_device_iommufd_attach_hwpt(idev, hwpt_id, NULL)) {
+        error_report("Unable to attach dev to stage-2 HW pagetable");
+        return;
+    }
+
+    qemu_log("uninstall s1 hwpt(%u) success\n", s1_hwpt->hwpt_id);
+    iommufd_backend_free_id(idev->iommufd, s1_hwpt->hwpt_id);
+    ummu_dev->s1_hwpt = NULL;
+    g_free(s1_hwpt);
+}
+
+int ummu_dev_install_nested_tecte(UMMUDevice *ummu_dev, uint32_t data_type,
+                                  uint32_t data_len, void *data)
+{
+    UMMUViommu *viommu = ummu_dev->viommu;
+    UMMUS1Hwpt *s1_hwpt = ummu_dev->s1_hwpt;
+    HostIOMMUDeviceIOMMUFD *idev = ummu_dev->idev;
+    uint64_t *tecte = (uint64_t *)data;
+
+    if (!idev || !viommu) {
+        return -ENOENT;
+    }
+
+    if (s1_hwpt) {
+        return 0;
+    }
+
+    s1_hwpt = g_new0(UMMUS1Hwpt, 1);
+    if (!s1_hwpt) {
+        return -ENOMEM;
+    }
+
+    s1_hwpt->ummu = ummu_dev->ummu;
+    s1_hwpt->viommu = viommu;
+    s1_hwpt->iommufd = idev->iommufd;
+
+    if (tecte) {
+        trace_ummu_dev_install_nested_tecte(tecte[0], tecte[1]);
+    }
+
+    if (!iommufd_backend_alloc_hwpt(idev->iommufd, idev->devid,
+                                    viommu->core->viommu_id, 0, data_type,
+                                    data_len, data, &s1_hwpt->hwpt_id, NULL, NULL)) {
+        goto free;
+    }
+
+    if (!host_iommu_device_iommufd_attach_hwpt(idev, s1_hwpt->hwpt_id, NULL)) {
+        goto free_hwpt;
+    }
+
+    ummu_dev->s1_hwpt = s1_hwpt;
+
+    return 0;
+free_hwpt:
+    iommufd_backend_free_id(idev->iommufd, s1_hwpt->hwpt_id);
+free:
+    ummu_dev->s1_hwpt = NULL;
+    g_free(s1_hwpt);
+
+    return -EINVAL;
+}
+
 static void ummu_base_register_types(void)
 {
     type_register_static(&ummu_base_info);
 }
+
 type_init(ummu_base_register_types)
