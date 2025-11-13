@@ -416,4 +416,6 @@ typedef struct MsgPktHeader { /* TODO, check byte order */
 uint32_t fill_rq(BusControllerState *s, void *rsp, uint32_t rsp_size);
 uint32_t fill_cq(BusControllerState *s, HiMsgCqe *cqe);
 
+bool ub_guid_is_none(UbGuid *guid);
+
 #endif

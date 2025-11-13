@@ -32,6 +32,7 @@
 #include "hw/ub/hisi/ub_mem.h"
 #include "hw/ub/hisi/ub_fm.h"
 #include "migration/vmstate.h"
+#include "hw/ub/ubus_instance.h"
 
 static uint64_t ub_msgq_reg_read(void *opaque, hwaddr addr, unsigned len)
 {
@@ -157,6 +158,7 @@ static void ub_bus_controller_realize(DeviceState *dev, Error **errp)
     g_free(name);
 }
 
+static void ub_bus_instance_guid_unlock(BusControllerDev *ubc_dev);
 static void ub_bus_controller_unrealize(DeviceState *dev)
 {
     BusControllerState *s = BUS_CONTROLLER(dev);
@@ -165,6 +167,7 @@ static void ub_bus_controller_unrealize(DeviceState *dev)
     QLIST_REMOVE(s, node);
     ub_unregister_root_bus(s->bus);
     ub_reg_free(dev);
+    ub_bus_instance_guid_unlock(s->ubc_dev);
 }
 
 static bool ub_bus_controller_needed(void *opaque)
@@ -409,6 +412,68 @@ static bool ub_ubc_is_empty(UBBus *bus)
     return true;
 }
 
+#define UB_BUSINSTANCE_GUID_LOCK_DIR "/run/libvirt/qemu"
+
+static int ub_bus_instance_guid_lock(UbGuid *guid)
+{
+    char path[256] = {0};
+    char guid_str[UB_DEV_GUID_STRING_LENGTH + 1] = {0};
+    int lock_fd;
+
+    ub_device_get_str_from_guid(guid, guid_str, UB_DEV_GUID_STRING_LENGTH + 1);
+    snprintf(path, sizeof(path), "%s/ub-bus-instance-%s.lock",  UB_BUSINSTANCE_GUID_LOCK_DIR, guid_str);
+    lock_fd = open(path, O_RDONLY | O_CREAT, 0600);
+    if (lock_fd < 0) {
+        qemu_log("failed to open lock file %s: %s\n", path, strerror(errno));
+        return -1;
+    }
+
+    if (flock(lock_fd, LOCK_EX | LOCK_NB)) {
+        qemu_log("lock %s failed: %s\n", path, strerror(errno));
+        close(lock_fd);
+        return -1;
+    }
+
+    return lock_fd;
+}
+
+static void ub_bus_instance_guid_unlock(BusControllerDev *ubc_dev)
+{
+    char guid_str[UB_DEV_GUID_STRING_LENGTH + 1] = {0};
+
+    if (ubc_dev->bus_instance_lock_fd <= 0) {
+        return;
+    }
+
+    ub_device_get_str_from_guid(&ubc_dev->bus_instance_guid, guid_str,
+                                UB_DEV_GUID_STRING_LENGTH + 1);
+    qemu_log("unlock ub bus instance lock for guid: %s\n", guid_str);
+    if (flock(ubc_dev->bus_instance_lock_fd, LOCK_UN)) {
+        qemu_log("failed to unlock for bus instance guid %s: %s\n",
+                 guid_str, strerror(errno));
+    }
+    close(ubc_dev->bus_instance_lock_fd);
+}
+
+static int ub_bus_instance_process(BusControllerDev *ubc_dev, Error **errp)
+{
+    int lock_fd;
+
+    if (ub_guid_is_none(&ubc_dev->bus_instance_guid)) {
+        error_setg(errp, "ubc bus instance guid is required");
+        return -1;
+    }
+
+    lock_fd = ub_bus_instance_guid_lock(&ubc_dev->bus_instance_guid);
+    if (lock_fd < 0) {
+        error_setg(errp, "ubc bus instance guid lock failed, it may used by other vm");
+        return -1;
+    }
+
+    ubc_dev->bus_instance_lock_fd = lock_fd;
+    return 0;
+}
+
 static void ub_bus_controller_dev_realize(UBDevice *dev, Error **errp)
 {
     UBBus *bus = UB_BUS(qdev_get_parent_bus(DEVICE(dev)));
@@ -436,6 +501,13 @@ static void ub_bus_controller_dev_realize(UBDevice *dev, Error **errp)
     ub_bus_controller_dev_config_space_init(dev);
     if (0 > ummu_associating_with_ubc(ubc)) {
         qemu_log("failed to associating ubc with ummu. %s\n", dev->name);
+    }
+
+    qemu_log("set type UB_TYPE_CONTROLLER, ubc %p, "
+             "ubc->ubc_dev %p, bus %p\n", ubc, ubc->ubc_dev, bus);
+    if (ub_bus_instance_process(ubc->ubc_dev, errp)) {
+        qemu_log("ub bus instance process failed\n");
+        return;
     }
 }
 
