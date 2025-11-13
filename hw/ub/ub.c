@@ -945,3 +945,15 @@ void ub_setup_iommu(UBBus *bus, const UBIOMMUOps *ops, void *opaque)
     bus->iommu_ops = ops;
     bus->iommu_opaque = opaque;
 }
+
+uint32_t ub_dev_get_token_id(UBDevice *udev)
+{
+    uint64_t offset = ub_cfg_offset_to_emulated_offset(UB_CFG1_DEV_TOKEN_ID_OFFSET, true);
+    return *(uint32_t *)(udev->config + offset);
+}
+
+uint32_t ub_dev_get_ueid(UBDevice *udev)
+{
+    uint64_t offset = ub_cfg_offset_to_emulated_offset(UB_CFG0_DEV_UEID_OFFSET, true);
+    return *(uint32_t *)(udev->config + offset);
+}

@@ -71,6 +71,33 @@ static const char *const mcmdq_cmd_strings[MCMDQ_CMD_MAX] = {
     [CMD_TLBI_S2_IPA_U]          = "CMD_TLBI_S2_IPA_U",
 };
 
+static const char *const ummu_event_type_strings[EVT_MAX] = {
+    [EVT_NONE] = "EVT_NONE",
+    [EVT_UT] = "EVT_UT",
+    [EVT_BAD_DSTEID] = "EVT_BAD_DSTEID",
+    [EVT_TECT_FETCH] = "EVT_TECT_FETCH",
+    [EVT_BAD_TECT] = "EVT_BAD_TECT",
+    [EVT_RESERVE_0] = "EVT_RESERVE_0",
+    [EVT_BAD_TOKENID] = "EVT_BAD_TOKENID",
+    [EVT_TCT_FETCH] = "EVT_TCT_FETCH",
+    [EVT_BAD_TCT] = "EVT_BAD_TCT",
+    [EVT_A_PTW_EABT] = "EVT_A_PTW_EABT",
+    [EVT_A_TRANSLATION] = "EVT_A_TRANSLATION",
+    [EVT_A_ADDR_SIZE] = "EVT_A_ADDR_SIZE",
+    [EVT_ACCESS] = "EVT_ACCESS",
+    [EVT_A_PERMISSION] = "EVT_A_PERMISSION",
+    [EVT_TBU_CONFLICT] = "EVT_TBU_CONFLICT",
+    [EVT_CFG_CONFLICT] = "EVT_CFG_CONFLICT",
+    [EVT_VMS_FETCH] = "EVT_VMS_FETCH",
+    [EVT_P_PTW_EABT] = "EVT_P_PTW_EABT",
+    [EVT_P_CFG_ERROR] = "EVT_P_CFG_ERROR",
+    [EVT_P_PERMISSION] = "EVT_P_PERMISSION",
+    [EVT_RESERVE_1] = "EVT_RESERVE_1",
+    [EVT_EBIT_DENY] = "EVT_EBIT_DENY",
+    [EVT_CREATE_DSTEID_TECT_RELATION_RESULT] = "EVT_CREATE_DSTEID_TECT_RELATION_RESULT",
+    [EVT_DELETE_DSTEID_TECT_RELATION_RESULT] = "EVT_DELETE_DSTEID_TECT_RELATION_RESULT"
+};
+
 QLIST_HEAD(, UMMUState) ub_umms;
 UMMUState *ummu_find_by_bus_num(uint8_t bus_num)
 {
@@ -387,6 +414,19 @@ static void mcmdq_cmd_sync_usi_irq(uint64_t addr, uint32_t data)
 static void mcmdq_cmd_sync_sev_irq(void)
 {
     qemu_log("cannot support CMD_SYNC SEV event.\n");
+}
+
+static void ummu_glb_usi_notify(UMMUState *u, UMMUUSIVectorType type)
+{
+    USIMessage msg;
+
+    if (type == UMMU_USI_VECTOR_GERROR) {
+        msg = ummu_get_gerror_usi_message(u);
+    } else {
+        msg = ummu_get_eventq_usi_message(u);
+    }
+
+    usi_send_message(&msg, UMMU_INTERRUPT_ID, NULL);
 }
 
 static void mcmdq_cmd_sync_handler(UMMUState *u, UMMUMcmdqCmd *cmd, uint8_t mcmdq_idx)
@@ -1624,6 +1664,7 @@ static void ummu_base_realize(DeviceState *dev, Error **errp)
     ub_save_ummu_list(u);
 
     u->ummu_devs = g_hash_table_new_full(NULL, NULL, NULL, g_free);
+    u->configs = g_hash_table_new_full(NULL, NULL, NULL, g_free);
     QLIST_INIT(&u->kvtbl);
     if (u->primary_bus) {
         ub_setup_iommu(u->primary_bus, &ummu_ops, u);
@@ -1632,6 +1673,7 @@ static void ummu_base_realize(DeviceState *dev, Error **errp)
     }
 
     u->tecte_tag_num = 0;
+    u->mrtypename = TYPE_UMMU_IOMMU_MEMORY_REGION;
     if (u->nested) {
         memory_region_init(&u->stage2, OBJECT(u), "stage2", UINT64_MAX);
         memory_region_init_alias(&u->sysmem, OBJECT(u),
@@ -1660,6 +1702,12 @@ static void ummu_base_unrealize(DeviceState *dev)
         g_hash_table_remove_all(u->ummu_devs);
         g_hash_table_destroy(u->ummu_devs);
         u->ummu_devs = NULL;
+    }
+
+    if (u->configs) {
+        g_hash_table_remove_all(u->configs);
+        g_hash_table_destroy(u->configs);
+        u->configs = NULL;
     }
 
     QLIST_FOREACH_SAFE(entry, &u->kvtbl, list, next_entry) {
@@ -1719,6 +1767,25 @@ static int ummu_get_tecte(UMMUState *ummu, dma_addr_t addr, TECTE *tecte)
     return 0;
 }
 
+static uint32_t ummu_get_tecte_tag_by_dest_eid(UMMUState *u, uint32_t dst_eid)
+{
+    UMMUKVTblEntry *entry = NULL;
+
+    QLIST_FOREACH(entry, &u->kvtbl, list) {
+        if (entry->dst_eid == dst_eid) {
+            break;
+        }
+    }
+
+    if (!entry) {
+        qemu_log("cannot find tecte_tag by dst_eid 0x%x\n", dst_eid);
+        return UINT32_MAX;
+    }
+    qemu_log("success get tecte_tag(0x%x) by dst_eid(0x%x)\n", entry->tecte_tag, dst_eid);
+
+    return entry->tecte_tag;
+}
+
 static int ummu_find_tecte(UMMUState *ummu, uint32_t tecte_tag, TECTE *tecte)
 {
     dma_addr_t tect_base_addr = TECT_BASE_ADDR(ummu->tect_base);
@@ -1765,6 +1832,429 @@ static int ummu_find_tecte(UMMUState *ummu, uint32_t tecte_tag, TECTE *tecte)
         return -EINVAL;
     }
 
+    return 0;
+}
+
+static int ummu_decode_tecte(UMMUState *ummu, UMMUTransCfg *cfg,
+                             TECTE *tecte, UMMUEventInfo *event)
+{
+    if (TECTE_VALID(tecte) == 0) {
+        qemu_log("fetched tecte is invalid\n");
+        return -EINVAL;
+    }
+
+    cfg->tct_ptr = TECTE_TCT_PTR(tecte);
+    cfg->tct_num = TECTE_TCT_NUM(tecte);
+    cfg->tct_fmt = TECTE_TCT_FMT(tecte);
+
+    qemu_log("tct_ptr: 0x%lx, tct_num: %lu, fmt: %lu\n",
+             cfg->tct_ptr, cfg->tct_num, cfg->tct_fmt);
+    return 0;
+}
+
+static int ummu_get_tcte(UMMUState *ummu, dma_addr_t addr,
+                         TCTE *tcte, uint32_t tid)
+{
+    int ret, i;
+    uint64_t *_tcte;
+
+    ret = dma_memory_read(&address_space_memory, addr, tcte, sizeof(*tcte),
+                          MEMTXATTRS_UNSPECIFIED);
+    if (ret != MEMTX_OK) {
+        qemu_log("Cannot fetch tcte at address=0x%lx\n", addr);
+        return -EINVAL;
+    }
+
+    for (i = 0; i < ARRAY_SIZE(tcte->word); i++) {
+        le32_to_cpus(&tcte->word[i]);
+    }
+
+    _tcte = (uint64_t *)tcte;
+    qemu_log("fetch tcte(%u): <0x%lx, 0x%lx, 0x%lx, 0x%lx, 0x%lx, 0x%lx, 0x%lx, 0x%lx>\n",
+             tid, _tcte[0], _tcte[1], _tcte[2], _tcte[3], _tcte[4], _tcte[5], _tcte[6], _tcte[7]);
+    return 0;
+}
+
+static int ummu_find_tcte(UMMUState *ummu, UMMUTransCfg *cfg, uint32_t tid,
+                          TCTE *tcte, UMMUEventInfo *event)
+{
+    int l1idx, l2idx;
+    dma_addr_t tct_lv1_addr, tcte_addr;
+    TCTEDesc tct_desc;
+    int ret, i;
+
+    if (cfg->tct_num == 0 || tid >= TCTE_MAX_NUM(cfg->tct_num)) {
+        event->type = EVT_BAD_TOKENID;
+        return -EINVAL;
+    }
+
+    if (TCT_FMT_LINEAR == cfg->tct_fmt || TCT_FMT_LVL2_4K == cfg->tct_fmt) {
+        event->type = EVT_TCT_FETCH;
+        qemu_log("current dont support TCT_FMT_LINEAR&TCT_FMT_LVL2_4K.\n");
+        return -EINVAL;
+    }
+
+    l1idx = tid >> TCT_SPLIT_64K;
+    tct_lv1_addr = cfg->tct_ptr + l1idx * sizeof(tct_desc);
+    ret = dma_memory_read(&address_space_memory, tct_lv1_addr, &tct_desc, sizeof(tct_desc),
+                          MEMTXATTRS_UNSPECIFIED);
+    if (ret != MEMTX_OK) {
+        event->type = EVT_TCT_FETCH;
+        qemu_log("failed to dma read tct lv1 entry.\n");
+        return -EINVAL;
+    }
+
+    for (i = 0; i < ARRAY_SIZE(tct_desc.word); i++) {
+        le32_to_cpus(&tct_desc.word[i]);
+    }
+
+    qemu_log("l1idx: %d, tct_l1_addr: 0x%lx, tct_desc: 0x%lx, tcte_ptr: 0x%llx, l1tcte_v: %u\n",
+             l1idx, tct_lv1_addr, *(uint64_t *)&tct_desc, TCT_L2TCTE_PTR(&tct_desc), TCT_L1TCTE_V(&tct_desc));
+
+    if (TCT_L1TCTE_V(&tct_desc) == 0) {
+        event->type = EVT_BAD_TOKENID;
+        qemu_log("l2tcte is invalid\n");
+        return -EINVAL;
+    }
+
+    l2idx = tid & (TCT_L2_ENTRIES - 1);
+    tcte_addr = TCT_L2TCTE_PTR(&tct_desc) + l2idx * sizeof(*tcte);
+    qemu_log("l2idx: %d, tcte_addr: 0x%lx\n", l2idx, tcte_addr);
+    ret = ummu_get_tcte(ummu, tcte_addr, tcte, tid);
+    if (ret) {
+        event->type = EVT_TCT_FETCH;
+        qemu_log("failed to get tcte, ret = %d\n", ret);
+        return ret;
+    }
+
+    return 0;
+}
+
+static int ummu_decode_tcte(UMMUState *ummu, UMMUTransCfg *cfg,
+                            TCTE *tcte, UMMUEventInfo *event)
+{
+    uint32_t tct_v = TCTE_TCT_V(tcte);
+
+    if (tct_v == 0) {
+        qemu_log("fetched tcte invalid\n");
+        event->type = EVT_BAD_TCT;
+        return -1;
+    }
+
+    cfg->tct_ttba = TCTE_TTBA(tcte);
+    cfg->tct_sz = TCTE_SZ(tcte);
+    cfg->tct_tgs = tgs2granule(TCTE_TGS(tcte));
+    qemu_log("tcte_tbba: 0x%lx, sz: %u, tgs: %u, tct_v: %u\n",
+             cfg->tct_ttba, cfg->tct_sz, cfg->tct_tgs, tct_v);
+    return 0;
+}
+
+static int ummu_tect_parse_sparse_table(UMMUDevice *ummu_dev, UMMUTransCfg *cfg,
+                                        uint32_t dest_eid, UMMUEventInfo *event)
+{
+    UMMUState *ummu = ummu_dev->ummu;
+    int ret;
+    TECTE tecte;
+    TCTE tcte;
+    uint32_t tecte_tag;
+    uint32_t tid = ub_dev_get_token_id(ummu_dev->udev);
+
+    tecte_tag = ummu_get_tecte_tag_by_dest_eid(ummu, dest_eid);
+    if (tecte_tag == UINT32_MAX) {
+        qemu_log("failed to get tecte tag by dest_eid(%u).\n", dest_eid);
+        event->type = EVT_BAD_DSTEID;
+        goto failed;
+    }
+
+    ret = ummu_find_tecte(ummu, tecte_tag, &tecte);
+    if (ret) {
+        event->type = EVT_TECT_FETCH;
+        qemu_log("failed to find tecte: %d\n", ret);
+        goto failed;
+    }
+
+    ret = ummu_decode_tecte(ummu, cfg, &tecte, event);
+    if (ret) {
+        event->type = EVT_BAD_TECT;
+        qemu_log("failed to decode tecte.\n");
+        goto failed;
+    }
+
+    qemu_log("get udev(%s %s) tid(%u)\n",
+             ummu_dev->udev->name, ummu_dev->udev->qdev.id, tid);
+    ret = ummu_find_tcte(ummu, cfg, tid, &tcte, event);
+    if (ret) {
+        qemu_log("failed to find tecte.\n");
+        goto failed;
+    }
+
+    ret = ummu_decode_tcte(ummu, cfg, &tcte, event);
+    if (ret) {
+        qemu_log("failed to decode tecte.\n");
+        goto failed;
+    }
+    cfg->tecte_tag = tecte_tag;
+    cfg->tid = tid;
+
+    return 0;
+
+failed:
+     event->tid = tid;
+     event->tecte_tag = tecte_tag;
+     return -EINVAL;
+}
+
+static int ummu_decode_config(UMMUDevice *ummu_dev, UMMUTransCfg *cfg, UMMUEventInfo *event)
+{
+    uint32_t dest_eid = ub_dev_get_ueid(ummu_dev->udev);
+
+    qemu_log("ummu decode config dest_eid is %u.\n", dest_eid);
+    if (ummu_tect_mode_sparse_table(ummu_dev->ummu)) {
+        return ummu_tect_parse_sparse_table(ummu_dev, cfg, dest_eid, event);
+    }
+
+    event->type = EVT_TECT_FETCH;
+    event->tecte_tag = ummu_get_tecte_tag_by_dest_eid(ummu_dev->ummu, dest_eid);
+
+    qemu_log("current not support process linear table.\n");
+    return -1;
+}
+
+static UMMUTransCfg *ummu_get_config(UMMUDevice *ummu_dev, UMMUEventInfo *event)
+{
+    UMMUState *ummu = ummu_dev->ummu;
+    UMMUTransCfg *cfg = NULL;
+
+    cfg = g_hash_table_lookup(ummu->configs, ummu_dev);
+    if (cfg) {
+        return cfg;
+    }
+
+    /* cfg will be freed when removed from hash table */
+    cfg = g_new0(UMMUTransCfg, 1);
+    if (!ummu_decode_config(ummu_dev, cfg, event)) {
+        g_hash_table_insert(ummu->configs, ummu_dev, cfg);
+    } else {
+        g_free(cfg);
+        cfg = NULL;
+    }
+
+    return cfg;
+}
+
+static int get_pte(dma_addr_t baseaddr, uint32_t index, uint64_t *pte)
+{
+    int ret;
+    dma_addr_t addr = baseaddr + index * sizeof(*pte);
+
+    ret = ldq_le_dma(&address_space_memory, addr, pte, MEMTXATTRS_UNSPECIFIED);
+    if (ret) {
+        qemu_log("failed to get dma data for addr 0x%lx\n", addr);
+        return -EINVAL;
+    }
+
+    return 0;
+}
+
+static void ummu_ptw_64_s1(UMMUTransCfg *cfg, dma_addr_t iova, IOMMUTLBEntry *entry, UMMUPTWEventInfo *ptw_info)
+{
+    dma_addr_t baseaddr, indexmask;
+    uint32_t granule_sz, stride, level, inputsize;
+
+    granule_sz = cfg->tct_tgs;
+    stride = VMSA_STRIDE(granule_sz);
+    if (granule_sz == 0 || stride == 0) {
+        qemu_log("ummu ptw 64 s1 failed: granule_sz = %u, stride = %u\n", granule_sz, stride);
+        goto error;
+    }
+    inputsize = 64 - cfg->tct_sz;
+    level = 4 - (inputsize - 4) / stride;
+    indexmask = VMSA_IDXMSK(inputsize, stride, level);
+    baseaddr = extract64(cfg->tct_ttba, 0, 48);
+    baseaddr &= ~indexmask;
+
+    qemu_log("stride: %u, inputsize: %u, level: %u, baseaddr: 0x%lx\n",
+             stride, inputsize, level, baseaddr);
+    while (level < VMSA_LEVELS) {
+        uint64_t subpage_size = 1ULL << level_shift(level, granule_sz);
+        uint64_t mask = subpage_size - 1;
+        uint64_t pte, gpa;
+        uint32_t offset = iova_level_offset(iova, inputsize, level, granule_sz);
+
+        if (get_pte(baseaddr, offset, &pte)) {
+            goto error;
+        }
+
+        if (is_invalid_pte(pte) || is_reserved_pte(pte, level)) {
+            qemu_log("invalid or reserved pte.\n");
+            break;
+        }
+
+        if (is_table_pte(pte, level)) {
+            baseaddr = get_table_pte_address(pte, granule_sz);
+            level++;
+            continue;
+        } else if (is_page_pte(pte, level)) {
+            gpa = get_page_pte_address(pte, granule_sz);
+        } else {
+            uint64_t block_size;
+            gpa = get_block_pte_address(pte, level, granule_sz, &block_size);
+        }
+
+        entry->translated_addr = gpa;
+        entry->iova = iova & ~mask;
+        entry->addr_mask = mask;
+
+        return;
+    }
+
+error:
+    ptw_info->type = UMMU_PTW_ERR_TRANSLATION;
+    return;
+}
+
+static void ummu_ptw(UMMUTransCfg *cfg, dma_addr_t iova, IOMMUTLBEntry *entry, UMMUPTWEventInfo *ptw_info)
+{
+    ummu_ptw_64_s1(cfg, iova, entry, ptw_info);
+}
+
+static MemTxResult eventq_write(UMMUEventQueue *q, UMMUEvent *evt_in)
+{
+    dma_addr_t base_addr, addr;
+    MemTxResult ret;
+    UMMUEvent evt = *evt_in;
+    int i;
+
+    for (i = 0; i < ARRAY_SIZE(evt.word); i++) {
+        cpu_to_le32s(&evt.word[i]);
+    }
+
+    base_addr = EVENT_QUE_BASE_ADDR(&q->queue);
+    addr = base_addr + EVENT_QUE_WR_IDX(&q->queue) * q->queue.entry_size;
+    ret = dma_memory_write(&address_space_memory, addr, &evt, sizeof(UMMUEvent),
+                           MEMTXATTRS_UNSPECIFIED);
+    if (ret != MEMTX_OK) {
+        return ret;
+    }
+
+    ummu_eventq_prod_incr(q);
+    qemu_log("eventq: addr(0x%lx), prod(%u), cons(%u)\n", addr,
+             EVENT_QUE_WR_IDX(&q->queue), EVENT_QUE_RD_IDX(&q->queue));
+    return MEMTX_OK;
+}
+
+static MemTxResult ummu_write_eventq(UMMUState *u, UMMUEvent *evt)
+{
+    UMMUEventQueue *queue = &u->eventq;
+    MemTxResult r;
+
+    if (!ummu_eventq_enabled(u)) {
+        return MEMTX_ERROR;
+    }
+
+    if (ummu_eventq_full(queue)) {
+        qemu_log("ummu eventq full, eventq write failed.\n");
+        return MEMTX_ERROR;
+    }
+
+    r = eventq_write(queue, evt);
+    if (r != MEMTX_OK) {
+        return r;
+    }
+
+    if (!ummu_eventq_empty(queue)) {
+        ummu_glb_usi_notify(u, UMMU_USI_VECTOR_EVETQ);
+    }
+
+    return MEMTX_OK;
+}
+
+static void ummu_record_event(UMMUState *u, UMMUEventInfo *info)
+{
+    UMMUEvent evt = {};
+    MemTxResult r;
+
+    if (!ummu_eventq_enabled(u)) {
+        qemu_log("ummu eventq disabled.\n");
+        return;
+    }
+
+    /* need set more EVT info for different event later */
+    EVT_SET_TYPE(&evt, info->type);
+    EVT_SET_TECTE_TAG(&evt, info->tecte_tag);
+    EVT_SET_TID(&evt, info->tid);
+
+    qemu_log("report event %s: tecte_tag %u tid %u\n",
+              ummu_event_type_strings[info->type], info->tecte_tag, info->tid);
+
+    r = ummu_write_eventq(u, &evt);
+    if (r != MEMTX_OK) {
+        qemu_log("ummu failed to write eventq.\n");
+        /* trigger glb err irq later */
+    }
+}
+
+static IOMMUTLBEntry ummu_translate(IOMMUMemoryRegion *mr, hwaddr addr,
+                                    IOMMUAccessFlags flag, int iommu_idx)
+{
+    UMMUDevice *ummu_dev = container_of(mr, UMMUDevice, iommu);
+    UMMUTransCfg *cfg = NULL;
+    IOMMUTLBEntry entry = {
+        .target_as = &address_space_memory,
+        .iova = addr,
+        .translated_addr = addr,
+        .addr_mask = ~(hwaddr)0,
+        .perm = IOMMU_RW,
+    };
+    UMMUEventInfo event = {
+        .type = EVT_NONE
+    };
+    UMMUPTWEventInfo ptw_info = {
+        .type = UMMU_PTW_ERR_NONE
+    };
+
+    cfg = ummu_get_config(ummu_dev, &event);
+    if (!cfg) {
+        qemu_log("failed to get ummu config.\n");
+        goto epilogue;
+    }
+
+    /* need support cache TLB entry later */
+    ummu_ptw(cfg, addr, &entry, &ptw_info);
+    if (ptw_info.type == UMMU_PTW_ERR_NONE) {
+        goto epilogue;
+    }
+
+    event.tecte_tag = cfg->tecte_tag;
+    event.tid = cfg->tid;
+    switch (ptw_info.type)
+    {
+    case UMMU_PTW_ERR_TRANSLATION:
+        event.type = EVT_A_TRANSLATION;
+        break;
+    case UMMU_PTW_ERR_PERMISSION:
+        event.type = EVT_A_PERMISSION;
+        break;
+    default:
+        break;
+    }
+
+epilogue:
+    qemu_log("ummu_translate: addr(0x%lx), translated_addr(0x%lx)\n", addr, entry.translated_addr);
+
+    if (event.type != EVT_NONE) {
+        ummu_record_event(ummu_dev->ummu, &event);
+    }
+
+    return entry;
+}
+
+static int ummu_notify_flag_changed(IOMMUMemoryRegion *iommu,
+                                    IOMMUNotifierFlag old,
+                                    IOMMUNotifierFlag new,
+                                    Error **errp)
+{
+    qemu_log("ummu_notify_flag_changed\n");
     return 0;
 }
 
@@ -1841,9 +2331,24 @@ free:
     return -EINVAL;
 }
 
+static void ummu_iommu_memory_region_class_init(ObjectClass *klass, void *data)
+{
+    IOMMUMemoryRegionClass *imrc = IOMMU_MEMORY_REGION_CLASS(klass);
+
+    imrc->translate = ummu_translate;
+    imrc->notify_flag_changed = ummu_notify_flag_changed;
+}
+
+static const TypeInfo ummu_iommu_memory_region_info = {
+    .parent = TYPE_IOMMU_MEMORY_REGION,
+    .name = TYPE_UMMU_IOMMU_MEMORY_REGION,
+    .class_init = ummu_iommu_memory_region_class_init,
+};
+
 static void ummu_base_register_types(void)
 {
     type_register_static(&ummu_base_info);
+    type_register_static(&ummu_iommu_memory_region_info);
 }
 
 type_init(ummu_base_register_types)
