@@ -1175,6 +1175,206 @@ int ummu_associating_with_ubc(BusControllerState *ubc)
     return 0;
 }
 
+static UMMUDevice *ummu_get_udev(UBBus *bus, UMMUState *u, uint32_t eid)
+{
+    UMMUDevice *ummu_dev = NULL;
+    UBDevice *udev = NULL;
+    char *name = NULL;
+
+    udev = ub_find_device_by_eid(bus, eid);
+    ummu_dev = g_hash_table_lookup(u->ummu_devs, udev);
+    if (ummu_dev) {
+        return ummu_dev;
+    }
+
+    /* will be freed when remove from hash table */
+    ummu_dev = g_new0(UMMUDevice, 1);
+    ummu_dev->ummu = u;
+    ummu_dev->udev = udev;
+
+    name = g_strdup_printf("%s-0x%x", u->mrtypename, eid);
+    memory_region_init_iommu(&ummu_dev->iommu, sizeof(ummu_dev->iommu), u->mrtypename,
+                             OBJECT(u), name, UINT64_MAX);
+    address_space_init(&ummu_dev->as_sysmem, &u->root, name);
+    address_space_init(&ummu_dev->as, MEMORY_REGION(&ummu_dev->iommu), name);
+    g_free(name);
+    g_hash_table_insert(u->ummu_devs, udev, ummu_dev);
+
+    return ummu_dev;
+}
+
+static AddressSpace *ummu_find_add_as(UBBus *bus, void *opaque, uint32_t eid)
+{
+    UMMUState *u = opaque;
+    UMMUDevice *ummu_dev = ummu_get_udev(bus, u, eid);
+
+    if (u->nested && !ummu_dev->s1_hwpt) {
+        return &ummu_dev->as_sysmem;
+    }
+
+    return &ummu_dev->as;
+}
+
+static bool ummu_is_nested(void *opaque)
+{
+    UMMUState *u = opaque;
+
+    return u->nested;
+}
+
+static bool ummu_dev_attach_viommu(UMMUDevice *udev,
+                                   HostIOMMUDeviceIOMMUFD *idev, Error **errp)
+{
+    UMMUState *u = udev->ummu;
+    UMMUS2Hwpt *s2_hwpt = NULL;
+    UMMUViommu *viommu = NULL;
+    uint32_t s2_hwpt_id;
+
+    if (u->viommu) {
+        return host_iommu_device_iommufd_attach_hwpt(
+            idev, u->viommu->s2_hwpt->hwpt_id, errp);
+    }
+
+    if (!iommufd_backend_alloc_hwpt(idev->iommufd, idev->devid, idev->ioas_id,
+                                    IOMMU_HWPT_ALLOC_NEST_PARENT,
+                                    IOMMU_HWPT_DATA_NONE, 0, NULL,
+                                    &s2_hwpt_id, NULL, errp)) {
+        error_setg(errp, "failed to allocate an S2 hwpt");
+        return false;
+    }
+
+    if (!host_iommu_device_iommufd_attach_hwpt(idev, s2_hwpt_id, errp)) {
+        error_setg(errp, "failed to attach stage-2 HW pagetable");
+        goto free_s2_hwpt;
+    }
+
+    viommu = g_new0(UMMUViommu, 1);
+    viommu->core = iommufd_backend_alloc_viommu(idev->iommufd, idev->devid,
+                                                IOMMU_VIOMMU_TYPE_UMMU,
+                                                s2_hwpt_id);
+    if (!viommu->core) {
+        error_setg(errp, "failed to allocate a viommu");
+        goto free_viommu;
+    }
+
+    s2_hwpt = g_new0(UMMUS2Hwpt, 1);
+    s2_hwpt->iommufd = idev->iommufd;
+    s2_hwpt->hwpt_id = s2_hwpt_id;
+    s2_hwpt->ioas_id = idev->ioas_id;
+    qemu_log("alloc hwpt for s2 success, hwpt id is %u\n", s2_hwpt_id);
+
+    viommu->iommufd = idev->iommufd;
+    viommu->s2_hwpt = s2_hwpt;
+
+    u->viommu = viommu;
+    return true;
+
+free_viommu:
+    g_free(viommu);
+    host_iommu_device_iommufd_attach_hwpt(idev, udev->idev->ioas_id, errp);
+free_s2_hwpt:
+    iommufd_backend_free_id(idev->iommufd, s2_hwpt_id);
+
+    return false;
+}
+
+static bool ummu_dev_set_iommu_dev(UBBus *bus, void *opaque, uint32_t eid,
+                                   HostIOMMUDevice *hiod, Error **errp)
+{
+    HostIOMMUDeviceIOMMUFD *idev = HOST_IOMMU_DEVICE_IOMMUFD(hiod);
+    UMMUState *u = opaque;
+    UMMUDevice *ummu_dev = NULL;
+
+    if (!u->nested) {
+        error_setg(errp, "set iommu dev expcet ummu is nested mode\n");
+        return false;
+    }
+
+    if (!idev) {
+        error_setg(errp, "unexpect idev is NULL\n");
+        return false;
+    }
+
+    ummu_dev = ummu_get_udev(bus, u, eid);
+    if (!ummu_dev) {
+        error_setg(errp, "failed to get ummu dev by eid 0x%x\n", eid);
+        return false;
+    }
+
+    if (ummu_dev->idev) {
+        if (ummu_dev->idev != idev) {
+            error_setg(errp, "udev(%s) exist idev conflict new config idev\n", ummu_dev->udev->name);
+            return false;
+        } else {
+            return true;
+        }
+    }
+
+    if (!ummu_dev_attach_viommu(ummu_dev, idev, errp)) {
+        error_report("Unable to attach viommu");
+        return false;
+    }
+
+    ummu_dev->idev = idev;
+    ummu_dev->viommu = u->viommu;
+    QLIST_INSERT_HEAD(&u->viommu->device_list, ummu_dev, next);
+
+    return 0;
+}
+
+static void ummu_dev_unset_iommu_dev(UBBus *bus, void *opaque, uint32_t eid)
+{
+    UMMUDevice *ummu_dev;
+    UMMUViommu *viommu = NULL;
+    UMMUVdev *vdev = NULL;
+    UMMUState *u = opaque;
+    UBDevice *udev = NULL;
+
+    if (!u->nested) {
+        return;
+    }
+
+    udev = ub_find_device_by_eid(bus, eid);
+    ummu_dev = g_hash_table_lookup(u->ummu_devs, udev);
+    if (!ummu_dev) {
+        return;
+    }
+
+    if (!host_iommu_device_iommufd_attach_hwpt(ummu_dev->idev,
+                                               ummu_dev->idev->ioas_id, NULL)) {
+        error_report("Unable to attach dev to the default HW pagetable");
+    }
+
+    vdev = ummu_dev->vdev;
+    viommu = ummu_dev->viommu;
+
+    ummu_dev->idev = NULL;
+    ummu_dev->viommu = NULL;
+    QLIST_REMOVE(ummu_dev, next);
+
+    if (vdev) {
+        iommufd_backend_free_id(viommu->iommufd, vdev->core->vdev_id);
+        g_free(vdev->core);
+        g_free(vdev);
+    }
+
+    if (QLIST_EMPTY(&viommu->device_list)) {
+        iommufd_backend_free_id(viommu->iommufd, viommu->core->viommu_id);
+        g_free(viommu->core);
+        iommufd_backend_free_id(viommu->iommufd, viommu->s2_hwpt->hwpt_id);
+        g_free(viommu->s2_hwpt);
+        g_free(viommu);
+        u->viommu = NULL;
+    }
+}
+
+static const UBIOMMUOps ummu_ops = {
+    .get_address_space = ummu_find_add_as,
+    .ummu_is_nested = ummu_is_nested,
+    .set_iommu_device = ummu_dev_set_iommu_dev,
+    .unset_iommu_device = ummu_dev_unset_iommu_dev,
+};
+
 static void ub_save_ummu_list(UMMUState *u)
 {
     QLIST_INSERT_HEAD(&ub_umms, u, node);
@@ -1202,7 +1402,24 @@ static void ummu_base_realize(DeviceState *dev, Error **errp)
     ummu_registers_init(u);
     ub_save_ummu_list(u);
 
+    u->ummu_devs = g_hash_table_new_full(NULL, NULL, NULL, g_free);
     QLIST_INIT(&u->kvtbl);
+    if (u->primary_bus) {
+        ub_setup_iommu(u->primary_bus, &ummu_ops, u);
+    } else {
+        error_setg(errp, "UMMU is not attached to any UB bus!");
+    }
+
+    if (u->nested) {
+        memory_region_init(&u->stage2, OBJECT(u), "stage2", UINT64_MAX);
+        memory_region_init_alias(&u->sysmem, OBJECT(u),
+                                 "ummu-sysmem", get_system_memory(), 0,
+                                 memory_region_size(get_system_memory()));
+        memory_region_add_subregion(&u->stage2, 0, &u->sysmem);
+
+        memory_region_init(&u->root, OBJECT(u), "ummu-root", UINT64_MAX);
+        memory_region_add_subregion(&u->root, 0, &u->stage2);
+    }
 }
 
 static void ummu_base_unrealize(DeviceState *dev)
@@ -1215,6 +1432,12 @@ static void ummu_base_unrealize(DeviceState *dev)
     ub_remove_ummu_list(u);
     if (sysdev->parent_obj.id) {
         g_free(sysdev->parent_obj.id);
+    }
+
+    if (u->ummu_devs) {
+        g_hash_table_remove_all(u->ummu_devs);
+        g_hash_table_destroy(u->ummu_devs);
+        u->ummu_devs = NULL;
     }
 
     QLIST_FOREACH_SAFE(entry, &u->kvtbl, list, next_entry) {

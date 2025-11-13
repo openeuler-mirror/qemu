@@ -255,4 +255,5 @@ static inline uint64_t ub_config_size(void)
 AddressSpace *ub_device_iommu_address_space(UBDevice *dev);
 UBDevice *ub_find_device_by_id(const char *id);
 uint32_t ub_interrupt_id(UBDevice *udev);
+void ub_setup_iommu(UBBus *bus, const UBIOMMUOps *ops, void *opaque);
 #endif

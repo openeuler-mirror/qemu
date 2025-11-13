@@ -935,3 +935,13 @@ int ub_dev_finally_setup(VirtMachineState *vms, Error **errp)
 
     return 0;
 }
+
+void ub_setup_iommu(UBBus *bus, const UBIOMMUOps *ops, void *opaque)
+{
+    /*
+     * If called, ub_setup_iommu() should provide a minimum set of
+     * useful callbacks for the bus.
+     */
+    bus->iommu_ops = ops;
+    bus->iommu_opaque = opaque;
+}
