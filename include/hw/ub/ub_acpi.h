@@ -175,6 +175,8 @@ typedef struct AcpiUbrtTable {
                           UBIOS_RSV_MEM_TABLE_SIZE(UBIOS_UMMU_TABLE_CNT))
 
 void ub_init_ubios_info_table(VirtMachineState *vms, uint64_t total_size);
+hwaddr ub_idev_ers_alloc_address_space(uint64_t size, uint32_t sys_pgs);
+void ub_idev_ers_free_address_space(hwaddr offset);
 void ub_set_gpa_bits(uint8_t bits);
 void build_ubrt(GArray *table_data, BIOSLinker *linker, VirtMachineState *vms);
 void ub_set_ubinfo_in_ubc_table(VirtMachineState *vms);

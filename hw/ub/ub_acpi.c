@@ -23,6 +23,7 @@
 #include "hw/qdev-properties.h"
 #include "hw/qdev-properties-system.h"
 #include "hw/ub/ub.h"
+#include "hw/ub/ub_config.h"
 #include "hw/ub/ub_bus.h"
 #include "hw/ub/ub_ubc.h"
 #include "hw/ub/ub_acpi.h"
@@ -41,6 +42,26 @@
 #define DTS_SIG_UBCTL "bus controller"
 #define DTS_SIG_UMMU "ummu"
 #define DTS_SIG_RSV_MEM "rsv_mem"
+
+typedef struct UBIdevErsAddrSpaceNode {
+    uint64_t offset;
+    uint64_t allocated_offset;
+    uint64_t size;
+
+    QTAILQ_ENTRY(UBIdevErsAddrSpaceNode) stailq_free;
+    QTAILQ_ENTRY(UBIdevErsAddrSpaceNode) stailq_used;
+} UBIdevErsAddrSpaceNode;
+
+typedef struct UBIdevErsAddrSpaceManage {
+    bool init;
+    uint64_t size;
+    hwaddr base_addr;
+
+    QTAILQ_HEAD(, UBIdevErsAddrSpaceNode) as_free_list;
+    QTAILQ_HEAD(, UBIdevErsAddrSpaceNode) as_used_list;
+} UBIdevErsAddrSpaceManage;
+
+UBIdevErsAddrSpaceManage g_idevErsAddrSpaceManage;
 
 static uint8_t gpa_bits;
 void ub_set_gpa_bits(uint8_t bits)
@@ -317,6 +338,177 @@ void ub_set_ubinfo_in_ubc_table(VirtMachineState *vms)
     ubc_node->ubc_info = guid;
 
     cpu_physical_memory_unmap(ubios, size, true, size);
+}
+
+static void ub_idev_ers_address_space_manage_init(void)
+{
+    VirtMachineState *vms = (VirtMachineState *)current_machine;
+    UBIdevErsAddrSpaceNode *free_node = NULL;
+
+    g_idevErsAddrSpaceManage.base_addr = vms->memmap[VIRT_UB_IDEV_ERS].base;
+    g_idevErsAddrSpaceManage.size = vms->memmap[VIRT_UB_IDEV_ERS].size;
+
+    QTAILQ_INIT(&g_idevErsAddrSpaceManage.as_free_list);
+    QTAILQ_INIT(&g_idevErsAddrSpaceManage.as_used_list);
+
+    free_node = g_new0(UBIdevErsAddrSpaceNode, 1);
+    free_node->size = g_idevErsAddrSpaceManage.size;
+    free_node->offset = 0;
+    QTAILQ_INSERT_TAIL(&g_idevErsAddrSpaceManage.as_free_list, free_node, stailq_free);
+    qemu_log("ub idev ers address space manage init success, base_addr: 0x%lx size: 0x%lx\n",
+             g_idevErsAddrSpaceManage.base_addr, g_idevErsAddrSpaceManage.size);
+}
+
+hwaddr ub_idev_ers_alloc_address_space(uint64_t size, uint32_t sys_pgs)
+{
+    UBIdevErsAddrSpaceNode *free_node = NULL;
+    UBIdevErsAddrSpaceNode *selected_free_node = NULL;
+    UBIdevErsAddrSpaceNode *used_node = NULL;
+    uint64_t need_node_size;
+    uint64_t free_node_base_addr;
+    uint64_t allocated_base_addr;
+    uint64_t allocated_diff;
+
+    if (!g_idevErsAddrSpaceManage.init) {
+        g_idevErsAddrSpaceManage.init = true;
+        ub_idev_ers_address_space_manage_init();
+    }
+
+    /* according UB Spec, if sys_pgs 0, unit is 4Kbytes, then unit is 64Kbytes */
+    if (!sys_pgs) {
+        size *= UB_CFG1_BASIC_SYSTEM_GRANULE_SIZE_4K;
+    } else {
+        size *= UB_CFG1_BASIC_SYSTEM_GRANULE_SIZE_64K;
+    }
+
+    QTAILQ_FOREACH(free_node, &g_idevErsAddrSpaceManage.as_free_list, stailq_free) {
+        if (free_node->size < size) {
+            continue;
+        }
+
+        free_node_base_addr = g_idevErsAddrSpaceManage.base_addr + free_node->offset;
+        /* allocated base addr need align to allocated size */
+        allocated_base_addr = ALIGN_UP(free_node_base_addr, size);
+        allocated_diff = allocated_base_addr - free_node_base_addr;
+        need_node_size = allocated_diff + size;
+        if (free_node->size < need_node_size) {
+            continue;
+        }
+
+        if (selected_free_node && selected_free_node->size < free_node->size) {
+            continue;
+        }
+
+        selected_free_node = free_node;
+        if (!used_node) {
+            /* create used node */
+            used_node = g_new0(UBIdevErsAddrSpaceNode, 1);
+        }
+        used_node->offset = selected_free_node->offset;
+        used_node->allocated_offset = used_node->offset + allocated_diff;
+        used_node->size = size + allocated_diff;
+    }
+
+    if (!selected_free_node) {
+        g_free(used_node);
+        return UINT64_MAX;
+    }
+
+    /* adjust free node */
+    if (selected_free_node->size - size < UB_CFG1_BASIC_SYSTEM_GRANULE_SIZE_4K) {
+        used_node->size = selected_free_node->size;
+        QTAILQ_REMOVE(&g_idevErsAddrSpaceManage.as_free_list, selected_free_node, stailq_free);
+        g_free(selected_free_node);
+    } else {
+        selected_free_node->size -= used_node->size;
+        selected_free_node->offset += used_node->size;
+    }
+
+    QTAILQ_INSERT_TAIL(&g_idevErsAddrSpaceManage.as_used_list, used_node, stailq_used);
+
+    return allocated_base_addr;
+}
+
+void ub_idev_ers_free_address_space(hwaddr offset)
+{
+    UBIdevErsAddrSpaceNode *used_node = NULL;
+    UBIdevErsAddrSpaceNode *free_node = NULL;
+    UBIdevErsAddrSpaceNode *next_free_node = NULL;
+    uint64_t as_offset = offset - g_idevErsAddrSpaceManage.base_addr;
+
+    QTAILQ_FOREACH(used_node, &g_idevErsAddrSpaceManage.as_used_list, stailq_used) {
+        if (used_node->allocated_offset == as_offset) {
+            QTAILQ_REMOVE(&g_idevErsAddrSpaceManage.as_used_list, used_node, stailq_used);
+            break;
+        }
+    }
+
+    if (!used_node) {
+        qemu_log("idev ers address space free failed, unable to find offset 0x%lx.\n", offset);
+        return;
+    }
+
+    /* adjust free node list */
+    /* case 1: as free list is empty */
+    if (QTAILQ_EMPTY(&g_idevErsAddrSpaceManage.as_free_list)) {
+        QTAILQ_INSERT_HEAD(&g_idevErsAddrSpaceManage.as_free_list, used_node, stailq_free);
+        return;
+    }
+
+    /* case 2: freed used_node->offset is minial  */
+    free_node = QTAILQ_FIRST(&g_idevErsAddrSpaceManage.as_free_list);
+    if (used_node->offset + used_node->size < free_node->offset) {
+        QTAILQ_INSERT_HEAD(&g_idevErsAddrSpaceManage.as_free_list, used_node, stailq_free);
+        return;
+    } else if (used_node->offset + used_node->size == free_node->offset) { /* merge to first free node */
+        free_node->offset = used_node->offset;
+        free_node->size += used_node->size;
+        g_free(used_node);
+        return;
+    }
+
+    /* case 3: foreach all free node, insert freed address space to free node in order */
+    QTAILQ_FOREACH(free_node, &g_idevErsAddrSpaceManage.as_free_list, stailq_free) {
+        next_free_node = QTAILQ_NEXT(free_node, stailq_free);
+        if (!next_free_node) {
+            if (free_node->offset + free_node->size < used_node->offset) {
+                QTAILQ_INSERT_TAIL(&g_idevErsAddrSpaceManage.as_free_list, used_node, stailq_free);
+            } else if (free_node->offset + free_node->size == used_node->offset) {
+                free_node->size += used_node->size;
+                g_free(used_node);
+            }
+            return;
+        }
+
+        if (used_node->offset >= next_free_node->offset + next_free_node->size) {
+            continue;
+        }
+
+        if (free_node->offset + free_node->size == used_node->offset &&
+            used_node->offset + used_node->size < next_free_node->offset) {
+            free_node->size += used_node->size;
+            g_free(used_node);
+            return;
+        } else if (free_node->offset + free_node->size < used_node->offset &&
+                   used_node->offset + used_node->size == next_free_node->offset) {
+            next_free_node->offset = used_node->offset;
+            next_free_node->size += used_node->size;
+            g_free(used_node);
+            return;
+        } else if (free_node->offset + free_node->size < used_node->offset &&
+                   used_node->offset + used_node->size < next_free_node->offset) {
+            QTAILQ_INSERT_AFTER(&g_idevErsAddrSpaceManage.as_free_list, free_node, used_node, stailq_free);
+            return;
+        } else {
+            next_free_node->offset = free_node->offset;
+            next_free_node->size += free_node->size;
+            next_free_node->size += used_node->size;
+            QTAILQ_REMOVE(&g_idevErsAddrSpaceManage.as_free_list, free_node, stailq_free);
+            g_free(used_node);
+            g_free(free_node);
+            return;
+        }
+    }
 }
 
 void build_ubrt(GArray *table_data, BIOSLinker *linker, VirtMachineState *vms)
