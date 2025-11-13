@@ -411,7 +411,10 @@ void kvm_arch_on_sigbus_vcpu(CPUState *cpu, int code, void *addr);
 #endif
 
 void kvm_arch_init_irq_routing(KVMState *s);
-
+#ifdef CONFIG_UB
+int kvm_arch_fixup_usi_route(struct kvm_irq_routing_entry *route,
+                             uint64_t address, uint32_t data, UBDevice *dev);
+#endif // CONFIG_UB
 int kvm_arch_fixup_msi_route(struct kvm_irq_routing_entry *route,
                              uint64_t address, uint32_t data, PCIDevice *dev);
 
@@ -513,6 +516,10 @@ int kvm_irqchip_add_msi_route(KVMRouteChange *c, int vector, PCIDevice *dev);
 int kvm_irqchip_update_msi_route(KVMRouteChange *c, int virq, MSIMessage msg,
                                  PCIDevice *dev);
 void kvm_irqchip_commit_routes(KVMState *s);
+#ifdef CONFIG_UB
+int kvm_irqchip_add_usi_route(KVMRouteChange *c, USIMessage msg, uint32_t devid, UBDevice *udev);
+int kvm_irqchip_update_usi_route(KVMRouteChange *c, int virq, USIMessage msg, UBDevice *udev);
+#endif // CONFIG_UB
 
 static inline KVMRouteChange kvm_irqchip_begin_route_changes(KVMState *s)
 {

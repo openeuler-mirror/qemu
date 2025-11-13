@@ -41,6 +41,8 @@ struct UBBus {
     BusState qbus;
     UBDeviceList devices;
     MemoryRegion *address_space_mem;
+    const UBIOMMUOps *iommu_ops;
+    void *iommu_opaque;
 };
 
 #define TYPE_UB_BUS "UB_BUS"

@@ -20,6 +20,7 @@
 #include <linux/vfio.h>
 #include "qemu/typedefs.h"
 #include "exec/memory.h"
+#include "sysemu/host_iommu_device.h"
 #include "hw/arm/virt.h"
 
 #define BYTE_SIZE 1
@@ -181,6 +182,25 @@ typedef struct UBDeviceClass {
 DECLARE_OBJ_CHECKERS(UBDevice, UBDeviceClass,
                      UB_DEVICE, TYPE_UB_DEVICE)
 
+typedef struct UBIOMMUOps {
+    /**
+     * @get_address_space: get the address space for a set of devices
+     * on a UB bus.
+     *
+     * Mandatory callback which returns a pointer to an #AddressSpace
+     *
+     * @bus: the #UBBus being accessed.
+     *
+     * @opaque: the data passed to ub_setup_iommu().
+     *
+     * @eid: ub device eid
+     */
+    AddressSpace * (*get_address_space)(UBBus *bus, void *opaque, uint32_t eid);
+    bool (*set_iommu_device)(UBBus *bus, void *opaque, uint32_t eid,
+                            HostIOMMUDevice *dev, Error **errp);
+    void (*unset_iommu_device)(UBBus *bus, void *opaque, uint32_t eid);
+    bool (*ummu_is_nested)(void *opaque);
+} UBIOMMUOps;
 
 static inline void ub_set_byte(uint8_t *config, uint8_t val)
 {
@@ -232,5 +252,7 @@ static inline uint64_t ub_config_size(void)
 {
     return UB_DEV_CONFIG_SPACE_TOTAL_SIZE;
 }
+AddressSpace *ub_device_iommu_address_space(UBDevice *dev);
 UBDevice *ub_find_device_by_id(const char *id);
+uint32_t ub_interrupt_id(UBDevice *udev);
 #endif

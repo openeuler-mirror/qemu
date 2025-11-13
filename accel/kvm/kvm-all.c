@@ -26,6 +26,10 @@
 #include "qapi/error.h"
 #include "hw/pci/msi.h"
 #include "hw/pci/msix.h"
+#ifdef CONFIG_UB
+#include "hw/ub/ub.h"
+#include "hw/ub/ub_usi.h"
+#endif // CONFIG_UB
 #include "hw/s390x/adapter.h"
 #include "exec/gdbstub.h"
 #include "sysemu/kvm_int.h"
@@ -56,6 +60,8 @@
 #ifdef CONFIG_HAM_MIGRATION
 #include "migration/ham.h"
 #endif
+#include "qemu/log.h"
+
 /* This check must be after config-host.h is included */
 #ifdef CONFIG_EVENTFD
 #include <sys/eventfd.h>
@@ -2044,6 +2050,64 @@ int kvm_irqchip_send_msi(KVMState *s, MSIMessage msg)
 
     return kvm_vm_ioctl(s, KVM_SIGNAL_MSI, &msi);
 }
+
+#ifdef CONFIG_UB
+int kvm_irqchip_add_usi_route(KVMRouteChange *c, USIMessage msg,
+                              uint32_t devid, UBDevice *udev)
+{
+    struct kvm_irq_routing_entry kroute = {};
+    int virq;
+    KVMState *s = c->s;
+
+    virq = kvm_irqchip_get_virq(s);
+    if (virq < 0) {
+        qemu_log("kvm irqchip get virq failed\n");
+        return virq;
+    }
+
+    kroute.gsi = virq;
+    kroute.type = KVM_IRQ_ROUTING_MSI;
+    kroute.flags = 0;
+    kroute.u.msi.address_lo = (uint32_t)msg.address;
+    kroute.u.msi.address_hi = msg.address >> 32;
+    kroute.u.msi.data = le32_to_cpu(msg.data);
+    kroute.flags = KVM_MSI_VALID_DEVID;
+    kroute.u.msi.devid = devid;
+
+    if (udev && kvm_arch_fixup_usi_route(&kroute, msg.address, msg.data, udev)) {
+        kvm_irqchip_release_virq(s, virq);
+        return -EINVAL;
+    }
+
+    kvm_add_routing_entry(s, &kroute);
+    c->changes++;
+
+    return virq;
+}
+
+int kvm_irqchip_update_usi_route(KVMRouteChange *c, int virq, USIMessage msg, UBDevice *udev)
+{
+    struct kvm_irq_routing_entry kroute = {};
+
+    qemu_log("ub device(%s %s) virq(%d) start update usi route.\n",
+             udev->name, udev->qdev.id, virq);
+    kroute.gsi = virq;
+    kroute.type = KVM_IRQ_ROUTING_MSI;
+    kroute.flags = 0;
+    kroute.u.msi.address_lo = (uint32_t)msg.address;
+    kroute.u.msi.address_hi = msg.address >> 32;
+    kroute.u.msi.data = le32_to_cpu(msg.data);
+    kroute.flags = KVM_MSI_VALID_DEVID;
+    kroute.u.msi.devid = ub_interrupt_id(udev);
+
+    if (udev && kvm_arch_fixup_usi_route(&kroute, msg.address, msg.data, udev)) {
+        qemu_log("failed to fixup usi route: addr(0x%lx) data(%u).\n", msg.address, msg.data);
+        return -EINVAL;
+    }
+
+    return kvm_update_routing_entry(c, &kroute);
+}
+#endif // CONFIG_UB
 
 int kvm_irqchip_add_msi_route(KVMRouteChange *c, int vector, PCIDevice *dev)
 {

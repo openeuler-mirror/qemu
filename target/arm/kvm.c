@@ -36,6 +36,9 @@
 #include "hw/irq.h"
 #include "qapi/visitor.h"
 #include "qemu/log.h"
+#ifdef CONFIG_UB
+#include "hw/ub/ub.h"
+#endif // CONFIG_UB
 
 /*
  * SMMCC KVM Vendor hypercall definitions.
@@ -1401,6 +1404,44 @@ int kvm_arm_set_irq(int cpu, int irqtype, int irq, int level)
 
     return kvm_set_irq(kvm_state, kvm_irq, !!level);
 }
+
+#ifdef CONFIG_UB
+int kvm_arch_fixup_usi_route(struct kvm_irq_routing_entry *route,
+                             uint64_t address, uint32_t data, UBDevice *dev)
+{
+    AddressSpace *as = ub_device_iommu_address_space(dev);
+    hwaddr xlat, len, doorbell_gpa;
+    MemoryRegionSection mrs;
+    MemoryRegion *mr;
+
+    if (as == &address_space_memory) {
+        return 0;
+    }
+
+    /* USI doorbell address is translated by an IOMMU */
+    RCU_READ_LOCK_GUARD();
+    mr = address_space_translate(as, address, &xlat, &len, true,
+                                 MEMTXATTRS_UNSPECIFIED);
+    if (!mr) {
+        qemu_log("address space translate address(0x%lx) failed.\n", address);
+        return 1;
+    }
+
+    mrs = memory_region_find(mr, xlat, 1);
+    if (!mrs.mr) {
+        qemu_log("mr failed to find mrs.\n");
+        return 1;
+    }
+
+    doorbell_gpa = mrs.offset_within_address_space;
+    memory_region_unref(mrs.mr);
+    qemu_log("IOVA(0x%lx) trans to GPA(0x%lx) by iommu success.\n", address, doorbell_gpa);
+    route->u.msi.address_lo = doorbell_gpa;
+    route->u.msi.address_hi = doorbell_gpa >> 32;
+
+    return 0;
+}
+#endif // CONFIG_UB
 
 int kvm_arch_fixup_msi_route(struct kvm_irq_routing_entry *route,
                              uint64_t address, uint32_t data, PCIDevice *dev)
