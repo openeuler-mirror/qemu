@@ -379,6 +379,55 @@ static uint64_t ummu_reg_read(void *opaque, hwaddr offset, unsigned size)
     return val;
 }
 
+static void mcmdq_cmd_create_kvtbl(UMMUState *u, UMMUMcmdqCmd *cmd, uint8_t mcmdq_idx)
+{
+    UMMUKVTblEntry *entry = NULL;
+    uint32_t dst_eid = CMD_CREATE_KVTBL_DEST_EID(cmd);
+    uint32_t tecte_tag = CMD_CREATE_KVTBL_TECTE_TAG(cmd);
+
+    trace_mcmdq_cmd_create_kvtbl(mcmdq_idx, dst_eid, tecte_tag);
+
+    QLIST_FOREACH(entry, &u->kvtbl, list) {
+        if (entry->dst_eid == dst_eid) {
+            qemu_log("update kvtlb dst_eid(0x%x) tecte_tag from 0x%x to 0x%x\n",
+                     dst_eid, entry->tecte_tag, tecte_tag);
+            entry->tecte_tag = tecte_tag;
+            return;
+        }
+    }
+
+    entry = g_malloc(sizeof(UMMUKVTblEntry));
+    if (!entry) {
+        qemu_log("failed to malloc for kvtbl entry for dst_eid(0x%x)\n", dst_eid);
+        return;
+    }
+
+    entry->dst_eid = dst_eid;
+    entry->tecte_tag = tecte_tag;
+    QLIST_INSERT_HEAD(&u->kvtbl, entry, list);
+}
+
+static void mcmdq_cmd_delete_kvtbl(UMMUState *u, UMMUMcmdqCmd *cmd, uint8_t mcmdq_idx)
+{
+    UMMUKVTblEntry *entry = NULL;
+    uint32_t dst_eid = CMD_DELETE_KVTBL_DEST_EID(cmd);
+
+    trace_mcmdq_cmd_delete_kvtbl(mcmdq_idx, dst_eid);
+
+    QLIST_FOREACH(entry, &u->kvtbl, list) {
+        if (entry->dst_eid == dst_eid) {
+            break;
+        }
+    }
+
+    if (entry) {
+        QLIST_REMOVE(entry, list);
+        g_free(entry);
+    } else {
+        qemu_log("cannot find dst_eid(0x%x) entry in kvtbl.\n", dst_eid);
+    }
+}
+
 static void mcmdq_cmd_plbi_x_process(UMMUState *u, UMMUMcmdqCmd *cmd, uint8_t mcmdq_idx)
 {
     trace_mcmdq_cmd_plbi_x_process(mcmdq_idx, mcmdq_cmd_strings[CMD_TYPE(cmd)]);
@@ -476,8 +525,8 @@ static void (*mcmdq_cmd_handlers[])(UMMUState *u, UMMUMcmdqCmd *cmd, uint8_t mcm
     [CMD_TLBI_S2_IPA]          = mcmdq_cmd_tlbi_x_process,
     [CMD_TLBI_NS_OS_ALL]       = mcmdq_cmd_tlbi_x_process,
     [CMD_RESUME]               = NULL,
-    [CMD_CREATE_KVTBL]         = NULL,
-    [CMD_DELETE_KVTBL]         = NULL,
+    [CMD_CREATE_KVTBL]         = mcmdq_cmd_create_kvtbl,
+    [CMD_DELETE_KVTBL]         = mcmdq_cmd_delete_kvtbl,
     [CMD_NULL]                 = mcmdq_cmd_null,
     [CMD_TLBI_OS_ALL_U]        = NULL,
     [CMD_TLBI_OS_ASID_U]       = NULL,
@@ -1068,18 +1117,26 @@ static void ummu_base_realize(DeviceState *dev, Error **errp)
     sysbus_init_mmio(sysdev, &u->ummu_reg_mem);
     ummu_registers_init(u);
     ub_save_ummu_list(u);
+
+    QLIST_INIT(&u->kvtbl);
 }
 
 static void ummu_base_unrealize(DeviceState *dev)
 {
     UMMUState *u = UB_UMMU(dev);
     SysBusDevice *sysdev = SYS_BUS_DEVICE(dev);
+    UMMUKVTblEntry *entry = NULL;
+    UMMUKVTblEntry *next_entry = NULL;
 
     ub_remove_ummu_list(u);
     if (sysdev->parent_obj.id) {
         g_free(sysdev->parent_obj.id);
     }
 
+    QLIST_FOREACH_SAFE(entry, &u->kvtbl, list, next_entry) {
+        QLIST_REMOVE(entry, list);
+        g_free(entry);
+    }
 }
 
 static void ummu_base_reset(DeviceState *dev)

@@ -5,6 +5,8 @@ ummu_mcmdq_reg_writel(uint32_t idx, uint32_t prod, uint32_t cons) "mcmdq process
 mcmdq_process_task(uint32_t mcmdq_idx, const char *cmd) "mcmdq_idx: %u, cmd: %s"
 mcmdq_cmd_plbi_x_process(uint32_t mcmdq_idx, const char *cmd) "CMD_PLBIx: mcmdq_idx(%u) cmd(%s)"
 mcmdq_cmd_tlbi_x_process(uint32_t mcmdq_idx, const char *cmd) "CMD_TLBIx: mcmdq_idx(%u) cmd(%s)"
+mcmdq_cmd_create_kvtbl(uint32_t mcmdq_idx, uint32_t dest_eid, uint32_t tecte_tag) "CMD_CREATE_KVTBL: mcmdq_idx(%u) dest_eid(%u) tecte_tag(%u)"
+mcmdq_cmd_delete_kvtbl(uint32_t mcmdq_idx, uint32_t dest_eid) "CMD_DELETE_KVTBL: mcmdq_idx(%u) dest_eid(%u)"
 mcmdq_cmd_null(uint32_t mcmdq_idx, uint64_t addr, void *hva, uint64_t size, uint64_t rb_size) "CMD_NULL: mcmdq_idx(%u) addr(0x%lx) hva(%p) size(0x%lx) rb_size(0x%lx)"
 ummu_mcmdq_base_reg_writell(uint8_t idx, uint64_t base, uint8_t log2size) "idx(%u) base(0x%lx) log2size(0x%x)"
 ummu_eventq_req_writell(uint64_t base, uint8_t log2size) "base(0x%lx) log2size(0x%x)"
