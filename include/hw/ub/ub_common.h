@@ -415,7 +415,13 @@ typedef struct MsgPktHeader { /* TODO, check byte order */
 
 uint32_t fill_rq(BusControllerState *s, void *rsp, uint32_t rsp_size);
 uint32_t fill_cq(BusControllerState *s, HiMsgCqe *cqe);
-
+/* get eid from sysfs, not found will return UINT32_MAX */
+uint32_t sysfs_get_dev_number_by_guid(UbGuid *guid);
+uint32_t sysfs_get_ub_device_bus_instance_eid(char *sysfsdev);
+uint32_t sysfs_get_bus_instance_type_by_eid(uint32_t eid);
+uint32_t sysfs_get_bus_instance_eid_by_guid(UbGuid *guid);
+void ub_mem_dump(void *start, int size, const char *tag_fmt, ...) __attribute__((format(printf, 3, 4)));
+int ub_hexdump(void *data, int offset, int len, char *buff, int buff_size);
 bool ub_guid_is_none(UbGuid *guid);
 
 #endif
