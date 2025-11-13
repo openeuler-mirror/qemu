@@ -3,6 +3,7 @@
 # ub_ummu.c
 ummu_mcmdq_reg_writel(uint32_t idx, uint32_t prod, uint32_t cons) "mcmdq process: idx(%u), prod(%u), cons(%u)"
 mcmdq_process_task(uint32_t mcmdq_idx, const char *cmd) "mcmdq_idx: %u, cmd: %s"
+mcmdq_cmd_sync_handler(uint32_t mcmdq_idx, uint64_t usi_addr, uint32_t usi_data) "CMD_SYNC: mcmdq_idx(%u) usi_addr(0x%lx) usi_data(0x%x)"
 mcmdq_cmd_plbi_x_process(uint32_t mcmdq_idx, const char *cmd) "CMD_PLBIx: mcmdq_idx(%u) cmd(%s)"
 mcmdq_cmd_tlbi_x_process(uint32_t mcmdq_idx, const char *cmd) "CMD_TLBIx: mcmdq_idx(%u) cmd(%s)"
 mcmdq_cmd_create_kvtbl(uint32_t mcmdq_idx, uint32_t dest_eid, uint32_t tecte_tag) "CMD_CREATE_KVTBL: mcmdq_idx(%u) dest_eid(%u) tecte_tag(%u)"

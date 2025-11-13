@@ -379,6 +379,28 @@ static uint64_t ummu_reg_read(void *opaque, hwaddr offset, unsigned size)
     return val;
 }
 
+static void mcmdq_cmd_sync_usi_irq(uint64_t addr, uint32_t data)
+{
+    cpu_physical_memory_rw(addr, &data, sizeof(uint32_t), true);
+}
+
+static void mcmdq_cmd_sync_sev_irq(void)
+{
+    qemu_log("cannot support CMD_SYNC SEV event.\n");
+}
+
+static void mcmdq_cmd_sync_handler(UMMUState *u, UMMUMcmdqCmd *cmd, uint8_t mcmdq_idx)
+{
+    uint32_t cm = CMD_SYNC_CM(cmd);
+
+    trace_mcmdq_cmd_sync_handler(mcmdq_idx, CMD_SYNC_USI_ADDR(cmd), CMD_SYNC_USI_DATA(cmd));
+    if (cm & CMD_SYNC_CM_USI) {
+        mcmdq_cmd_sync_usi_irq(CMD_SYNC_USI_ADDR(cmd), CMD_SYNC_USI_DATA(cmd));
+    } else if (cm & CMD_SYNC_CM_SEV) {
+        mcmdq_cmd_sync_sev_irq();
+    }
+}
+
 static void mcmdq_cmd_create_kvtbl(UMMUState *u, UMMUMcmdqCmd *cmd, uint8_t mcmdq_idx)
 {
     UMMUKVTblEntry *entry = NULL;
@@ -502,7 +524,7 @@ static void mcmdq_cmd_prefet_cfg(UMMUState *u, UMMUMcmdqCmd *cmd, uint8_t mcmdq_
 }
 
 static void (*mcmdq_cmd_handlers[])(UMMUState *u, UMMUMcmdqCmd *cmd, uint8_t mcmdq_idx) = {
-    [CMD_SYNC]                 = NULL,
+    [CMD_SYNC]                 = mcmdq_cmd_sync_handler,
     [CMD_STALL_RESUME]         = NULL,
     [CMD_PREFET_CFG]           = mcmdq_cmd_prefet_cfg,
     [CMD_CFGI_TECT]            = NULL,
