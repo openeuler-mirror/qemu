@@ -35,6 +35,42 @@
 #include "qemu/error-report.h"
 #include "trace.h"
 
+static const char *const mcmdq_cmd_strings[MCMDQ_CMD_MAX] = {
+    [CMD_SYNC]                   = "CMD_SYNC",
+    [CMD_STALL_RESUME]           = "CMD_STALL_RESUME",
+    [CMD_PREFET_CFG]             = "CMD_PREFET_CFG",
+    [CMD_CFGI_TECT]              = "CMD_CFGI_TECT",
+    [CMD_CFGI_TECT_RANGE]        = "CMD_CFGI_TECT_RANGE",
+    [CMD_CFGI_TCT]               = "CMD_CFGI_TCT",
+    [CMD_CFGI_TCT_ALL]           = "CMD_CFGI_TCT_ALL",
+    [CMD_CFGI_VMS_PIDM]          = "CMD_CFGI_VMS_PIDM",
+    [CMD_PLBI_OS_EID]            = "CMD_PLBI_OS_EID",
+    [CMD_PLBI_OS_EIDTID]         = "CMD_PLBI_OS_EIDTID",
+    [CMD_PLBI_OS_VA]             = "CMD_PLBI_OS_VA",
+    [CMD_TLBI_OS_ALL]            = "CMD_TLBI_OS_ALL",
+    [CMD_TLBI_OS_TID]            = "CMD_TLBI_OS_TID",
+    [CMD_TLBI_OS_VA]             = "CMD_TLBI_OS_VA",
+    [CMD_TLBI_OS_VAA]            = "CMD_TLBI_OS_VAA",
+    [CMD_TLBI_HYP_ALL]           = "CMD_TLBI_HYP_ALL",
+    [CMD_TLBI_HYP_TID]           = "CMD_TLBI_HYP_TID",
+    [CMD_TLBI_HYP_VA]            = "CMD_TLBI_HYP_VA",
+    [CMD_TLBI_HYP_VAA]           = "CMD_TLBI_HYP_VAA",
+    [CMD_TLBI_S1S2_VMALL]        = "CMD_TLBI_S1S2_VMALL",
+    [CMD_TLBI_S2_IPA]            = "CMD_TLBI_S2_IPA",
+    [CMD_TLBI_NS_OS_ALL]         = "CMD_TLBI_NS_OS_ALL",
+    [CMD_RESUME]                 = "CMD_RESUME",
+    [CMD_CREATE_KVTBL]           = "CMD_CREATE_KVTBL",
+    [CMD_DELETE_KVTBL]           = "CMD_DELETE_KVTBL",
+    [CMD_TLBI_OS_ALL_U]          = "CMD_TLBI_OS_ALL_U",
+    [CMD_TLBI_OS_ASID_U]         = "CMD_TLBI_OS_ASID_U",
+    [CMD_TLBI_OS_VA_U]           = "CMD_TLBI_OS_VA_U",
+    [CMD_TLBI_OS_VAA_U]          = "CMD_TLBI_OS_VAA_U",
+    [CMD_TLBI_HYP_ASID_U]        = "CMD_TLBI_HYP_ASID_U",
+    [CMD_TLBI_HYP_VA_U]          = "CMD_TLBI_HYP_VA_U",
+    [CMD_TLBI_S1S2_VMALL_U]      = "CMD_TLBI_S1S2_VMALL_U",
+    [CMD_TLBI_S2_IPA_U]          = "CMD_TLBI_S2_IPA_U",
+};
+
 QLIST_HEAD(, UMMUState) ub_umms;
 UMMUState *ummu_find_by_bus_num(uint8_t bus_num)
 {
@@ -343,8 +379,172 @@ static uint64_t ummu_reg_read(void *opaque, hwaddr offset, unsigned size)
     return val;
 }
 
+static void mcmdq_cmd_plbi_x_process(UMMUState *u, UMMUMcmdqCmd *cmd, uint8_t mcmdq_idx)
+{
+    trace_mcmdq_cmd_plbi_x_process(mcmdq_idx, mcmdq_cmd_strings[CMD_TYPE(cmd)]);
+}
+
+static void mcmdq_cmd_tlbi_x_process(UMMUState *u, UMMUMcmdqCmd *cmd, uint8_t mcmdq_idx)
+{
+    trace_mcmdq_cmd_tlbi_x_process(mcmdq_idx, mcmdq_cmd_strings[CMD_TYPE(cmd)]);
+}
+
+static void mcmdq_check_pa_continuity_fill_result(UMMUMcmdQueue *mcmdq, bool continuity)
+{
+    uint8_t result = 0;
+    dma_addr_t addr;
+
+    result |= UMMU_RUN_IN_VM_FLAG;
+    if (continuity) {
+        result |= PA_CONTINUITY;
+    } else {
+        result |= PA_NOT_CONTINUITY;
+    }
+
+#define CHECK_PA_CONTINUITY_RESULT_OFFSET 0x2
+    addr = MCMD_QUE_BASE_ADDR(&mcmdq->queue) +
+           MCMD_QUE_RD_IDX(&mcmdq->queue) * mcmdq->queue.entry_size;
+    if (dma_memory_write(&address_space_memory, addr + CHECK_PA_CONTINUITY_RESULT_OFFSET,
+                         &result, sizeof(result), MEMTXATTRS_UNSPECIFIED)) {
+        qemu_log("dma failed to wirte result(0x%x) to addr 0x%lx\n", result, addr);
+        return;
+    }
+
+    qemu_log("mcmdq check pa continuity update result(0x%x) success.\n", result);
+}
+
+static void mcmdq_cmd_null(UMMUState *u, UMMUMcmdqCmd *cmd, uint8_t mcmdq_idx)
+{
+    uint64_t size;
+    uint64_t addr;
+    void *hva = NULL;
+    ram_addr_t rb_offset;
+    RAMBlock *rb = NULL;
+    size_t rb_page_size = 0;
+
+    if (CMD_NULL_SUBOP(cmd) != CMD_NULL_SUBOP_CHECK_PA_CONTINUITY) {
+        qemu_log("current cannot process CMD_NULL subop %u.\n", CMD_NULL_SUBOP(cmd));
+        return;
+    }
+
+    size = CMD_NULL_CHECK_PA_CONTI_SIZE(cmd);
+    addr = CMD_NULL_CHECK_PA_CONTI_ADDR(cmd);
+    hva = cpu_physical_memory_map(addr, &size, false);
+    rb = qemu_ram_block_from_host(hva, false, &rb_offset);
+    if (rb) {
+        rb_page_size = qemu_ram_pagesize(rb);
+    } else {
+        qemu_log("failed to get ram block from host(%p)\n", hva);
+    }
+
+    trace_mcmdq_cmd_null(mcmdq_idx, addr, hva, size, rb_page_size);
+
+#define PAGESZ_2M 0x200000
+    if (rb_page_size < PAGESZ_2M) {
+        mcmdq_check_pa_continuity_fill_result(&u->mcmdqs[mcmdq_idx], false);
+    } else {
+        mcmdq_check_pa_continuity_fill_result(&u->mcmdqs[mcmdq_idx], true);
+    }
+}
+
+static void mcmdq_cmd_prefet_cfg(UMMUState *u, UMMUMcmdqCmd *cmd, uint8_t mcmdq_idx)
+{
+    /* do nothing */
+}
+
+static void (*mcmdq_cmd_handlers[])(UMMUState *u, UMMUMcmdqCmd *cmd, uint8_t mcmdq_idx) = {
+    [CMD_SYNC]                 = NULL,
+    [CMD_STALL_RESUME]         = NULL,
+    [CMD_PREFET_CFG]           = mcmdq_cmd_prefet_cfg,
+    [CMD_CFGI_TECT]            = NULL,
+    [CMD_CFGI_TECT_RANGE]      = NULL,
+    [CMD_CFGI_TCT]             = NULL,
+    [CMD_CFGI_TCT_ALL]         = NULL,
+    [CMD_CFGI_VMS_PIDM]        = NULL,
+    [CMD_PLBI_OS_EID]          = mcmdq_cmd_plbi_x_process,
+    [CMD_PLBI_OS_EIDTID]       = mcmdq_cmd_plbi_x_process,
+    [CMD_PLBI_OS_VA]           = mcmdq_cmd_plbi_x_process,
+    [CMD_TLBI_OS_ALL]          = mcmdq_cmd_tlbi_x_process,
+    [CMD_TLBI_OS_TID]          = mcmdq_cmd_tlbi_x_process,
+    [CMD_TLBI_OS_VA]           = mcmdq_cmd_tlbi_x_process,
+    [CMD_TLBI_OS_VAA]          = mcmdq_cmd_tlbi_x_process,
+    [CMD_TLBI_HYP_ALL]         = mcmdq_cmd_tlbi_x_process,
+    [CMD_TLBI_HYP_TID]         = mcmdq_cmd_tlbi_x_process,
+    [CMD_TLBI_HYP_VA]          = mcmdq_cmd_tlbi_x_process,
+    [CMD_TLBI_HYP_VAA]         = mcmdq_cmd_tlbi_x_process,
+    [CMD_TLBI_S1S2_VMALL]      = mcmdq_cmd_tlbi_x_process,
+    [CMD_TLBI_S2_IPA]          = mcmdq_cmd_tlbi_x_process,
+    [CMD_TLBI_NS_OS_ALL]       = mcmdq_cmd_tlbi_x_process,
+    [CMD_RESUME]               = NULL,
+    [CMD_CREATE_KVTBL]         = NULL,
+    [CMD_DELETE_KVTBL]         = NULL,
+    [CMD_NULL]                 = mcmdq_cmd_null,
+    [CMD_TLBI_OS_ALL_U]        = NULL,
+    [CMD_TLBI_OS_ASID_U]       = NULL,
+    [CMD_TLBI_OS_VA_U]         = NULL,
+    [CMD_TLBI_OS_VAA_U]        = NULL,
+    [CMD_TLBI_HYP_ASID_U]      = NULL,
+    [CMD_TLBI_HYP_VA_U]        = NULL,
+    [CMD_TLBI_S1S2_VMALL_U]    = NULL,
+    [CMD_TLBI_S2_IPA_U]        = NULL,
+};
+
+static MemTxResult ummu_cmdq_fetch_cmd(UMMUMcmdQueue *mcmdq, UMMUMcmdqCmd *cmd)
+{
+    uint64_t addr, mcmdq_base_addr;
+    MemTxResult ret;
+    int i;
+
+    mcmdq_base_addr = MCMD_QUE_BASE_ADDR(&mcmdq->queue);
+    addr = mcmdq_base_addr + MCMD_QUE_RD_IDX(&mcmdq->queue) * mcmdq->queue.entry_size;
+    ret = dma_memory_read(&address_space_memory, addr, cmd, sizeof(UMMUMcmdqCmd),
+                          MEMTXATTRS_UNSPECIFIED);
+    if (ret != MEMTX_OK) {
+        qemu_log("addr 0x%lx failed to fectch mcmdq cmd\n", addr);
+        return ret;
+    }
+
+    for (i = 0; i < ARRAY_SIZE(cmd->word); i++) {
+        le32_to_cpus(&cmd->word[i]);
+    }
+
+    return ret;
+}
+
 static void mcmdq_process_task(UMMUState *u, uint8_t mcmdq_idx)
 {
+    UMMUMcmdQueue *mcmdq = &u->mcmdqs[mcmdq_idx];
+    UMMUMcmdqCmd cmd;
+    UmmuMcmdqCmdType cmd_type;
+
+    if (!ummu_mcmdq_enabled(mcmdq)) {
+        ummu_mcmdq_disable_resp(mcmdq);
+        return;
+    }
+
+    while (!ummu_mcmdq_empty(mcmdq)) {
+        if (ummu_cmdq_fetch_cmd(mcmdq, &cmd) != MEMTX_OK) {
+            /* eventq generate later */
+            break;
+        }
+
+        cmd_type = CMD_TYPE(&cmd);
+        if (cmd_type >= MCMDQ_CMD_MAX) {
+            /* eventq generate later */
+            break;
+        }
+
+        if (mcmdq_cmd_handlers[cmd_type]) {
+            trace_mcmdq_process_task(mcmdq_idx, mcmdq_cmd_strings[cmd_type]);
+            mcmdq_cmd_handlers[cmd_type](u, &cmd, mcmdq_idx);
+        } else {
+            qemu_log("current cannot process mcmdq cmd: %s.\n", mcmdq_cmd_strings[cmd_type]);
+        }
+
+        ummu_mcmdq_cons_incr(mcmdq);
+    }
+
+    ummu_mcmdq_enable_resp(mcmdq);
 }
 
 static void ummu_mcmdq_reg_writel(UMMUState *u, hwaddr offset, uint64_t data)
