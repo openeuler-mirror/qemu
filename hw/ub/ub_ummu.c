@@ -47,13 +47,663 @@ UMMUState *ummu_find_by_bus_num(uint8_t bus_num)
     return NULL;
 }
 
+static void ummu_cr0_process_task(UMMUState *u)
+{
+    u->ctrl0_ack = u->ctrl[0];
+}
+
+static uint64_t ummu_mcmdq_reg_readl(UMMUState *u, hwaddr offset)
+{
+    uint8_t mcmdq_idx;
+    uint64_t val = UINT64_MAX;
+
+    mcmdq_idx = (uint8_t)(offset & MCMDQ_IDX_MASK) >> __bf_shf(MCMDQ_IDX_MASK);
+    if (mcmdq_idx >= UMMU_MAX_MCMDQS) {
+        qemu_log("invalid idx %u, offset is 0x%lx\n", mcmdq_idx, offset);
+        return val;
+    }
+
+    switch (offset & MCMDQ_BASE_ADDR_MASK) {
+        case MCMDQ_PROD_BASE_ADDR:
+            val = u->mcmdqs[mcmdq_idx].queue.prod;
+            break;
+        case MCMDQ_CONS_BASE_ADDR:
+            val = u->mcmdqs[mcmdq_idx].queue.cons;
+            break;
+        default:
+            qemu_log("ummu cannot handle 32-bit mcmdq reg read access at 0x%lx\n", offset);
+            break;
+    }
+
+    return val;
+}
+
+static int ummu_mapt_get_cmdq_base(UMMUState *u, dma_addr_t base_addr, uint32_t qid, MAPTCmdqBase *base)
+{
+    int ret, i;
+    dma_addr_t addr = base_addr + qid * MAPT_CMDQ_CTXT_BASE_BYTES;
+
+    ret = dma_memory_read(&address_space_memory, addr, base, sizeof(*base),
+                          MEMTXATTRS_UNSPECIFIED);
+    if (ret != MEMTX_OK) {
+        qemu_log("Cannot fetch mapt cmdq ctx at address=0x%lx\n", addr);
+        return -EINVAL;
+    }
+
+    for (i = 0; i < ARRAY_SIZE(base->word); i++) {
+        le32_to_cpus(&base->word[i]);
+    }
+
+    return 0;
+}
+
+static int ummu_mapt_update_cmdq_base(UMMUState *u, dma_addr_t base_addr, uint32_t qid, MAPTCmdqBase *base)
+{
+    int i;
+    dma_addr_t addr = base_addr + qid * MAPT_CMDQ_CTXT_BASE_BYTES;
+
+    for (i = 0; i < ARRAY_SIZE(base->word); i++, addr += sizeof(uint32_t)) {
+        uint32_t tmp = cpu_to_le32(base->word[i]);
+        if (dma_memory_write(&address_space_memory, addr, &tmp,
+                             sizeof(uint32_t), MEMTXATTRS_UNSPECIFIED)) {
+            qemu_log("dma failed to write to addr 0x%lx\n", addr);
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
+static uint64_t ummu_mapt_ctrlr_page_read_process(UMMUState *u, hwaddr offset)
+{
+    MAPTCmdqBase base;
+    uint32_t qid = ummu_mapt_cmdq_get_qid(u, offset);
+    dma_addr_t addr = MAPT_CMDQ_CTXT_BASE_ADDR(u->mapt_cmdq_ctxt_base);
+    int ret;
+    uint64_t val = UINT64_MAX;
+
+    if (!addr) {
+        /* mapt ctrlr page not init, return default val 0 */
+        return 0;
+    }
+
+    ret = ummu_mapt_get_cmdq_base(u, addr, qid, &base);
+    if (ret) {
+        qemu_log("failed to get mapt cmdq base.\n");
+        return val;
+    }
+
+    switch (offset & UCMDQ_UCPLQ_CI_PI_MASK) {
+        case UCMDQ_PI:
+            val = ummu_mapt_cmdq_base_get_ucmdq_pi(&base);
+            break;
+        case UCMDQ_CI:
+            val = ummu_mapt_cmdq_base_get_ucmdq_ci(&base);
+            break;
+        case UCPLQ_PI:
+            val = ummu_mapt_cmdq_base_get_ucplq_pi(&base);
+            break;
+        case UCPLQ_CI:
+            val = ummu_mapt_cmdq_base_get_ucplq_ci(&base);
+            break;
+        default:
+            qemu_log("cannot process addr(0x%lx) mpat ctrlr page read.\n", offset);
+            return val;
+    }
+
+    return val;
+}
+
+static uint64_t ummu_reg_readw(UMMUState *u, hwaddr offset)
+{
+    uint64_t val = UINT64_MAX;
+
+    switch (offset) {
+        case A_UCMDQ_PI_START_REG...A_UCPLQ_CI_END_REG:
+            val = ummu_mapt_ctrlr_page_read_process(u, offset);
+            break;
+        default:
+            qemu_log("ummu cannot handle 16-bit read access at: 0x%lx\n", offset);
+            break;
+    }
+
+    return val;
+}
+
+static uint64_t ummu_reg_readl(UMMUState *u, hwaddr offset)
+{
+    uint64_t val = UINT64_MAX;
+
+    switch (offset) {
+        case A_CAP0...A_CAP6:
+            val = u->cap[(offset - A_CAP0) / 4];
+            break;
+        case A_CTRL0:
+            val = u->ctrl[0];
+            break;
+        case A_CTRL0_ACK:
+            val = u->ctrl0_ack;
+            break;
+        case A_CTRL1:
+            val = u->ctrl[1];
+            break;
+        case A_CTRL2:
+            val = u->ctrl[2];
+            break;
+        case A_CTRL3:
+            val = u->ctrl[3];
+            break;
+        case A_TECT_BASE_CFG:
+            val = u->tect_base_cfg;
+            break;
+        case A_MCMD_QUE_BASE...A_MCMD_QUE_LASTEST_CI:
+            val = ummu_mcmdq_reg_readl(u, offset);
+            break;
+        case A_EVENT_QUE_PI:
+            val = u->eventq.queue.prod;
+            break;
+        case A_EVENT_QUE_CI:
+            val = u->eventq.queue.cons;
+            break;
+        case A_EVENT_QUE_USI_DATA:
+            val = u->eventq.usi_data;
+            break;
+        case A_EVENT_QUE_USI_ATTR:
+            val = u->eventq.usi_attr;
+            break;
+        case A_GLB_INT_EN:
+            val = 0;
+            /* glb err interrupt bit enabled int bit 0 */
+            if (ummu_glb_err_int_en(u)) {
+                val |= 0x1;
+            }
+
+            /* event que interrupt bit enabled in bit 1 */
+            if (ummu_event_que_int_en(u)) {
+                val |= (1 << 1);
+            }
+            break;
+        case A_GLB_ERR:
+            val = u->glb_err.glb_err;
+            break;
+        case A_GLB_ERR_RESP:
+            val = u->glb_err.glb_err_resp;
+            break;
+        case A_GLB_ERR_INT_USI_DATA:
+            val = u->glb_err.usi_data;
+            break;
+        case A_GLB_ERR_INT_USI_ATTR:
+            val = u->glb_err.usi_attr;
+            break;
+        case A_RELEASE_UM_QUEUE_ID:
+            val = u->release_um_queue_id;
+            break;
+        case A_RELEASE_UM_QUEUE:
+            val = u->release_um_queue;
+            break;
+        case A_UCMDQ_PI_START_REG...A_UCPLQ_CI_END_REG:
+            val = ummu_mapt_ctrlr_page_read_process(u, offset);
+            break;
+        case A_UMCMD_PAGE_SEL:
+            val = u->ucmdq_page_sel;
+            break;
+        case A_UMMU_USER_CONFIG0...A_UMMU_USER_CONFIG11:
+        case A_UMMU_MEM_USI_DATA:
+        case A_UMMU_MEM_USI_ATTR:
+        case A_UMMU_INT_MASK:
+        case A_UMMU_DSTEID_CAM_TABLE_BASE_CFG:
+            /* do nothing, reg return val 0 */
+            val = 0;
+            break;
+        default:
+            qemu_log("ummu cannot handle 32-bit read access at 0x%lx\n", offset);
+            break;
+    }
+
+    return val;
+}
+
+static uint64_t ummu_mcmdq_reg_readll(UMMUState *u, hwaddr offset)
+{
+    uint8_t mcmdq_idx;
+    uint64_t val = UINT64_MAX;
+
+    mcmdq_idx = (uint8_t)(offset & MCMDQ_IDX_MASK) >> __bf_shf(MCMDQ_IDX_MASK);
+    if (mcmdq_idx >= UMMU_MAX_MCMDQS) {
+        qemu_log("invalid idx %u, offset is 0x%lx\n", mcmdq_idx, offset);
+        return val;
+    }
+
+    switch (offset & MCMDQ_BASE_ADDR_MASK) {
+        case A_MCMD_QUE_BASE:
+            val = u->mcmdqs[mcmdq_idx].queue.base;
+            break;
+        default:
+            qemu_log("ummu cannot handle 64-bit mcmdq reg read access at 0x%lx\n", offset);
+            break;
+    }
+
+    return val;
+}
+
+static uint64_t ummu_reg_readll(UMMUState *u, hwaddr offset)
+{
+    uint64_t val = UINT64_MAX;
+
+    switch (offset) {
+        case A_TECT_BASE0:
+            val = u->tect_base;
+            break;
+        case A_MCMD_QUE_BASE...A_MCMD_QUE_LASTEST_CI:
+            val = ummu_mcmdq_reg_readll(u, offset);
+            break;
+        case A_EVENT_QUE_BASE0:
+            val = u->eventq.queue.base;
+            break;
+        case A_EVENT_QUE_USI_ADDR0:
+            val = u->eventq.usi_addr;
+            break;
+        case A_GLB_ERR_INT_USI_ADDR0:
+            val = u->glb_err.usi_addr;
+            break;
+        case A_MAPT_CMDQ_CTXT_BADDR0:
+            val = u->mapt_cmdq_ctxt_base;
+            break;
+        case A_UMMU_MEM_USI_ADDR0:
+            /* do nothing, reg return val 0 */
+            val = 0;
+            break;
+        default:
+            qemu_log("ummu cannot handle 64-bit read access at 0x%lx\n", offset);
+            break;
+    }
+
+    return val;
+}
+
 static uint64_t ummu_reg_read(void *opaque, hwaddr offset, unsigned size)
 {
+    UMMUState *u = opaque;
+    uint64_t val = UINT64_MAX;
+
+    switch (size) {
+        case 2:
+            val = ummu_reg_readw(u, offset);
+            break;
+        case 4:
+            val = ummu_reg_readl(u, offset);
+            break;
+        case 8:
+            val = ummu_reg_readll(u, offset);
+            break;
+        default:
+            break;
+    }
+
+    return val;
+}
+
+static void mcmdq_process_task(UMMUState *u, uint8_t mcmdq_idx)
+{
+}
+
+static void ummu_mcmdq_reg_writel(UMMUState *u, hwaddr offset, uint64_t data)
+{
+    uint8_t mcmdq_idx;
+    UMMUMcmdQueue *q = NULL;
+
+    mcmdq_idx = (uint8_t)(offset & MCMDQ_IDX_MASK) >> __bf_shf(MCMDQ_IDX_MASK);
+    if (mcmdq_idx >= UMMU_MAX_MCMDQS) {
+        qemu_log("invalid idx %u, offset is 0x%lx\n", mcmdq_idx, offset);
+        return;
+    }
+
+    switch (offset & MCMDQ_BASE_ADDR_MASK) {
+        case MCMDQ_PROD_BASE_ADDR:
+            update_reg32_by_wmask(&u->mcmdqs[mcmdq_idx].queue.prod, data, UMMU_MCMDQ_PI_WMASK);
+            mcmdq_process_task(u, mcmdq_idx);
+            break;
+        case MCMDQ_CONS_BASE_ADDR:
+            update_reg32_by_wmask(&u->mcmdqs[mcmdq_idx].queue.cons, data, UMMU_MCMDQ_CI_WMASK);
+            break;
+        default:
+            qemu_log("ummu cannot handle 32-bit mcmdq reg write access at 0x%lx\n", offset);
+            break;
+    }
+
+    q = &u->mcmdqs[mcmdq_idx];
+    trace_ummu_mcmdq_reg_writel(mcmdq_idx, MCMD_QUE_WD_IDX(&q->queue), MCMD_QUE_RD_IDX(&q->queue));
+}
+
+static void ummu_glb_int_en_process(UMMUState *u, uint64_t data)
+{
+}
+
+static MemTxResult ummu_mapt_cmdq_fetch_cmd(MAPTCmdqBase *base, MAPTCmd *cmd)
+{
+    dma_addr_t base_addr = MAPT_UCMDQ_BASE_ADDR(base);
+    dma_addr_t addr = base_addr + MAPT_UCMDQ_CI(base) * sizeof(*cmd);
+    int ret, i;
+
+    ret = dma_memory_read(&address_space_memory, addr, cmd, sizeof(*cmd),
+                          MEMTXATTRS_UNSPECIFIED);
+    if (ret != MEMTX_OK) {
+        qemu_log("addr 0x%lx failed to fectch mapt ucmdq cmd.\n", addr);
+        return ret;
+    }
+
+    for (i = 0; i < ARRAY_SIZE(cmd->word); i++) {
+        le32_to_cpus(&cmd->word[i]);
+    }
+
+    return ret;
+}
+
+static void ummu_mapt_cplq_add_entry(MAPTCmdqBase *base, MAPTCmdCpl *cpl)
+{
+    dma_addr_t base_addr = MAPT_UCPLQ_BASE_ADDR(base);
+    dma_addr_t addr = base_addr + MAPT_UCPLQ_PI(base) * sizeof(*cpl);
+    uint32_t tmp = cpu_to_le32(*(uint32_t *)cpl);
+
+    if (dma_memory_write(&address_space_memory, addr, &tmp,
+                         sizeof(tmp), MEMTXATTRS_UNSPECIFIED)) {
+        qemu_log("dma failed to wirte cpl entry to addr 0x%lx\n", addr);
+    }
+}
+
+static void ummu_process_mapt_cmd(UMMUState *u, MAPTCmdqBase *base, MAPTCmd *cmd, uint32_t ci)
+{
+    uint32_t type = MAPT_UCMD_TYPE(cmd);
+    MAPTCmdCpl cpl;
+    uint16_t tecte_tag;
+    uint32_t tid;
+
+    /* default set cpl staus invalid */
+    ummu_mapt_ucplq_set_cpl(&cpl, MAPT_UCPL_STATUS_INVALID, 0);
+    tecte_tag = ummu_mapt_cmdq_base_get_tecte_tag(base);
+    tid = ummu_mapt_cmdq_base_get_token_id(base);
+    qemu_log("tid: %u, tecte_tag: %u\n", tid, tecte_tag);
+    switch (type) {
+        case MAPT_UCMD_TYPE_PSYNC:
+            qemu_log("start process mapt cmd: MAPT_UCMD_TYPE_PSYNC.\n");
+            ummu_mapt_ucplq_set_cpl(&cpl, MAPT_UCPL_STATUS_PSYNC_SUCCESS, ci);
+            break;
+        case MAPT_UCMD_TYPE_PLBI_USR_ALL:
+            qemu_log("start process mapt cmd: MAPT_UCMD_TYPE_PLBI_USR_ALL.\n");
+            break;
+        case MAPT_UCMD_TYPE_PLBI_USR_VA:
+            qemu_log("start process mapt cmd: MAPT_UCMD_TYPE_PLBI_USR_VA.\n");
+            break;
+        default:
+            qemu_log("unknown mapt cmd type: 0x%x\n", type);
+            ummu_mapt_ucplq_set_cpl(&cpl, MAPT_UCPL_STATUS_TYPE_ERROR, ci);
+            break;
+    }
+
+    if (cpl.cpl_status == MAPT_UCPL_STATUS_INVALID) {
+        return;
+    }
+
+    if (ummu_mapt_ucplq_full(base)) {
+        qemu_log("mapt ucplq full, failed to add cpl entry.\n");
+        return;
+    }
+    ummu_mapt_cplq_add_entry(base, &cpl);
+    ummu_mapt_ucqlq_prod_incr(base);
+    qemu_log("mapt cplq add entry success, cplpi: %u, cplci: %u.\n",
+             MAPT_UCPLQ_PI(base),  MAPT_UCPLQ_CI(base));
+}
+
+static void ummu_process_mapt_cmdq(UMMUState *u, MAPTCmdqBase *base)
+{
+    MAPTCmd cmd;
+    int ret;
+
+    while (!ummu_mapt_ucmdq_empty(base)) {
+        ret = ummu_mapt_cmdq_fetch_cmd(base, &cmd);
+        if (ret) {
+            qemu_log("failed to fetch matp cmdq cmd.\n");
+            return;
+        }
+        ummu_process_mapt_cmd(u, base, &cmd, MAPT_UCMDQ_CI(base));
+        ummu_mapt_ucmdq_cons_incr(base);
+    }
+    qemu_log("after cmdq process, log2size: %u, cmdpi: %u, cmdci: %u, cplpi: %u, cplci: %u\n",
+             MAPT_UCMDQ_LOG2SIZE(base), MAPT_UCMDQ_PI(base), MAPT_UCMDQ_CI(base),
+             MAPT_UCPLQ_PI(base), MAPT_UCPLQ_CI(base));
+}
+
+static void ummu_mapt_ctrlr_page_write_process(UMMUState *u, hwaddr offset, uint64_t data)
+{
+    MAPTCmdqBase base;
+    uint32_t qid = ummu_mapt_cmdq_get_qid(u, offset);
+    dma_addr_t addr = MAPT_CMDQ_CTXT_BASE_ADDR(u->mapt_cmdq_ctxt_base);
+    int ret;
+
+    qemu_log("qid: %u, mapt_ctxt_base: 0x%lx\n", qid, addr);
+    ret = ummu_mapt_get_cmdq_base(u, addr, qid, &base);
+    if (ret) {
+        qemu_log("failed to get mapt cmdq base.\n");
+        return;
+    }
+
+    switch (offset & UCMDQ_UCPLQ_CI_PI_MASK) {
+        case UCMDQ_PI:
+            ummu_mapt_cmdq_base_update_ucmdq_pi(&base, (uint16_t)data);
+            ummu_process_mapt_cmdq(u, &base);
+            break;
+        case UCMDQ_CI:
+            ummu_mapt_cmdq_base_update_ucmdq_ci(&base, (uint16_t)data);
+            break;
+        case UCPLQ_PI:
+            ummu_mapt_cmdq_base_update_ucplq_pi(&base, (uint16_t)data);
+            break;
+        case UCPLQ_CI:
+            ummu_mapt_cmdq_base_update_ucplq_ci(&base, (uint16_t)data);
+            break;
+        default:
+            qemu_log("cannot process addr(0x%lx) mpat ctrlr page write.\n", offset);
+            return;
+    }
+
+    ret = ummu_mapt_update_cmdq_base(u, addr, qid, &base);
+    if (ret) {
+        qemu_log("failed to update mapt cmdq ctx.\n");
+        return;
+    }
+}
+
+static void ummu_reg_writew(UMMUState *u, hwaddr offset, uint64_t data)
+{
+    switch (offset) {
+        case A_UCMDQ_PI_START_REG...A_UCPLQ_CI_END_REG:
+            ummu_mapt_ctrlr_page_write_process(u, offset, data);
+            break;
+        default:
+            qemu_log("ummu cannot handle 16-bit write access at: 0x%lx\n", offset);
+            break;
+    }
+}
+
+static int ummu_mapt_process_release_um_queue(UMMUState *u)
+{
+    MAPTCmdqBase base;
+    uint32_t qid = u->release_um_queue_id;
+    dma_addr_t addr = MAPT_CMDQ_CTXT_BASE_ADDR(u->mapt_cmdq_ctxt_base);
+
+    memset(&base, 0, sizeof(base));
+    if (ummu_mapt_update_cmdq_base(u, addr, qid, &base)) {
+        qemu_log("failed to release um queue(qid: %u)\n", qid);
+        return -1;
+    }
+
+    qemu_log("release um queue(qid: %u) success.\n", qid);
     return 0;
+}
+
+static void ummu_reg_writel(UMMUState *u, hwaddr offset, uint64_t data)
+{
+    switch (offset) {
+        case A_CTRL0:
+            update_reg32_by_wmask(&u->ctrl[0], data, UMMU_CTRL0_WMASK);
+            ummu_cr0_process_task(u);
+            break;
+        case A_CTRL1:
+            update_reg32_by_wmask(&u->ctrl[1], data, UMMU_CTRL1_WMASK);
+            break;
+        case A_CTRL2:
+            update_reg32_by_wmask(&u->ctrl[2], data, UMMU_CTRL2_WMASK);
+            break;
+        case A_CTRL3:
+            update_reg32_by_wmask(&u->ctrl[3], data, UMMU_CTRL3_WMASK);
+            break;
+        case A_TECT_BASE_CFG:
+            update_reg32_by_wmask(&u->tect_base_cfg, data, UMMU_TECT_BASE_CFG_WMASK);
+            break;
+        case A_MCMD_QUE_BASE...A_MCMD_QUE_LASTEST_CI:
+            ummu_mcmdq_reg_writel(u, offset, data);
+            break;
+        case A_EVENT_QUE_PI:
+            update_reg32_by_wmask(&u->eventq.queue.prod, data, UMMU_EVENTQ_PI_WMASK);
+            break;
+        case A_EVENT_QUE_CI:
+            update_reg32_by_wmask(&u->eventq.queue.cons, data, UMMU_EVENTQ_CI_WMASK);
+            break;
+        case A_EVENT_QUE_USI_DATA:
+            update_reg32_by_wmask(&u->eventq.usi_data, data, UMMU_EVENT_QUE_USI_DATA_WMASK);
+            break;
+        case A_EVENT_QUE_USI_ATTR:
+            update_reg32_by_wmask(&u->eventq.usi_attr, data, UMMU_EVENTQ_USI_ATTR_WMASK);
+            break;
+        case A_GLB_ERR_INT_USI_DATA:
+            update_reg32_by_wmask(&u->glb_err.usi_data, data, UMMU_GLB_ERR_INT_USI_DATA_WMASK);
+            break;
+        case A_GLB_ERR_INT_USI_ATTR:
+            update_reg32_by_wmask(&u->glb_err.usi_attr, data, UMMU_GLB_ERR_INT_USI_ATTR_WMASK);
+            break;
+        case A_GLB_INT_EN:
+            ummu_glb_int_en_process(u, data);
+            break;
+        case A_GLB_ERR_RESP:
+             update_reg32_by_wmask(&u->glb_err.glb_err_resp, data, UMMU_GLB_ERR_RESP_WMASK);
+             break;
+        case A_RELEASE_UM_QUEUE:
+            /* release_um_queue reg set 1 to release um_queue */
+            if ((data & RELEASE_UM_QUEUE_WMASK) != 1) {
+                break;
+            }
+            if (ummu_mapt_process_release_um_queue(u)) {
+                u->release_um_queue = 1;
+                break;
+            }
+            /* release success, set release_um_queue reg to 0, means release success */
+            u->release_um_queue = 0;
+            break;
+        case A_RELEASE_UM_QUEUE_ID:
+            update_reg32_by_wmask(&u->release_um_queue_id, data, RELEASE_UM_QUEUE_ID_WMASK);
+            break;
+        case A_UCMDQ_PI_START_REG...A_UCPLQ_CI_END_REG:
+            ummu_mapt_ctrlr_page_write_process(u, offset, data);
+            break;
+        case A_UMCMD_PAGE_SEL:
+            qemu_log("ucmdq set page sel to %s\n",
+                     data == MAPT_CMDQ_CTRLR_PAGE_SIZE_4K ? "4K" : "64K");
+            update_reg32_by_wmask(&u->ucmdq_page_sel, data, UMCMD_PAGE_SEL_WMASK);
+            break;
+        case A_DSTEID_KV_TABLE_BASE_CFG:
+        case A_UMMU_DSTEID_KV_TABLE_HASH_CFG0:
+        case A_UMMU_DSTEID_KV_TABLE_HASH_CFG1:
+        case A_UMMU_USER_CONFIG0...A_UMMU_USER_CONFIG11:
+        case A_UMMU_MEM_USI_DATA:
+        case A_UMMU_MEM_USI_ATTR:
+        case A_UMMU_INT_MASK:
+        case A_UMMU_DSTEID_CAM_TABLE_BASE_CFG:
+            /* do nothing */
+            break;
+        default:
+            qemu_log("ummu cannot handle 32-bit write access at 0x%lx\n", offset);
+            break;
+    }
+}
+
+static void ummu_mcmdq_reg_writell(UMMUState *u, hwaddr offset, uint64_t data)
+{
+    uint8_t mcmdq_idx;
+
+    mcmdq_idx = (uint8_t)(offset & MCMDQ_IDX_MASK) >> __bf_shf(MCMDQ_IDX_MASK);
+    if (mcmdq_idx >= UMMU_MAX_MCMDQS) {
+        qemu_log("invalid idx %u, offset is 0x%lx\n", mcmdq_idx, offset);
+        return;
+    }
+
+    switch (offset & MCMDQ_BASE_ADDR_MASK) {
+        case A_MCMD_QUE_BASE:
+            update_reg64_by_wmask(&u->mcmdqs[mcmdq_idx].queue.base, data, UMMU_MCMDQ_BASE_WMASK);
+            u->mcmdqs[mcmdq_idx].queue.log2size = MCMD_QUE_LOG2SIZE(data);
+            trace_ummu_mcmdq_base_reg_writell(mcmdq_idx, u->mcmdqs[mcmdq_idx].queue.base,
+                                              u->mcmdqs[mcmdq_idx].queue.log2size);
+            break;
+        default:
+            qemu_log("ummu cannot handle 64-bit mcmdq reg write access at 0x%lx\n", offset);
+            break;
+    }
+}
+
+static void ummu_reg_writell(UMMUState *u, hwaddr offset, uint64_t data)
+{
+    switch (offset) {
+        case A_TECT_BASE0:
+            update_reg64_by_wmask(&u->tect_base, data, UMMU_TECT_BASE_WMASK);
+            break;
+        case A_MCMD_QUE_BASE...A_MCMD_QUE_LASTEST_CI:
+            ummu_mcmdq_reg_writell(u, offset, data);
+            break;
+        case A_EVENT_QUE_BASE0:
+            update_reg64_by_wmask(&u->eventq.queue.base, data, UMMU_EVENTQ_BASE_WMASK);
+            u->eventq.queue.log2size = EVENT_QUE_LOG2SIZE(data);
+            trace_ummu_eventq_req_writell(u->eventq.queue.base, u->eventq.queue.log2size);
+            break;
+        case A_EVENT_QUE_USI_ADDR0:
+            update_reg64_by_wmask(&u->eventq.usi_addr, data, UMMU_EVENTQ_USI_ADDR_WMASK);
+            trace_ummu_eventq_usi_reg_writell(data);
+            break;
+        case A_GLB_ERR_INT_USI_ADDR0:
+            update_reg64_by_wmask(&u->glb_err.usi_addr, data, UMMU_GLB_ERR_INT_USI_ADDR_WMASK);
+            trace_ummu_glberr_usi_reg_writell(data);
+            break;
+        case A_MAPT_CMDQ_CTXT_BADDR0:
+            update_reg64_by_wmask(&u->mapt_cmdq_ctxt_base, data, MAPT_CMDQ_CTXT_BADDR_WMASK);
+            trace_ummu_mapt_ctx_base_reg_writell(u->mapt_cmdq_ctxt_base);
+            break;
+        case A_DSTEID_KV_TABLE_BASE0:
+        case A_UMMU_DSTEID_CAM_TABLE_BASE0:
+        case A_UMMU_MEM_USI_ADDR0:
+            /* do nothing */
+            break;
+        default:
+            qemu_log("ummu cannot handle 64-bit write access at 0x%lx\n", offset);
+            break;
+    }
 }
 
 static void ummu_reg_write(void *opaque, hwaddr offset, uint64_t data, unsigned size)
 {
+    UMMUState *u = opaque;
+
+    switch (size) {
+        case 2:
+            ummu_reg_writew(u, offset, data);
+            break;
+        case 4:
+            ummu_reg_writel(u, offset, data);
+            break;
+        case 8:
+            ummu_reg_writell(u, offset, data);
+            break;
+        default:
+            qemu_log("cann't process ummu reg write for size: %u\n", size);
+            break;
+    }
 }
 
 static const MemoryRegionOps ummu_reg_ops = {

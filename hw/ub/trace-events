@@ -1,3 +1,13 @@
+# See docs/devel/tracing.rst for syntax documentation.
+
+# ub_ummu.c
+ummu_mcmdq_reg_writel(uint32_t idx, uint32_t prod, uint32_t cons) "mcmdq process: idx(%u), prod(%u), cons(%u)"
+ummu_mcmdq_base_reg_writell(uint8_t idx, uint64_t base, uint8_t log2size) "idx(%u) base(0x%lx) log2size(0x%x)"
+ummu_eventq_req_writell(uint64_t base, uint8_t log2size) "base(0x%lx) log2size(0x%x)"
+ummu_eventq_usi_reg_writell(uint64_t addr) "set eventq usi addr 0x%lx"
+ummu_glberr_usi_reg_writell(uint64_t addr) "set glb err usi addr 0x%lx"
+ummu_mapt_ctx_base_reg_writell(uint64_t addr) "config mapt ctx base 0x%lx"
+
 # ub.c
 ub_update_mappings(int i, uint64_t region_size, uint64_t old_addr, uint64_t new_addr) "region[%d], size: 0x%lx, old_addr: 0x%lx, new_addr: 0x%lx"
 ub_update_mappings_add(uint64_t new_addr) "commit region addr to 0x%lx"
