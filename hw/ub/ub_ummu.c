@@ -646,8 +646,68 @@ static void ummu_mcmdq_reg_writel(UMMUState *u, hwaddr offset, uint64_t data)
     trace_ummu_mcmdq_reg_writel(mcmdq_idx, MCMD_QUE_WD_IDX(&q->queue), MCMD_QUE_RD_IDX(&q->queue));
 }
 
+static void ummu_glb_int_disable(UMMUState *u, UMMUUSIVectorType type)
+{
+    qemu_log("start disable glb int\n");
+
+    if (u->usi_virq[type] < 0) {
+        return;
+    }
+
+    kvm_irqchip_release_virq(kvm_state, u->usi_virq[type]);
+    u->usi_virq[type] = -1;
+}
+
+static void ummu_glb_int_enable(UMMUState *u, UMMUUSIVectorType type)
+{
+    KVMRouteChange route_change;
+    USIMessage msg;
+    uint32_t interrupt_id = UMMU_INTERRUPT_ID;
+
+    if (type == UMMU_USI_VECTOR_EVETQ) {
+        msg = ummu_get_eventq_usi_message(u);
+    } else {
+        msg = ummu_get_gerror_usi_message(u);
+    }
+
+    route_change = kvm_irqchip_begin_route_changes(kvm_state);
+    u->usi_virq[type] = kvm_irqchip_add_usi_route(&route_change, msg, interrupt_id, NULL);
+    trace_ummu_glb_int_enable(type, u->usi_virq[type]);
+    if (u->usi_virq[type] < 0) {
+        qemu_log("kvm irqchip failed to add usi route.\n");
+        return;
+    }
+    kvm_irqchip_commit_route_changes(&route_change);
+}
+
+static void ummu_handle_glb_int_enable_update(UMMUState *u, UMMUUSIVectorType type,
+                                              bool was_enabled, bool is_enabled)
+{
+    if (was_enabled && !is_enabled) {
+        ummu_glb_int_disable(u, type);
+    } else if (!was_enabled && is_enabled) {
+        ummu_glb_int_enable(u, type);
+    }
+}
+
 static void ummu_glb_int_en_process(UMMUState *u, uint64_t data)
 {
+    bool gerror_was_enabled, eventq_was_enabled;
+    bool gerror_is_enabled, eventq_is_enabled;
+
+    /* process eventq interrupt update */
+    eventq_was_enabled = ummu_event_que_int_en(u);
+    ummu_set_event_que_int_en(u, data);
+    eventq_is_enabled = ummu_event_que_int_en(u);
+    ummu_handle_glb_int_enable_update(u, UMMU_USI_VECTOR_EVETQ,
+                                      eventq_was_enabled, eventq_is_enabled);
+
+    /* process glb_err interrupt update */
+    gerror_was_enabled = ummu_glb_err_int_en(u);
+    ummu_set_glb_err_int_en(u, data);
+    gerror_is_enabled = ummu_glb_err_int_en(u);
+    ummu_handle_glb_int_enable_update(u, UMMU_USI_VECTOR_GERROR,
+                                      gerror_was_enabled, gerror_is_enabled);
 }
 
 static MemTxResult ummu_mapt_cmdq_fetch_cmd(MAPTCmdqBase *base, MAPTCmd *cmd)
@@ -1137,6 +1197,8 @@ static void ummu_base_realize(DeviceState *dev, Error **errp)
     memory_region_init_io(&u->ummu_reg_mem, OBJECT(u), &ummu_reg_ops,
                           u, TYPE_UB_UMMU, u->ummu_reg_size);
     sysbus_init_mmio(sysdev, &u->ummu_reg_mem);
+
+    memset(u->usi_virq, -1, sizeof(u->usi_virq));
     ummu_registers_init(u);
     ub_save_ummu_list(u);
 
