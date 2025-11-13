@@ -573,6 +573,61 @@ static void mcmdq_cmd_cfgi_tect_handler(UMMUState *u, UMMUMcmdqCmd *cmd, uint8_t
     ummu_invalidate_cache(u, cmd);
 }
 
+static void mcmdq_cmd_cfgi_tect_range_handler(UMMUState *u, UMMUMcmdqCmd *cmd, uint8_t mcmdq_idx)
+{
+    uint32_t tecte_tag = CMD_TECTE_TAG(cmd);
+    uint8_t range = CMD_TECTE_RANGE(cmd);
+    uint32_t mask;
+    int i;
+    UMMUTecteRange tecte_range = { .invalid_all = false, };
+
+    trace_mcmdq_cmd_cfgi_tect_range_handler(mcmdq_idx, tecte_tag, range);
+
+    if (CMD_TECTE_RANGE_INVILID_ALL(range)) {
+        tecte_range.invalid_all = true;
+    } else {
+        mask = (1ULL << (range + 1)) - 1;
+        tecte_range.start = tecte_tag & ~mask;
+        tecte_range.end  = tecte_range.start + mask;
+    }
+
+    g_hash_table_foreach_remove(u->configs, ummu_invalid_tecte, &tecte_range);
+    ummu_invalidate_cache(u, cmd);
+
+    if (tecte_range.invalid_all && u->tecte_tag_num > 0) {
+        for (i = u->tecte_tag_num - 1; i >= 0; i--) {
+            if (i >= UMMU_TECTE_TAG_MAX_NUM) {
+                continue;
+            }
+            ummu_config_tecte(u, u->tecte_tag_cache[i]);
+        }
+        u->tecte_tag_num = 0;
+        return;
+    }
+
+    for (i = tecte_range.start; i <= tecte_range.end; i++) {
+        ummu_config_tecte(u, i);
+    }
+}
+
+static void mcmdq_cmd_cfgi_tct_handler(UMMUState *u, UMMUMcmdqCmd *cmd, uint8_t mcmdq_idx)
+{
+    uint32_t tecte_tag = CMD_TECTE_TAG(cmd);
+
+    trace_mcmdq_cmd_cfgi_tct_handler(mcmdq_idx, tecte_tag);
+
+    ummu_invalid_single_tecte(u, tecte_tag);
+    ummu_invalidate_cache(u, cmd);
+}
+
+static void mcmdq_cmd_cfgi_tct_all_handler(UMMUState *u, UMMUMcmdqCmd *cmd, uint8_t mcmdq_idx)
+{
+    trace_mcmdq_cmd_cfgi_tct_all_handler(mcmdq_idx);
+
+    /* cfgi_tct & cfgi_tct_all process is the same */
+    mcmdq_cmd_cfgi_tct_handler(u, cmd, mcmdq_idx);
+}
+
 static void ummu_viommu_invalidate_cache(IOMMUFDViommu *viommu, uint32_t type, UMMUMcmdqCmd *cmd)
 {
     int ret;
@@ -611,11 +666,13 @@ static void ummu_invalidate_cache(UMMUState *u, UMMUMcmdqCmd *cmd)
 static void mcmdq_cmd_plbi_x_process(UMMUState *u, UMMUMcmdqCmd *cmd, uint8_t mcmdq_idx)
 {
     trace_mcmdq_cmd_plbi_x_process(mcmdq_idx, mcmdq_cmd_strings[CMD_TYPE(cmd)]);
+    ummu_invalidate_cache(u, cmd);
 }
 
 static void mcmdq_cmd_tlbi_x_process(UMMUState *u, UMMUMcmdqCmd *cmd, uint8_t mcmdq_idx)
 {
     trace_mcmdq_cmd_tlbi_x_process(mcmdq_idx, mcmdq_cmd_strings[CMD_TYPE(cmd)]);
+    ummu_invalidate_cache(u, cmd);
 }
 
 static void mcmdq_check_pa_continuity_fill_result(UMMUMcmdQueue *mcmdq, bool continuity)
@@ -686,9 +743,9 @@ static void (*mcmdq_cmd_handlers[])(UMMUState *u, UMMUMcmdqCmd *cmd, uint8_t mcm
     [CMD_STALL_RESUME]         = NULL,
     [CMD_PREFET_CFG]           = mcmdq_cmd_prefet_cfg,
     [CMD_CFGI_TECT]            = mcmdq_cmd_cfgi_tect_handler,
-    [CMD_CFGI_TECT_RANGE]      = NULL,
-    [CMD_CFGI_TCT]             = NULL,
-    [CMD_CFGI_TCT_ALL]         = NULL,
+    [CMD_CFGI_TECT_RANGE]      = mcmdq_cmd_cfgi_tect_range_handler,
+    [CMD_CFGI_TCT]             = mcmdq_cmd_cfgi_tct_handler,
+    [CMD_CFGI_TCT_ALL]         = mcmdq_cmd_cfgi_tct_all_handler,
     [CMD_CFGI_VMS_PIDM]        = NULL,
     [CMD_PLBI_OS_EID]          = mcmdq_cmd_plbi_x_process,
     [CMD_PLBI_OS_EIDTID]       = mcmdq_cmd_plbi_x_process,
@@ -904,9 +961,11 @@ static void ummu_process_mapt_cmd(UMMUState *u, MAPTCmdqBase *base, MAPTCmd *cmd
 {
     uint32_t type = MAPT_UCMD_TYPE(cmd);
     MAPTCmdCpl cpl;
+    UMMUMcmdqCmd mcmd_cmd = { 0 };
     uint16_t tecte_tag;
     uint32_t tid;
 
+    mcmd_cmd.word[0] = CMD_PLBI_OS_EID;
     /* default set cpl staus invalid */
     ummu_mapt_ucplq_set_cpl(&cpl, MAPT_UCPL_STATUS_INVALID, 0);
     tecte_tag = ummu_mapt_cmdq_base_get_tecte_tag(base);
@@ -919,9 +978,13 @@ static void ummu_process_mapt_cmd(UMMUState *u, MAPTCmdqBase *base, MAPTCmd *cmd
             break;
         case MAPT_UCMD_TYPE_PLBI_USR_ALL:
             qemu_log("start process mapt cmd: MAPT_UCMD_TYPE_PLBI_USR_ALL.\n");
+            ummu_mcmdq_construct_plbi_os_eidtid(&mcmd_cmd, tid, tecte_tag);
+            ummu_invalidate_cache(u, &mcmd_cmd);
             break;
         case MAPT_UCMD_TYPE_PLBI_USR_VA:
             qemu_log("start process mapt cmd: MAPT_UCMD_TYPE_PLBI_USR_VA.\n");
+            ummu_plib_usr_va_to_pibi_os_va(cmd, &mcmd_cmd, tid, tecte_tag);
+            ummu_invalidate_cache(u, &mcmd_cmd);
             break;
         default:
             qemu_log("unknown mapt cmd type: 0x%x\n", type);
