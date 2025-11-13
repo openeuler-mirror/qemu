@@ -248,6 +248,8 @@ typedef QLIST_HEAD(VFIODeviceList, VFIODevice) VFIODeviceList;
 extern VFIOGroupList vfio_group_list;
 extern VFIODeviceList vfio_device_list;
 extern const MemoryListener vfio_memory_listener;
+extern const MemoryListener csv3_vfio_ram_listener;
+extern const MemoryListener csv3_vfio_mmio_listener;
 extern int vfio_kvm_device_fd;
 
 bool vfio_mig_active(void);

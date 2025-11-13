@@ -914,6 +914,66 @@ static void vfio_listener_region_del(MemoryListener *listener,
     vfio_container_del_section_window(bcontainer, section);
 }
 
+static void csv3_vfio_ram_listener_region_add(MemoryListener *listener,
+                                              MemoryRegionSection *section)
+{
+    VFIOContainerBase *bcontainer;
+
+    if (!kvm_csv3_enabled())
+        return;
+
+    bcontainer = container_of(listener, VFIOContainerBase, csv3_ram_listener);
+    vfio_listener_region_add(&bcontainer->listener, section);
+}
+
+static void csv3_vfio_ram_listener_region_del(MemoryListener *listener,
+                                              MemoryRegionSection *section)
+{
+    VFIOContainerBase *bcontainer;
+
+    if (!kvm_csv3_enabled())
+        return;
+
+    bcontainer = container_of(listener, VFIOContainerBase, csv3_ram_listener);
+    vfio_listener_region_del(&bcontainer->listener, section);
+}
+
+static void csv3_vfio_mmio_listener_region_add(MemoryListener *listener,
+                                               MemoryRegionSection *section)
+{
+    VFIOContainerBase *bcontainer;
+
+    if (!kvm_csv3_enabled() || !memory_region_is_ram_device(section->mr))
+        return;
+
+    bcontainer = container_of(listener, VFIOContainerBase, csv3_mmio_listener);
+    vfio_listener_region_add(&bcontainer->listener, section);
+}
+
+static void csv3_vfio_mmio_listener_region_del(MemoryListener *listener,
+                                               MemoryRegionSection *section)
+{
+    VFIOContainerBase *bcontainer;
+
+    if (!kvm_csv3_enabled() || !memory_region_is_ram_device(section->mr))
+        return;
+
+    bcontainer = container_of(listener, VFIOContainerBase, csv3_mmio_listener);
+    vfio_listener_region_del(&bcontainer->listener, section);
+}
+
+const MemoryListener csv3_vfio_ram_listener = {
+    .name = "csv3-vfio-ram",
+    .region_add = csv3_vfio_ram_listener_region_add,
+    .region_del = csv3_vfio_ram_listener_region_del,
+};
+
+const MemoryListener csv3_vfio_mmio_listener = {
+    .name = "csv3-vfio-mmio",
+    .region_add = csv3_vfio_mmio_listener_region_add,
+    .region_del = csv3_vfio_mmio_listener_region_del,
+};
+
 typedef struct VFIODirtyRanges {
     hwaddr min32;
     hwaddr max32;
