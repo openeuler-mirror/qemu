@@ -280,5 +280,7 @@ void bitmap_copy_with_src_offset(unsigned long *dst, const unsigned long *src,
                                  unsigned long offset, unsigned long nbits);
 void bitmap_copy_with_dst_offset(unsigned long *dst, const unsigned long *src,
                                  unsigned long shift, unsigned long nbits);
+int bitmap_scnprintf(char *buf, unsigned int buflen,
+                     const unsigned long *maskp, int nmaskbits);
 
 #endif /* BITMAP_H */
