@@ -34,6 +34,7 @@
 #include "hw/ub/ub_ubc.h"
 #include "migration/vmstate.h"
 #include "exec/address-spaces.h"
+#include "hw/ub/ubus_instance.h"
 #include "monitor/monitor.h"
 #include "trace.h"
 
@@ -474,6 +475,70 @@ static void do_ub_unregister_device(UBDevice *ub_dev)
     ub_port_info_free(ub_dev);
 }
 
+static uint32_t ub_get_host_bus_instance_eid(UbGuid *guid)
+{
+    uint32_t bus_instance_eid;
+    char guid_str[UB_DEV_GUID_STRING_LENGTH + 1] = {0};
+    int bus_instance_type;
+
+    ub_device_get_str_from_guid(guid, guid_str, UB_DEV_GUID_STRING_LENGTH + 1);
+    bus_instance_eid = sysfs_get_bus_instance_eid_by_guid(guid);
+    if (bus_instance_eid == UINT32_MAX) {
+        qemu_log("sysfs failed to get bus instance eid by guid %s\n", guid_str);
+        return UINT32_MAX;
+    }
+
+    bus_instance_type = sysfs_get_bus_instance_type_by_eid(bus_instance_eid);
+    if (!UBUS_INSTANCE_IS_DYNAMIC(bus_instance_type)) {
+        qemu_log("bus instance(guid: %s) not dynamic bus instance.\n", guid_str);
+        return UINT32_MAX;
+    }
+
+    return bus_instance_eid;
+}
+
+/* current this just for vfio ub dev host bus instance verify */
+static int ub_dev_bus_instance_verify(UBDevice *dev, Error **errp)
+{
+    BusControllerState *ubc = QLIST_FIRST(&ub_bus_controllers);
+    BusControllerDev *ub_bus_controller_dev = NULL;
+    UBDevice *ubc_dev = NULL;
+    uint32_t bus_instance_eid;
+    char guid_str[UB_DEV_GUID_STRING_LENGTH + 1] = {0};
+
+    if (!ubc) {
+        qemu_log("failed to get ub bus controller, bus instance verify later.\n");
+        return 0;
+    }
+
+    ub_bus_controller_dev = ubc->ubc_dev;
+
+    if (!ub_bus_controller_dev) {
+        qemu_log("ub controller dev not realized, bus instance verify later.\n");
+        return 0;
+    }
+
+    ubc_dev = &ub_bus_controller_dev->parent;
+
+    if (ubc_dev->bus_instance_eid == UINT32_MAX) {
+        bus_instance_eid = ub_get_host_bus_instance_eid(&ub_bus_controller_dev->bus_instance_guid);
+        if (bus_instance_eid == UINT32_MAX) {
+            error_setg(errp, "failed to get bus instance eid.\n");
+            return -1;
+        }
+        ubc_dev->bus_instance_eid = bus_instance_eid;
+    }
+
+    if (ubc_dev->bus_instance_eid != dev->bus_instance_eid) {
+        ub_device_get_str_from_guid(&dev->guid, guid_str, UB_DEV_GUID_STRING_LENGTH + 1);
+        error_setg(errp, "ub dev(guid: %s) bus instance eid verify failed: expect 0x%x, actual 0x%x\n",
+                   guid_str, ubc_dev->bus_instance_eid, dev->bus_instance_eid);
+        return -1;
+    }
+
+    return 0;
+}
+
 static void ub_qdev_realize(DeviceState *qdev, Error **errp)
 {
     UBDevice *ub_dev = (UBDevice *)qdev;
@@ -490,6 +555,7 @@ static void ub_qdev_realize(DeviceState *qdev, Error **errp)
         return;
     }
 
+    ub_dev->bus_instance_verify = ub_dev_bus_instance_verify;
     if (uc->realize) {
         uc->realize(ub_dev, &local_err);
         if (local_err) {
@@ -916,6 +982,24 @@ uint32_t ub_interrupt_id(UBDevice *udev)
     return cfg1_int_cap->interrupt_id;
 }
 
+static int ub_bus_instance_verify(Error **errp)
+{
+    BusControllerState *ubc = QLIST_FIRST(&ub_bus_controllers);
+    UBDevice *dev = NULL;
+
+    QLIST_FOREACH(dev, &ubc->bus->devices, node) {
+        if (dev->dev_type == UB_TYPE_IBUS_CONTROLLER ||
+            dev->bus_instance_eid == UINT32_MAX) {
+            continue;
+        }
+
+        if (ub_dev_bus_instance_verify(dev, errp)) {
+            return -1;
+        }
+    }
+    return 0;
+}
+
 /*
  * now all ub device add, finally setup for all ub device.
  * 1. check ub device bus instance type
@@ -923,6 +1007,10 @@ uint32_t ub_interrupt_id(UBDevice *udev)
  * */
 int ub_dev_finally_setup(VirtMachineState *vms, Error **errp)
 {
+    if (ub_bus_instance_verify(errp)) {
+        return -1;
+    }
+
     /*
      * Initialize the port information of all UB devices according
      * to the input information after all UB devices are constructed.
