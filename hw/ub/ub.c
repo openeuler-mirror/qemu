@@ -691,16 +691,6 @@ BusControllerState *container_of_ubbus(UBBus *bus)
     return NULL;
 }
 
-AddressSpace *ub_device_iommu_address_space(UBDevice *dev)
-{
-    UBBus *bus = ub_get_bus(dev);
-
-    if (bus->iommu_ops && bus->iommu_ops->get_address_space) {
-        return bus->iommu_ops->get_address_space(bus, bus->iommu_opaque, dev->eid);
-    }
-    return &address_space_memory;
-}
-
 UBDevice *ub_find_device_by_id(const char *id)
 {
     BusControllerState *ubc = NULL;
@@ -974,6 +964,87 @@ static int ub_dev_init_port_info_by_cmd(Error **errp)
     return 0;
 }
 
+bool ub_guid_initialized(UbGuid *guid)
+{
+    if (!guid->vendor && !guid->type && !guid->version &&
+        !guid->device_id && !guid->rsv && !guid->seq_num) {
+        return false;
+    } else {
+        return true;
+    }
+}
+
+AddressSpace *ub_device_iommu_address_space(UBDevice *dev)
+{
+    UBBus *bus = ub_get_bus(dev);
+
+    if (bus->iommu_ops && bus->iommu_ops->get_address_space) {
+        return bus->iommu_ops->get_address_space(bus, bus->iommu_opaque, dev->eid);
+    }
+    return &address_space_memory;
+}
+
+int ub_device_set_iommu_device(UBDevice *dev, HostIOMMUDevice *hoid, Error **errp)
+{
+    UBBus *bus = ub_get_bus(dev);
+
+    if (bus->iommu_ops && bus->iommu_ops->set_iommu_device) {
+        return bus->iommu_ops->set_iommu_device(bus, bus->iommu_opaque, dev->eid, hoid, errp);
+    }
+
+    return 0;
+}
+
+void ub_device_unset_iommu_device(UBDevice *dev)
+{
+    UBBus *bus = ub_get_bus(dev);
+
+    if (bus->iommu_ops && bus->iommu_ops->unset_iommu_device) {
+        bus->iommu_ops->unset_iommu_device(bus, bus->iommu_opaque, dev->eid);
+    }
+}
+
+bool ub_device_check_ummu_is_nested(UBDevice *dev)
+{
+    UBBus *bus = ub_get_bus(dev);
+
+    if (bus->iommu_ops && bus->iommu_ops->ummu_is_nested) {
+        return bus->iommu_ops->ummu_is_nested(bus->iommu_opaque);
+    }
+
+    return false;
+}
+
+void ub_register_ers(UBDevice *dev, uint8_t region_num, MemoryRegion *memory)
+{
+    UBIORegion *r;
+    UbCfg1Basic *cfg1_basic_wmask;
+    uint64_t size = memory_region_size(memory);
+    uint64_t emulated_offset;
+    uint64_t wmask;
+
+    if (region_num >= UB_NUM_REGIONS) {
+        qemu_log("invalid region_num %u\n", region_num);
+        return;
+    }
+    if (!is_power_of_2(size)) {
+        qemu_log("region %u is_power_of_2 check failed! size 0x%"PRIx64"\n",
+                 region_num, size);
+        return;
+    }
+
+    r = &dev->io_regions[region_num];
+    r->addr = UINT64_MAX;
+    r->size = size;
+    r->memory = memory;
+    r->address_space = ub_get_bus(dev)->address_space_mem;
+    wmask = ~(size - 1);
+    /* Mark that the ers is RW */
+    emulated_offset = ub_cfg_offset_to_emulated_offset(UB_CFG1_BASIC_START, true);
+    cfg1_basic_wmask = (UbCfg1Basic *)(dev->wmask + emulated_offset);
+    ub_set_quad((uint8_t *)&cfg1_basic_wmask->ers_ubba[region_num], wmask);
+}
+
 uint32_t ub_interrupt_id(UBDevice *udev)
 {
     uint64_t offset = ub_cfg_offset_to_emulated_offset(UB_CFG1_CAP4_INT_TYPE2, true);
@@ -1044,4 +1115,42 @@ uint32_t ub_dev_get_ueid(UBDevice *udev)
 {
     uint64_t offset = ub_cfg_offset_to_emulated_offset(UB_CFG0_DEV_UEID_OFFSET, true);
     return *(uint32_t *)(udev->config + offset);
+}
+
+enum UbDeviceType ub_dev_get_type(UBDevice *udev)
+{
+    uint64_t offset;
+    UbCfg1Basic *cfg1;
+    int baseCode;
+
+    if (udev == NULL) {
+        return UB_TYPE_UNINIT;
+    }
+
+    offset = ub_cfg_offset_to_emulated_offset(UB_CFG1_BASIC_START, true);
+    cfg1 = (UbCfg1Basic *)(udev->config + offset);
+    baseCode = cfg1->class_code & UB_GUID_BASE_CODE_MASK;
+
+    switch (udev->guid.type) {
+    case UB_GUID_TYPE_BUS_INSTANCE:
+        return UB_TYPE_BUS_INSTANCE;
+    case UB_GUID_TYPE_BUS_CONTROLLER:
+        if (baseCode == UB_GUID_BASE_INSTANCE) {
+            return UB_TYPE_UNINIT;
+        } else {
+            return UB_TYPE_DEVICE;
+        }
+    case UB_GUID_TYPE_IBUS_CONTROLLER:
+        if (baseCode == UB_GUID_BASE_INSTANCE) {
+            return UB_TYPE_IBUS_CONTROLLER;
+        } else {
+            return UB_TYPE_IDEVICE;
+        }
+    case UB_GUID_TYPE_SWITCH:
+        return UB_TYPE_SWITCH;
+    case UB_GUID_TYPE_ISWITCH:
+        return UB_TYPE_ISWITCH;
+    default:
+        return UB_TYPE_UNINIT;
+    }
 }
