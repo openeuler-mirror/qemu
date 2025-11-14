@@ -24,6 +24,25 @@ struct USIMessage {
     uint32_t data;
 };
 
+void usi_init(UBDevice *udev, uint16_t vec_table_num, uint16_t addr_table_num,
+              uint64_t vec_table_start_addr, uint64_t addr_table_start_addr,
+              uint64_t pend_table_start_addr, MemoryRegion *fer0_mr);
+void usi_uninit(UBDevice *udev, MemoryRegion *fer0_mr);
+bool usi_is_masked(UBDevice *udev, uint16_t vector);
+USIMessage usi_get_message(UBDevice *udev, uint16_t vector);
+int usi_enabled(UBDevice *udev);
+int usi_set_vector_notifiers(UBDevice *udev,
+                             USIVectorUseNotifier use_notifier,
+                             USIVectorReleaseNotifier release_notifier,
+                             USIVectorPollNotifier poll_notifier);
+void usi_unset_vector_notifiers(UBDevice *udev);
+void usi_notify(UBDevice *udev, uint16_t vector);
+int usi_is_pending(UBDevice *udev, uint16_t vector);
+void usi_set_pending(UBDevice *udev, uint16_t vector);
+void usi_clr_pending(UBDevice *udev, uint16_t vector);
+int usi_ue_is_masked(UBDevice *udev);
+void usi_handle_ue_mask_update(UBDevice *udev, bool was_masked);
 void usi_send_message(USIMessage *msg, uint32_t interrupt_id, UBDevice *udev);
+void usi_reset(UBDevice *dev);
 
 #endif

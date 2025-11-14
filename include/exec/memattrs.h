@@ -51,7 +51,7 @@ typedef struct MemTxAttrs {
      */
     unsigned int memory:1;
     /* Requester ID (for MSI for example) */
-    unsigned int requester_id:16;
+    unsigned int requester_id;
     /* Invert endianness for this page */
     unsigned int byte_swap:1;
     /*

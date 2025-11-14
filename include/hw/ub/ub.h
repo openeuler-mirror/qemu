@@ -142,6 +142,9 @@ typedef void UBConfigReadFunc(UBDevice *dev, uint64_t offset,
                               uint32_t *val, uint32_t dw_mask);
 typedef void UBConfigWriteFunc(UBDevice *dev, uint64_t offset,
                                uint32_t *val, uint32_t dw_mask);
+typedef int (*USIVectorUseNotifier)(UBDevice *udev, uint16_t vector, USIMessage msg);
+typedef void (*USIVectorReleaseNotifier)(UBDevice *udev, uint16_t vector);
+typedef void (*USIVectorPollNotifier)(UBDevice *dev, uint16_t vector_start, uint16_t vector_end);
 
 struct UBDevice {
     DeviceState qdev;
@@ -164,6 +167,22 @@ struct UBDevice {
     UBConfigReadFunc *config_read;
     UBConfigWriteFunc *config_write;
     int (* bus_instance_verify)(UBDevice *dev, Error **errp);
+
+    /* usi entries */
+    uint16_t usi_entries_nr;
+    uint16_t usi_addr_table_nr;
+    /* Space to store usi vec table & addr table & pending bit array */
+    uint8_t *usi_vec_table;
+    uint8_t *usi_addr_table;
+    uint8_t *usi_pend_table;
+    /* MemoryRegion container for usi vec table & addr table & pending bit array */
+    MemoryRegion usi_vec_table_mmio;
+    MemoryRegion usi_addr_table_mmio;
+    MemoryRegion usi_pend_table_mmio;
+    /* USI notifiers */
+    USIVectorUseNotifier usi_vector_use_notifier;
+    USIVectorReleaseNotifier usi_vector_release_notifier;
+    USIVectorPollNotifier usi_vector_poll_notifier;
 
     QLIST_ENTRY(UBDevice) node;
 };
