@@ -22,5 +22,6 @@ vfio_ss.add(when: 'CONFIG_VFIO_AMD_XGBE', if_true: files('amd-xgbe.c'))
 vfio_ss.add(when: 'CONFIG_VFIO_AP', if_true: files('ap.c'))
 vfio_ss.add(when: 'CONFIG_VFIO_IGD', if_true: files('igd.c'))
 vfio_ss.add(when: 'CONFIG_VFIO_HCT', if_true: files('hct.c'))
+vfio_ss.add(when: 'CONFIG_VFIO_UB', if_true: files('ub.c'))
 
 specific_ss.add_all(when: 'CONFIG_VFIO', if_true: vfio_ss)
