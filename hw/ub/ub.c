@@ -27,6 +27,7 @@
 #include "hw/ub/ub_config.h"
 #include "hw/ub/ub_bus.h"
 #include "hw/ub/ub_ubc.h"
+#include "hw/ub/ub_usi.h"
 #include "hw/ub/ub_acpi.h"
 #include "qemu/log.h"
 #include "qapi/error.h"
@@ -39,6 +40,7 @@
 #include "trace.h"
 
 QLIST_HEAD(, BusControllerState) ub_bus_controllers;
+static void ub_update_mappings(UBDevice *dev);
 
 static void ubbus_dev_print(Monitor *mon, DeviceState *dev, int indent)
 {
@@ -112,8 +114,93 @@ static void ub_bus_unrealize(BusState *qbus)
     vmstate_unregister(NULL, &vmstate_ubbus, bus);
 }
 
+static void ub_dev_clear_cfg0(UBDevice *dev)
+{
+    UbCfg0Basic *cfg0_basic;
+    uint64_t offset;
+
+    /* emulated feilds in cfg0 basic */
+    offset = ub_cfg_offset_to_emulated_offset(UB_CFG0_BASIC_START, true);
+    cfg0_basic = (UbCfg0Basic *)(dev->config + offset);
+    memset(&cfg0_basic->eid, 0, sizeof(cfg0_basic->eid));
+    memset(&cfg0_basic->fm_eid, 0, sizeof(cfg0_basic->fm_eid));
+    memset(&cfg0_basic->net_addr_info, 0,
+           sizeof(cfg0_basic->net_addr_info));
+    cfg0_basic->upi = 0;
+    cfg0_basic->mtu_cfg = 0;
+    cfg0_basic->dev_rst = 0;
+    cfg0_basic->th_en = 0;
+    cfg0_basic->cc_en = 0;
+    cfg0_basic->ueid_low = 0;
+    cfg0_basic->ueid_high = 0;
+    cfg0_basic->ucna = 0;
+    cfg0_basic->fm_cna = 0;
+}
+
+static void ub_dev_clear_cfg1(UBDevice *dev)
+{
+    UbCfg1Basic *cfg1_basic;
+    uint64_t offset;
+
+    offset = ub_cfg_offset_to_emulated_offset(UB_CFG1_BASIC_START, true);
+    cfg1_basic = (UbCfg1Basic *)(dev->config + offset);
+    cfg1_basic->elr = 0;
+    cfg1_basic->elr_done = 0;
+    cfg1_basic->mig_ctrl = 0;
+    cfg1_basic->sys_pgs = 0;
+    cfg1_basic->eid_upi_tab = 0;
+    cfg1_basic->ctp_tb_bypass = 0;
+    cfg1_basic->crystal_dma_en = 0;
+    cfg1_basic->dev_token_id = 0;
+    cfg1_basic->bus_access_en = 0;
+    cfg1_basic->dev_rs_access_en = 0;
+}
+
+static void ub_reset_regions(UBDevice *dev)
+{
+    UbCfg1Basic *cfg1_basic;
+    uint64_t offset;
+    UBIORegion *region;
+    int i;
+
+    offset = ub_cfg_offset_to_emulated_offset(UB_CFG1_BASIC_START, true);
+    cfg1_basic = (UbCfg1Basic *)(dev->config + offset);
+
+    for (i = 0; i < UB_NUM_REGIONS; i++) {
+        region = &dev->io_regions[i];
+        region->addr = UB_ER_UNMAPPED;
+        cfg1_basic->ers_ubba[i] = UB_ER_UNMAPPED;
+    }
+    qemu_log("ub device(%s %s) clear ubba\n",
+             dev->name, dev->qdev.id);
+}
+
+static void ub_do_device_reset(UBDevice *dev)
+{
+    /* ubba of idev is allocated by virtualization not by driver */
+    if (dev->dev_type != UB_TYPE_IDEVICE) {
+        ub_reset_regions(dev);
+        ub_update_mappings(dev);
+    }
+    ub_dev_clear_cfg0(dev);
+    ub_dev_clear_cfg1(dev);
+    usi_reset(dev);
+    dev->rst_cnt++;
+}
+
 static void ubbus_reset(BusState *qbus)
 {
+    UBBus *bus = DO_UPCAST(UBBus, qbus, qbus);
+    UBDevice *dev;
+
+    QLIST_FOREACH(dev, &bus->devices, node) {
+        if (dev->dev_type != UB_TYPE_DEVICE && dev->dev_type != UB_TYPE_IDEVICE) {
+            continue;
+        }
+        qemu_log("ub device(%s %s) ub_do_device_reset\n",
+                 dev->name, dev->qdev.id);
+        ub_do_device_reset(dev);
+    }
 }
 
 UBBus *ub_register_root_bus(DeviceState *parent, const char *name,
@@ -566,9 +653,27 @@ static void ub_qdev_realize(DeviceState *qdev, Error **errp)
     }
 }
 
+static void ub_unregister_io_regions(UBDevice *ub_dev)
+{
+    UBIORegion *r;
+    int i;
+
+    for (i = 0; i < UB_NUM_REGIONS; i++) {
+        r = &ub_dev->io_regions[i];
+        if (!r->size || r->addr == UB_ER_UNMAPPED)
+            continue;
+        memory_region_del_subregion(r->address_space, r->memory);
+    }
+}
+
 static void ub_qdev_unrealize(DeviceState *dev)
 {
+    UBDevice *ub_dev = UB_DEVICE(dev);
+
+    ub_unregister_io_regions(ub_dev);
+    do_ub_unregister_device(ub_dev);
 }
+
 #define DECLARE_PORT_INFO(n) \
     DEFINE_PROP_UB_DEV_NEIGHBOR_INFO("port"#n, UBDevice, port),
 static Property ub_props[] = {
