@@ -34,6 +34,10 @@
 #include "hw/ub/ub_bus.h"
 #include "hw/ub/ub_ubc.h"
 #include "migration/vmstate.h"
+#include "qapi/qapi-commands-ub.h"
+#include "qapi/error.h"
+#include "qapi/util.h"
+#include "qapi/qmp/qstring.h"
 #include "exec/address-spaces.h"
 #include "hw/ub/ubus_instance.h"
 #include "monitor/monitor.h"
@@ -780,6 +784,61 @@ bool ub_device_get_guid_from_str(UbGuid *guid, char *guid_str)
     guid->rsv = rsv & 0xFFFFFF;
     guid->seq_num = seq_num & 0xFFFFFFFFFFFFFFFF;
     return true;
+}
+
+static UBDeviceInfo *qmp_query_ub_device(UBDevice *dev)
+{
+    UBDeviceInfo *info;
+    /* will be freed by qmp framework */
+    char *guid_str = g_malloc0(UB_DEV_GUID_STRING_LENGTH + 1);
+
+    info = g_new0(UBDeviceInfo, 1);
+    info->bi = dev->bus_instance_eid;
+    info->eid = dev->eid;
+    info->type = dev->dev_type;
+    info->name = g_strdup(dev->name);
+    info->id = g_strdup(dev->qdev.id);
+    info->cna = dev->cna;
+    info->feidx = dev->ue_idx;
+    ub_device_get_str_from_guid(&dev->guid, guid_str, UB_DEV_GUID_STRING_LENGTH + 1);
+    info->guid = guid_str;
+    info->ports = dev->port.port_num;
+    info->usis = dev->usi_entries_nr;
+    return info;
+}
+
+static UBDeviceInfoList *qmp_query_ub_devices(UBBus *bus)
+{
+    UBDeviceInfoList *head = NULL, **tail = &head;
+    UBDevice *dev;
+
+    QLIST_FOREACH(dev, &bus->devices, node) {
+        QAPI_LIST_APPEND(tail, qmp_query_ub_device(dev));
+    }
+
+    return head;
+}
+
+static UBInfo *qmp_query_ub_bus(UBBus *bus)
+{
+    UBInfo *info = NULL;
+    info = g_malloc0(sizeof(*info));
+    info->devices = qmp_query_ub_devices(bus);
+
+    return info;
+}
+
+UBInfoList *qmp_query_ub(Error **errp)
+{
+    UBInfoList *head = NULL, **tail = &head;
+    BusControllerState *ubc = NULL;
+
+    QLIST_FOREACH(ubc, &ub_bus_controllers, node) {
+        QAPI_LIST_APPEND(tail,
+                         qmp_query_ub_bus(ubc->bus));
+    }
+
+    return head;
 }
 
 /* container_of cannot be used here because 'bus' is a pointer member. */
