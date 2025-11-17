@@ -291,6 +291,9 @@ option('pipewire', type: 'feature', value: 'auto',
 option('sndio', type: 'feature', value: 'auto',
        description: 'sndio sound support')
 
+option('ub', type: 'feature', value: 'auto',
+       description: 'unify bus support')
+
 option('vhost_kernel', type: 'feature', value: 'auto',
        description: 'vhost kernel backend support')
 option('vhost_net', type: 'feature', value: 'auto',

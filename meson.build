@@ -580,6 +580,11 @@ have_hugepage_pod = get_option('hugepage_pod') \
 
 config_host_data.set('CONFIG_HUGEPAGE_POD', have_hugepage_pod)
 
+# ub
+have_ub = get_option('ub') \
+  .require(targetos == 'linux', error_message: 'UB is supported only on Linux') \
+  .allowed()
+
 # vhost
 have_vhost_user = get_option('vhost_user') \
   .disable_auto_if(targetos != 'linux') \
@@ -2287,6 +2292,7 @@ config_host_data.set('CONFIG_VHOST_NET_VDPA', have_vhost_net_vdpa)
 config_host_data.set('CONFIG_VHOST_KERNEL', have_vhost_kernel)
 config_host_data.set('CONFIG_VHOST_USER', have_vhost_user)
 config_host_data.set('CONFIG_VHOST_CRYPTO', have_vhost_user_crypto)
+config_host_data.set('CONFIG_UB', have_ub)
 config_host_data.set('CONFIG_VHOST_VDPA', have_vhost_vdpa)
 config_host_data.set('CONFIG_VMNET', vmnet.found())
 config_host_data.set('CONFIG_VHOST_USER_BLK_SERVER', have_vhost_user_blk_server)
@@ -2999,6 +3005,7 @@ host_kconfig = \
   (have_ivshmem ? ['CONFIG_IVSHMEM=y'] : []) + \
   (opengl.found() ? ['CONFIG_OPENGL=y'] : []) + \
   (x11.found() ? ['CONFIG_X11=y'] : []) + \
+  (have_ub ? ['CONFIG_UB=y'] : []) + \
   (have_vhost_user ? ['CONFIG_VHOST_USER=y'] : []) + \
   (have_vhost_vdpa ? ['CONFIG_VHOST_VDPA=y'] : []) + \
   (have_vhost_kernel ? ['CONFIG_VHOST_KERNEL=y'] : []) + \
@@ -3454,6 +3461,8 @@ if have_system
     'system',
     'ui',
     'hw/remote',
+    'hw/ub',
+    'hw/ub/hisi'
   ]
 endif
 if have_system or have_user
@@ -4226,6 +4235,7 @@ endif
 summary_info += {'D-Bus display':     dbus_display}
 summary_info += {'QOM debugging':     get_option('qom_cast_debug')}
 summary_info += {'Relocatable install': get_option('relocatable')}
+summary_info += {'ub support': have_ub}
 summary_info += {'vhost-kernel support': have_vhost_kernel}
 summary_info += {'vhost-net support': have_vhost_net}
 summary_info += {'vhost-user support': have_vhost_user}
