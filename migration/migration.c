@@ -3166,6 +3166,21 @@ static bool migration_can_switchover(MigrationState *s)
     return s->switchover_acked;
 }
 
+static bool migration_should_complete(MigrationState *s)
+{
+#ifdef CONFIG_HAM_MIGRATION
+    if (ham_should_complete_migration(s)) {
+        return true;
+    }
+#endif
+
+    if (migrate_onecopy_ram()) {
+        return true;
+    }
+
+    return false;
+}
+
 /* Migration thread iteration status */
 typedef enum {
     MIG_ITERATE_RESUME,         /* Resume current iteration */
@@ -3195,12 +3210,8 @@ static MigIterateState migration_iteration_run(MigrationState *s)
         trace_migrate_pending_exact(pending_size, must_precopy, can_postcopy);
     }
 
-#ifdef CONFIG_HAM_MIGRATION
     if (((!pending_size || pending_size < s->threshold_size) && can_switchover) ||
-       ham_should_complete_migration(s)) {
-#else
-    if ((!pending_size || pending_size < s->threshold_size) && can_switchover) {
-#endif
+        migration_should_complete(s)) {
         trace_migration_thread_low_pending(pending_size);
         migration_completion(s);
         return MIG_ITERATE_BREAK;

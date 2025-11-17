@@ -3707,6 +3707,19 @@ static int ram_save_complete(QEMUFile *f, void *opaque)
 
     rs->last_stage = !migration_in_colo_state();
 
+#ifdef CONFIG_URMA_MIGRATION
+    if (migrate_urma() && migrate_onecopy_ram()) {
+        start_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
+        ret = qemu_urma_write_all(s->urma_ctx);
+        if (ret < 0) {
+            qemu_file_set_error(f, ret);
+            return ret;
+        }
+
+        goto finish;
+    }
+#endif
+
     WITH_RCU_READ_LOCK_GUARD() {
         if (!migration_in_postcopy()) {
             migration_bitmap_sync_precopy(rs, true);
@@ -3769,6 +3782,9 @@ static int ram_save_complete(QEMUFile *f, void *opaque)
         }
     }
 
+#ifdef CONFIG_URMA_MIGRATION
+finish:
+#endif
     ret = multifd_send_sync_main();
     if (ret < 0) {
         return ret;

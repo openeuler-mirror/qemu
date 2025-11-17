@@ -990,6 +990,49 @@ int qemu_flush_urma_write(URMAContext *urma)
     return 0;
 }
 
+int qemu_urma_write_all(URMAContext *urma)
+{
+    int i;
+    URMALocalBlocks *local = &urma->local_ram_blocks;
+    uint64_t local_addr, remote_addr, offset, length;
+    uint64_t chunk_length = 1UL << URMA_REG_CHUNK_SHIFT;
+    urma_jfs_wr_flag_t flag = {
+        .bs.complete_enable = 1
+    };
+
+    for (i = 0; i < local->nb_blocks; i++) {
+        URMALocalBlock *block = &local->block[i];
+
+        if (!block->is_ram_block) {
+            continue;
+        }
+
+        for (offset = 0; offset < block->length; offset += chunk_length) {
+            local_addr = (uint64_t)block->local_host_addr + offset;
+            remote_addr = (uint64_t)block->remote_seg.ubva.va + offset;
+            length = (block->length - offset) > chunk_length ? chunk_length : (block->length - offset);
+
+            if (urma_write_p(urma->jfs, urma->tjfr, block->import_tseg, block->local_tseg,
+                       remote_addr, local_addr, length,
+                       flag, urma->rid) != URMA_SUCCESS) {
+                qemu_log("Failed to do urma_write, local addr: %lx, remote addr: %lx, size: %lx, errno: %d\n",
+                         local_addr, remote_addr, length, errno);
+                return -EINVAL;
+            }
+
+            urma->nb_polling++;
+            if (urma->nb_polling >= urma->max_jfs_depth) {
+                if (qemu_flush_urma_write(urma) < 0) {
+                    qemu_log("Failed to flush urma write, errno: %d\n", errno);
+                    return -EINVAL;
+                }
+            }
+        }
+    }
+
+    return 0;
+}
+
 static int qemu_urma_write_one(URMAContext *urma,
                                int current_index, uint64_t current_addr,
                                uint64_t length)

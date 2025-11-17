@@ -41,6 +41,7 @@ bool migrate_postcopy_ram(void);
 #ifdef CONFIG_URMA_MIGRATION
 bool migrate_urma(void);
 #endif
+bool migrate_onecopy_ram(void);
 bool migrate_rdma_pin_all(void);
 bool migrate_release_ram(void);
 bool migrate_return_path(void);

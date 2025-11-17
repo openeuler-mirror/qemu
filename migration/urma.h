@@ -150,5 +150,6 @@ int qemu_exchange_urma_info(QEMUFile *f, URMAContext *urma, bool server);
 int qemu_urma_import(URMAContext *urma);
 void urma_migration_cleanup(void);
 void record_migration_log(MigrationState *s);
+int qemu_urma_write_all(URMAContext *urma);
 
 #endif

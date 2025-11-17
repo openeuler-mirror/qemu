@@ -535,6 +535,10 @@
 #     and can result in more stable read performance.  Requires KVM
 #     with accelerator property "dirty-ring-size" set.  (Since 8.1)
 #
+# @onecopy: If enabled, live migration will skip the iteration phase
+#     and enter to the completion phase:suspend the source VM and
+#     synchronize all VM states to the destination host.  (Since 8.2)
+#
 # Features:
 #
 # @deprecated: Member @block is deprecated.  Use blockdev-mirror with
@@ -550,7 +554,7 @@
 { 'enum': 'MigrationCapability',
   'data': ['xbzrle', 'rdma-pin-all', 'auto-converge', 'zero-blocks',
            { 'name': 'compress', 'features': [ 'deprecated' ] },
-           'events', 'postcopy-ram', 'ldst',
+           'events', 'postcopy-ram', 'onecopy', 'ldst',
            { 'name': 'x-colo', 'features': [ 'unstable' ] },
            'release-ram',
            { 'name': 'block', 'features': [ 'deprecated' ] },
@@ -614,6 +618,7 @@
 #       {"state": true, "capability": "events"},
 #       {"state": false, "capability": "postcopy-ram"},
 #       {"state": false, "capability": "x-colo"},
+#       {"state": false, "capability": "onecopy"},
 #       {"state": false, "capability": "ldst"}
 #    ]}
 ##
