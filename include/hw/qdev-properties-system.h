@@ -27,6 +27,12 @@ extern const PropertyInfo qdev_prop_off_auto_pcibar;
 extern const PropertyInfo qdev_prop_pcie_link_speed;
 extern const PropertyInfo qdev_prop_pcie_link_width;
 extern const PropertyInfo qdev_prop_cpus390entitlement;
+#ifdef CONFIG_UB
+extern const PropertyInfo qdev_prop_ub_host_devaddr;
+extern const PropertyInfo qdev_prop_ub_dev_guid;
+extern const PropertyInfo qdev_prop_ub_dev_neighbor_info;
+extern const PropertyInfo qdev_prop_ub_dev_port_num;
+#endif
 
 #define DEFINE_PROP_PCI_DEVFN(_n, _s, _f, _d)                   \
     DEFINE_PROP_SIGNED(_n, _s, _f, _d, qdev_prop_pci_devfn, int32_t)
@@ -93,5 +99,19 @@ extern const PropertyInfo qdev_prop_cpus390entitlement;
 #define DEFINE_PROP_CPUS390ENTITLEMENT(_n, _s, _f, _d) \
     DEFINE_PROP_SIGNED(_n, _s, _f, _d, qdev_prop_cpus390entitlement, \
                        CpuS390Entitlement)
+
+#ifdef CONFIG_UB
+#define DEFINE_PROP_UB_HOST_DEVADDR(_n, _s, _f) \
+    DEFINE_PROP(_n, _s, _f, qdev_prop_ub_host_devaddr, UBHostDeviceAddress)
+
+#define DEFINE_PROP_UB_DEV_GUID(_n, _s, _f) \
+    DEFINE_PROP(_n, _s, _f, qdev_prop_ub_dev_guid, UbGuid)
+
+#define DEFINE_PROP_UB_DEV_NEIGHBOR_INFO(_n, _s, _f) \
+    DEFINE_PROP(_n, _s, _f, qdev_prop_ub_dev_neighbor_info, UbPortInfo)
+
+#define DEFINE_PROP_UB_DEV_PORT_NUM(_n, _s, _f) \
+    DEFINE_PROP(_n, _s, _f, qdev_prop_ub_dev_port_num, UbPortInfo)
+#endif // CONFIG_UB
 
 #endif

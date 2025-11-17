@@ -1858,4 +1858,19 @@ struct vfio_iommu_spapr_tce_remove {
 
 /* ***************************************************************** */
 
+/* ub irq types */
+enum {
+    VFIO_UB_MSIX_IRQ_INDEX,
+    VFIO_UB_NUM_IRQS
+};
+
+/* ub regions types */
+enum {
+    VFIO_UB_REGION0_INDEX = 0,
+    VFIO_UB_REGION1_INDEX,
+    VFIO_UB_REGION2_INDEX,
+    VFIO_UB_CONFIG_REGION_INDEX,
+    VFIO_UB_NUM_REGIONS
+};
+
 #endif /* VFIO_H */

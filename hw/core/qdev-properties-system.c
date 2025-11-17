@@ -23,6 +23,7 @@
 #include "qemu/cutils.h"
 #include "qemu/units.h"
 #include "qemu/uuid.h"
+#include "qemu/id.h"
 #include "qemu/error-report.h"
 #include "qdev-prop-internal.h"
 
@@ -35,6 +36,10 @@
 #include "hw/pci/pcie.h"
 #include "hw/i386/x86.h"
 #include "util/block-helpers.h"
+#ifdef CONFIG_UB
+#include "hw/ub/ub.h"
+#include "qemu/log.h"
+#endif // CONFIG_UB
 
 static bool check_prop_still_unset(Object *obj, const char *name,
                                    const void *old_val, const char *new_val,
@@ -1235,3 +1240,212 @@ const PropertyInfo qdev_prop_cpus390entitlement = {
     .set   = qdev_propinfo_set_enum,
     .set_default_value = qdev_propinfo_set_default_value_enum,
 };
+
+#ifdef CONFIG_UB
+/* --- ub host address --- */
+static void get_ub_host_devaddr(Object *obj, Visitor *v, const char *name,
+                                void *opaque, Error **errp)
+{
+    Property *prop = opaque;
+    UBHostDeviceAddress *addr = object_field_prop_ptr(obj, prop);
+    char buffer[UB_DEV_GUID_STRING_LENGTH + 1] = {0};
+    char *p = buffer;
+    ub_device_get_str_from_guid(&addr->guid, buffer, sizeof(buffer));
+
+    visit_type_str(v, name, &p, errp);
+}
+
+static void set_ub_host_devaddr(Object *obj, Visitor *v, const char *name,
+                                void *opaque, Error **errp)
+{
+    Property *prop = opaque;
+    UBHostDeviceAddress *addr = object_field_prop_ptr(obj, prop);
+    char *str;
+    if (!visit_type_str(v, name, &str, errp)) {
+        return;
+    }
+
+    if (!ub_device_get_guid_from_str(&addr->guid, str)) {
+        qemu_log("host set failed, current: %s,"
+                 "example: %s\n", str, GUID_STR_EXAMPLE);
+        error_setg(errp, "host set failed, current: %s,"
+                   " example: %s\n", str, GUID_STR_EXAMPLE);
+    }
+    g_free(str);
+}
+
+const PropertyInfo qdev_prop_ub_host_devaddr = {
+    .name = "str",
+    .description = "Address ub_guid(128bit) of the host device. example: "GUID_STR_EXAMPLE,
+    .get = get_ub_host_devaddr,
+    .set = set_ub_host_devaddr,
+};
+
+/* --- ub device guid --- */
+static void ub_dev_get_guid(Object *obj, Visitor *v, const char *name,
+                            void *opaque, Error **errp)
+{
+    Property *prop = opaque;
+    UbGuid *guid = object_field_prop_ptr(obj, prop);
+    g_autofree char *guid_str = g_malloc0(UB_DEV_GUID_STRING_LENGTH + 1);
+
+    ub_device_get_str_from_guid(guid, guid_str, UB_DEV_GUID_STRING_LENGTH + 1);
+    visit_type_str(v, name, &guid_str, errp);
+}
+
+static void ub_dev_set_guid(Object *obj, Visitor *v, const char *name,
+                            void *opaque, Error **errp)
+{
+    Property *prop = opaque;
+    UbGuid *guid = object_field_prop_ptr(obj, prop);
+    char *str;
+    if (!visit_type_str(v, name, &str, errp)) {
+        return;
+    }
+
+    if (!ub_device_get_guid_from_str(guid, str)) {
+        qemu_log("guid set failed, current: %s,"
+                 " example: %s\n", str, GUID_STR_EXAMPLE);
+        error_setg(errp, "guid set failed, current: %s,"
+                   " example: %s\n", str, GUID_STR_EXAMPLE);
+    }
+    g_free(str);
+}
+
+const PropertyInfo qdev_prop_ub_dev_guid = {
+    .name = "str",
+    .description = "guid(128bit) of the ub device. example: "GUID_STR_EXAMPLE,
+    .get = ub_dev_get_guid,
+    .set = ub_dev_set_guid,
+};
+
+/* --- ub device neighbor info --- */
+static void ub_dev_get_neighbor_cmd(Object *obj, Visitor *v, const char *name,
+                                    void *opaque, Error **errp)
+{
+    Property *prop = opaque;
+    UbPortInfo *port = object_field_prop_ptr(obj, prop);
+    g_autofree char *buffer = g_malloc0(64);
+    int i;
+    uint32_t input_port;
+
+    if (sscanf(name, "port%u", &input_port) != 1) {
+        return;
+    }
+
+    for (i = 0; i < port->port_num; i++) {
+        if (!port->port_info_exist) {
+            continue;
+        }
+        if (port->neighbors->local_port_idx == input_port) {
+            snprintf(buffer, 64, "remote %s port %u",
+                     port->neighbors->neighbor_dev ?
+                     port->neighbors->neighbor_dev->qdev.id : "",
+                     port->neighbors->neighbor_port_idx);
+            break;
+        }
+    }
+
+    visit_type_str(v, name, &buffer, errp);
+}
+
+static void ub_dev_set_neighbor_cmd(Object *obj, Visitor *v, const char *name,
+                                    void *opaque, Error **errp)
+{
+    Property *prop = opaque;
+    UbPortInfo *port = object_field_prop_ptr(obj, prop);
+    char *str;
+    char *origin;
+    uint64_t rport_id;
+    uint64_t lport_id;
+    gchar **substrings;
+
+    if (!visit_type_str(v, name, &str, errp)) {
+        return;
+    }
+
+    if (sscanf(name, "port%lu", &lport_id) != 1) {
+        qemu_log("failed to get port id %s\n", str);
+        g_free(str);
+        return;
+    }
+
+    substrings = g_strsplit(str, ":", 2);
+    if (!substrings || !substrings[0] || !substrings[1]) {
+        error_setg(errp, "remote neighbor info '%s' doesn't contain ':' ", str);
+        g_free(str);
+        g_strfreev(substrings);
+        return;
+    }
+
+    if (sscanf(substrings[1], "%lu", &rport_id) != 1 ||
+        !id_wellformed(substrings[0])) {
+        qemu_log("failed to parse remote neighber info %s %s\n",
+                 substrings[0], substrings[1]);
+        error_setg(errp, QERR_INVALID_PARAMETER_VALUE, "remote device id", "an identifier");
+        error_append_hint(errp, "Identifiers consist of letters, digits, "
+                          "'-', '.', '_', starting with a letter. \n"
+                          "remote info:%s parse failed: %s %s\n",
+                          str, substrings[0], substrings[1]);
+        g_free(str);
+        g_strfreev(substrings);
+        return;
+    }
+
+    origin = port->neighbors_cmd;
+    if (origin != NULL) {
+        port->neighbors_cmd = g_strdup_printf("%s+%lu:%s", origin, lport_id, str);
+        g_free(origin);
+    } else {
+        port->neighbors_cmd = g_strdup_printf("%lu:%s", lport_id, str);
+    }
+
+    qemu_log("%s = %s\n", name, str);
+    g_free(str);
+    g_strfreev(substrings);
+}
+
+const PropertyInfo qdev_prop_ub_dev_neighbor_info = {
+    .name = "str",
+    .description = "port remote neighbor info. "
+        "example: mydev1:1(id:portIdx)",
+    .get = ub_dev_get_neighbor_cmd,
+    .set = ub_dev_set_neighbor_cmd,
+};
+
+/* --- ub device port num --- */
+static void ub_dev_get_port_num(Object *obj, Visitor *v, const char *name,
+                                void *opaque, Error **errp)
+{
+    Property *prop = opaque;
+    UbPortInfo *port = object_field_prop_ptr(obj, prop);
+
+    visit_type_uint32(v, name, &port->port_num, errp);
+}
+
+static void ub_dev_set_port_num(Object *obj, Visitor *v, const char *name,
+                                void *opaque, Error **errp)
+{
+    Property *prop = opaque;
+    UbPortInfo *port = object_field_prop_ptr(obj, prop);
+    int port_num;
+    Error *local_err = NULL;
+
+    if (!visit_type_int32(v, name, &port_num, errp)) {
+        return;
+    }
+    if ((port_num <= 0) || (port_num > UB_DEV_MAX_NUM_OF_PORT)) {
+        error_setg(&local_err, "illegal port num: %d, set port num bettwen 1 to %u",
+                   port_num, UB_DEV_MAX_NUM_OF_PORT);
+        error_propagate(errp, local_err);
+    }
+    port->port_num = port_num;
+}
+
+const PropertyInfo qdev_prop_ub_dev_port_num = {
+    .name = "str",
+    .description = "number of the ub device ports. ",
+    .get = ub_dev_get_port_num,
+    .set = ub_dev_set_port_num,
+};
+#endif // CONFIG_UB
