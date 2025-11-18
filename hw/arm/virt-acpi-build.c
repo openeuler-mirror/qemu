@@ -60,6 +60,9 @@
 #include "hw/acpi/viot.h"
 #include "kvm_arm.h"
 #include "hw/virtio/virtio-acpi.h"
+#ifdef CONFIG_UB
+#include "hw/ub/ub_acpi.h"
+#endif
 
 #define ARM_SPI_BASE 32
 
@@ -679,6 +682,11 @@ build_iort(GArray *table_data, BIOSLinker *linker, VirtMachineState *vms)
     } else {
         rc_mapping_count = 1;
     }
+
+#ifdef CONFIG_UB
+    nb_nodes += 3; /* UBC0, UMU0, PMU0 */
+#endif
+
     /* Number of IORT Nodes */
     build_append_int_noprefix(table_data, nb_nodes, 4);
 
@@ -787,6 +795,10 @@ build_iort(GArray *table_data, BIOSLinker *linker, VirtMachineState *vms)
     if (vms->iommu == VIRT_IOMMU_SMMUV3_ACCEL) {
         build_iort_rmr_nodes(table_data, smmu_idmaps, smmu_offset, &id);
     }
+
+#ifdef CONFIG_UB
+    acpi_iort_add_ub(table_data);
+#endif
 
     acpi_table_end(linker, &table);
     g_array_free(smmu_idmaps, true);
@@ -1318,6 +1330,10 @@ build_dsdt(GArray *table_data, BIOSLinker *linker, VirtMachineState *vms)
     acpi_dsdt_add_tpm(scope, vms);
 #endif
 
+#ifdef CONFIG_UB
+    acpi_dsdt_add_ub(scope);
+#endif
+
     aml_append(dsdt, scope);
 
     /* copy AML table into ACPI tables blob */
@@ -1365,7 +1381,10 @@ void virt_acpi_build(VirtMachineState *vms, AcpiBuildTables *tables)
     /* DSDT is pointed to by FADT */
     dsdt = tables_blob->len;
     build_dsdt(tables_blob, tables->linker, vms);
-
+#ifdef CONFIG_UB
+    acpi_add_table(table_offsets, tables_blob);
+    build_ubrt(tables_blob, tables->linker, vms);
+#endif
     /* FADT MADT PPTT GTDT MCFG SPCR DBG2 pointed to by RSDT */
     acpi_add_table(table_offsets, tables_blob);
     build_fadt_rev6(tables_blob, tables->linker, vms, dsdt);
@@ -1474,8 +1493,6 @@ void virt_acpi_build(VirtMachineState *vms, AcpiBuildTables *tables)
                      " or PCI bridges.");
     }
     acpi_align_size(tables_blob, ACPI_BUILD_TABLE_SIZE);
-
-
     /* Cleanup memory that's no longer used. */
     g_array_free(table_offsets, true);
 }

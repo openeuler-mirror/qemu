@@ -90,9 +90,14 @@
 #include "qemu/log.h"
 #ifdef CONFIG_UB
 #include "hw/ub/ub.h"
+#include "hw/ub/ub_bus.h"
 #include "hw/ub/ub_ubc.h"
+#include "hw/ub/hisi/ub_mem.h"
+#include "hw/ub/ub_acpi.h"
 #include "hw/ub/hisi/ubc.h"
 #include "hw/ub/hisi/ub_fm.h"
+#include "hw/ub/ub_ummu.h"
+#include "hw/ub/ub_common.h"
 #endif // CONFIG_UB
 
 #define DEFINE_VIRT_MACHINE_LATEST(major, minor, latest) \
@@ -213,6 +218,16 @@ static MemMapEntry extended_memmap[] = {
     [VIRT_HIGH_PCIE_ECAM] =     { 0x0, 256 * MiB },
     /* Second PCIe window */
     [VIRT_HIGH_PCIE_MMIO] =     { 0x0, 512 * GiB },
+#ifdef CONFIG_UB
+    /* ub mmio window */
+    [VIRT_HIGH_UB_MMIO] =       { 0x0, UBIOS_MMIOS_SIZE_PER_UBC * UBIOS_UBC_TABLE_CNT},
+    /* ub idev fers window */
+    [VIRT_UB_IDEV_ERS] =        { 0x0, 512 * GiB},
+    [VIRT_UBC_BASE_REG] =       { 0x0, BASE_REG_SIZE}, /* now only support one UBC */
+    [VIRT_UBIOS_INFO_TABLE] =   { 0x0, UBIOS_TABLE_SIZE},
+    [VIRT_UB_MEM_CC] =          { 0x0, UB_MEM_SPACE_SIZE},
+    [VIRT_UB_MEM_NC] =          { 0x0, UB_MEM_SPACE_SIZE},
+#endif // CONFIG_UB
 };
 
 static const int a15irqmap[] = {
@@ -375,6 +390,20 @@ static void create_fdt(VirtMachineState *vms)
         g_free(matrix);
     }
 }
+
+#ifdef CONFIG_UB
+static void create_ubios_info_table_fdt(VirtMachineState *vms, MemoryRegion *machine_ram)
+{
+    MachineState *ms = MACHINE(vms);
+
+    qemu_fdt_setprop_u64(ms->fdt, "/chosen", "linux,ubios-information-table",
+                         vms->memmap[VIRT_UBIOS_INFO_TABLE].base);
+    qemu_log("create fdt for ubios-information-table 0x%lx\n",
+             vms->memmap[VIRT_UBIOS_INFO_TABLE].base);
+
+    ub_init_ubios_info_table(vms, ROUND_UP(UBIOS_TABLE_SIZE, 4 * KiB));
+}
+#endif // CONFIG_UB
 
 static void fdt_add_timer_nodes(const VirtMachineState *vms)
 {
@@ -1725,11 +1754,41 @@ static void create_virtio_iommu_dt_bindings(VirtMachineState *vms)
 static void create_ub(VirtMachineState *vms)
 {
     DeviceState *ubc;
+    MemoryRegion *mmio_reg;
+    MemoryRegion *mmio_alias;
 
     ubc = qdev_new(TYPE_BUS_CONTROLLER);
     qdev_prop_set_uint32(ubc, "ub-bus-controller-msgq-reg-size", UBC_MSGQ_REG_SIZE);
     qdev_prop_set_uint32(ubc, "ub-bus-controller-fm-msgq-reg-size", FM_MSGQ_REG_SIZE);
     sysbus_realize_and_unref(SYS_BUS_DEVICE(ubc), &error_fatal);
+
+    /* in ub_bus_controller_realize will call sysbus_init_mmio init memory_region in order,
+     * 0: msgq_reg_mem
+     * 1: fm_msgq_reg_mem
+     * 2: ub controller io_mmio
+     * sysbus_mmio_map get inited memory_region by index 0, msgq_reg_mem
+     */
+    sysbus_mmio_map(SYS_BUS_DEVICE(ubc), 0,
+                    vms->memmap[VIRT_UBC_BASE_REG].base + UBC_MSGQ_REG_OFFSET);
+    /* sysbus_mmio_map get inited memory_region by index 1, fm_msgq_reg_mem */
+    sysbus_mmio_map(SYS_BUS_DEVICE(ubc), 1,
+                    vms->memmap[VIRT_UBC_BASE_REG].base + FM_MSGQ_REG_OFFSET);
+    mmio_alias = g_new0(MemoryRegion, 1);
+    /* here get inited memory_region by index 3, ub controller io_mmio */
+    mmio_reg = sysbus_mmio_get_region(SYS_BUS_DEVICE(ubc), 2);
+    memory_region_init_alias(mmio_alias, OBJECT(ubc), "ub-mmio",
+                             mmio_reg, vms->memmap[VIRT_HIGH_UB_MMIO].base,
+                             vms->memmap[VIRT_HIGH_UB_MMIO].size);
+    memory_region_add_subregion(get_system_memory(),
+                                vms->memmap[VIRT_HIGH_UB_MMIO].base,
+                                mmio_alias);
+
+    mmio_alias = g_new0(MemoryRegion, 1);
+    memory_region_init_alias(mmio_alias, OBJECT(ubc), "ub-idev-fers-as",
+                             mmio_reg, vms->memmap[VIRT_UB_IDEV_ERS].base,
+                             vms->memmap[VIRT_UB_IDEV_ERS].size);
+    memory_region_add_subregion(get_system_memory(),
+                                vms->memmap[VIRT_UB_IDEV_ERS].base, mmio_alias);
 }
 #endif // CONFIG_UB
 static void create_pcie(VirtMachineState *vms)
@@ -2040,6 +2099,14 @@ static inline bool *virt_get_high_memmap_enabled(VirtMachineState *vms,
         &vms->highmem_redists,
         &vms->highmem_ecam,
         &vms->highmem_mmio,
+#ifdef CONFIG_UB
+        &vms->highmem_ub_mmio,
+        &vms->highmem_idev_ers,
+        &vms->highmem_ubc_base_reg,
+        &vms->highmem_ubios_info_table,
+        &vms->highmem_ub_mem_cc,
+        &vms->highmem_ub_mem_nc,
+#endif // CONFIG_UB
     };
 
     assert(ARRAY_SIZE(extended_memmap) - VIRT_LOWMEMMAP_LAST ==
@@ -2056,6 +2123,9 @@ static void virt_set_high_memmap(VirtMachineState *vms,
     bool *region_enabled, fits;
     int i;
 
+#ifdef CONFIG_UB
+    ub_set_gpa_bits((uint8_t)pa_bits);
+#endif
     for (i = VIRT_LOWMEMMAP_LAST; i < ARRAY_SIZE(extended_memmap); i++) {
         region_enabled = virt_get_high_memmap_enabled(vms, i);
         region_base = ROUND_UP(base, extended_memmap[i].size);
@@ -2074,6 +2144,10 @@ static void virt_set_high_memmap(VirtMachineState *vms,
          */
         fits = (region_base + region_size) <= BIT_ULL(pa_bits);
         *region_enabled &= fits;
+#ifdef CONFIG_UB
+        qemu_log("%d base 0x%lx size 0x%lx enable %u highmem_compact %u\n", i,
+                 region_base, region_size, *region_enabled, vms->highmem_compact);
+#endif
         if (vms->highmem_compact && !*region_enabled) {
             continue;
         }
@@ -2152,8 +2226,8 @@ static void virt_set_memmap(VirtMachineState *vms, int pa_bits)
     /* Base address of the high IO region */
     memtop = base = device_memory_base + ROUND_UP(device_memory_size, GiB);
     if (memtop > BIT_ULL(pa_bits)) {
-	    error_report("Addressing limited to %d bits, but memory exceeds it by %llu bytes\n",
-			 pa_bits, memtop - BIT_ULL(pa_bits));
+        error_report("Addressing limited to %d bits, but memory exceeds it by %llu bytes\n",
+             pa_bits, memtop - BIT_ULL(pa_bits));
         exit(EXIT_FAILURE);
     }
     if (base < device_memory_base) {
@@ -2861,6 +2935,16 @@ static void machvirt_init(MachineState *machine)
                                 machine->ram);
 
     virt_flash_fdt(vms, sysmem, secure_sysmem ?: sysmem);
+#ifdef CONFIG_UB
+    qemu_log("memory_region_add_reservation 0x%lx size %ld round up %ld\n",
+             vms->memmap[VIRT_UBIOS_INFO_TABLE].base, UBIOS_TABLE_SIZE,
+             ROUND_UP(UBIOS_TABLE_SIZE, 4 * KiB));
+    memory_region_add_reservation_with_ram(get_system_memory(),
+                                           OBJECT(machine->memdev), "ubios-information-table",
+                                           vms->memmap[VIRT_UBIOS_INFO_TABLE].base,
+                                           ROUND_UP(UBIOS_TABLE_SIZE, 4 * KiB));
+    create_ubios_info_table_fdt(vms, machine->ram);
+#endif // CONFIG_UB
 
     create_gic(vms, sysmem);
 
@@ -3995,6 +4079,50 @@ static int virt_kvm_type(MachineState *ms, const char *type_str)
     return requested_pa_size | rme_vm_type | type;
 }
 
+#ifdef CONFIG_UB
+static bool virt_get_ummu(Object *obj, Error **errp)
+{
+    VirtMachineState *vms = VIRT_MACHINE(obj);
+
+    return vms->ummu;
+}
+
+static void virt_set_ummu(Object *obj, bool value, Error **errp)
+{
+    VirtMachineState *vms = VIRT_MACHINE(obj);
+
+    vms->ummu = value;
+}
+
+static bool virt_ub_get_cluster_mode(Object *obj, Error **errp)
+{
+    VirtMachineState *vms = VIRT_MACHINE(obj);
+
+    return vms->ub_cluster_mode;
+}
+
+static void virt_ub_set_cluster_mode(Object *obj, bool value, Error **errp)
+{
+    VirtMachineState *vms = VIRT_MACHINE(obj);
+
+    vms->ub_cluster_mode = value;
+}
+
+static bool virt_ub_get_fm_deployment_info(Object *obj, Error **errp)
+{
+    VirtMachineState *vms = VIRT_MACHINE(obj);
+
+    return vms->fm_deployment;
+}
+
+static void virt_ub_set_fm_deployment_info(Object *obj, bool value, Error **errp)
+{
+    VirtMachineState *vms = VIRT_MACHINE(obj);
+
+    vms->fm_deployment = value;
+}
+#endif // CONFIG_UB
+
 static void virt_machine_class_init(ObjectClass *oc, void *data)
 {
     MachineClass *mc = MACHINE_CLASS(oc);
@@ -4169,6 +4297,17 @@ static void virt_machine_class_init(ObjectClass *oc, void *data)
     object_class_property_set_description(oc, "x-target-impl-cpus",
                                           "Describe target cpu impl in the format midr1:revidr1-midr2:revidr2"
                                           "Maximum 4 midr:revidr pair is supported");
+#ifdef CONFIG_UB
+	object_class_property_add_bool(oc, "ummu", virt_get_ummu, virt_set_ummu);
+    object_class_property_add_bool(oc, "ub-cluster-mode", virt_ub_get_cluster_mode,
+                                   virt_ub_set_cluster_mode);
+    object_class_property_set_description(oc, "ub-cluster-mode",
+                                          "Set on/off to enable/disable ub cluster mode");
+    object_class_property_add_bool(oc, "fm-deployment", virt_ub_get_fm_deployment_info,
+                                   virt_ub_set_fm_deployment_info);
+    object_class_property_set_description(oc, "fm-deployment",
+                                          "Set on/off to support FM msg queue or not");
+#endif // CONFIG_UB
 }
 
 static char *virt_get_kvm_type(Object *obj, Error **errp G_GNUC_UNUSED)
@@ -4234,6 +4373,17 @@ static void virt_instance_init(Object *obj)
 
     /* MTE is disabled by default.  */
     vms->mte = false;
+
+#ifdef CONFIG_UB
+    vms->highmem_ub_mmio = true;
+    vms->highmem_idev_ers = true;
+    vms->highmem_ubc_base_reg = true;
+    vms->highmem_ubios_info_table = true;
+    vms->highmem_ub_mem_cc = true;
+    vms->highmem_ub_mem_nc = true;
+    vms->ub_cluster_mode = false;
+    vms->fm_deployment = false;
+#endif
 
     vms->irqmap = a15irqmap;
 

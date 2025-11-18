@@ -123,6 +123,8 @@ static void ub_bus_controller_realize(DeviceState *dev, Error **errp)
     memory_region_init(&s->io_mmio, OBJECT(s), "UB_MMIO", UINT64_MAX);
     sysbus_init_mmio(sysdev, &s->io_mmio);
 
+    s->bus = ub_register_root_bus(dev, name, &s->io_mmio);
+    ub_save_ubc_list(s);
     g_free(name);
 }
 
@@ -132,6 +134,7 @@ static void ub_bus_controller_unrealize(DeviceState *dev)
     SysBusDevice *sysdev = SYS_BUS_DEVICE(dev);
     g_free(sysdev->parent_obj.id);
     QLIST_REMOVE(s, node);
+    ub_unregister_root_bus(s->bus);
     ub_reg_free(dev);
 }
 
@@ -153,6 +156,17 @@ static Property ub_bus_controller_properties[] = {
 
 const VMStateDescription vmstate_ub_bus_controller = {
     .name = TYPE_BUS_CONTROLLER,
+    .needed = ub_bus_controller_needed,
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .fields = (VMStateField[]) {
+        /* support migration later */
+        VMSTATE_END_OF_LIST()
+    }
+};
+
+const VMStateDescription vmstate_ub_bus_controller_dev = {
+    .name = TYPE_BUS_CONTROLLER_DEV,
     .needed = ub_bus_controller_needed,
     .version_id = 1,
     .minimum_version_id = 1,
@@ -191,8 +205,69 @@ static const TypeInfo ub_bus_controller_type_info = {
     .class_init = ub_bus_controller_class_init,
 };
 
+static bool ub_ubc_is_empty(UBBus *bus)
+{
+    UBDevice *dev;
+    QLIST_FOREACH(dev, &bus->devices, node) {
+        if (dev->dev_type == UB_TYPE_IBUS_CONTROLLER) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static void ub_bus_controller_dev_realize(UBDevice *dev, Error **errp)
+{
+    UBBus *bus = UB_BUS(qdev_get_parent_bus(DEVICE(dev)));
+    BusControllerState *ubc = container_of_ubbus(bus);
+    VirtMachineState *vms = VIRT_MACHINE(qdev_get_machine());
+
+    vms->ub_bus = bus;
+
+    if (!ub_ubc_is_empty(bus)) {
+        qemu_log("ubc realize repetitively\n");
+        error_setg(errp, "ubc realize repetitively");
+        return;
+    }
+
+    ubc->ubc_dev = BUS_CONTROLLER_DEV(dev);
+    if (dev->guid.type != UB_GUID_TYPE_IBUS_CONTROLLER) {
+        qemu_log("%s device type set error, expect: %u, actual: %u\n",
+                 dev->qdev.id, UB_GUID_TYPE_IBUS_CONTROLLER, dev->guid.type);
+        error_setg(errp, "%s device type set error, expect: %u, actual: %u\n",
+                   dev->qdev.id, UB_GUID_TYPE_IBUS_CONTROLLER, dev->guid.type);
+        return;
+    }
+
+    dev->dev_type = UB_TYPE_IBUS_CONTROLLER;
+}
+
+static Property ub_bus_controller_dev_properties[] = {
+    DEFINE_PROP_UB_DEV_GUID("bus_instance_guid", BusControllerDev, bus_instance_guid),
+    DEFINE_PROP_END_OF_LIST(),
+};
+
+static void ub_bus_controller_dev_class_init(ObjectClass *class, void *data)
+{
+    DeviceClass *dc = DEVICE_CLASS(class);
+    UBDeviceClass *uc = UB_DEVICE_CLASS(class);
+
+    device_class_set_props(dc, ub_bus_controller_dev_properties);
+    uc->realize = ub_bus_controller_dev_realize;
+    dc->vmsd = &vmstate_ub_bus_controller_dev;
+}
+
+static const TypeInfo ub_bus_controller_dev_type_info = {
+    .name = TYPE_BUS_CONTROLLER_DEV,
+    .parent = TYPE_UB_DEVICE,
+    .instance_size = sizeof(BusControllerDev),
+    .class_size = sizeof(BusControllerDevClass),
+    .class_init = ub_bus_controller_dev_class_init,
+};
+
 static void ub_bus_controller_register_types(void)
 {
     type_register_static(&ub_bus_controller_type_info);
+    type_register_static(&ub_bus_controller_dev_type_info);
 }
 type_init(ub_bus_controller_register_types)

@@ -15,33 +15,15 @@
  * with this program; if not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef UB_BUS_H
-#define UB_BUS_H
+#ifndef UB_UMMU_H
+#define UB_UMMU_H
 
-#include "hw/ub/ub.h"
+#include "hw/sysbus.h"
+#include "qom/object.h"
+#include "hw/ub/hisi/ubc.h"
+#include "hw/ub/ub_bus.h"
+#include "hw/ub/ub_ubc.h"
 
-struct UBBusClass {
-    /* < private > */
-    BusClass parent_class;
-    /* < public > */
-};
+#define UMMU_INTERRUPT_ID 0x8989  // UMMU DEVICE ID need allocate later
 
-typedef QLIST_HEAD(, UBDevice) UBDeviceList;
-struct UBBus {
-    BusState qbus;
-    UBDeviceList devices;
-    MemoryRegion *address_space_mem;
-};
-
-#define TYPE_UB_BUS "UB_BUS"
-OBJECT_DECLARE_TYPE(UBBus, UBBusClass, UB_BUS)
-
-UBBus *ub_register_root_bus(DeviceState *parent, const char *name,
-                            MemoryRegion *io_mmio);
-void ub_unregister_root_bus(UBBus *bus);
-UBDevice *ub_find_device_by_eid(UBBus *bus, uint32_t eid);
-static inline UBBus *ub_get_bus(const UBDevice *dev)
-{
-    return UB_BUS(qdev_get_parent_bus(DEVICE(dev)));
-}
 #endif
