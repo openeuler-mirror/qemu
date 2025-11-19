@@ -71,7 +71,9 @@
 #include "qemu/log-for-trace.h"
 #include "sysemu/kvm.h"
 #endif
-
+#ifdef CONFIG_HAM_MIGRATION
+#include "ham.h"
+#endif
 #define DEFAULT_FD_MAX 4096
 
 static NotifierList migration_state_notifiers =
@@ -3364,7 +3366,9 @@ static void *migration_thread(void *opaque)
     qemu_mutex_lock_iothread();
     qemu_savevm_state_header(s->to_dst_file);
     qemu_mutex_unlock_iothread();
-
+#ifdef CONFIG_HAM_MIGRATION
+    ham_migrate_prepare(s);
+#endif
     /*
      * If we opened the return path, we need to make sure dst has it
      * opened as well.
@@ -3438,6 +3442,9 @@ out:
     object_unref(OBJECT(s));
     rcu_unregister_thread();
     migration_threads_remove(thread);
+#ifdef CONFIG_HAM_MIGRATION
+    ham_migrate_cleanup();
+#endif
     return NULL;
 }
 

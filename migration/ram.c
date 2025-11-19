@@ -65,7 +65,9 @@
 #include "sysemu/dirtylimit.h"
 #include "sysemu/kvm.h"
 #include "exec/confidential-guest-support.h"
-
+#ifdef CONFIG_HAM_MIGRATION
+#include "ham.h"
+#endif
 /* Defines RAM_SAVE_ENCRYPTED_PAGE and RAM_SAVE_SHARED_REGION_LIST */
 #include "target/i386/sev.h"
 #include "target/i386/csv.h"
@@ -2591,6 +2593,23 @@ static int ram_save_csv3_pages(RAMState *rs, PageSearchStatus *pss)
     return pages;
 }
 
+#ifdef CONFIG_HAM_MIGRATION
+static int ram_ham_migrate_page(PageSearchStatus *pss)
+{
+    int pages = 0;
+    int ret;
+
+    pss->page += (pss->block->used_length >> TARGET_PAGE_BITS);
+    pages += (pss->block->used_length >> TARGET_PAGE_BITS);
+    ret = ham_pages_commit();
+    if (ret) {
+        return ret;
+    }
+
+    return pages;
+}
+#endif
+
 /**
  * ram_save_host_page: save a whole host page
  *
@@ -2643,7 +2662,15 @@ static int ram_save_host_page(RAMState *rs, PageSearchStatus *pss)
 
     /* Update host page boundary information */
     pss_host_page_prepare(pss);
-
+#ifdef CONFIG_HAM_MIGRATION
+    if (migrate_use_ldst() && ham_is_vm_ram(pss->block->page_size)) {
+        pages = ram_ham_migrate_page(pss);
+        if (pages < 0) {
+            return pages;
+        }
+        goto completed;
+    }
+#endif
     do {
         page_dirty = migration_bitmap_clear_dirty(rs, pss->block, pss->page);
 
@@ -2682,7 +2709,9 @@ static int ram_save_host_page(RAMState *rs, PageSearchStatus *pss)
 
         pss_find_next_dirty(pss);
     } while (pss_within_range(pss));
-
+#ifdef CONFIG_HAM_MIGRATION
+completed:
+#endif
     pss_host_page_finish(pss);
 
     res = ram_save_release_protection(rs, pss, start_page);
