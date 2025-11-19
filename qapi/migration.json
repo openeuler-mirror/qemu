@@ -2754,3 +2754,115 @@
   'data': { 'job-id': 'str',
             'tag': 'str',
             'devices': ['str'] } }
+
+##
+# @RamInfo:
+#
+# Specifies the memory address segment of the VM.
+#
+# @uuid: indicates the NUMA index of the VM.
+#
+# @hva: indicates the start address of each NUMA segment of a VM.
+#
+# @size: size of each NUMA segment on a VM.
+#
+# Since: 8.2
+##
+{ 'struct': 'RamInfo',
+'data': { 'uuid': 'uint32',
+'hva': 'uint64',
+'size': 'size' } }
+
+##
+# @VmInfo:
+#
+# Basic VM information.
+#
+# @pid: pid of the VM.
+#
+# @block: specifies the memory address segment of the VM.
+#
+# Since: 8.2
+##
+{ 'struct': 'VmInfo',
+'data': { 'pid': 'int',
+'block': ['RamInfo'] } }
+
+##
+# @query-ramblock:
+#
+# Returns info of RAM blocks in the VM.
+#
+# Example:
+# -> {"execute": "query-ramblock"}
+# <- {"return": {"block": [{"hva": 281470478319616, "uuid": 0, "size": 1073741824},
+#                          {"hva": 281469402480640, "uuid": 1, "size": 1073741824}],
+#                "pid": 25643}}
+#
+# Since: 8.2
+##
+{ 'command': 'query-ramblock', 'returns': 'VmInfo' }
+
+##
+# @NumaInfo:
+#
+# NUMA information reported by the remote memory.
+#
+# @numa-id: NUMA id reported by the remote memory.
+#
+# @size: NUMA size reported by the remote memory.
+#
+# Since: 8.2
+##
+{ 'struct': 'NumaInfo',
+'data': { 'numa-id': 'uint32',
+'size': 'size' } }
+
+##
+# @recv-rmtnuma:
+#
+# Returns info of RAM blocks in the VM.
+#
+# Example:
+# -> { "execute": "recv-rmtnuma",
+#      "arguments": {
+#         "pid": 25643,
+#         'scna': 1,
+#         "block":[{"numa-id": 5, "size": 1073741824},
+#                  {"numa-id": 6, "size": 1073741824}]
+#      }
+#    }
+# <- { "return": { } }
+#
+# Since: 8.2
+##
+{ 'command': 'recv-rmtnuma',
+'data': { 'pid': 'int',
+'scna': 'uint16',
+'block': ['NumaInfo'] } }
+
+##
+# @rollback-pages:
+#
+# Roll back migrated pages when the migration fails.
+#
+# Example:
+# -> { "execute": "rollback-pages" }
+# <- { "return": { } }
+#
+# Since: 8.2
+##
+{ 'command': 'rollback-pages' }
+
+##
+# @modify-pgtable:
+#
+# The attribute of the VM memory page table is changed from invalid to cacheable.
+#
+# Example:
+# -> { "execute": "modify-pgtable" }
+# <- { "return": { } }
+#
+# Since: 8.2
+##
+{ 'command': 'modify-pgtable' }

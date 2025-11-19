@@ -271,3 +271,75 @@ close_dlfunc:
     ham_dlfunc_close();
     return ret;
 }
+
+static void free_ram_info_list(RamInfoList *list)
+{
+    RamInfoList *tmp;
+    for (tmp = list; tmp; tmp = tmp->next) {
+      g_free(tmp->value);
+    }
+}
+
+struct VmInfo *qmp_query_ramblock(Error **errp)
+{
+    RAMBlock *ram_block = NULL;
+    VmInfo *vm_info = g_new0(VmInfo, 1);
+    RamInfo *info = NULL;
+    RamInfoList *head = NULL, **tail = &head;
+    uint32_t uuid = 0;
+    WITH_RCU_READ_LOCK_GUARD() {
+        RAMBLOCK_FOREACH_MIGRATABLE(ram_block) {
+            if (!ham_is_vm_ram(ram_block->page_size)) {
+                continue;
+            }
+            if (uuid >= BATCH_NUM) {
+                free_ram_info_list(head);
+                g_free(vm_info);
+                error_setg(errp, "Ram block num exceeds, limit:%u", BATCH_NUM);
+                return NULL;
+            }
+            info = g_malloc0(sizeof(*info));
+            info->uuid = uuid++;
+            info->hva = (uintptr_t)ram_block->host;
+            info->size = ram_block->used_length;
+            qemu_log("HAM: uuid:%d size:%lu\n", info->uuid, info->size);
+            QAPI_LIST_APPEND(tail, info);
+        }
+    }
+    vm_info->pid = getpid();
+    vm_info->block = head;
+    qemu_log("HAM: pid = %ld\n", vm_info->pid);
+    return vm_info;
+}
+
+void qmp_recv_rmtnuma(int64_t pid, uint16_t scna, NumaInfoList *numa_info, Error **errp)
+{
+    int num = 0;
+    g_dst_numa.pid = pid;
+    g_src_ram.scna = scna;
+    while (numa_info != NULL) {
+        g_dst_numa.numaList[num].numaId = numa_info->value->numa_id;
+        g_dst_numa.numaList[num].size = numa_info->value->size;
+        num++;
+        numa_info = numa_info->next;
+    }
+    g_dst_numa.num = num;
+}
+
+void qmp_rollback_pages(Error **errp)
+{
+    if (ham_pages_rollback()) {
+        error_setg(errp, "rollback pages failed");
+        return;
+    }
+    qemu_log("HAM: completed rollback pages\n");
+}
+
+void qmp_modify_pgtable(Error **errp)
+{
+    if (ham_modify_pgtable()) {
+        error_setg(errp, "modify pgtable failed");
+        return;
+    }
+    qemu_log("HAM: completed modify pgtable\n");
+}
