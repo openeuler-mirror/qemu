@@ -696,7 +696,16 @@ static void loongarch_max_initfn(Object *obj)
         cpu->ptw = ON_OFF_AUTO_OFF;
         cpu->env.cpucfg[1] = FIELD_DP32(cpu->env.cpucfg[1], CPUCFG1, MSG_INT, 1);
         cpu->msgint = ON_OFF_AUTO_AUTO;
-        cpu->env.cpucfg[2] = FIELD_DP32(cpu->env.cpucfg[2], CPUCFG2, HPTW, 0);
+
+        uint32_t data = cpu->env.cpucfg[2];
+        data = FIELD_DP32(data, CPUCFG2, HPTW, 0);
+        /* Enable LA v1.1 instructions */
+        data = FIELD_DP32(data, CPUCFG2, FRECIPE, 1);
+        data = FIELD_DP32(data, CPUCFG2, LAM_BH, 1);
+        data = FIELD_DP32(data, CPUCFG2, LAMCAS, 1);
+        data = FIELD_DP32(data, CPUCFG2, LLACQ_SCREL, 1);
+        data = FIELD_DP32(data, CPUCFG2, SCQ, 1);
+        cpu->env.cpucfg[2] = data;
     }
 }
 
@@ -751,7 +760,7 @@ static void loongarch_cpu_reset_hold(Object *obj)
     env->CSR_ECFG = FIELD_DP64(env->CSR_ECFG, CSR_ECFG, VS, 0);
     env->CSR_ECFG = FIELD_DP64(env->CSR_ECFG, CSR_ECFG, LIE, 0);
 
-    env->CSR_ESTAT = 0;
+    env->CSR_ESTAT = env->CSR_ESTAT & (~MAKE_64BIT_MASK(0, 2));
     env->CSR_RVACFG = FIELD_DP64(env->CSR_RVACFG, CSR_RVACFG, RBITS, 0);
     env->CSR_CPUID = cs->cpu_index;
     env->CSR_TCFG = FIELD_DP64(env->CSR_TCFG, CSR_TCFG, EN, 0);
@@ -861,15 +870,9 @@ static ObjectClass *loongarch_cpu_class_by_name(const char *cpu_model)
         g_autofree char *typename
             = g_strdup_printf(LOONGARCH_CPU_TYPE_NAME("%s"), cpu_model);
         oc = object_class_by_name(typename);
-        if (!oc) {
-            return NULL;
-        }
     }
 
-    if (object_class_dynamic_cast(oc, TYPE_LOONGARCH_CPU)) {
-        return oc;
-    }
-    return NULL;
+    return oc;
 }
 
 static void loongarch_cpu_dump_csr(CPUState *cs, FILE *f)
