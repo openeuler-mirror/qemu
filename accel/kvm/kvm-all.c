@@ -53,7 +53,9 @@
 #include "sysemu/stats.h"
 
 #include "sysemu/kvm.h"
-
+#ifdef CONFIG_HAM_MIGRATION
+#include "migration/ham.h"
+#endif
 /* This check must be after config-host.h is included */
 #ifdef CONFIG_EVENTFD
 #include <sys/eventfd.h>
@@ -897,6 +899,11 @@ static void kvm_physical_sync_dirty_bitmap(KVMMemoryListener *kml,
             /* We don't have a slot if we want to trap every access. */
             return;
         }
+#ifdef CONFIG_HAM_MIGRATION
+        if (ham_should_skip_dirty_log(mem)) {
+            return;
+        }
+#endif
         if (kvm_slot_get_dirty_log(s, mem)) {
             kvm_slot_sync_dirty_pages(mem);
         }

@@ -281,6 +281,17 @@ bool ham_should_complete_migration(MigrationState *s)
     return migrate_use_ldst() && s->iteration_num >= 1;
 }
 
+bool ham_should_skip_dirty_log(KVMSlot *mem)
+{
+    /*
+     * In QEMU's memory layout, VIRT_MEM ususally starts at 1 GiB.
+     * Since the HAM mode doesn't require dirty marking, this
+     * function avoids unnecessarily tracking dirty pages in
+     * memory regions, thereby improving performance.
+     */
+    return migrate_use_ldst() && mem->start_addr >= GiB;
+}
+
 static void free_ram_info_list(RamInfoList *list)
 {
     RamInfoList *tmp;

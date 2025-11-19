@@ -78,6 +78,8 @@ void ham_madvise_page(void);
 
 bool ham_should_complete_migration(MigrationState *s);
 
+bool ham_should_skip_dirty_log(KVMSlot *mem);
+
 #ifdef __cplusplus
 }
 #endif
