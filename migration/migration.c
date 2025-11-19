@@ -1623,6 +1623,7 @@ int migrate_init(MigrationState *s, Error **errp)
     s->threshold_size = 0;
     s->switchover_acked = false;
     s->rdma_migration = false;
+    s->iteration_num = 0;
     /*
      * set mig_stats memory to zero for a new migration
      */
@@ -3146,7 +3147,12 @@ static MigIterateState migration_iteration_run(MigrationState *s)
         trace_migrate_pending_exact(pending_size, must_precopy, can_postcopy);
     }
 
+#ifdef CONFIG_HAM_MIGRATION
+    if (((!pending_size || pending_size < s->threshold_size) && can_switchover) ||
+       ham_should_complete_migration(s)) {
+#else
     if ((!pending_size || pending_size < s->threshold_size) && can_switchover) {
+#endif
         trace_migration_thread_low_pending(pending_size);
         migration_completion(s);
         return MIG_ITERATE_BREAK;
@@ -3162,6 +3168,7 @@ static MigIterateState migration_iteration_run(MigrationState *s)
         return MIG_ITERATE_SKIP;
     }
 
+    s->iteration_num++;
     /* Just another iteration step */
     qemu_savevm_state_iterate(s->to_dst_file, in_postcopy);
     return MIG_ITERATE_RESUME;

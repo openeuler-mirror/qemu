@@ -272,6 +272,15 @@ close_dlfunc:
     return ret;
 }
 
+bool ham_should_complete_migration(MigrationState *s)
+{
+    /* Only trigger completion when:
+     * 1. HAM (ldst) mode is enabled
+     * 2. At least one iteration has been completed
+     */
+    return migrate_use_ldst() && s->iteration_num >= 1;
+}
+
 static void free_ram_info_list(RamInfoList *list)
 {
     RamInfoList *tmp;

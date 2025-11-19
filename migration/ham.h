@@ -76,6 +76,8 @@ bool ham_is_vm_ram(size_t page_size);
 
 void ham_madvise_page(void);
 
+bool ham_should_complete_migration(MigrationState *s);
+
 #ifdef __cplusplus
 }
 #endif
