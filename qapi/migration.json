@@ -461,6 +461,10 @@
 #     and target or migration will not even start.  NOTE: If the
 #     migration fails during postcopy the VM will fail.  (since 2.6)
 #
+# @ldst: If enabled, the memory of virtual machine will be migrated
+#     to the borrowed memory via migrate_pages, completing the live
+#     migration of the virtual machine.  (Since 8.2)
+#
 # @x-colo: If enabled, migration will never end, and the state of the
 #     VM on the primary side will be migrated continuously to the VM
 #     on secondary side, this process is called COarse-Grain LOck
@@ -546,7 +550,7 @@
 { 'enum': 'MigrationCapability',
   'data': ['xbzrle', 'rdma-pin-all', 'auto-converge', 'zero-blocks',
            { 'name': 'compress', 'features': [ 'deprecated' ] },
-           'events', 'postcopy-ram',
+           'events', 'postcopy-ram', 'ldst',
            { 'name': 'x-colo', 'features': [ 'unstable' ] },
            'release-ram',
            { 'name': 'block', 'features': [ 'deprecated' ] },
@@ -609,7 +613,8 @@
 #       {"state": false, "capability": "compress"},
 #       {"state": true, "capability": "events"},
 #       {"state": false, "capability": "postcopy-ram"},
-#       {"state": false, "capability": "x-colo"}
+#       {"state": false, "capability": "x-colo"},
+#       {"state": false, "capability": "ldst"}
 #    ]}
 ##
 { 'command': 'query-migrate-capabilities', 'returns':   ['MigrationCapabilityStatus']}
