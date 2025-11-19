@@ -184,4 +184,219 @@
 #define HI_MSGQ_MAX_DEPTH 1024
 #define HI_MSGQ_MIN_DEPTH 4
 
+/*
+ *  msgq sq memory layout
+ *            +----------------------------+
+ *            | sqe 1                      |
+ *            |----------------------------| 12Byte
+ *       +----|    payload addr(offset)    |
+ *       |    +----------------------------+
+ *       |    | sqe 2                      |
+ *       |    |----------------------------| 12Byte
+ *    +-------|    payload addr(offset)    |
+ *    |  |    +----------------------------+
+ *    |  |    |       .....                |
+ *    |  |    |                            |
+ *    |  |    +----------------------------+
+ *    |  |    | sqe (depth)                |
+ *    |  |    |----------------------------| 12Byte
+ *  +---------|    payload addr(offset)    |
+ *  | |  |    +----------------------------+
+ *  | |  +--> |       payload 1            |  1K
+ *  | |       +----------------------------+
+ *  | +-----> |       payload 2            |  1K
+ *  |         +----------------------------+
+ *  |         |       .......              |  1K
+ *  |         +----------------------------+
+ *  +-------> |   payload (depth)          |  1K
+ *            +----------------------------+
+ *
+ *                      SQE layout
+ * +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+ * |31|30|29|28|27|26|25|24|23|22|21|20|19|18|17|16|15|14|13|12|11|10| 9| 8| 7| 6| 5| 4| 3| 2| 1| 0|
+ * +-----------------------------------------------+-----------------------+-----------+-----------+
+ * |                  payload length               |       msg id          |submsg code| msg code  |
+ * +-----------------------------------------------+-----+--+--+-----------+-----------+-----------+
+ * |                        rsvd                         |e1|e2|    vl     |        rsvd           |  e1:icrc  e2:local
+ * +-----------------------------------------------------+--+--+-----------+-----------------------+
+ * |                                        payload addr                                           |
+ * +-----------------------------------------------------------------------------------------------+
+ */
+typedef struct HiMsgSqe {
+    /* DW0 */
+    uint32_t task_type : 2;
+    uint32_t rsvd0 : 2;
+    uint32_t local : 1;
+    uint32_t dev_type : 2;
+    uint32_t icrc : 1;
+    union {
+        struct {
+            uint8_t type : 1;
+            uint8_t msg_code : 3;
+            uint8_t sub_msg_code : 4;
+        };
+        uint8_t opcode;
+    };
+    uint32_t p_len : 12;
+    uint32_t rsvd1 : 4;
+
+    /* DW1 */
+    uint32_t msn : 16;
+    uint32_t rsvd3 : 16;
+
+    /* DW2 */
+    uint32_t p_addr;
+
+    /* DW3 */
+    uint32_t rsvd2;
+} HiMsgSqe;
+#define HI_MSG_SQE_SIZE sizeof(HiMsgSqe)
+
+typedef struct HiMsgCqe {
+    /* DW0 */
+    uint32_t task_type : 2;
+    uint32_t rsvd0 : 6;
+    union {
+        struct {
+            uint8_t type : 1;
+            uint8_t msg_code : 3;
+            uint8_t sub_msg_code : 4;
+        };
+        uint8_t opcode;
+    };
+    uint32_t p_len : 12;
+    uint32_t rsvd1 : 4;
+
+    /* DW1 */
+    uint32_t msn : 16;
+    uint32_t rsvd5 : 16;
+
+    /* DW2 */
+    uint32_t rq_pi : 10;
+    uint32_t rsvd2 : 6;
+    uint32_t status : 8;
+    uint32_t rsvd3 : 8;
+
+    /* DW3 */
+    uint32_t rsvd4;
+} HiMsgCqe;
+#define HI_MSG_CQE_SIZE sizeof(HiMsgCqe)
+
+typedef struct HiMsgSqePld {
+    char packet[HI_MSG_SQE_PLD_SIZE];
+} HiMsgSqePld;
+
+typedef struct HiMsgqInfo {
+    uint64_t sq_base_addr_gpa;
+    uint64_t sq_base_addr_hva;
+    uint64_t sq_sz;
+    uint64_t cq_base_addr_gpa;
+    uint64_t cq_base_addr_hva;
+    uint64_t cq_sz;
+    uint64_t rq_base_addr_gpa;
+    uint64_t rq_base_addr_hva;
+    uint64_t rq_sz;
+} HiMsgqInfo;
+
+typedef enum HiMsgqIdx {
+    MSG_SQ = 0,
+    MSG_RQ = 1,
+    MSG_CQ = 2,
+    MSGQ_NUM
+} HiMsgqIdx_t;
+
+enum HiCqeStatus {
+    CQE_SUCCESS,
+    CQE_FAIL
+};
+
+enum HiCqSwState {
+    CQ_SW_INIT,
+    CQ_SW_HANDLED
+};
+
+struct HiMsgQueue {
+    HiMsgqIdx_t idx;
+
+    union {
+        struct HiMsgSqe *sqe;
+        void *rqe;
+        struct HiMsgCqe *cqe;
+        void *entry;
+    };
+
+    uint16_t entry_size;
+    uint8_t depth;
+    uint8_t ci;
+    uint8_t pi;
+
+    pthread_spinlock_t lock;
+};
+
+#define UB_MSG_CODE_ENUM 0x8 /* hisi private */
+enum HiEnumSubMsgCode {
+    ENUM_QUERY_REQ = 0,
+    ENUM_QUERY_RSP,
+    CNA_CFG_REQ,
+    CNA_CFG_RSP
+};
+
+enum UB_MSG_RSP_STATUS_CODE {
+    UB_MSG_RSP_SUCCESS,
+    UB_MSG_RSP_INVALID_MESSAGE,
+    UB_MSG_RSP_UPI_BEYOND_AUTH,
+    UB_MSG_RSP_INVALID_TOKEN,
+    UB_MSG_RSP_REG_ATTR_MISMATCH,
+    UB_MSG_RSP_INVALID_ADDR,
+    UB_MSG_RSP_HW_EXEC_FAILED,
+    UB_MSG_RSP_LACK_OF_EID,
+};
+
+enum HiTaskType {
+    PROTOCOL_MSG = 0,
+    PROTOCOL_ENUM = 1,
+    HISI_PRIVATE = 2
+};
+
+typedef enum HiMsgqPrivateOpcode {
+    CC_CTX_CFG_CMD = 0,
+    QUERY_UB_MEM_ROUTE_CMD = 1,
+    EU_TABLE_CFG_CMD = 2,
+    CC_CTX_QUERY_CMD = 3
+} HiMsgqPrivateOpcode;
+
+typedef enum HiEuCfgStatus {
+    EU_CFG_FAIL,
+    EU_CFG_SUCCESS
+} HiEuCfgStatus;
+
+typedef struct HiEuCfgReq {
+    uint32_t eu_msg_code : 4;
+    uint32_t cfg_entry_num : 10;
+    uint32_t tbl_cfg_mode : 1;
+    uint32_t tbl_cfg_status : 1;
+    uint32_t entry_start_id : 16;
+    uint32_t eid : 20;
+    uint32_t rsv0 : 12;
+    uint32_t upi : 16;
+    uint32_t rsv1 : 16;
+} HiEuCfgReq;
+#define HI_EU_CFG_REQ_SIZE 12
+
+typedef struct HiEuCfgRsp {
+    uint32_t eu_msg_code : 4;
+    uint32_t cfg_entry_num : 10;
+    uint32_t tbl_cfg_mode : 1;
+    uint32_t tbl_cfg_status : 1;
+    uint32_t entry_start_id : 16;
+} HiEuCfgRsp;
+#define HI_EU_CFG_RSP_SIZE 4
+
+typedef struct HiEuCfgPld {
+    union {
+        HiEuCfgReq req;
+        HiEuCfgRsp rsp;
+    };
+} HiEuCfgPld;
+
 #endif

@@ -18,8 +18,12 @@
 #ifndef UB_HISI_FM_H
 #define UB_HISI_FM_H
 #include "hw/ub/hisi/ubc.h"
+#include "hw/qdev-core.h"
+#include "hw/ub/ub_common.h"
 
 #define FM_MSGQ_REG_OFFSET (UBC_MSGQ_REG_OFFSET + UBC_MSGQ_REG_SIZE)
 #define FM_MSGQ_REG_SIZE    0x100000   /* 1MiB */
 
+uint64_t ub_fm_msgq_reg_read(void *opaque, hwaddr addr, unsigned len);
+void ub_fm_msgq_reg_write(void *opaque, hwaddr addr, uint64_t val, unsigned len);
 #endif

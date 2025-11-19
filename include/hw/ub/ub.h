@@ -20,6 +20,7 @@
 #include <linux/vfio.h>
 #include "qemu/typedefs.h"
 #include "exec/memory.h"
+#include "hw/arm/virt.h"
 
 #define BYTE_SIZE 1
 #define WORD_SIZE 2
@@ -221,4 +222,11 @@ static inline uint64_t ub_get_quad(const uint8_t *config)
     return ldq_le_p(config);
 }
 
+void ub_default_read_config(UBDevice *dev, uint64_t offset,
+                            uint32_t *val, uint32_t dw_mask);
+void ub_default_write_config(UBDevice *dev, uint64_t offset,
+                             uint32_t *val, uint32_t dw_mask);
+UBDevice *ub_find_device_by_guid(UbGuid *guid);
+int ub_dev_finally_setup(VirtMachineState *vms, Error **errp);
+UBDevice *ub_find_device_by_id(const char *id);
 #endif
