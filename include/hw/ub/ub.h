@@ -228,5 +228,9 @@ void ub_default_write_config(UBDevice *dev, uint64_t offset,
                              uint32_t *val, uint32_t dw_mask);
 UBDevice *ub_find_device_by_guid(UbGuid *guid);
 int ub_dev_finally_setup(VirtMachineState *vms, Error **errp);
+static inline uint64_t ub_config_size(void)
+{
+    return UB_DEV_CONFIG_SPACE_TOTAL_SIZE;
+}
 UBDevice *ub_find_device_by_id(const char *id);
 #endif

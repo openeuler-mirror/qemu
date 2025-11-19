@@ -248,41 +248,6 @@ static int get_pte(dma_addr_t baseaddr, uint32_t index, uint64_t *pte,
     return 0;
 }
 
-/* VMSAv8-64 Translation Table Format Descriptor Decoding */
-
-/**
- * get_page_pte_address - returns the L3 descriptor output address,
- * ie. the page frame
- * ARM ARM spec: Figure D4-17 VMSAv8-64 level 3 descriptor format
- */
-static inline hwaddr get_page_pte_address(uint64_t pte, int granule_sz)
-{
-    return PTE_ADDRESS(pte, granule_sz);
-}
-
-/**
- * get_table_pte_address - return table descriptor output address,
- * ie. address of next level table
- * ARM ARM Figure D4-16 VMSAv8-64 level0, level1, and level 2 descriptor formats
- */
-static inline hwaddr get_table_pte_address(uint64_t pte, int granule_sz)
-{
-    return PTE_ADDRESS(pte, granule_sz);
-}
-
-/**
- * get_block_pte_address - return block descriptor output address and block size
- * ARM ARM Figure D4-16 VMSAv8-64 level0, level1, and level 2 descriptor formats
- */
-static inline hwaddr get_block_pte_address(uint64_t pte, int level,
-                                           int granule_sz, uint64_t *bsz)
-{
-    int n = level_shift(level, granule_sz);
-
-    *bsz = 1ULL << n;
-    return PTE_ADDRESS(pte, n);
-}
-
 SMMUTransTableInfo *select_tt(SMMUTransCfg *cfg, dma_addr_t iova)
 {
     bool tbi = extract64(iova, 55, 1) ? TBI1(cfg->tbi) : TBI0(cfg->tbi);

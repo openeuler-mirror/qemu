@@ -33,17 +33,49 @@
 #include "hw/ub/ub_bus.h"
 #include "hw/ub/ub_ubc.h"
 #include "migration/vmstate.h"
-
+#include "exec/address-spaces.h"
+#include "monitor/monitor.h"
+#include "trace.h"
 
 QLIST_HEAD(, BusControllerState) ub_bus_controllers;
 
 static void ubbus_dev_print(Monitor *mon, DeviceState *dev, int indent)
 {
+    UBDevice *udev = (UBDevice *)dev;
+    uint64_t offset0 = ub_cfg_offset_to_emulated_offset(UB_CFG0_BASIC_START, true);
+    uint64_t offset1 = ub_cfg_offset_to_emulated_offset(UB_CFG1_BASIC_START, true);
+    UbCfg0Basic *cfg0 = (UbCfg0Basic *)(udev->config + offset0);
+    UbCfg1Basic *cfg1 = (UbCfg1Basic *)(udev->config + offset1);
+    UBIORegion *r;
+    int i;
+
+    monitor_printf(mon, "%*sGUID:vendor 0x%x Class 0x%x Type 0x%x "
+                   "DevId 0x%x Ver 0x%x SN 0x%lx\n",
+                   indent, "", cfg0->guid.vendor, cfg1->class_code,
+                   cfg0->guid.type, cfg0->guid.device_id, cfg0->guid.version,
+                   (unsigned long)cfg0->guid.seq_num);
+    for (i = 0; i < UB_NUM_REGIONS; i++) {
+        r = &udev->io_regions[i];
+        if (!r->size) {
+            continue;
+        }
+        monitor_printf(mon, "%*sers %d: mem at 0x%"PRIx64
+                       " [0x%"PRIx64"]\n",
+                       indent, "", i,
+                       r->addr, r->addr + r->size - 1);
+    }
 }
 
 static char *ubbus_get_dev_path(DeviceState *dev)
 {
-    return NULL;
+    UBDevice *udev = (UBDevice *)dev;
+    uint64_t offset = ub_cfg_offset_to_emulated_offset(UB_CFG0_BASIC_START, true);
+    UbCfg0Basic *cfg0 = (UbCfg0Basic *)(udev->config + offset);
+    char *path = g_malloc(UB_DEV_GUID_STRING_LENGTH + 1);
+
+    ub_device_get_str_from_guid(&cfg0->guid, path, UB_DEV_GUID_STRING_LENGTH + 1);
+
+    return path;
 }
 
 static char *ubbus_get_fw_dev_path(DeviceState *dev)
@@ -294,6 +326,72 @@ void ub_default_read_config(UBDevice *dev, uint64_t offset,
     *val = read_data & dw_mask;
 }
 
+static uint64_t ub_er_address(UBDevice *dev, uint8_t ers, uint64_t size)
+{
+    uint64_t new_addr, last_addr;
+    UbCfg1Basic *cfg1_basic;
+    uint64_t emulated_offset;
+
+    if (ers > UB_NUM_REGIONS) {
+        qemu_log("invalid ers %u\n", ers);
+        return UB_ER_UNMAPPED;
+    }
+
+    emulated_offset = ub_cfg_offset_to_emulated_offset(UB_CFG1_BASIC_START, true);
+    cfg1_basic = (UbCfg1Basic *)(dev->config + emulated_offset);
+    if (!cfg1_basic->dev_rs_access_en) {
+        return UB_ER_UNMAPPED;
+    }
+
+    new_addr = cfg1_basic->ers_ubba[ers];
+    new_addr &= ~(size -1);
+    last_addr = new_addr + size - 1;
+    /* NOTE: we do not support wrapping */
+    if (last_addr <= new_addr || last_addr == UB_ER_UNMAPPED) {
+        return UB_ER_UNMAPPED;
+    }
+
+    return new_addr;
+}
+
+static void ub_update_mappings(UBDevice *dev)
+{
+    UBIORegion *region;
+    uint64_t new_addr;
+    uint8_t i;
+
+    for (i = 0; i < UB_NUM_REGIONS; i++) {
+        region = &dev->io_regions[i];
+
+        /* this region isn't registered */
+        if (!region->size) {
+            continue;
+        }
+
+        new_addr = ub_er_address(dev, i, region->size);
+        trace_ub_update_mappings(i, region->size, region->addr, new_addr);
+        if (new_addr == UB_ER_UNMAPPED) {
+            continue;
+        }
+
+        /* This ers isn't changed */
+        if (new_addr == region->addr) {
+            continue;
+        }
+
+        if (region->addr != UB_ER_UNMAPPED) {
+            memory_region_del_subregion(region->address_space, region->memory);
+        }
+
+        region->addr = new_addr;
+        if (region->addr != UB_ER_UNMAPPED) {
+            trace_ub_update_mappings_add(region->addr);
+            memory_region_add_subregion_overlap(region->address_space,
+                                                region->addr, region->memory, 1);
+        }
+    }
+}
+
 void ub_default_write_config(UBDevice *dev, uint64_t offset,
                              uint32_t *val, uint32_t dw_mask)
 {
@@ -314,6 +412,17 @@ void ub_default_write_config(UBDevice *dev, uint64_t offset,
     dw_w1cmask = *(uint32_t *)(dev->w1cmask + emulated_offset) & dw_mask;
     *dst_data = (*dst_data & ~dw_wmask) | (write_data & dw_wmask);
     *dst_data &= ~(write_data & dw_w1cmask);
+
+    if (ranges_overlap(offset, DWORD_SIZE,
+        UB_CFG1_BASIC_START + offsetof(UbCfg1Basic, ers_ubba),
+        UB_NUM_REGIONS * sizeof(uint64_t)) && write_data != UINT32_MAX) {
+        ub_update_mappings(dev);
+    }
+
+    /* for idev update mapping */
+    if (ranges_overlap(offset, DWORD_SIZE, UB_CFG1_DEV_RS_ACCESS_EN_OFFSET, DWORD_SIZE)) {
+        ub_update_mappings(dev);
+    }
 }
 
 static UBDevice *do_ub_register_device(UBDevice *ub_dev, const char *name, Error **errp)

@@ -399,4 +399,9 @@ typedef struct HiEuCfgPld {
     };
 } HiEuCfgPld;
 
+void msgq_sq_init(void *opaque);
+void msgq_cq_init(void *opaque);
+void msgq_rq_init(void *opaque);
+void msgq_process_task(void *opaque, uint64_t val);
+void msgq_handle_rst(void *opaque);
 #endif

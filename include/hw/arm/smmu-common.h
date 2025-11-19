@@ -24,20 +24,11 @@
 #include "qom/object.h"
 #include "sysemu/iommufd.h"
 #include <linux/iommufd.h>
+#include "hw/arm/mmu-translate-common.h"
 
 #define SMMU_PCI_BUS_MAX                    256
 #define SMMU_PCI_DEVFN_MAX                  256
 #define SMMU_PCI_DEVFN(sid)                 (sid & 0xFF)
-
-/* VMSAv8-64 Translation constants and functions */
-#define VMSA_LEVELS                         4
-#define VMSA_MAX_S2_CONCAT                  16
-
-#define VMSA_STRIDE(gran)                   ((gran) - VMSA_LEVELS + 1)
-#define VMSA_BIT_LVL(isz, strd, lvl)        ((isz) - (strd) * \
-                                             (VMSA_LEVELS - (lvl)))
-#define VMSA_IDXMSK(isz, strd, lvl)         ((1ULL << \
-                                             VMSA_BIT_LVL(isz, strd, lvl)) - 1)
 
 /*
  * Page table walk error types

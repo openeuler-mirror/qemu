@@ -1,0 +1,15 @@
+# ub.c
+ub_update_mappings(int i, uint64_t region_size, uint64_t old_addr, uint64_t new_addr) "region[%d], size: 0x%lx, old_addr: 0x%lx, new_addr: 0x%lx"
+ub_update_mappings_add(uint64_t new_addr) "commit region addr to 0x%lx"
+
+# ub_enum.c
+enum_query_set_rsp_port_num(uint32_t num) "tlv total num ports is %u"
+handle_enum_query_request(uint32_t hops, uint32_t opcode, uint32_t idx_start, uint32_t num_ports, uint32_t max_num_ports, char *guid) "hops: %u, opcode: %u, port_idx_start:%u, rsp_num_ports:%u, max_num_ports:%u guid %s"
+
+# ub_cna_mgmt.c
+handle_enum_cna_config_request(char *guid, uint32_t port_idx, uint32_t cmd, uint32_t opcode) "guid %s port_idx %u cmd %u opcode %u"
+enum_set_cna_config_space_port(char *guid, uint32_t port_idx, uint32_t cna) "guid: %s, port_idx: %u, cna: %u"
+enum_set_cna_config_space_device(char *guid, uint32_t primary_cna) "guid: %s, primary_cna %u"
+
+handle_enum_cna_query_request(char *guid, uint32_t port_idx, uint32_t cmd, uint32_t opcode) "guid %s port_idx %u cmd %u opcode %u"
+handle_enum_cna_query_request_rsp(char *guid, uint32_t cna) "guid %s return cna %u"
