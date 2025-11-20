@@ -1,3 +1,20 @@
+# See docs/devel/tracing.rst for syntax documentation.
+
+# ub_ummu.c
+ummu_mcmdq_reg_writel(uint32_t idx, uint32_t prod, uint32_t cons) "mcmdq process: idx(%u), prod(%u), cons(%u)"
+mcmdq_process_task(uint32_t mcmdq_idx, const char *cmd) "mcmdq_idx: %u, cmd: %s"
+mcmdq_cmd_sync_handler(uint32_t mcmdq_idx, uint64_t usi_addr, uint32_t usi_data) "CMD_SYNC: mcmdq_idx(%u) usi_addr(0x%lx) usi_data(0x%x)"
+mcmdq_cmd_plbi_x_process(uint32_t mcmdq_idx, const char *cmd) "CMD_PLBIx: mcmdq_idx(%u) cmd(%s)"
+mcmdq_cmd_tlbi_x_process(uint32_t mcmdq_idx, const char *cmd) "CMD_TLBIx: mcmdq_idx(%u) cmd(%s)"
+mcmdq_cmd_create_kvtbl(uint32_t mcmdq_idx, uint32_t dest_eid, uint32_t tecte_tag) "CMD_CREATE_KVTBL: mcmdq_idx(%u) dest_eid(%u) tecte_tag(%u)"
+mcmdq_cmd_delete_kvtbl(uint32_t mcmdq_idx, uint32_t dest_eid) "CMD_DELETE_KVTBL: mcmdq_idx(%u) dest_eid(%u)"
+mcmdq_cmd_null(uint32_t mcmdq_idx, uint64_t addr, void *hva, uint64_t size, uint64_t rb_size) "CMD_NULL: mcmdq_idx(%u) addr(0x%lx) hva(%p) size(0x%lx) rb_size(0x%lx)"
+ummu_mcmdq_base_reg_writell(uint8_t idx, uint64_t base, uint8_t log2size) "idx(%u) base(0x%lx) log2size(0x%x)"
+ummu_eventq_req_writell(uint64_t base, uint8_t log2size) "base(0x%lx) log2size(0x%x)"
+ummu_eventq_usi_reg_writell(uint64_t addr) "set eventq usi addr 0x%lx"
+ummu_glberr_usi_reg_writell(uint64_t addr) "set glb err usi addr 0x%lx"
+ummu_mapt_ctx_base_reg_writell(uint64_t addr) "config mapt ctx base 0x%lx"
+
 # ub.c
 ub_update_mappings(int i, uint64_t region_size, uint64_t old_addr, uint64_t new_addr) "region[%d], size: 0x%lx, old_addr: 0x%lx, new_addr: 0x%lx"
 ub_update_mappings_add(uint64_t new_addr) "commit region addr to 0x%lx"

@@ -1755,8 +1755,10 @@ static void create_virtio_iommu_dt_bindings(VirtMachineState *vms)
 static void create_ub(VirtMachineState *vms)
 {
     DeviceState *ubc;
+    DeviceState *ummu;
     MemoryRegion *mmio_reg;
     MemoryRegion *mmio_alias;
+    BusControllerState *ubc_state;
 
     if (ub_cfg_addr_map_table_init() < 0) {
         qemu_log("failed to init ub cfg addr map table\n");
@@ -1795,6 +1797,19 @@ static void create_ub(VirtMachineState *vms)
                              vms->memmap[VIRT_UB_IDEV_ERS].size);
     memory_region_add_subregion(get_system_memory(),
                                 vms->memmap[VIRT_UB_IDEV_ERS].base, mmio_alias);
+    if (vms->ummu) {
+        ummu = qdev_new(TYPE_UB_UMMU);
+        ubc_state = BUS_CONTROLLER(ubc);
+        object_property_set_link(OBJECT(ummu), "primary-bus", OBJECT(ubc_state->bus), &error_abort);
+        /* default set ummu nestd */
+        object_property_set_bool(OBJECT(ummu), "nested", true, &error_abort);
+        qdev_prop_set_uint64(ummu, "ub-ummu-reg-size", UMMU_REG_SIZE);
+        sysbus_realize_and_unref(SYS_BUS_DEVICE(ummu), &error_fatal);
+        sysbus_mmio_map(SYS_BUS_DEVICE(ummu), 0,
+                        vms->memmap[VIRT_UBC_BASE_REG].base + UMMU_REG_OFFSET);
+    } else {
+        qemu_log("ummu disabled.\n");
+    }
 }
 #endif // CONFIG_UB
 static void create_pcie(VirtMachineState *vms)
