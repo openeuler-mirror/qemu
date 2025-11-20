@@ -625,6 +625,16 @@ BusControllerState *container_of_ubbus(UBBus *bus)
     return NULL;
 }
 
+AddressSpace *ub_device_iommu_address_space(UBDevice *dev)
+{
+    UBBus *bus = ub_get_bus(dev);
+
+    if (bus->iommu_ops && bus->iommu_ops->get_address_space) {
+        return bus->iommu_ops->get_address_space(bus, bus->iommu_opaque, dev->eid);
+    }
+    return &address_space_memory;
+}
+
 UBDevice *ub_find_device_by_id(const char *id)
 {
     BusControllerState *ubc = NULL;
@@ -896,6 +906,14 @@ static int ub_dev_init_port_info_by_cmd(Error **errp)
         }
     }
     return 0;
+}
+
+uint32_t ub_interrupt_id(UBDevice *udev)
+{
+    uint64_t offset = ub_cfg_offset_to_emulated_offset(UB_CFG1_CAP4_INT_TYPE2, true);
+    UbCfg1IntType2Cap *cfg1_int_cap = (UbCfg1IntType2Cap *)(udev->config + offset);
+
+    return cfg1_int_cap->interrupt_id;
 }
 
 /*
