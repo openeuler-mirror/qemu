@@ -31,6 +31,10 @@ system_ss.add(files(
   'threadinfo.c',
 ), gnutls)
 
+if have_ham_migration
+  system_ss.add(files('ham.c'))
+endif
+
 if get_option('replication').allowed()
   system_ss.add(files('colo-failover.c', 'colo.c'))
 endif

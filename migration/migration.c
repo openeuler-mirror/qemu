@@ -71,7 +71,9 @@
 #include "qemu/log-for-trace.h"
 #include "sysemu/kvm.h"
 #endif
-
+#ifdef CONFIG_HAM_MIGRATION
+#include "ham.h"
+#endif
 #define DEFAULT_FD_MAX 4096
 
 static NotifierList migration_state_notifiers =
@@ -1621,6 +1623,7 @@ int migrate_init(MigrationState *s, Error **errp)
     s->threshold_size = 0;
     s->switchover_acked = false;
     s->rdma_migration = false;
+    s->iteration_num = 0;
     /*
      * set mig_stats memory to zero for a new migration
      */
@@ -3144,7 +3147,12 @@ static MigIterateState migration_iteration_run(MigrationState *s)
         trace_migrate_pending_exact(pending_size, must_precopy, can_postcopy);
     }
 
+#ifdef CONFIG_HAM_MIGRATION
+    if (((!pending_size || pending_size < s->threshold_size) && can_switchover) ||
+       ham_should_complete_migration(s)) {
+#else
     if ((!pending_size || pending_size < s->threshold_size) && can_switchover) {
+#endif
         trace_migration_thread_low_pending(pending_size);
         migration_completion(s);
         return MIG_ITERATE_BREAK;
@@ -3160,6 +3168,7 @@ static MigIterateState migration_iteration_run(MigrationState *s)
         return MIG_ITERATE_SKIP;
     }
 
+    s->iteration_num++;
     /* Just another iteration step */
     qemu_savevm_state_iterate(s->to_dst_file, in_postcopy);
     return MIG_ITERATE_RESUME;
@@ -3364,7 +3373,9 @@ static void *migration_thread(void *opaque)
     qemu_mutex_lock_iothread();
     qemu_savevm_state_header(s->to_dst_file);
     qemu_mutex_unlock_iothread();
-
+#ifdef CONFIG_HAM_MIGRATION
+    ham_migrate_prepare(s);
+#endif
     /*
      * If we opened the return path, we need to make sure dst has it
      * opened as well.
@@ -3438,6 +3449,9 @@ out:
     object_unref(OBJECT(s));
     rcu_unregister_thread();
     migration_threads_remove(thread);
+#ifdef CONFIG_HAM_MIGRATION
+    ham_migrate_cleanup();
+#endif
     return NULL;
 }
 

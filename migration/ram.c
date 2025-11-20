@@ -65,7 +65,9 @@
 #include "sysemu/dirtylimit.h"
 #include "sysemu/kvm.h"
 #include "exec/confidential-guest-support.h"
-
+#ifdef CONFIG_HAM_MIGRATION
+#include "ham.h"
+#endif
 /* Defines RAM_SAVE_ENCRYPTED_PAGE and RAM_SAVE_SHARED_REGION_LIST */
 #include "target/i386/sev.h"
 #include "target/i386/csv.h"
@@ -1058,6 +1060,24 @@ static void migration_trigger_throttle(RAMState *rs)
     }
 }
 
+#ifdef CONFIG_HAM_MIGRATION
+static bool ham_sync_vm_ram_bitmap(RAMState *rs, RAMBlock *block)
+{
+    /*
+     * In HAM migration mode, QEMU dirty page synchronization is not
+     * performed for memory blocks; instead, a page is marked as dirty
+     * and the process proceeds directly to the HAM migration stage.
+     */
+    if (!migrate_use_ldst() || !ham_is_vm_ram(block->page_size)) {
+        return false;
+    }
+    unsigned long *bmap = block->bmap;
+    memset(bmap, 0, sizeof(unsigned long));
+    bmap[0] = ~0UL;
+    return true;
+}
+#endif
+
 static void migration_bitmap_sync(RAMState *rs, bool last_stage)
 {
     RAMBlock *block;
@@ -1075,6 +1095,11 @@ static void migration_bitmap_sync(RAMState *rs, bool last_stage)
     qemu_mutex_lock(&rs->bitmap_mutex);
     WITH_RCU_READ_LOCK_GUARD() {
         RAMBLOCK_FOREACH_NOT_IGNORED(block) {
+#ifdef CONFIG_HAM_MIGRATION
+            if (ham_sync_vm_ram_bitmap(rs, block)) {
+                continue;
+            }
+#endif
             ramblock_sync_dirty_bitmap(rs, block);
         }
         stat64_set(&mig_stats.dirty_bytes_last_sync, ram_bytes_remaining());
@@ -1466,7 +1491,12 @@ static int find_dirty_block(RAMState *rs, PageSearchStatus *pss)
 {
     /* Update pss->page for the next dirty bit in ramblock */
     pss_find_next_dirty(pss);
-
+#ifdef CONFIG_HAM_MIGRATION
+    /* In HAM migration mode, only one round of dirty page traversal is needed */
+    if (migrate_use_ldst() && pss->complete_round) {
+        return PAGE_ALL_CLEAN;
+    }
+#endif
     if (pss->complete_round && pss->block == rs->last_seen_block &&
         pss->page >= rs->last_page) {
         /*
@@ -2591,6 +2621,23 @@ static int ram_save_csv3_pages(RAMState *rs, PageSearchStatus *pss)
     return pages;
 }
 
+#ifdef CONFIG_HAM_MIGRATION
+static int ram_ham_migrate_page(PageSearchStatus *pss)
+{
+    int pages = 0;
+    int ret;
+
+    pss->page += (pss->block->used_length >> TARGET_PAGE_BITS);
+    pages += (pss->block->used_length >> TARGET_PAGE_BITS);
+    ret = ham_pages_commit();
+    if (ret) {
+        return ret;
+    }
+
+    return pages;
+}
+#endif
+
 /**
  * ram_save_host_page: save a whole host page
  *
@@ -2643,7 +2690,15 @@ static int ram_save_host_page(RAMState *rs, PageSearchStatus *pss)
 
     /* Update host page boundary information */
     pss_host_page_prepare(pss);
-
+#ifdef CONFIG_HAM_MIGRATION
+    if (migrate_use_ldst() && ham_is_vm_ram(pss->block->page_size)) {
+        pages = ram_ham_migrate_page(pss);
+        if (pages < 0) {
+            return pages;
+        }
+        goto completed;
+    }
+#endif
     do {
         page_dirty = migration_bitmap_clear_dirty(rs, pss->block, pss->page);
 
@@ -2682,7 +2737,9 @@ static int ram_save_host_page(RAMState *rs, PageSearchStatus *pss)
 
         pss_find_next_dirty(pss);
     } while (pss_within_range(pss));
-
+#ifdef CONFIG_HAM_MIGRATION
+completed:
+#endif
     pss_host_page_finish(pss);
 
     res = ram_save_release_protection(rs, pss, start_page);
@@ -3548,7 +3605,15 @@ static int ram_save_iterate(QEMUFile *f, void *opaque)
                 if (migrate_postcopy_ram()) {
                     compress_flush_data();
                 }
-
+#ifdef CONFIG_HAM_MIGRATION
+                /*
+                 * In HAM migration mode, there is no need to check for timeouts;
+                 * the process can be completed in one iteration.
+                 */
+                if (migrate_use_ldst()) {
+                    continue;
+                }
+#endif
                 /*
                  * we want to check in the 1st loop, just in case it was the 1st
                  * time and we had to sync the dirty bitmap.

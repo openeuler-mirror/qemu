@@ -56,3 +56,6 @@ config HV_BALLOON_POSSIBLE
 
 config UB
     bool
+
+config HAM_MIGRATION
+    bool

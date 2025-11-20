@@ -470,6 +470,8 @@ struct MigrationState {
     bool switchover_acked;
     /* Is this a rdma migration */
     bool rdma_migration;
+    /* Number of migration iterations */
+    uint64_t iteration_num;
 };
 
 void migrate_set_state(int *state, int old_state, int new_state);

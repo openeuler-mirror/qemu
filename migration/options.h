@@ -46,6 +46,7 @@ bool migrate_validate_uuid(void);
 bool migrate_xbzrle(void);
 bool migrate_zero_blocks(void);
 bool migrate_zero_copy_send(void);
+bool migrate_use_ldst(void);
 
 /*
  * pseudo capabilities

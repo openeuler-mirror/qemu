@@ -461,6 +461,10 @@
 #     and target or migration will not even start.  NOTE: If the
 #     migration fails during postcopy the VM will fail.  (since 2.6)
 #
+# @ldst: If enabled, the memory of virtual machine will be migrated
+#     to the borrowed memory via migrate_pages, completing the live
+#     migration of the virtual machine.  (Since 8.2)
+#
 # @x-colo: If enabled, migration will never end, and the state of the
 #     VM on the primary side will be migrated continuously to the VM
 #     on secondary side, this process is called COarse-Grain LOck
@@ -546,7 +550,7 @@
 { 'enum': 'MigrationCapability',
   'data': ['xbzrle', 'rdma-pin-all', 'auto-converge', 'zero-blocks',
            { 'name': 'compress', 'features': [ 'deprecated' ] },
-           'events', 'postcopy-ram',
+           'events', 'postcopy-ram', 'ldst',
            { 'name': 'x-colo', 'features': [ 'unstable' ] },
            'release-ram',
            { 'name': 'block', 'features': [ 'deprecated' ] },
@@ -609,7 +613,8 @@
 #       {"state": false, "capability": "compress"},
 #       {"state": true, "capability": "events"},
 #       {"state": false, "capability": "postcopy-ram"},
-#       {"state": false, "capability": "x-colo"}
+#       {"state": false, "capability": "x-colo"},
+#       {"state": false, "capability": "ldst"}
 #    ]}
 ##
 { 'command': 'query-migrate-capabilities', 'returns':   ['MigrationCapabilityStatus']}
@@ -2749,3 +2754,122 @@
   'data': { 'job-id': 'str',
             'tag': 'str',
             'devices': ['str'] } }
+
+##
+# @RamInfo:
+#
+# Specifies the memory address segment of the VM.
+#
+# @uuid: indicates the NUMA index of the VM.
+#
+# @hva: indicates the start address of each NUMA segment of a VM.
+#
+# @size: size of each NUMA segment on a VM.
+#
+# Since: 8.2
+##
+{ 'struct': 'RamInfo',
+'data': { 'uuid': 'uint32',
+'hva': 'uint64',
+'size': 'size' },
+'if': { 'any': ['CONFIG_HAM_MIGRATION'] } }
+
+##
+# @VmInfo:
+#
+# Basic VM information.
+#
+# @pid: pid of the VM.
+#
+# @block: specifies the memory address segment of the VM.
+#
+# Since: 8.2
+##
+{ 'struct': 'VmInfo',
+'data': { 'pid': 'int',
+'block': ['RamInfo'] },
+'if': { 'any': ['CONFIG_HAM_MIGRATION'] } }
+
+##
+# @query-ramblock:
+#
+# Returns info of RAM blocks in the VM.
+#
+# Example:
+# -> {"execute": "query-ramblock"}
+# <- {"return": {"block": [{"hva": 281470478319616, "uuid": 0, "size": 1073741824},
+#                          {"hva": 281469402480640, "uuid": 1, "size": 1073741824}],
+#                "pid": 25643}}
+#
+# Since: 8.2
+##
+{ 'command': 'query-ramblock', 'returns': 'VmInfo',
+'if': { 'any': ['CONFIG_HAM_MIGRATION'] } }
+
+##
+# @NumaInfo:
+#
+# NUMA information reported by the remote memory.
+#
+# @numa-id: NUMA id reported by the remote memory.
+#
+# @size: NUMA size reported by the remote memory.
+#
+# Since: 8.2
+##
+{ 'struct': 'NumaInfo',
+'data': { 'numa-id': 'uint32',
+'size': 'size' },
+'if': { 'any': ['CONFIG_HAM_MIGRATION'] } }
+
+##
+# @recv-rmtnuma:
+#
+# Returns info of RAM blocks in the VM.
+#
+# Example:
+# -> { "execute": "recv-rmtnuma",
+#      "arguments": {
+#         "pid": 25643,
+#         'scna': 1,
+#         "block":[{"numa-id": 5, "size": 1073741824},
+#                  {"numa-id": 6, "size": 1073741824}]
+#      }
+#    }
+# <- { "return": { } }
+#
+# Since: 8.2
+##
+{ 'command': 'recv-rmtnuma',
+'data': { 'pid': 'int',
+'scna': 'uint16',
+'block': ['NumaInfo'] },
+'if': { 'any': ['CONFIG_HAM_MIGRATION'] } }
+
+##
+# @rollback-pages:
+#
+# Roll back migrated pages when the migration fails.
+#
+# Example:
+# -> { "execute": "rollback-pages" }
+# <- { "return": { } }
+#
+# Since: 8.2
+##
+{ 'command': 'rollback-pages',
+'if': { 'any': ['CONFIG_HAM_MIGRATION'] } }
+
+##
+# @modify-pgtable:
+#
+# The attribute of the VM memory page table is changed from invalid to cacheable.
+#
+# Example:
+# -> { "execute": "modify-pgtable" }
+# <- { "return": { } }
+#
+# Since: 8.2
+##
+{ 'command': 'modify-pgtable',
+'if': { 'any': ['CONFIG_HAM_MIGRATION'] } }

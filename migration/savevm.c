@@ -70,6 +70,9 @@
 #include "yank_functions.h"
 #include "sysemu/qtest.h"
 #include "options.h"
+#ifdef CONFIG_HAM_MIGRATION
+#include "ham.h"
+#endif
 
 const unsigned int postcopy_ram_discard_version;
 
@@ -2766,6 +2769,11 @@ static int qemu_loadvm_state_setup(QEMUFile *f)
             return ret;
         }
     }
+#ifdef CONFIG_HAM_MIGRATION
+    if (migrate_use_ldst()) {
+        ham_madvise_page();
+    }
+#endif
     return 0;
 }
 

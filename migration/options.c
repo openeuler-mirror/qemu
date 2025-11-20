@@ -227,6 +227,7 @@ Property migration_properties[] = {
     DEFINE_PROP_MIG_CAP("x-switchover-ack",
                         MIGRATION_CAPABILITY_SWITCHOVER_ACK),
     DEFINE_PROP_MIG_CAP("x-dirty-limit", MIGRATION_CAPABILITY_DIRTY_LIMIT),
+    DEFINE_PROP_MIG_CAP("x-ldst", MIGRATION_CAPABILITY_LDST),
     DEFINE_PROP_END_OF_LIST(),
 };
 
@@ -333,6 +334,13 @@ bool migrate_postcopy_ram(void)
     MigrationState *s = migrate_get_current();
 
     return s->capabilities[MIGRATION_CAPABILITY_POSTCOPY_RAM];
+}
+
+bool migrate_use_ldst(void)
+{
+    MigrationState *s = migrate_get_current();
+
+    return s->capabilities[MIGRATION_CAPABILITY_LDST];
 }
 
 bool migrate_rdma_pin_all(void)
@@ -475,7 +483,8 @@ INITIALIZE_MIGRATE_CAPS_SET(check_caps_background_snapshot,
     MIGRATION_CAPABILITY_XBZRLE,
     MIGRATION_CAPABILITY_X_COLO,
     MIGRATION_CAPABILITY_VALIDATE_UUID,
-    MIGRATION_CAPABILITY_ZERO_COPY_SEND);
+    MIGRATION_CAPABILITY_ZERO_COPY_SEND,
+    MIGRATION_CAPABILITY_LDST);
 
 static bool migrate_incoming_started(void)
 {
