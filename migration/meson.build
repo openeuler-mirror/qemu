@@ -31,7 +31,7 @@ system_ss.add(files(
   'threadinfo.c',
 ), gnutls)
 
-if get_option('ham_migration').allowed()
+if have_ham_migration
   system_ss.add(files('ham.c'))
 endif
 

@@ -585,10 +585,14 @@ have_ub = get_option('ub') \
   .require(targetos == 'linux', error_message: 'UB is supported only on Linux') \
   .allowed()
 
-# ham migration
-have_ham_migration = get_option('ham_migration') \
-  .require(targetos == 'linux', error_message: 'ham_migration is supported only on Linux') \
-  .allowed()
+if cpu in ['aarch64']
+  # ham migration
+  have_ham_migration = get_option('ham_migration') \
+    .require(targetos == 'linux', error_message: 'ham_migration is supported only on Linux') \
+    .allowed()
+else
+  have_ham_migration = false
+endif
 
 # vhost
 have_vhost_user = get_option('vhost_user') \

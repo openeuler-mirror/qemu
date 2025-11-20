@@ -2771,7 +2771,8 @@
 { 'struct': 'RamInfo',
 'data': { 'uuid': 'uint32',
 'hva': 'uint64',
-'size': 'size' } }
+'size': 'size' },
+'if': { 'any': ['CONFIG_HAM_MIGRATION'] } }
 
 ##
 # @VmInfo:
@@ -2786,7 +2787,8 @@
 ##
 { 'struct': 'VmInfo',
 'data': { 'pid': 'int',
-'block': ['RamInfo'] } }
+'block': ['RamInfo'] },
+'if': { 'any': ['CONFIG_HAM_MIGRATION'] } }
 
 ##
 # @query-ramblock:
@@ -2801,7 +2803,8 @@
 #
 # Since: 8.2
 ##
-{ 'command': 'query-ramblock', 'returns': 'VmInfo' }
+{ 'command': 'query-ramblock', 'returns': 'VmInfo',
+'if': { 'any': ['CONFIG_HAM_MIGRATION'] } }
 
 ##
 # @NumaInfo:
@@ -2816,7 +2819,8 @@
 ##
 { 'struct': 'NumaInfo',
 'data': { 'numa-id': 'uint32',
-'size': 'size' } }
+'size': 'size' },
+'if': { 'any': ['CONFIG_HAM_MIGRATION'] } }
 
 ##
 # @recv-rmtnuma:
@@ -2839,7 +2843,8 @@
 { 'command': 'recv-rmtnuma',
 'data': { 'pid': 'int',
 'scna': 'uint16',
-'block': ['NumaInfo'] } }
+'block': ['NumaInfo'] },
+'if': { 'any': ['CONFIG_HAM_MIGRATION'] } }
 
 ##
 # @rollback-pages:
@@ -2852,7 +2857,8 @@
 #
 # Since: 8.2
 ##
-{ 'command': 'rollback-pages' }
+{ 'command': 'rollback-pages',
+'if': { 'any': ['CONFIG_HAM_MIGRATION'] } }
 
 ##
 # @modify-pgtable:
@@ -2865,4 +2871,5 @@
 #
 # Since: 8.2
 ##
-{ 'command': 'modify-pgtable' }
+{ 'command': 'modify-pgtable',
+'if': { 'any': ['CONFIG_HAM_MIGRATION'] } }
