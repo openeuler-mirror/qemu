@@ -675,7 +675,16 @@ static void vfio_usi_early_setup(VFIOUBDevice *vdev, Error **errp)
 
 static void vfio_ers_exit(VFIOUBDevice *vdev)
 {
-    /* do nothing now */
+    int i;
+
+    for (i = 0; i < UB_NUM_REGIONS; i++) {
+        VFIOERS *er = &vdev->ers[i];
+
+        vfio_region_exit(&er->region);
+        if (er->region.size) {
+            memory_region_del_subregion(er->mr, er->region.mem);
+        }
+    }
 }
 
 static void vfio_copy_config_space_slice(VFIOUBDevice *vdev, size_t offset, size_t read_size)
