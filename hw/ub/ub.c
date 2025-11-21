@@ -34,6 +34,7 @@
 #include "hw/ub/ub_ubc.h"
 #include "migration/vmstate.h"
 #include "exec/address-spaces.h"
+#include "hw/ub/ubus_instance.h"
 #include "monitor/monitor.h"
 #include "trace.h"
 
@@ -474,6 +475,70 @@ static void do_ub_unregister_device(UBDevice *ub_dev)
     ub_port_info_free(ub_dev);
 }
 
+static uint32_t ub_get_host_bus_instance_eid(UbGuid *guid)
+{
+    uint32_t bus_instance_eid;
+    char guid_str[UB_DEV_GUID_STRING_LENGTH + 1] = {0};
+    int bus_instance_type;
+
+    ub_device_get_str_from_guid(guid, guid_str, UB_DEV_GUID_STRING_LENGTH + 1);
+    bus_instance_eid = sysfs_get_bus_instance_eid_by_guid(guid);
+    if (bus_instance_eid == UINT32_MAX) {
+        qemu_log("sysfs failed to get bus instance eid by guid %s\n", guid_str);
+        return UINT32_MAX;
+    }
+
+    bus_instance_type = sysfs_get_bus_instance_type_by_eid(bus_instance_eid);
+    if (!UBUS_INSTANCE_IS_DYNAMIC(bus_instance_type)) {
+        qemu_log("bus instance(guid: %s) not dynamic bus instance.\n", guid_str);
+        return UINT32_MAX;
+    }
+
+    return bus_instance_eid;
+}
+
+/* current this just for vfio ub dev host bus instance verify */
+static int ub_dev_bus_instance_verify(UBDevice *dev, Error **errp)
+{
+    BusControllerState *ubc = QLIST_FIRST(&ub_bus_controllers);
+    BusControllerDev *ub_bus_controller_dev = NULL;
+    UBDevice *ubc_dev = NULL;
+    uint32_t bus_instance_eid;
+    char guid_str[UB_DEV_GUID_STRING_LENGTH + 1] = {0};
+
+    if (!ubc) {
+        qemu_log("failed to get ub bus controller, bus instance verify later.\n");
+        return 0;
+    }
+
+    ub_bus_controller_dev = ubc->ubc_dev;
+
+    if (!ub_bus_controller_dev) {
+        qemu_log("ub controller dev not realized, bus instance verify later.\n");
+        return 0;
+    }
+
+    ubc_dev = &ub_bus_controller_dev->parent;
+
+    if (ubc_dev->bus_instance_eid == UINT32_MAX) {
+        bus_instance_eid = ub_get_host_bus_instance_eid(&ub_bus_controller_dev->bus_instance_guid);
+        if (bus_instance_eid == UINT32_MAX) {
+            error_setg(errp, "failed to get bus instance eid.\n");
+            return -1;
+        }
+        ubc_dev->bus_instance_eid = bus_instance_eid;
+    }
+
+    if (ubc_dev->bus_instance_eid != dev->bus_instance_eid) {
+        ub_device_get_str_from_guid(&dev->guid, guid_str, UB_DEV_GUID_STRING_LENGTH + 1);
+        error_setg(errp, "ub dev(guid: %s) bus instance eid verify failed: expect 0x%x, actual 0x%x\n",
+                   guid_str, ubc_dev->bus_instance_eid, dev->bus_instance_eid);
+        return -1;
+    }
+
+    return 0;
+}
+
 static void ub_qdev_realize(DeviceState *qdev, Error **errp)
 {
     UBDevice *ub_dev = (UBDevice *)qdev;
@@ -490,6 +555,7 @@ static void ub_qdev_realize(DeviceState *qdev, Error **errp)
         return;
     }
 
+    ub_dev->bus_instance_verify = ub_dev_bus_instance_verify;
     if (uc->realize) {
         uc->realize(ub_dev, &local_err);
         if (local_err) {
@@ -623,16 +689,6 @@ BusControllerState *container_of_ubbus(UBBus *bus)
     }
 
     return NULL;
-}
-
-AddressSpace *ub_device_iommu_address_space(UBDevice *dev)
-{
-    UBBus *bus = ub_get_bus(dev);
-
-    if (bus->iommu_ops && bus->iommu_ops->get_address_space) {
-        return bus->iommu_ops->get_address_space(bus, bus->iommu_opaque, dev->eid);
-    }
-    return &address_space_memory;
 }
 
 UBDevice *ub_find_device_by_id(const char *id)
@@ -908,12 +964,111 @@ static int ub_dev_init_port_info_by_cmd(Error **errp)
     return 0;
 }
 
+bool ub_guid_initialized(UbGuid *guid)
+{
+    if (!guid->vendor && !guid->type && !guid->version &&
+        !guid->device_id && !guid->rsv && !guid->seq_num) {
+        return false;
+    } else {
+        return true;
+    }
+}
+
+AddressSpace *ub_device_iommu_address_space(UBDevice *dev)
+{
+    UBBus *bus = ub_get_bus(dev);
+
+    if (bus->iommu_ops && bus->iommu_ops->get_address_space) {
+        return bus->iommu_ops->get_address_space(bus, bus->iommu_opaque, dev->eid);
+    }
+    return &address_space_memory;
+}
+
+int ub_device_set_iommu_device(UBDevice *dev, HostIOMMUDevice *hoid, Error **errp)
+{
+    UBBus *bus = ub_get_bus(dev);
+
+    if (bus->iommu_ops && bus->iommu_ops->set_iommu_device) {
+        return bus->iommu_ops->set_iommu_device(bus, bus->iommu_opaque, dev->eid, hoid, errp);
+    }
+
+    return 0;
+}
+
+void ub_device_unset_iommu_device(UBDevice *dev)
+{
+    UBBus *bus = ub_get_bus(dev);
+
+    if (bus->iommu_ops && bus->iommu_ops->unset_iommu_device) {
+        bus->iommu_ops->unset_iommu_device(bus, bus->iommu_opaque, dev->eid);
+    }
+}
+
+bool ub_device_check_ummu_is_nested(UBDevice *dev)
+{
+    UBBus *bus = ub_get_bus(dev);
+
+    if (bus->iommu_ops && bus->iommu_ops->ummu_is_nested) {
+        return bus->iommu_ops->ummu_is_nested(bus->iommu_opaque);
+    }
+
+    return false;
+}
+
+void ub_register_ers(UBDevice *dev, uint8_t region_num, MemoryRegion *memory)
+{
+    UBIORegion *r;
+    UbCfg1Basic *cfg1_basic_wmask;
+    uint64_t size = memory_region_size(memory);
+    uint64_t emulated_offset;
+    uint64_t wmask;
+
+    if (region_num >= UB_NUM_REGIONS) {
+        qemu_log("invalid region_num %u\n", region_num);
+        return;
+    }
+    if (!is_power_of_2(size)) {
+        qemu_log("region %u is_power_of_2 check failed! size 0x%"PRIx64"\n",
+                 region_num, size);
+        return;
+    }
+
+    r = &dev->io_regions[region_num];
+    r->addr = UINT64_MAX;
+    r->size = size;
+    r->memory = memory;
+    r->address_space = ub_get_bus(dev)->address_space_mem;
+    wmask = ~(size - 1);
+    /* Mark that the ers is RW */
+    emulated_offset = ub_cfg_offset_to_emulated_offset(UB_CFG1_BASIC_START, true);
+    cfg1_basic_wmask = (UbCfg1Basic *)(dev->wmask + emulated_offset);
+    ub_set_quad((uint8_t *)&cfg1_basic_wmask->ers_ubba[region_num], wmask);
+}
+
 uint32_t ub_interrupt_id(UBDevice *udev)
 {
     uint64_t offset = ub_cfg_offset_to_emulated_offset(UB_CFG1_CAP4_INT_TYPE2, true);
     UbCfg1IntType2Cap *cfg1_int_cap = (UbCfg1IntType2Cap *)(udev->config + offset);
 
     return cfg1_int_cap->interrupt_id;
+}
+
+static int ub_bus_instance_verify(Error **errp)
+{
+    BusControllerState *ubc = QLIST_FIRST(&ub_bus_controllers);
+    UBDevice *dev = NULL;
+
+    QLIST_FOREACH(dev, &ubc->bus->devices, node) {
+        if (dev->dev_type == UB_TYPE_IBUS_CONTROLLER ||
+            dev->bus_instance_eid == UINT32_MAX) {
+            continue;
+        }
+
+        if (ub_dev_bus_instance_verify(dev, errp)) {
+            return -1;
+        }
+    }
+    return 0;
 }
 
 /*
@@ -923,6 +1078,10 @@ uint32_t ub_interrupt_id(UBDevice *udev)
  * */
 int ub_dev_finally_setup(VirtMachineState *vms, Error **errp)
 {
+    if (ub_bus_instance_verify(errp)) {
+        return -1;
+    }
+
     /*
      * Initialize the port information of all UB devices according
      * to the input information after all UB devices are constructed.
@@ -956,4 +1115,42 @@ uint32_t ub_dev_get_ueid(UBDevice *udev)
 {
     uint64_t offset = ub_cfg_offset_to_emulated_offset(UB_CFG0_DEV_UEID_OFFSET, true);
     return *(uint32_t *)(udev->config + offset);
+}
+
+enum UbDeviceType ub_dev_get_type(UBDevice *udev)
+{
+    uint64_t offset;
+    UbCfg1Basic *cfg1;
+    int baseCode;
+
+    if (udev == NULL) {
+        return UB_TYPE_UNINIT;
+    }
+
+    offset = ub_cfg_offset_to_emulated_offset(UB_CFG1_BASIC_START, true);
+    cfg1 = (UbCfg1Basic *)(udev->config + offset);
+    baseCode = cfg1->class_code & UB_GUID_BASE_CODE_MASK;
+
+    switch (udev->guid.type) {
+    case UB_GUID_TYPE_BUS_INSTANCE:
+        return UB_TYPE_BUS_INSTANCE;
+    case UB_GUID_TYPE_BUS_CONTROLLER:
+        if (baseCode == UB_GUID_BASE_INSTANCE) {
+            return UB_TYPE_UNINIT;
+        } else {
+            return UB_TYPE_DEVICE;
+        }
+    case UB_GUID_TYPE_IBUS_CONTROLLER:
+        if (baseCode == UB_GUID_BASE_INSTANCE) {
+            return UB_TYPE_IBUS_CONTROLLER;
+        } else {
+            return UB_TYPE_IDEVICE;
+        }
+    case UB_GUID_TYPE_SWITCH:
+        return UB_TYPE_SWITCH;
+    case UB_GUID_TYPE_ISWITCH:
+        return UB_TYPE_ISWITCH;
+    default:
+        return UB_TYPE_UNINIT;
+    }
 }

@@ -53,6 +53,7 @@ typedef struct __attribute__ ((__packed__)) UbGuid {
     unsigned int device_id : 16;
     unsigned int vendor : 16;
 } UbGuid;
+bool ub_guid_initialized(UbGuid *guid);
 #define UB_DEV_GUID_STRING_LENGTH   37
 void ub_device_get_str_from_guid(UbGuid *guid, char *guid_str, uint32_t str_len);
 bool ub_device_get_guid_from_str(UbGuid *guid, char *guid_str);
@@ -141,6 +142,9 @@ typedef void UBConfigReadFunc(UBDevice *dev, uint64_t offset,
                               uint32_t *val, uint32_t dw_mask);
 typedef void UBConfigWriteFunc(UBDevice *dev, uint64_t offset,
                                uint32_t *val, uint32_t dw_mask);
+typedef int (*USIVectorUseNotifier)(UBDevice *udev, uint16_t vector, USIMessage msg);
+typedef void (*USIVectorReleaseNotifier)(UBDevice *udev, uint16_t vector);
+typedef void (*USIVectorPollNotifier)(UBDevice *dev, uint16_t vector_start, uint16_t vector_end);
 
 struct UBDevice {
     DeviceState qdev;
@@ -163,6 +167,22 @@ struct UBDevice {
     UBConfigReadFunc *config_read;
     UBConfigWriteFunc *config_write;
     int (* bus_instance_verify)(UBDevice *dev, Error **errp);
+
+    /* usi entries */
+    uint16_t usi_entries_nr;
+    uint16_t usi_addr_table_nr;
+    /* Space to store usi vec table & addr table & pending bit array */
+    uint8_t *usi_vec_table;
+    uint8_t *usi_addr_table;
+    uint8_t *usi_pend_table;
+    /* MemoryRegion container for usi vec table & addr table & pending bit array */
+    MemoryRegion usi_vec_table_mmio;
+    MemoryRegion usi_addr_table_mmio;
+    MemoryRegion usi_pend_table_mmio;
+    /* USI notifiers */
+    USIVectorUseNotifier usi_vector_use_notifier;
+    USIVectorReleaseNotifier usi_vector_release_notifier;
+    USIVectorPollNotifier usi_vector_poll_notifier;
 
     QLIST_ENTRY(UBDevice) node;
 };
@@ -253,9 +273,15 @@ static inline uint64_t ub_config_size(void)
     return UB_DEV_CONFIG_SPACE_TOTAL_SIZE;
 }
 AddressSpace *ub_device_iommu_address_space(UBDevice *dev);
+int ub_device_set_iommu_device(UBDevice *dev, HostIOMMUDevice *hoid, Error **errp);
+void ub_device_unset_iommu_device(UBDevice *dev);
+bool ub_device_check_ummu_is_nested(UBDevice *dev);
 UBDevice *ub_find_device_by_id(const char *id);
+void ub_register_ers(UBDevice *dev, uint8_t region_num,
+                      MemoryRegion *memory);
 uint32_t ub_interrupt_id(UBDevice *udev);
 void ub_setup_iommu(UBBus *bus, const UBIOMMUOps *ops, void *opaque);
 uint32_t ub_dev_get_token_id(UBDevice *udev);
 uint32_t ub_dev_get_ueid(UBDevice *udev);
+enum UbDeviceType ub_dev_get_type(UBDevice *udev);
 #endif
