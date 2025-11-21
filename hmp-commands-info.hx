@@ -880,6 +880,54 @@ SRST
     Show intel SGX information.
 ERST
 
+#if defined(CONFIG_UB)
+    {
+        .name       = "ub",
+        .args_type  = "id:s?",
+        .params     = "[id]",
+        .help       = "show UB info",
+        .cmd        = hmp_info_ub,
+    },
+#endif
+
+SRST
+  ``info ub``
+    Show UB information.
+
+ERST
+
+#if defined(CONFIG_UB)
+    {
+        .name       = "ub-config",
+        .args_type  = "id:s,offset:l,len:l",
+        .params     = "id offset len",
+        .help       = "show UB config space information",
+        .cmd        = hmp_info_ub_config,
+    },
+#endif
+
+SRST
+  ``info ub-config`` *name*
+    Show UB config space information.
+
+ERST
+
+#if defined(CONFIG_UB)
+    {
+        .name       = "ub-ers",
+        .args_type  = "id:s,index:l,offset:l,len:l",
+        .params     = "id index offset len",
+        .help       = "show UB Function Entity Resource Space information",
+        .cmd        = hmp_info_ub_ers,
+    },
+#endif
+
+SRST
+  ``info ub-fers`` *name*
+    Show UB Function Entity Resource Space information.
+
+ERST
+
 #if defined(CONFIG_MOS6522)
     {
         .name         = "via",

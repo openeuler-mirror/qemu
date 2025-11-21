@@ -27,8 +27,11 @@
 #include "hw/ub/ub_config.h"
 #include "hw/ub/ub_bus.h"
 #include "hw/ub/ub_ubc.h"
+#include "hw/ub/ub_ummu.h"
 #include "hw/ub/ub_usi.h"
 #include "hw/ub/ub_acpi.h"
+#include "hw/vfio/ub.h"
+#include "ub_ummu_internal.h"
 #include "qemu/log.h"
 #include "qapi/error.h"
 #include "hw/ub/ub_bus.h"
@@ -1317,4 +1320,529 @@ enum UbDeviceType ub_dev_get_type(UBDevice *udev)
     default:
         return UB_TYPE_UNINIT;
     }
+}
+
+int ub_dev_dump_config(const char *id, uint64_t offset, uint64_t len,
+                       char *buff, int buff_size)
+{
+    UBDevice *dev = ub_find_device_by_id(id);
+    uint64_t emulated_offset;
+    uint64_t origin_len = len;
+
+    if (!dev) {
+        qemu_log("UB device not found, id %s\n", id);
+        return -1;
+    }
+
+    emulated_offset = ub_cfg_offset_to_emulated_offset(offset, false);
+    if (emulated_offset == UINT64_MAX) {
+        qemu_log("ub dev dump config out of emulated cfg range, "
+                 "offset is 0x%lx\n", offset);
+        return -1;
+    }
+
+    if (emulated_offset + len > ub_emulated_config_size()) {
+        len = ub_emulated_config_size() - emulated_offset;
+        qemu_log("ub dev dump config len out of eulated cfg range, "
+                 "adjust len from 0x%lx to 0x%lx\n", origin_len, len);
+    }
+
+    return ub_hexdump(dev->config, emulated_offset, len, buff, buff_size);
+}
+
+void ub_dev_dump_ers(const char *id, uint8_t idx, uint64_t offset, uint64_t len,
+                      char *buff, int buff_size)
+{
+    UBDevice *udev = ub_find_device_by_id(id);
+    VFIOUBDevice *vdev = NULL;
+    VFIOERS *ers = NULL;
+    VFIORegion *region = NULL;
+    uint64_t emulated_offset = ub_cfg_offset_to_emulated_offset(UB_CFG1_BASIC_START, true);
+    UbCfg1Basic *cfg1 = NULL;
+    int i;
+    int l = 0;
+    uint64_t len_printed = 0;
+    uint64_t len_remain = 0;
+
+    if (!udev) {
+        qemu_log("do not have ub device %s\n", id);
+        return;
+    }
+
+    cfg1 = (UbCfg1Basic *)(udev->config + emulated_offset);
+    l += snprintf(buff + l, buff_size - l, "io_region[%u] size 0x%lx addr 0x%lx\n",
+                  idx, udev->io_regions[idx].size, udev->io_regions[idx].addr);
+
+    vdev = VFIO_UB_SAFE(udev);
+    if (!vdev) {
+        l += snprintf(buff + l, buff_size - l, "only support vfio-ub dev\n");
+        return;
+    }
+    ers = &vdev->ers[idx];
+    region = &ers->region;
+    l += snprintf(buff + l, buff_size - l, "ers[%u] size 0x%zx gpa 0x%lx\n",
+                  idx, ers->size, cfg1->ers_ubba[idx]);
+    l += snprintf(buff + l, buff_size - l, "ers[%u] region->nr_mmaps %u\n",
+                  idx, region->nr_mmaps);
+    for (i = 0; i < region->nr_mmaps; i++) {
+        l += snprintf(buff + l, buff_size - l,
+                      "mmaps[%d]:\n"
+                      " +-- mmap %p size 0x%lx offset 0x%lx\n"
+                      " +-- memRegion:\n"
+                      "       +--name %s addr 0x%lx align 0x%lx\n"
+                      "       +--bool: ram %u readonly %u\n",
+                      i, region->mmaps[i].mmap, region->mmaps[i].size,
+                      region->mmaps[i].offset, region->mmaps[i].mem.name,
+                      region->mmaps[i].mem.addr, region->mmaps[i].mem.align,
+                      region->mmaps[i].mem.ram, region->mmaps[i].mem.readonly);
+        if (region->mmaps[i].offset) {
+            if (offset < region->mmaps[i].offset) {
+                l += snprintf(buff + l, buff_size - l,
+                              "warn:The query area falls within the simulation area,\n"
+                              "querying the simulation area is not supported at present.\n"
+                              "please adjust the offset to the queryable area.\n");
+                return;
+            } else {
+                offset -= region->mmaps[i].offset;
+            }
+        }
+        len_remain = len - len_printed;
+        if (len_remain > region->mmaps[i].size) {
+            len_remain = region->mmaps[i].size;
+        }
+        ub_hexdump(region->mmaps[i].mmap, offset, len_remain,
+                   buff + l, buff_size - l);
+        len_printed += region->mmaps[i].size;
+    }
+}
+
+static void ub_dev_get_usi_info(Monitor *mon, UBDevice *udev)
+{
+    int i;
+    /* usi enable info */
+    monitor_printf(mon, "│%-24s│%-25u%-20u│\n",
+                  "USI: enable masked", usi_enabled(udev), usi_ue_is_masked(udev));
+    for (i = 0; i < udev->usi_entries_nr; i++) {
+        USIMessage msg = usi_get_message(udev, i);
+        monitor_printf(mon, "│%-4s%d%-19s│0x%-20lx%7u%8u%8u│\n",
+                       "vect", i, ":addr data pend msk",
+                       msg.address, msg.data,
+                       usi_is_pending(udev, i), usi_is_masked(udev, i));
+    }
+    /* USI table info */
+    monitor_printf(mon, "│%-24s│0x%-23lx%-20u│\n", "USI: vector_table nr",
+                  udev->usi_vec_table_mmio.addr, udev->usi_entries_nr);
+    monitor_printf(mon, "│%-24s│0x%-23lx%-20u│\n", "USI: addr_table nr",
+                  udev->usi_addr_table_mmio.addr, udev->usi_addr_table_nr);
+    monitor_printf(mon, "│%-24s│0x%-43lx│\n", "USI: pend_table",
+                  udev->usi_pend_table_mmio.addr);
+
+    /* USI notify info */
+    monitor_printf(mon, "│%-24s│%-45p│\n", "USI: UseNotify",
+                  udev->usi_vector_use_notifier);
+    monitor_printf(mon, "│%-24s│%-45p│\n", "USI: ReleaseNotify",
+                  udev->usi_vector_release_notifier);
+    monitor_printf(mon, "│%-24s│%-45p│\n", "USI: PollNotify",
+                  udev->usi_vector_poll_notifier);
+    return;
+}
+
+static void ub_dev_get_cfg0_info(Monitor *mon, UBDevice *udev)
+{
+    uint64_t offset = ub_cfg_offset_to_emulated_offset(UB_CFG0_BASIC_START, true);
+    UbCfg0Basic *cfg0 = (UbCfg0Basic *)(udev->config + offset);
+    ConfigNetAddrInfo *cna;
+    char cap_bitmap[CAP_BITMAP_LEN + 1] = {0};
+
+    monitor_printf(mon, "│%-24s│%-45u│\n", "cfg0:total ports", cfg0->total_num_of_port);
+    monitor_printf(mon, "│%-24s│%-45u│\n", "cfg0:total UEs", cfg0->total_num_of_ue);
+    if (bitmap_scnprintf(cap_bitmap, sizeof(cap_bitmap),
+        (unsigned long *)cfg0->cap_bitmap, sizeof(cfg0->cap_bitmap)) <= 0) {
+        snprintf(cap_bitmap, sizeof(cap_bitmap), "failed to get bitmap");
+    }
+    monitor_printf(mon, "│%-24s│0x%-43s│\n", "cfg0:cap_bitmap", cap_bitmap);
+    monitor_printf(mon, "│%-24s│%-45u│\n", "cfg0:feat.entity",
+                  cfg0->support_feature.bits.entity_available);
+    monitor_printf(mon, "│%-24s│%-45u│\n", "cfg0:feat.mtu",
+                  cfg0->support_feature.bits.mtu_supported);
+    monitor_printf(mon, "│%-24s│%-45u│\n", "cfg0:feat.route_table",
+                  cfg0->support_feature.bits.route_table_supported);
+    monitor_printf(mon, "│%-24s│%-45u│\n", "cfg0:feat.upi",
+                  cfg0->support_feature.bits.upi_supported);
+    monitor_printf(mon, "│%-24s│%-45u│\n", "cfg0:feat.broker",
+                  cfg0->support_feature.bits.broker_supported);
+    monitor_printf(mon, "│%-24s│%-45u│\n", "cfg0:feat.switch",
+                  cfg0->support_feature.bits.switch_supported);
+    monitor_printf(mon, "│%-24s│%-45u│\n", "config0:feat.rsv",
+                  cfg0->support_feature.bits.rsv);
+    monitor_printf(mon, "│%-24s│%-45u│\n", "cfg0:feat.cc",
+                  cfg0->support_feature.bits.cc_supported);
+    monitor_printf(mon, "│%-24s│0x%-8x0x%-8x0x%-8x0x%-13x│\n",
+                  "cfg0:eid", cfg0->eid.dw0, cfg0->eid.dw1,
+                  cfg0->eid.dw2, cfg0->eid.dw3);
+    monitor_printf(mon, "│%-24s│0x%-8x0x%-8x0x%-8x0x%-13x│\n",
+                  "cfg0:fm_eid", cfg0->fm_eid.dw0, cfg0->fm_eid.dw1,
+                  cfg0->fm_eid.dw2, cfg0->fm_eid.dw3);
+    offset = ub_cfg_offset_to_emulated_offset(UB_CFG0_BASIC_NA_INFO_START, true);
+    cna = (ConfigNetAddrInfo *)(udev->config + offset);
+    monitor_printf(mon, "│%-24s│0x%-23x%-20u│\n", "cfg0:net_addr.cna",
+                  cna->primary_cna, cna->primary_cna);
+    monitor_printf(mon, "│%-24s│0x%-23x%-20u│\n", "cfg0:upi", cfg0->upi, cfg0->upi);
+    monitor_printf(mon, "│%-24s│%-45u│\n", "config0:module_id", cfg0->module_id);
+    monitor_printf(mon, "│%-24s│%-45u│\n", "config0:vendor_id", cfg0->vendor_id);
+    monitor_printf(mon, "│%-24s│%-45u│\n", "cfg0:dev_rst", cfg0->dev_rst);
+    monitor_printf(mon, "│%-24s│%-45u│\n", "cfg0:mtu_cfg", cfg0->mtu_cfg);
+    monitor_printf(mon, "│%-24s│%-45u│\n", "cfg0:cc_en", cfg0->cc_en);
+    monitor_printf(mon, "│%-24s│%-45u│\n", "cfg0:th_en", cfg0->th_en);
+    monitor_printf(mon, "│%-24s│0x%-23x%-20u│\n", "cfg0:fm_cna",
+                  cfg0->fm_cna, cfg0->fm_cna);
+    monitor_printf(mon, "│%-24s│0x%-23lx%-20lu│\n", "cfg0:ueid_low",
+                  cfg0->ueid_low, cfg0->ueid_low);
+    monitor_printf(mon, "│%-24s│0x%-23lx%-20lu│\n", "cfg0:ueid_high",
+                  cfg0->ueid_high, cfg0->ueid_high);
+    return;
+}
+
+static void ub_dev_get_cfg1_int_type2_capinfo(Monitor *mon, UBDevice *udev)
+{
+    uint64_t emu_offset = ub_cfg_offset_to_emulated_offset(UB_CFG1_CAP4_INT_TYPE2, true);
+    UbCfg1IntType2Cap *cap = (UbCfg1IntType2Cap *)(udev->config + emu_offset);
+
+    monitor_printf(mon, "│%-24s│vec_table_start_addr 0x%-22lx│\n", "cfg1:int type2 CAP",
+                  cap->vec_table_start_addr);
+    monitor_printf(mon, "│%-24s│add_table_start_addr 0x%-22lx│\n", "cfg1:int type2 CAP",
+                  cap->add_table_start_addr);
+    monitor_printf(mon, "│%-24s│pend_table_start_addr 0x%-21lx│\n", "cfg1:int type2 CAP",
+                  cap->pend_table_start_addr);
+    monitor_printf(mon, "│%-24s│int_id 0x%-6xint_mask 0x%-3xint_enable 0x%-3x│\n",
+                  "cfg1:int type2 CAP", cap->interrupt_id, cap->interrupt_mask, cap->interrupt_enable);
+    return;
+}
+
+static void ub_dev_get_cfg1_info(Monitor *mon, UBDevice *udev)
+{
+    uint64_t offset = ub_cfg_offset_to_emulated_offset(UB_CFG1_BASIC_START, true);
+    UbCfg1Basic *cfg1 = (UbCfg1Basic *)(udev->config + offset);
+    char cap_bitmap[CAP_BITMAP_LEN + 1] = {0};
+    int i;
+
+    if (bitmap_scnprintf(cap_bitmap, sizeof(cap_bitmap),
+        (unsigned long *)cfg1->cap_bitmap, sizeof(cfg1->cap_bitmap)) <= 0) {
+        snprintf(cap_bitmap, sizeof(cap_bitmap), "failed to get bitmap");
+    }
+    monitor_printf(mon, "│%-24s│0x%-43s│\n", "cfg1:cap_bitmap", cap_bitmap);
+    monitor_printf(mon, "│%-24s│%-45u│\n", "cfg1:feat.mgs",
+                  cfg1->support_feature.bits.mgs);
+    monitor_printf(mon, "│%-24s│%-45u│\n", "cfg1:feat.ubbas",
+                  cfg1->support_feature.bits.ubbas);
+    monitor_printf(mon, "│%-24s│%-45u│\n", "cfg1:feat.ers0s",
+                  cfg1->support_feature.bits.ers0s);
+    monitor_printf(mon, "│%-24s│%-45u│\n", "cfg1:feat.ers1s",
+                  cfg1->support_feature.bits.ers1s);
+    monitor_printf(mon, "│%-24s│%-45u│\n", "cfg1:feat.ers2s",
+                  cfg1->support_feature.bits.ers2s);
+    monitor_printf(mon, "│%-24s│%-45u│\n", "config1:feat.cdmas",
+                  cfg1->support_feature.bits.cdmas);
+    monitor_printf(mon, "│%-24s│%-45u│\n", "config1:feat.matt_juris",
+                  cfg1->support_feature.bits.matt_juris);
+    for (i = 0; i < UB_NUM_REGIONS; i++) {
+        monitor_printf(mon, "│%-9s%-2usz sa ba(hex)│%-11x%-17lx%-17lx│\n",
+                      "cfg1:ERS", i, cfg1->ers_space_size[i],
+                      cfg1->ers_start_addr[i], cfg1->ers_ubba[i]);
+    }
+    monitor_printf(mon, "│%-24s│%-20u%-25u│\n", "cfg1:elr elr_done",
+                  cfg1->elr, cfg1->elr_done);
+    monitor_printf(mon, "│%-24s│%-20u%-25u│\n", "cfg1:mig ctrl stat",
+                  cfg1->mig_ctrl, cfg1->mig_status);
+    monitor_printf(mon, "│%-24s│%-45u│\n", "cfg1:tpid u num",
+                  cfg1->tpid_num);
+    monitor_printf(mon, "│%-24s│%-45u│\n", "cfg1:ctp_tb_bypass",
+                  cfg1->ctp_tb_bypass);
+    monitor_printf(mon, "│%-24s│%-45u│\n", "cfg1:crystal_dma_en",
+                  cfg1->crystal_dma_en);
+    monitor_printf(mon, "│%-24s│0x%-21lx0x%-20x│\n", "cfg1:eid_upi tab ten",
+                  cfg1->eid_upi_tab, cfg1->eid_upi_ten);
+    monitor_printf(mon, "│%-24s│%-45u│\n", "cfg1:bus_access_en",
+                  cfg1->bus_access_en);
+    monitor_printf(mon, "│%-24s│%-45u│\n", "cfg1:dev_rs_access_en",
+                  cfg1->dev_rs_access_en);
+    monitor_printf(mon, "│%-24s│0x%-23x%-20u│\n", "cfg1:dev_token_id",
+                  cfg1->dev_token_id, cfg1->dev_token_id);
+
+    ub_dev_get_cfg1_int_type2_capinfo(mon, udev);
+
+    return;
+}
+static void ub_dev_get_bus_info(Monitor *mon, UBDevice *udev)
+{
+    BusControllerState *ubcs = container_of_ubbus(UB_BUS(udev->qdev.parent_bus));
+    UBDevice *tmp;
+
+    monitor_printf(mon, "│%-24s│%-45s│\n",
+                  "parent_bus name", udev->qdev.parent_bus->name);
+    monitor_printf(mon, "│%-24s│%-45d│\n",
+                  "parent_bus max_index", udev->qdev.parent_bus->max_index);
+    monitor_printf(mon, "│%-24s│%-45u│\n",
+                  "parent_bus realized", udev->qdev.parent_bus->realized);
+    monitor_printf(mon, "│%-24s│%-45u│\n",
+                  "parent_bus full", udev->qdev.parent_bus->full);
+    monitor_printf(mon, "│%-24s│%-45u│\n", "parent_bus num_children",
+                  udev->qdev.parent_bus->num_children);
+    QLIST_FOREACH(tmp, &ubcs->bus->devices, node) {
+        monitor_printf(mon, "│%-24s│name %-10s id %-16seid%7u│\n",
+                      "      device", tmp->name, tmp->qdev.id, tmp->eid);
+    }
+
+    monitor_printf(mon, "│%-24s│%-45s│\n",
+                  "parent_bus p id", udev->qdev.parent_bus->parent->id);
+    monitor_printf(mon, "│%-24s│%-45s│\n", "parent_bus p canon_path",
+                  udev->qdev.parent_bus->parent->canonical_path);
+    return;
+}
+
+static void ub_dev_get_ubc_info(Monitor *mon, UBDevice *udev)
+{
+    BusControllerState *ubcs = container_of_ubbus(UB_BUS(udev->qdev.parent_bus));
+    VirtMachineState *vms = VIRT_MACHINE(qdev_get_machine());
+
+    monitor_printf(mon, "│%-24s│%-45u│\n", "cluster_mode", vms->ub_cluster_mode);
+    monitor_printf(mon, "│%-24s│%-45u│\n", "fm_deployment", vms->fm_deployment);
+    monitor_printf(mon, "│%-24s│%-45u│\n", "mmio_size", ubcs->mmio_size);
+    monitor_printf(mon, "│%-24s│%-45u│\n", "mig_enabled", ubcs->mig_enabled);
+    monitor_printf(mon, "│%-24s│%-45u│\n", "msgq_reg_size", ubcs->msgq_reg_size);
+    monitor_printf(mon, "│%-24s│0x%-43lx│\n", "msgq_reg", (uint64_t)ubcs->msgq_reg);
+    monitor_printf(mon, "│%-24s│%-45s│\n", "MR msgq_reg_mem name", ubcs->msgq_reg_mem.name);
+    monitor_printf(mon, "│%-24s│%-45s│\n", "MR io_mmio name", ubcs->io_mmio.name);
+    monitor_printf(mon, "│%-24s│gpa 0x%-10lx hva 0x%-22lx│\n",
+                  "hi_msgq_info sq addr", ubcs->msgq.sq_base_addr_gpa,
+                  ubcs->msgq.sq_base_addr_hva);
+    monitor_printf(mon, "│%-24s│gpa 0x%-10lx hva 0x%-22lx│\n",
+                  "hi_msgq_info cq addr", ubcs->msgq.cq_base_addr_gpa,
+                  ubcs->msgq.cq_base_addr_hva);
+    monitor_printf(mon, "│%-24s│gpa 0x%-10lx hva 0x%-22lx│\n",
+                  "hi_msgq_info rq addr", ubcs->msgq.rq_base_addr_gpa,
+                  ubcs->msgq.rq_base_addr_hva);
+    return;
+}
+
+static void ub_dev_get_ummu_info(Monitor *mon, UBDevice *udev)
+{
+    unsigned int bus_num;
+    UMMUState *ummu = NULL;
+    UMMUDevice *ummu_dev = NULL;
+    UMMUKVTblEntry *entry = NULL;
+    UMMUTransCfg *cfg = NULL;
+    int i;
+
+    if (1 == sscanf(udev->qdev.parent_bus->name, "ubus.%u", &bus_num)) {
+        ummu = ummu_find_by_bus_num(bus_num);
+    }
+
+    if (!ummu) {
+        return;
+    }
+    monitor_printf(mon, "│%-24s│%-45s│\n", "ummu id ", ummu->dev.parent_obj.id);
+    monitor_printf(mon, "│%-24s│0x%-43lx│\n", " ummu_reg_size ", ummu->ummu_reg_size);
+    for (i = 0; i < ARRAY_SIZE(ummu->mcmdqs); i++) {
+        monitor_printf(mon, "│%-21s%-3u│gpa 0x%-39lx│\n",
+                      " que_info cmdq base", i, ummu->mcmdqs[i].queue.base);
+    }
+    monitor_printf(mon, "│%-22s%2u│gpa 0x%-39lx│\n",
+                  " que_info eventq base", i, ummu->eventq.queue.base);
+    monitor_printf(mon, "│%-24s│%-8x %-8x %-8x %-8x %-8x │\n",
+                  "ummu CAP[0-4]", ummu->cap[0], ummu->cap[1],
+                  ummu->cap[2], ummu->cap[3], ummu->cap[4]);
+    monitor_printf(mon, "│%-24s│%-8x %-18x %-17x│\n",
+                  "ummu CAP[5-6] ctrl0_ack",
+                  ummu->cap[5], ummu->cap[6], ummu->ctrl0_ack);
+    monitor_printf(mon, "│%-24s│%-8x %-8x %-8x %-18x│\n",
+                  "ummu CTRL[0-3]", ummu->ctrl[0], ummu->ctrl[1],
+                  ummu->ctrl[2], ummu->ctrl[3]);
+
+    monitor_printf(mon, "│%-24s│0x%-20lx 0x%-20lx│\n",
+                  "tect_base_addr", ummu->tect_base,
+                  (uint64_t)TECT_BASE_ADDR(ummu->tect_base));
+    monitor_printf(mon, "│%-24s│0x%-23x%-20u│\n", "tect_base_cfg tag_num",
+                  ummu->tect_base_cfg, ummu->tecte_tag_num);
+    for (i = 0; i < ummu->tecte_tag_num; i++) {
+        monitor_printf(mon, "│%-16s%2u%-6s│0x%-43x│\n",
+                      " tecte_tag_cahe[", i, "]", ummu->tecte_tag_cache[i]);
+    }
+    monitor_printf(mon, "│%-24s│%-22d%-23d│\n", "usi_virq[EVETQ,GERROR]",
+                  ummu->usi_virq[UMMU_USI_VECTOR_EVETQ],
+                  ummu->usi_virq[UMMU_USI_VECTOR_GERROR]);
+    QLIST_FOREACH(entry, &ummu->kvtbl, list) {
+        monitor_printf(mon, "│%-24s│eid 0x%-17xtag %-18u│\n",
+                      "kvtbl: dst_eid tecte_tag", entry->dst_eid, entry->tecte_tag);
+    }
+    monitor_printf(mon, "│%-24s│fd %-8downed %-4uusers %-6uref %-8u│\n",
+                  "UMMUViommu->iommufd", ummu->viommu->iommufd->fd,
+                  ummu->viommu->iommufd ? ummu->viommu->iommufd->owned : 0,
+                  ummu->viommu->iommufd ? ummu->viommu->iommufd->users : 0,
+                  ummu->viommu->iommufd ? ummu->viommu->iommufd->parent.ref : 0);
+    if (ummu->viommu->core) {
+        monitor_printf(mon, "│%-24s│s2_hwpt_id %-12uviommu_id %-12u│\n",
+                      " ->core", ummu->viommu->core->s2_hwpt_id,
+                      ummu->viommu->core->viommu_id);
+    } else {
+        monitor_printf(mon, "│%-24s│%-45s│\n",
+                      " ->core", "IOMMUFDViommu is NULL, viommu not attach yet");
+    }
+    if (ummu->viommu->s2_hwpt) {
+        monitor_printf(mon, "│%-24s│iommufd %-7uhwpt_id %-7uioas_id %-7u│\n",
+                      " ->s2_hwpt", ummu->viommu->s2_hwpt->iommufd->fd,
+                      ummu->viommu->s2_hwpt->hwpt_id,
+                      ummu->viommu->s2_hwpt->ioas_id);
+    } else {
+        monitor_printf(mon, "│%-24s│%-45s│\n",
+                      " ->s2_hwpt", "s2_hwpt is NULL, not attach viommu yet");
+    }
+    /* UMMUViommu: UMMUDevice device_list info */
+    QLIST_FOREACH(ummu_dev, &ummu->viommu->device_list, next) {
+        monitor_printf(mon, "│%-12s%-12s│as:name %-37s│\n",
+                      " ->dev_list", ummu_dev->udev->qdev.id, ummu_dev->as.name);
+        monitor_printf(mon, "│%-12s%-12s│idev: devid %-5uioas_id %-6uiommufd %-6u│\n",
+                      " ->dev_list", ummu_dev->udev->qdev.id, ummu_dev->idev->devid,
+                      ummu_dev->idev->ioas_id, ummu_dev->idev->iommufd->fd);
+        if (ummu_dev->s1_hwpt) {
+            monitor_printf(mon, "│%-12s%-12s│s1_hwpt: hwpt_id %-10uiommufd %-10u│\n",
+                          " ->dev_list", ummu_dev->udev->qdev.id,
+                          ummu_dev->s1_hwpt->hwpt_id,
+                          ummu_dev->s1_hwpt->iommufd->fd);
+        } else {
+            monitor_printf(mon, "│%-12s%-12s│%-45s│\n",
+                          " ->dev_list", ummu_dev->udev->qdev.id,
+                          "s1_hwpt is NULL, tecte not install yet");
+        }
+        if (ummu_dev->vdev) {
+            monitor_printf(mon, "│%-12s%-12s│vdev: sid %-7uVdevId %-7uVirtId %-7lu│\n",
+                          " ->dev_list", ummu_dev->udev->qdev.id, ummu_dev->vdev->sid,
+                          ummu_dev->vdev->core->vdev_id, ummu_dev->vdev->core->virt_id);
+        } else {
+            monitor_printf(mon, "│%-12s%-12s│%-45s│\n",
+                          " ->dev_list", ummu_dev->udev->qdev.id,
+                          "UMMUVdev is NULL, tecte not install yet");
+        }
+
+        cfg = g_hash_table_lookup(ummu->configs, ummu_dev);
+        if (cfg) {
+            monitor_printf(mon, "│+TransCfg %-14s│tct_ptr 0x%-16lxtct_num %-5lufmt %-2lu│\n",
+                          ummu_dev->udev->qdev.id, cfg->tct_ptr, cfg->tct_num, cfg->tct_fmt);
+            monitor_printf(mon, "│+TransCfg %-14s│tct_ttba 0x%-16lxtct_sz %-11u│\n",
+                          ummu_dev->udev->qdev.id, cfg->tct_ttba, cfg->tct_sz);
+            monitor_printf(mon, "│+TransCfg %-14s│tct_tgs 0x%-16xtecte_tag %-9u│\n",
+                          ummu_dev->udev->qdev.id, cfg->tct_tgs, cfg->tecte_tag);
+        }
+    }
+    return;
+}
+
+static void ub_dev_get_vfio_info(Monitor *mon, UBDevice *udev)
+{
+    VFIOUBDevice *vdev = VFIO_UB_SAFE(udev);
+    int i;
+    char guid[UB_DEV_GUID_STRING_LENGTH + 1] = {0};
+
+    if (!vdev) {
+        return;
+    }
+    monitor_printf(mon, "│%-24s│%-27sfd %-3ddevid 0x%-4x│\n",
+                  "VFIOUBDev sysfsdev", vdev->vbasedev.sysfsdev,
+                  vdev->vbasedev.fd, vdev->vbasedev.devid);
+    ub_device_get_str_from_guid(&vdev->host.guid, guid,
+                                UB_DEV_GUID_STRING_LENGTH + 1);
+    monitor_printf(mon, "│%-24s│%-45s│\n", "VFIOUBDev host", guid);
+
+    for (i = 0; i < UB_NUM_REGIONS; i++) {
+        monitor_printf(mon, "│vfioers %-16d│hva %-18pofs 0x%-17lx│\n",
+                      i, vdev->ers[i].region.mmaps ?
+                      vdev->ers[i].region.mmaps[0].mmap : NULL,
+                      vdev->ers[i].region.fd_offset);
+    }
+    if (!vdev->usi || !vdev->usi_vectors) {
+        return;
+    }
+    for (i = 0; i < vdev->usi->vec_table_num; i++) {
+        monitor_printf(mon, "│usi_vectors[%-2d] use=%-4u│virq %-6d "
+                      "kvm_int %-1u %-5d interrupt %-1u %-5d│\n",
+                      i, vdev->usi_vectors[i].use, vdev->usi_vectors[i].virq,
+                      vdev->usi_vectors[i].kvm_interrupt.initialized,
+                      vdev->usi_vectors[i].kvm_interrupt.rfd,
+                      vdev->usi_vectors[i].interrupt.initialized,
+                      vdev->usi_vectors[i].interrupt.rfd);
+    }
+    return;
+}
+
+int ub_dev_get_detail(Monitor *mon, const char *id)
+{
+    UBDevice *dev = ub_find_device_by_id(id);
+    char guid[UB_DEV_GUID_STRING_LENGTH + 1] = {0};
+    /* Column 1 width 24, column 2 width 45 */
+    g_autofree char *line_c1 = line_generator(24);
+    g_autofree char *line_c2 = line_generator(45);
+    int i;
+
+    if (!dev) {
+        qemu_log("UB device not found, id %s\n", id);
+        return -1;
+    }
+    if (!line_c1 || !line_c2) {
+        qemu_log("failed to alloc mem %p %p\n",
+                 line_c1, line_c2);
+        return -1;
+    }
+    ub_device_get_str_from_guid(&dev->guid, guid,
+                                UB_DEV_GUID_STRING_LENGTH + 1);
+    monitor_printf(mon, "┌%s┬%s┐\n", line_c1, line_c2);
+    monitor_printf(mon, "│%-24s│%-45s│\n", "id", dev->qdev.id);
+    monitor_printf(mon, "│%-24s│%-11u%-34s│\n", "dev_type",
+                  dev->dev_type, ub_dev_get_type_str(dev->dev_type));
+    monitor_printf(mon, "│%-24s│%-45p│\n", "config", dev->config);
+    monitor_printf(mon, "│%-24s│0x%-21lx0x%-20lx│\n", "config_size",
+                  ub_config_size(), ub_config_size());
+    monitor_printf(mon, "│%-24s│%-45s│\n", "name", dev->name);
+    monitor_printf(mon, "│%-24s│%-45u│\n", "eid", dev->eid);
+    ub_dev_get_cfg0_info(mon, dev);
+    ub_dev_get_cfg1_info(mon, dev);
+    monitor_printf(mon, "│%-24s│%-45u│\n", "cna", dev->cna);
+    monitor_printf(mon, "│%-24s│%-45u│\n", "ue_idx", dev->ue_idx);
+    monitor_printf(mon, "│%-24s│%-45s│\n", "guid", guid);
+    monitor_printf(mon, "│%-24s│%-45u│\n", "port_num", dev->port.port_num);
+    for (i = 0; i < dev->port.port_num; i++) {
+        if ((dev->port.neighbors + i)->neighbor_dev) {
+            monitor_printf(mon, "│neighbor_info lport %-4u│%-10s rport %-28u│\n",
+                          (dev->port.neighbors + i)->local_port_idx,
+                          (dev->port.neighbors + i)->neighbor_dev->qdev.id,
+                          (dev->port.neighbors + i)->neighbor_port_idx);
+        }
+    }
+    for (i = 0; i < UB_NUM_REGIONS; i++) {
+        monitor_printf(mon, "│io_regions %-13d│gpa 0x%-18lx size 0x%-13lx│\n",
+                      i, dev->io_regions[i].addr, dev->io_regions[i].size);
+    }
+    if (dev->dev_type == UB_TYPE_IDEVICE || dev->dev_type == UB_TYPE_DEVICE) {
+        ub_dev_get_vfio_info(mon, dev);
+    }
+    monitor_printf(mon, "│%-24s│%-45s│\n", "canonical_path", dev->qdev.canonical_path);
+    monitor_printf(mon, "│%-24s│%-45u│\n", "realized", dev->qdev.realized);
+    monitor_printf(mon, "│%-24s│%-45u│\n", "pending_del_evt", dev->qdev.pending_deleted_event);
+    monitor_printf(mon, "│%-24s│%-45lu│\n", "pending_del_expr_ms", dev->qdev.pending_deleted_expires_ms);
+    monitor_printf(mon, "│%-24s│%-45d│\n", "hotplugged", dev->qdev.hotplugged);
+    monitor_printf(mon, "│%-24s│%-45d│\n", "allow_unplug_dur_mig", dev->qdev.allow_unplug_during_migration);
+    monitor_printf(mon, "│%-24s│count %-4uhold_pending %-4uexit_progress %-4u│\n",
+                  "ResettableState", dev->qdev.reset.count,
+                  dev->qdev.reset.hold_phase_pending,
+                  dev->qdev.reset.exit_phase_in_progress);
+    monitor_printf(mon, "│%-24s│%-45u│\n", "reset_count", dev->rst_cnt);
+    ub_dev_get_bus_info(mon, dev);
+    ub_dev_get_usi_info(mon, dev);
+    /* ubc info */
+    if (UB_TYPE_IBUS_CONTROLLER == dev->dev_type) {
+        ub_dev_get_ummu_info(mon, dev);
+        ub_dev_get_ubc_info(mon, dev);
+    }
+
+    monitor_printf(mon, "└%s┴%s┘", line_c1, line_c2);
+    return 0;
 }

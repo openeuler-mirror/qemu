@@ -181,5 +181,10 @@ void hmp_ioport_write(Monitor *mon, const QDict *qdict);
 void hmp_boot_set(Monitor *mon, const QDict *qdict);
 void hmp_info_mtree(Monitor *mon, const QDict *qdict);
 void hmp_info_cryptodev(Monitor *mon, const QDict *qdict);
+#ifdef CONFIG_UB
+void hmp_info_ub(Monitor *mon, const QDict *qdict);
+void hmp_info_ub_config(Monitor *mon, const QDict *qdict);
+void hmp_info_ub_ers(Monitor *mon, const QDict *qdict);
+#endif // CONFIG_UB
 
 #endif
