@@ -1604,15 +1604,6 @@ static void ub_dev_get_ubc_info(Monitor *mon, UBDevice *udev)
     monitor_printf(mon, "│%-24s│0x%-43lx│\n", "msgq_reg", (uint64_t)ubcs->msgq_reg);
     monitor_printf(mon, "│%-24s│%-45s│\n", "MR msgq_reg_mem name", ubcs->msgq_reg_mem.name);
     monitor_printf(mon, "│%-24s│%-45s│\n", "MR io_mmio name", ubcs->io_mmio.name);
-    monitor_printf(mon, "│%-24s│gpa 0x%-10lx hva 0x%-22lx│\n",
-                  "hi_msgq_info sq addr", ubcs->msgq.sq_base_addr_gpa,
-                  ubcs->msgq.sq_base_addr_hva);
-    monitor_printf(mon, "│%-24s│gpa 0x%-10lx hva 0x%-22lx│\n",
-                  "hi_msgq_info cq addr", ubcs->msgq.cq_base_addr_gpa,
-                  ubcs->msgq.cq_base_addr_hva);
-    monitor_printf(mon, "│%-24s│gpa 0x%-10lx hva 0x%-22lx│\n",
-                  "hi_msgq_info rq addr", ubcs->msgq.rq_base_addr_gpa,
-                  ubcs->msgq.rq_base_addr_hva);
     return;
 }
 

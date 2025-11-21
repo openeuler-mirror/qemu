@@ -29,6 +29,7 @@ typedef struct EnumCnaQueryReq {
     uint32_t port_idx : 16;
     uint32_t rsv : 16;
 } EnumCnaQueryReq;
+#define ENUM_NA_QRY_REQ_SIZE 28
 
 typedef struct EnumCnaQueryRsp {
     /* DW0~DW5 */
@@ -56,7 +57,7 @@ typedef struct EnumCnaCfgReq {
     uint32_t cna : 24;
     uint8_t rsvd1;
 } EnumCnaCfgReq;
-#define ENUM_NA_CFG_REQ_SIZE 44
+#define ENUM_NA_CFG_REQ_SIZE 32
 
 typedef struct EnumNaCfgRsp {
     /* DW0~DW5 */

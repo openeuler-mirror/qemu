@@ -21,6 +21,8 @@
 #include "hw/ub/ub_config.h"
 #include "qemu/log.h"
 #include "trace.h"
+#include "sysemu/dma.h"
+#include "hw/ub/ub_cna_mgmt.h"
 
 static void enum_set_cna_config_space(uint8_t opcode, EnumCnaCfgReq *cna_cfg_req)
 {
@@ -60,8 +62,9 @@ void handle_enum_cna_config_request(BusControllerState *s,
                                     HiMsgSqe *sqe, void *buf)
 {
     /* req message */
+    void *payload;
     size_t header_sz;
-    EnumPktHeader *header = (EnumPktHeader *)buf;
+    EnumPktHeader *header;
     EnumPldScanHeader *scan_header;
     EnumCnaCfgReq *cna_cfg_req;
     /* rsp message */
@@ -74,10 +77,29 @@ void handle_enum_cna_config_request(BusControllerState *s,
     HiMsgCqe cqe;
     char guid[UB_DEV_GUID_STRING_LENGTH + 1] = {0};
 
-    scan_header = (EnumPldScanHeader *)((uint8_t *)buf + ENUM_PKT_HEADER_SIZE);
+    scan_header = g_malloc0(sizeof(EnumPldScanHeader));
+    if (dma_memory_read(&address_space_memory,
+                        (unsigned long)(buf + ENUM_PKT_HEADER_SIZE),
+                        scan_header, sizeof(EnumPldScanHeader), MEMTXATTRS_UNSPECIFIED)) {
+        qemu_log("Failed to read sq_base_addr_gpa entry\n");
+        g_free(scan_header);
+        return;
+    }
+    header_sz = ENUM_PKT_HEADER_SIZE + calc_enum_pld_header_size(scan_header, true) + ENUM_NA_CFG_REQ_SIZE;
+    g_free(scan_header);
+    payload = g_malloc0(header_sz);
+    if (dma_memory_read(&address_space_memory, (unsigned long)(buf),
+                        payload, header_sz, MEMTXATTRS_UNSPECIFIED)) {
+        qemu_log("Failed to read sq_base_addr_gpa entry\n");
+        g_free(payload);
+        return;
+    }
+
+    header = (EnumPktHeader *)payload;
+    scan_header = (EnumPldScanHeader *)((uint8_t *)payload + ENUM_PKT_HEADER_SIZE);
     header_sz = ENUM_PKT_HEADER_SIZE +
-            calc_enum_pld_header_size(scan_header, true);
-    cna_cfg_req = (EnumCnaCfgReq *)((uint8_t *)buf + header_sz);
+                calc_enum_pld_header_size(scan_header, true);
+    cna_cfg_req = (EnumCnaCfgReq *)((uint8_t *)payload + header_sz);
     if (header->ulh.cfg != UB_CLAN_LINK_CFG ||
         header->cnth.nth_nlp != NTH_NLP_WITHOUT_TPH ||
         header->upi != UB_CP_UPI ||
@@ -129,8 +151,9 @@ void handle_enum_cna_query_request(BusControllerState *s,
                                    HiMsgSqe *sqe, void *buf)
 {
     /* req message */
+    void *payload;
     size_t header_sz;
-    EnumPktHeader *header = (EnumPktHeader *)buf;
+    EnumPktHeader *header;
     EnumPldScanHeader *scan_header;
     EnumCnaQueryReq *cna_query_req;
     /* rsp message */
@@ -146,10 +169,29 @@ void handle_enum_cna_query_request(BusControllerState *s,
     uint64_t emulated_offset;
     size_t forward_path_size;
 
-    scan_header = (EnumPldScanHeader *)((uint8_t *)buf + ENUM_PKT_HEADER_SIZE);
+    scan_header = g_malloc0(sizeof(EnumPldScanHeader));
+    if (dma_memory_read(&address_space_memory,
+                        (unsigned long)(buf + ENUM_PKT_HEADER_SIZE),
+                        scan_header, sizeof(EnumPldScanHeader), MEMTXATTRS_UNSPECIFIED)) {
+        qemu_log("Failed to read sq_base_addr_gpa entry\n");
+        g_free(scan_header);
+        return;
+    }
+    header_sz = ENUM_PKT_HEADER_SIZE + calc_enum_pld_header_size(scan_header, true) + ENUM_NA_QRY_REQ_SIZE;
+    g_free(scan_header);
+    payload = g_malloc0(header_sz);
+    if (dma_memory_read(&address_space_memory, (unsigned long)(buf),
+                        payload, header_sz, MEMTXATTRS_UNSPECIFIED)) {
+        qemu_log("Failed to read sq_base_addr_gpa entry\n");
+        g_free(payload);
+        return;
+    }
+
+    header = (EnumPktHeader *)payload;
+    scan_header = (EnumPldScanHeader *)((uint8_t *)payload + ENUM_PKT_HEADER_SIZE);
     header_sz = ENUM_PKT_HEADER_SIZE +
             calc_enum_pld_header_size(scan_header, true);
-    cna_query_req = (EnumCnaQueryReq *)((uint8_t *)buf + header_sz);
+    cna_query_req = (EnumCnaQueryReq *)((uint8_t *)payload + header_sz);
     if (header->ulh.cfg != UB_CLAN_LINK_CFG ||
         header->cnth.nth_nlp != NTH_NLP_WITHOUT_TPH ||
         header->upi != UB_CP_UPI ||

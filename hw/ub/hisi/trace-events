@@ -2,6 +2,6 @@
 
 # ubc_msgq.c
 handle_eu_table_cfg_cmd(uint32_t msg_code, uint32_t entry_num, uint32_t tbl_cfg_mode, uint32_t tbl_cfg_status, uint32_t entry_start_id, uint32_t eid, uint32_t upi) "eu_msg_code(%u), cfg_entry_num(%u), tbl_cfg_mode(%u), tbl_cfg_status(%u), entry_start_id(%u), eid(%u), upi(%u)"
-msgq_sq_init(uint64_t gpa, uint64_t hva, uint32_t depth) "sq_base_addr_gpa 0x%lx sq_base_addr_hva 0x%lx depth %u"
-msgq_cq_init(uint64_t gpa, uint64_t hva, uint32_t depth) "cq_base_addr_gpa 0x%lx cq_base_addr_hva 0x%lx depth %u"
-msgq_rq_init(uint64_t gpa, uint64_t hva, uint32_t depth) "rq_base_addr_gpa 0x%lx rq_base_addr_hva 0x%lx depth %u"
+msgq_sq_init(uint64_t gpa, uint32_t depth) "sq_base_addr_gpa 0x%lx depth %u"
+msgq_cq_init(uint64_t gpa, uint32_t depth) "cq_base_addr_gpa 0x%lx depth %u"
+msgq_rq_init(uint64_t gpa, uint32_t depth) "rq_base_addr_gpa 0x%lx depth %u"

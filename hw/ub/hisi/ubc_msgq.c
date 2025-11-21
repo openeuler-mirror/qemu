@@ -91,7 +91,7 @@ static void handle_task_type_msg(BusControllerState *s, HiMsgSqe *sqe)
     payload = g_malloc0(sizeof(MsgPktHeader));
     if (dma_memory_read(&address_space_memory, s->msgq.sq_base_addr_gpa + p_addr,
                         payload, sizeof(MsgPktHeader), MEMTXATTRS_UNSPECIFIED)) {
-        qemu_log("Fail to read sq_base_addr_gpa entry\n");
+        qemu_log("Failed to read sq_base_addr_gpa entry\n");
         g_free(payload);
         return;
     }
@@ -100,7 +100,7 @@ static void handle_task_type_msg(BusControllerState *s, HiMsgSqe *sqe)
     payload = g_malloc0(sizeof(MsgPktHeader) + plen);
     if (dma_memory_read(&address_space_memory, s->msgq.sq_base_addr_gpa + p_addr,
                         payload, sizeof(MsgPktHeader) + plen, MEMTXATTRS_UNSPECIFIED)) {
-        qemu_log("Fail to read sq_base_addr_gpa entry\n");
+        qemu_log("Failed to read sq_base_addr_gpa entry\n");
         g_free(payload);
         return;
     }
@@ -115,10 +115,8 @@ static void handle_task_type_msg(BusControllerState *s, HiMsgSqe *sqe)
 
 static void handle_task_type_enum(BusControllerState *s, HiMsgSqe *sqe)
 {
-    EnumPktHeader *payload = NULL;
-    EnumPldScanHeader *scan_header = NULL;
+    void *payload = NULL;
     uint32_t p_addr = sqe->p_addr;
-    uint32_t header_size;
 
     if (p_addr + HI_MSG_SQE_PLD_SIZE > s->msgq.sq_sz) {
         qemu_log("invalid p_addr %u, total size %ld\n",
@@ -126,26 +124,8 @@ static void handle_task_type_enum(BusControllerState *s, HiMsgSqe *sqe)
         return;
     }
 
-    scan_header = g_malloc0(sizeof(EnumPldScanHeader));
-    if (dma_memory_read(&address_space_memory,
-                        s->msgq.sq_base_addr_gpa + p_addr + ENUM_PKT_HEADER_SIZE,
-                        scan_header, sizeof(EnumPldScanHeader), MEMTXATTRS_UNSPECIFIED)) {
-        qemu_log("Fail to read sq_base_addr_gpa entry\n");
-        g_free(scan_header);
-        return;
-    }
-    header_size = ENUM_PKT_HEADER_SIZE + calc_enum_pld_header_size(scan_header, true) + ENUM_NA_CFG_REQ_SIZE;
-    g_free(scan_header);
-    payload = g_malloc0(header_size);
-    if (dma_memory_read(&address_space_memory, s->msgq.sq_base_addr_gpa + p_addr,
-                        payload, header_size, MEMTXATTRS_UNSPECIFIED)) {
-        qemu_log("Fail to read sq_base_addr_gpa entry\n");
-        g_free(payload);
-        return;
-    }
-
+    payload = (void *)s->msgq.sq_base_addr_gpa + p_addr;
     handle_msg_enum(s, sqe, payload);
-    g_free(payload);
 }
 
 static void handle_eu_table_cfg_cmd(BusControllerState *s, HiMsgSqe *sqe, void *payload)
@@ -200,7 +180,7 @@ static void handle_task_type_hisi_private(BusControllerState *s, HiMsgSqe *sqe)
     payload = g_malloc0(sizeof(HiEuCfgReq));
     if (dma_memory_read(&address_space_memory, s->msgq.sq_base_addr_gpa + p_addr,
                         payload, sizeof(HiEuCfgReq), MEMTXATTRS_UNSPECIFIED)) {
-        qemu_log("Fail to read sq_base_addr_gpa entry\n");
+        qemu_log("Failed to read sq_base_addr_gpa entry\n");
         g_free(payload);
         return;
     }
@@ -236,9 +216,9 @@ void msgq_process_task(void *opaque, uint64_t val)
     sqe = g_malloc0(sizeof(HiMsgSqe));
     cnt = (pi + depth - ci) % depth;
     for (i = 0; i < cnt; i++) {
-        if (dma_memory_read(&address_space_memory, s->msgq.sq_base_addr_gpa + ci,
+        if (dma_memory_read(&address_space_memory, (unsigned long)((HiMsgSqe *)s->msgq.sq_base_addr_gpa + ci),
                             sqe, sizeof(HiMsgSqe), MEMTXATTRS_UNSPECIFIED)) {
-            qemu_log("Fail to read sq_base_addr_gpa entry\n");
+            qemu_log("Failed to read sq_base_addr_gpa entry\n");
             g_free(sqe);
             return;
         }
@@ -278,14 +258,13 @@ void msgq_sq_init(void *opaque)
     uint64_t size = (uint64_t)depth * (HI_MSG_SQE_SIZE + HI_MSG_SQE_PLD_SIZE);
 
     s->msgq.sq_base_addr_gpa = addr_l | ((uint64_t)addr_h << 32);
-    s->msgq.sq_base_addr_hva = (uint64_t)cpu_physical_memory_map(s->msgq.sq_base_addr_gpa, &size, true);
     if (size != depth * (HI_MSG_SQE_SIZE + HI_MSG_SQE_PLD_SIZE)) {
         qemu_log("sq size %lu != %lu, depth=%u\n", size,
                  depth * (HI_MSG_SQE_SIZE + HI_MSG_SQE_PLD_SIZE), depth);
         return;
     }
     s->msgq.sq_sz = size;
-    trace_msgq_sq_init(s->msgq.sq_base_addr_gpa, s->msgq.sq_base_addr_hva, depth);
+    trace_msgq_sq_init(s->msgq.sq_base_addr_gpa, depth);
 }
 
 void msgq_cq_init(void *opaque)
@@ -297,14 +276,13 @@ void msgq_cq_init(void *opaque)
     uint64_t size = (uint64_t)depth * HI_MSG_CQE_SIZE;
 
     s->msgq.cq_base_addr_gpa = addr_l | ((uint64_t)addr_h << 32);
-    s->msgq.cq_base_addr_hva = (uint64_t)cpu_physical_memory_map(s->msgq.cq_base_addr_gpa, &size, true);
     if (size != depth * HI_MSG_CQE_SIZE) {
         qemu_log("cq size %lu != %lu, depth=%u\n", size,
                  depth * HI_MSG_CQE_SIZE, depth);
         return;
     }
     s->msgq.cq_sz = size;
-    trace_msgq_cq_init(s->msgq.cq_base_addr_gpa, s->msgq.cq_base_addr_hva, depth);
+    trace_msgq_cq_init(s->msgq.cq_base_addr_gpa, depth);
 }
 
 void msgq_rq_init(void *opaque)
@@ -316,14 +294,13 @@ void msgq_rq_init(void *opaque)
     uint64_t size = (uint64_t)depth * HI_MSG_RQE_SIZE;
 
     s->msgq.rq_base_addr_gpa = addr_l | ((uint64_t)addr_h << 32);
-    s->msgq.rq_base_addr_hva = (uint64_t)cpu_physical_memory_map(s->msgq.rq_base_addr_gpa, &size, true);
     if (size != depth * HI_MSG_RQE_SIZE) {
         qemu_log("rq size %lu != %u, depth=%u\n", size,
                  depth * HI_MSG_RQE_SIZE, depth);
         return;
     }
     s->msgq.rq_sz = size;
-    trace_msgq_rq_init(s->msgq.rq_base_addr_gpa, s->msgq.rq_base_addr_hva, depth);
+    trace_msgq_rq_init(s->msgq.rq_base_addr_gpa, depth);
 }
 
 void msgq_handle_rst(void *opaque)
@@ -346,17 +323,5 @@ void msgq_handle_rst(void *opaque)
     ub_set_long(s->msgq_reg + RQ_ADDR_H, 0);
     ub_set_long(s->msgq_reg + RQ_DEPTH, 0);
 
-    if (s->msgq.rq_sz && s->msgq.rq_base_addr_hva) {
-        cpu_physical_memory_unmap((void *)s->msgq.rq_base_addr_hva,
-                                  s->msgq.rq_sz, true, s->msgq.rq_sz);
-    }
-    if (s->msgq.sq_sz && s->msgq.sq_base_addr_hva) {
-        cpu_physical_memory_unmap((void *)s->msgq.sq_base_addr_hva,
-                                  s->msgq.sq_sz, true, s->msgq.sq_sz);
-    }
-    if (s->msgq.cq_sz && s->msgq.cq_base_addr_hva) {
-        cpu_physical_memory_unmap((void *)s->msgq.cq_base_addr_hva,
-                                  s->msgq.cq_sz, true, s->msgq.cq_sz);
-    }
     memset(&s->msgq, 0, sizeof(s->msgq));
 }

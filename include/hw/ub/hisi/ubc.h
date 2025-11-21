@@ -288,13 +288,10 @@ typedef struct HiMsgSqePld {
 
 typedef struct HiMsgqInfo {
     uint64_t sq_base_addr_gpa;
-    uint64_t sq_base_addr_hva;
     uint64_t sq_sz;
     uint64_t cq_base_addr_gpa;
-    uint64_t cq_base_addr_hva;
     uint64_t cq_sz;
     uint64_t rq_base_addr_gpa;
-    uint64_t rq_base_addr_hva;
     uint64_t rq_sz;
 } HiMsgqInfo;
 

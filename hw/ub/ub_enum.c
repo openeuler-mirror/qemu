@@ -26,6 +26,8 @@
 #include "qemu/log.h"
 #include "qapi/error.h"
 #include "trace.h"
+#include "sysemu/dma.h"
+#include "hw/ub/ub_cna_mgmt.h"
 
 static void enum_get_port_info_from_config_space(UBDevice *dev, uint16_t port_idx,
                                                  EnumTlvPortInfo *port_info)
@@ -156,10 +158,11 @@ static void handle_enum_query_request(BusControllerState *s, HiMsgSqe *sqe,
                                       void *buf)
 {
     /* req message */
+    void *payload;
     size_t header_sz;
-    EnumPktHeader *header = (EnumPktHeader *)buf;
-    struct ClanNetworkHeader *cnth = &header->cnth;
-    struct UbLinkHeader *ulh = &header->ulh;
+    EnumPktHeader *header;
+    struct ClanNetworkHeader *cnth;
+    struct UbLinkHeader *ulh;
     char guid_str[UB_DEV_GUID_STRING_LENGTH + 1] = {0};
     EnumPldScanHeader *scan_header;
     EnumTopoQueryReq *scan_pdu;
@@ -175,6 +178,28 @@ static void handle_enum_query_request(BusControllerState *s, HiMsgSqe *sqe,
     EnumTopoQueryRspPdu *rsp_pdu;
     HiMsgCqe cqe;
 
+    scan_header = g_malloc0(sizeof(EnumPldScanHeader));
+    if (dma_memory_read(&address_space_memory,
+                        (unsigned long)(buf + ENUM_PKT_HEADER_SIZE),
+                        scan_header, sizeof(EnumPldScanHeader), MEMTXATTRS_UNSPECIFIED)) {
+        qemu_log("Failed to read sq_base_addr_gpa entry\n");
+        g_free(scan_header);
+        return;
+    }
+    header_sz = ENUM_PKT_HEADER_SIZE + calc_enum_pld_header_size(scan_header, true) + ENUM_TOPO_QUERY_REQ_SIZE;
+    g_free(scan_header);
+    payload = g_malloc0(header_sz);
+    if (dma_memory_read(&address_space_memory, (unsigned long)(buf),
+                        payload, header_sz, MEMTXATTRS_UNSPECIFIED)) {
+        qemu_log("Failed to read sq_base_addr_gpa entry\n");
+        g_free(payload);
+        return;
+    }
+
+    header = (EnumPktHeader *)payload;
+    cnth = &header->cnth;
+    ulh = &header->ulh;
+
     if (ulh->cfg != UB_CLAN_LINK_CFG || cnth->nth_nlp != NTH_NLP_WITHOUT_TPH ||
         header->upi != UB_CP_UPI) {
         qemu_log("invalid enum pkt header, please check the driver inside guestos:"
@@ -182,9 +207,9 @@ static void handle_enum_query_request(BusControllerState *s, HiMsgSqe *sqe,
         return;
     }
 
-    scan_header = (EnumPldScanHeader *)((uint8_t *)buf + ENUM_PKT_HEADER_SIZE);
+    scan_header = (EnumPldScanHeader *)((uint8_t *)payload + ENUM_PKT_HEADER_SIZE);
     header_sz = ENUM_PKT_HEADER_SIZE + calc_enum_pld_header_size(scan_header, true);
-    scan_pdu = (EnumTopoQueryReq *)((uint8_t *)buf + header_sz);
+    scan_pdu = (EnumTopoQueryReq *)((uint8_t *)payload + header_sz);
     scan_pdu_com = (EnumPldScanPduCommon *)scan_pdu;
     ub_device_get_str_from_guid(&scan_pdu_com->guid, guid_str, UB_DEV_GUID_STRING_LENGTH + 1);
     dev = ub_find_device_by_guid(&scan_pdu_com->guid);
