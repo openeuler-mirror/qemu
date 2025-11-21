@@ -7,6 +7,7 @@ ub_ss.add(files(
   'ub_acpi.c',
   'ub_enum.c',
   'ub_common.c',
+  'ub_usi.c',
   'ub_cna_mgmt.c',
   'ub_sec.c',
 ))

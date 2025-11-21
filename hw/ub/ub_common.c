@@ -87,3 +87,14 @@ uint32_t fill_cq(BusControllerState *s, HiMsgCqe *cqe)
 
     return pi;
 }
+
+bool ub_guid_is_none(UbGuid *guid)
+{
+    if (guid->seq_num == 0 &&
+        guid->device_id == 0 && guid->version == 0 &&
+        guid->type == 0 && guid->vendor == 0) {
+        return true;
+    }
+
+    return false;
+}

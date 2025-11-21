@@ -24,4 +24,6 @@ struct USIMessage {
     uint32_t data;
 };
 
+void usi_send_message(USIMessage *msg, uint32_t interrupt_id, UBDevice *udev);
+
 #endif
