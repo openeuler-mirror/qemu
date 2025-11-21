@@ -358,21 +358,12 @@ static void ub_init_wmask(UBDevice *ub_dev)
     cfg1_int_type2_wmask->interrupt_mask = ~0;
     cfg1_int_type2_wmask->interrupt_enable = ~0;
 
-    /* port basic */
-    // set after port_info is initialized
-
-    /* port cap */
-    //  not support yet
-
     /* route table */
     emulated_offset = ub_cfg_offset_to_emulated_offset(UB_ROUTE_TABLE_START, true);
     route_table_wmask = (UbRouteTable *)(ub_dev->wmask + emulated_offset);
     memset(route_table_wmask, 0xff, UB_CFG_SLICE_SIZE);
     route_table_wmask->entry_num = 0;
     route_table_wmask->ers = 0;
-
-    /* route table entry */
-    // not support yet
 }
 
 static void ub_init_w1cmask(UBDevice *ub_dev)
@@ -427,7 +418,7 @@ static uint64_t ub_er_address(UBDevice *dev, uint8_t ers, uint64_t size)
     UbCfg1Basic *cfg1_basic;
     uint64_t emulated_offset;
 
-    if (ers > UB_NUM_REGIONS) {
+    if (ers >= UB_NUM_REGIONS) {
         qemu_log("invalid ers %u\n", ers);
         return UB_ER_UNMAPPED;
     }
@@ -1156,7 +1147,7 @@ int ub_device_set_iommu_device(UBDevice *dev, HostIOMMUDevice *hoid, Error **err
     UBBus *bus = ub_get_bus(dev);
 
     if (bus->iommu_ops && bus->iommu_ops->set_iommu_device) {
-        return bus->iommu_ops->set_iommu_device(bus, bus->iommu_opaque, dev->eid, hoid, errp);
+        return !bus->iommu_ops->set_iommu_device(bus, bus->iommu_opaque, dev->eid, hoid, errp);
     }
 
     return 0;
@@ -1613,15 +1604,6 @@ static void ub_dev_get_ubc_info(Monitor *mon, UBDevice *udev)
     monitor_printf(mon, "│%-24s│0x%-43lx│\n", "msgq_reg", (uint64_t)ubcs->msgq_reg);
     monitor_printf(mon, "│%-24s│%-45s│\n", "MR msgq_reg_mem name", ubcs->msgq_reg_mem.name);
     monitor_printf(mon, "│%-24s│%-45s│\n", "MR io_mmio name", ubcs->io_mmio.name);
-    monitor_printf(mon, "│%-24s│gpa 0x%-10lx hva 0x%-22lx│\n",
-                  "hi_msgq_info sq addr", ubcs->msgq.sq_base_addr_gpa,
-                  ubcs->msgq.sq_base_addr_hva);
-    monitor_printf(mon, "│%-24s│gpa 0x%-10lx hva 0x%-22lx│\n",
-                  "hi_msgq_info cq addr", ubcs->msgq.cq_base_addr_gpa,
-                  ubcs->msgq.cq_base_addr_hva);
-    monitor_printf(mon, "│%-24s│gpa 0x%-10lx hva 0x%-22lx│\n",
-                  "hi_msgq_info rq addr", ubcs->msgq.rq_base_addr_gpa,
-                  ubcs->msgq.rq_base_addr_hva);
     return;
 }
 

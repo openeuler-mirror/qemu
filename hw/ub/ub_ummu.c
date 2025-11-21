@@ -1580,7 +1580,7 @@ static bool ummu_dev_set_iommu_dev(UBBus *bus, void *opaque, uint32_t eid,
     ummu_dev->viommu = u->viommu;
     QLIST_INSERT_HEAD(&u->viommu->device_list, ummu_dev, next);
 
-    return 0;
+    return true;
 }
 
 static void ummu_dev_unset_iommu_dev(UBBus *bus, void *opaque, uint32_t eid)

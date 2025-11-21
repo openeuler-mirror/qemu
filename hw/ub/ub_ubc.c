@@ -177,11 +177,11 @@ static bool ub_bus_controller_needed(void *opaque)
 }
 
 static Property ub_bus_controller_properties[] = {
-    DEFINE_PROP_UINT32("ub-bus-controller-msgq-reg-size", BusControllerState,
+    DEFINE_PROP_UINT32("ub-msgq-reg-size", BusControllerState,
                        msgq_reg_size, 0),
-    DEFINE_PROP_UINT32("ub-bus-controller-fm-msgq-reg-size", BusControllerState,
+    DEFINE_PROP_UINT32("ub-fm-msgq-reg-size", BusControllerState,
                        fm_msgq_reg_size, 0),
-    DEFINE_PROP_BOOL("ub-bus-controller-migration-enabled", BusControllerState,
+    DEFINE_PROP_BOOL("ub-migration-enabled", BusControllerState,
                      mig_enabled, true),
     DEFINE_PROP_END_OF_LIST(),
 };

@@ -125,8 +125,8 @@ uint64_t ub_cfg_offset_to_emulated_offset(uint64_t offset, bool check_success)
         if (emulate_offset == UINT64_MAX) {
             ub_cfg_display_addr_map_table();
             qemu_log("failed to convert offset 0x%lx to emulated offset\n", offset);
+            assert(emulate_offset != UINT64_MAX);
         }
-        assert(emulate_offset != UINT64_MAX);
     }
 
     return emulate_offset;
