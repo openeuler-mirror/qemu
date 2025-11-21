@@ -175,3 +175,11 @@ iommufd_cdev_fail_attach_existing_container(const char *msg) " %s"
 iommufd_cdev_alloc_ioas(int iommufd, int ioas_id) " [iommufd=%d] new IOMMUFD container with ioasid=%d"
 iommufd_cdev_device_info(char *name, int devfd, int num_irqs, int num_regions, int flags) " %s (%d) num_irqs=%d num_regions=%d flags=%d"
 iommufd_cdev_pci_hot_reset_dep_devices(int domain, int bus, int slot, int function, int dev_id) "\t%04x:%02x:%02x.%x devid %d"
+
+#ub.c
+vfio_ub_read_config(uint64_t offset, uint32_t emu_val, uint32_t phys_val, uint32_t val) "offset: 0x%lx, emu_val: 0x%x, phys_val: 0x%x, ret_val: 0x%x"
+vfio_ub_write_config(uint64_t offset, uint32_t val, uint32_t dw_mask, uint32_t phys_val) "offset: 0x%lx, val: 0x%x, dw_mask: 0x%x, phys_val: 0x%x"
+vfio_ub_write_config_ioregion(int id, uint64_t old_addr, uint64_t new_addr, uint64_t size) "io_regions: %d, old_addr: 0x%lx, new_addr: 0x%lx, size: 0x%lx"
+vfio_ub_write_config_ers(int id, uint64_t offset, uint64_t size, uint32_t flags, uint64_t page_size) "id: %d, offset: 0x%lx, size: 0x%lx, flags: 0x%x, page_size: 0x%lx"
+vfio_ub_write_config_int_cap_en(uint32_t val, int was_enabled, int is_enabled) "val: %u, was_enabled: %d, is_enabled: %d"
+vfio_ub_write_config_int_cap_mask(uint32_t val, int was_masked, int is_masked) "val: %u, was_masked: %d, is_masked: %d"

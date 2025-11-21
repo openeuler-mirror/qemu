@@ -1,0 +1,79 @@
+# -*- Mode: Python -*-
+# vim: filetype=python
+#
+# This work is licensed under the terms of the GNU GPL, version 2 or later.
+# See the COPYING file in the top-level directory.
+# SPDX-License-Identifier: GPL-2.0-or-later
+
+##
+# = UB
+##
+
+
+##
+# @UBDeviceInfo:
+#
+# Information about a UB device
+#
+# @bi: the bus instance of the device
+#
+# @eid: the eid of the device
+#
+# @name: the name of the device
+#
+# @id: the id of the device
+#
+# @type: the type of the device
+#
+# @cna: the cna of the device
+#
+# @feidx: the FE Index of the device
+#
+# @guid: the guid of the device
+#
+# @usis: the usi entries num of the device
+#
+# @ports: the total ports of the device
+#
+# Since: 0.14
+#
+##
+
+{ 'struct': 'UBDeviceInfo',
+  'data': {'bi': 'int', 'eid': 'int', 'name': 'str', 'id':'str', 'type':'int',
+  'cna':'int', 'feidx':'int', 'guid':'str', 'usis':'int', 'ports':'int'}}
+
+
+
+##
+# @UBInfo:
+#
+# Information about a UB bus
+#
+# @bus: the bus index
+#
+# @devices: a list of devices on this bus
+#
+# Since: 0.14
+#
+##
+
+{ 'struct': 'UBInfo', 'data': {'bus': 'int', 'devices': ['UBDeviceInfo']}}
+
+##
+# @query-ub:
+#
+# Return information about the UB bus topology of the guest.
+#
+# Features:
+#
+# @unstable: This command is meant for debugging.
+#
+# Returns: a list of @UBInfo for each UB bus. Each bus is
+#          represented by a json-object, which has a key with a json-array of
+#          all PCI devices attached to it. Each device is represented by a
+#          json-object.
+##
+{ 'command': 'query-ub', 'returns': ['UBInfo'],
+  'if': 'CONFIG_UB',
+  'features': [ 'unstable' ] }

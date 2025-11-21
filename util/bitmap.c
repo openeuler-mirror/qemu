@@ -532,3 +532,47 @@ void bitmap_copy_with_dst_offset(unsigned long *dst, const unsigned long *src,
         *dst |= (*src & last_mask) << shift;
     }
 }
+
+#define CHUNKSZ 32
+#define ALIGN(x, a) (((x) + (a) - 1UL) & ~((a) - 1UL))
+
+int bitmap_scnprintf(char *buf, unsigned int buflen,
+                     const unsigned long *maskp, int nmaskbits)
+{
+    int i, word, bit;
+    int len = 0;
+    unsigned long val;
+    const char *sep = "";
+    int chunksz;
+    uint32_t chunkmask;
+    int first = 1;
+    int ret;
+
+    chunksz = nmaskbits & (CHUNKSZ - 1);
+    if (chunksz == 0) {
+        chunksz = CHUNKSZ;
+    }
+
+    i = ALIGN(nmaskbits, CHUNKSZ) - CHUNKSZ;
+    for (; i >= 0; i -= CHUNKSZ) {
+        chunkmask = ((1ULL << chunksz) - 1);
+        word = i / BITS_PER_LONG;
+        bit = i % BITS_PER_LONG;
+        val = (maskp[word] >> bit) & chunkmask;
+        if (val != 0 || !first || i == 0) {
+            /* (chunksz + 3) / 4 in order to align */
+            ret = snprintf(buf + len, buflen - len, "%s%0*lx", sep,
+                           (chunksz + 3) / 4, val);
+            if (ret < 0) {
+                (void)fprintf(stderr, "Executing snprintf failed: %d\n", ret);
+                return -1;
+            } else {
+                len += ret;
+            }
+            chunksz = CHUNKSZ;
+            sep = ",";
+            first = 0;
+        }
+    }
+    return len;
+}

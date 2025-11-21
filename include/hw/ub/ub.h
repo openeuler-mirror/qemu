@@ -284,4 +284,9 @@ void ub_setup_iommu(UBBus *bus, const UBIOMMUOps *ops, void *opaque);
 uint32_t ub_dev_get_token_id(UBDevice *udev);
 uint32_t ub_dev_get_ueid(UBDevice *udev);
 enum UbDeviceType ub_dev_get_type(UBDevice *udev);
+int ub_dev_dump_config(const char *id, uint64_t offset, uint64_t len,
+                       char *buff, int buff_size);
+void ub_dev_dump_ers(const char *id, uint8_t idx, uint64_t offset, uint64_t len,
+                      char *buff, int buff_size);
+int ub_dev_get_detail(Monitor *mon, const char *id);
 #endif

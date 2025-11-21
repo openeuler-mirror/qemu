@@ -47,3 +47,7 @@ config VFIO_HCT
     default y
     select VFIO
     depends on LINUX && PCI
+
+config VFIO_UB
+    bool
+    default y if UB

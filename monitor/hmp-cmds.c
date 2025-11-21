@@ -29,6 +29,13 @@
 #include "hw/intc/intc.h"
 #include "qemu/log.h"
 #include "sysemu/sysemu.h"
+#ifdef CONFIG_UB
+#include "qapi/qapi-commands-ub.h"
+#include "hw/ub/ub.h"
+#include "hw/vfio/ub.h"
+#include "hw/ub/ub_common.h"
+#include "qemu/units.h"
+#endif // CONFIG_UB
 
 bool hmp_handle_error(Monitor *mon, Error *err)
 {
@@ -444,3 +451,153 @@ void hmp_info_mtree(Monitor *mon, const QDict *qdict)
 
     mtree_info(flatview, dispatch_tree, owner, disabled);
 }
+
+#ifdef CONFIG_UB
+static void hmp_info_ub_device(Monitor *mon, const UBDeviceInfo *info)
+{
+    monitor_printf(mon, "%-12s", info->id);
+    monitor_printf(mon, "%-12s", info->name);
+    monitor_printf(mon, "%-8"PRId64, info->bi);
+    monitor_printf(mon, "%-8"PRId64, info->eid);
+    monitor_printf(mon, "%-8"PRId64, info->cna);
+    monitor_printf(mon, "%-6"PRId64, info->feidx);
+    monitor_printf(mon, "%-38s", info->guid);
+    monitor_printf(mon, "%-5lu", info->type);
+    monitor_printf(mon, "%-6"PRId64, info->ports);
+    monitor_printf(mon, "%-5ld", info->usis);
+    monitor_printf(mon, "\n");
+}
+
+/* Column width 100 */
+#define UB_HMP_INFO_UB_WIDTH 100
+void hmp_info_ub(Monitor *mon, const QDict *qdict)
+{
+    UBInfoList *info_list, *info;
+    const char *id = qdict_get_try_str(qdict, "id");
+    g_autofree char *line = NULL;
+    int cnt = 0;
+
+    if (!id) {
+        Error *err = NULL;
+        info_list = qmp_query_ub(&err);
+        if (!info_list || err) {
+            monitor_printf(mon, "UB devices not found\n");
+            error_free(err);
+            return;
+        }
+
+        line = line_generator(UB_HMP_INFO_UB_WIDTH);
+        if (!line) {
+            return;
+        }
+        monitor_printf(mon, "%-12s%-12s%-8s%-8s%-8s%-6s%-38s%-5s%-6s%-5s\n"
+                       "%s\n", "ID", "Name", "BI", "Eid", "CNA",
+                       "FeIdx", "Guid", "Type", "Ports", "USIs", line);
+        for (info = info_list; info; info = info->next) {
+            UBDeviceInfoList *dev;
+
+            for (dev = info->value->devices; dev; dev = dev->next) {
+                hmp_info_ub_device(mon, dev->value);
+                cnt++;
+            }
+        }
+
+        if (!cnt) {
+            monitor_printf(mon, "no UB devices found\n");
+            return;
+        }
+
+        monitor_printf(mon, "\n(Tips: Specifies the optional parameter [id]"
+                       " to display more detailed information.)\n");
+        qapi_free_UBInfoList(info_list);
+    } else {
+        if (ub_dev_get_detail(mon, id) < 0) {
+            monitor_printf(mon, "UB device not found\n");
+            return;
+        }
+    }
+}
+
+#define HMP_DUMP_STR_LEN (65 * KiB)
+#define MAX_BYTE_SUPPORT (32 * KiB)
+void hmp_info_ub_config(Monitor *mon, const QDict *qdict)
+{
+    const char *id = qdict_get_str(qdict, "id");
+    uint64_t offset = qdict_get_int(qdict, "offset");
+    uint64_t len = qdict_get_int(qdict, "len");
+    g_autofree char *buff = g_malloc0(HMP_DUMP_STR_LEN);
+    if (len > MAX_BYTE_SUPPORT) {
+        monitor_printf(mon, "you can keep length not exceed  %ld and try again.\n",
+                       MAX_BYTE_SUPPORT);
+        return;
+    }
+
+    if (ub_dev_dump_config(id, offset, len, buff, HMP_DUMP_STR_LEN) < 0) {
+        monitor_printf(mon, "Failed to dump UB device config space information.\n");
+        return;
+    }
+
+    monitor_printf(mon, "%s\n", buff);
+}
+
+void hmp_info_ub_ers(Monitor *mon, const QDict *qdict)
+{
+    const char *id = qdict_get_str(qdict, "id");
+    uint8_t idx = qdict_get_int(qdict, "index");
+    uint64_t offset = qdict_get_int(qdict, "offset");
+    uint64_t len = qdict_get_int(qdict, "len");
+    UBDevice *udev;
+    VFIOUBDevice *vdev = NULL;
+    VFIOERS *ers = NULL;
+    VFIORegion *region = NULL;
+    uint64_t size_total = 0;
+
+    g_autofree char *buff = g_malloc0(HMP_DUMP_STR_LEN);
+    if (len > MAX_BYTE_SUPPORT) {
+        monitor_printf(mon, "you can keep length not exceed %ld and try again.\n",
+                       MAX_BYTE_SUPPORT);
+        return;
+    }
+
+    if (idx > VFIO_UB_REGION2_INDEX) {
+        monitor_printf(mon, "invalid ers index, must <= %d.\n",
+                       VFIO_UB_REGION2_INDEX);
+        return;
+    }
+
+    udev = ub_find_device_by_id(id);
+    if (!udev) {
+        monitor_printf(mon, "%s not found, please check your input.\n", id);
+        return;
+    }
+    if (udev->dev_type != UB_TYPE_DEVICE && udev->dev_type != UB_TYPE_IDEVICE) {
+        monitor_printf(mon, "not support type: %s\n",
+                       ub_dev_get_type_str(udev->dev_type));
+        return;
+    }
+    vdev = VFIO_UB_SAFE(udev);
+    if (vdev) {
+        int i;
+        ers = &vdev->ers[idx];
+        region = &ers->region;
+        for (i = 0; i < region->nr_mmaps; i++) {
+            size_total += region->mmaps[i].size;
+        }
+        if (size_total != udev->io_regions[idx].size) {
+            monitor_printf(mon, "Some areas in this ers are emulated "
+                           "by virtualization.\n");
+        }
+    }
+    if ((vdev && offset + len > size_total) ||
+        (offset + len > udev->io_regions[idx].size)) {
+        monitor_printf(mon, "offset or len invalid, please check your input. "
+                       "udev region size 0x%lx, ers region size 0x%lx\n",
+                       udev->io_regions[idx].size, size_total);
+        return;
+    }
+
+    ub_dev_dump_ers(id, idx, offset, len, buff, HMP_DUMP_STR_LEN);
+
+    monitor_printf(mon, "%s\n", buff);
+}
+#endif // CONFIG_UB
