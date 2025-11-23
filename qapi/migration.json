@@ -1766,12 +1766,16 @@
 #
 # @rdma: Migrate via RDMA.
 #
+# @urma: Migrate via URMA.
+#
+# @hcom: Migrate via URMA.
+#
 # @file: Direct the migration stream to a file.
 #
 # Since 8.2
 ##
 { 'enum': 'MigrationAddressType',
-  'data': [ 'socket', 'exec', 'rdma', 'file' ] }
+  'data': [ 'socket', 'exec', 'rdma', 'file', 'urma', 'hcom' ] }
 
 ##
 # @FileMigrationArgs:
@@ -1810,7 +1814,9 @@
     'socket': 'SocketAddress',
     'exec': 'MigrationExecCommand',
     'rdma': 'InetSocketAddress',
-    'file': 'FileMigrationArgs' } }
+    'file': 'FileMigrationArgs',
+    'hcom': 'SocketAddress',
+    'urma': 'SocketAddress' } }
 
 ##
 # @MigrationChannelType:

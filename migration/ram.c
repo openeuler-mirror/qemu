@@ -1216,8 +1216,19 @@ static bool control_save_page(PageSearchStatus *pss,
 {
     int ret;
 
+#ifdef CONFIG_URMA_MIGRATION
+    if (migrate_urma()) {
+        ret = urma_control_save_page(pss->pss_channel, pss->block->offset, offset,
+                                     TARGET_PAGE_SIZE);
+    } else {
+        ret = rdma_control_save_page(pss->pss_channel, pss->block->offset, offset,
+                                     TARGET_PAGE_SIZE);
+    }
+#else
     ret = rdma_control_save_page(pss->pss_channel, pss->block->offset, offset,
                                  TARGET_PAGE_SIZE);
+#endif
+
     if (ret == RAM_SAVE_CONTROL_NOT_SUPP) {
         return false;
     }
@@ -3642,6 +3653,19 @@ static int ram_save_iterate(QEMUFile *f, void *opaque)
         qemu_file_set_error(f, ret);
     }
 
+#ifdef CONFIG_URMA_MIGRATION
+    /*
+     * During urma migration, we need wait all data write done
+     * to obtain the actual bandwidth.
+     */
+    if (migrate_urma()) {
+        ret = qemu_flush_urma_write(migrate_get_current()->urma_ctx);
+        if (ret < 0) {
+            qemu_file_set_error(f, ret);
+        }
+    }
+#endif
+
 out:
     if (ret >= 0
         && migration_is_setup_or_active(migrate_get_current()->state)) {
@@ -3678,6 +3702,8 @@ static int ram_save_complete(QEMUFile *f, void *opaque)
     RAMState **temp = opaque;
     RAMState *rs = *temp;
     int ret = 0;
+    MigrationState *s = migrate_get_current();
+    int64_t start_time = 0;
 
     rs->last_stage = !migration_in_colo_state();
 
@@ -3694,6 +3720,7 @@ static int ram_save_complete(QEMUFile *f, void *opaque)
 
         /* try transferring iterative blocks of memory */
 
+        start_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
         /* flush all remaining blocks regardless of rate limiting */
         qemu_mutex_lock(&rs->bitmap_mutex);
         while (true) {
@@ -3751,7 +3778,16 @@ static int ram_save_complete(QEMUFile *f, void *opaque)
         qemu_put_be64(f, RAM_SAVE_FLAG_MULTIFD_FLUSH);
     }
     qemu_put_be64(f, RAM_SAVE_FLAG_EOS);
-    return qemu_fflush(f);
+    ret = qemu_fflush(f);
+
+#ifdef CONFIG_URMA_MIGRATION
+    if (migrate_urma()) {
+        ret |= qemu_flush_urma_write(s->urma_ctx);
+    }
+#endif
+
+    s->last_memcpy_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME) - start_time;
+    return ret;
 }
 
 static void ram_state_pending_estimate(void *opaque, uint64_t *must_precopy,

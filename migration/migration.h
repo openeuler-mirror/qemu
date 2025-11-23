@@ -26,6 +26,9 @@
 #include "qom/object.h"
 #include "postcopy-ram.h"
 #include "sysemu/runstate.h"
+#ifdef CONFIG_URMA_MIGRATION
+#include "urma.h"
+#endif
 
 struct PostcopyBlocktimeContext;
 
@@ -470,6 +473,17 @@ struct MigrationState {
     bool switchover_acked;
     /* Is this a rdma migration */
     bool rdma_migration;
+
+    /* Is this a urma migration */
+    bool urma_migration;
+#ifdef CONFIG_URMA_MIGRATION
+    URMAContext *urma_ctx;
+#endif
+    int64_t urma_init_time;
+    int64_t urma_exchange_time;
+    int64_t last_memcpy_time;
+    int64_t ram_reg_time;
+    int64_t dev_mig_time;
     /* Number of migration iterations */
     uint64_t iteration_num;
 };

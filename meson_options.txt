@@ -294,6 +294,9 @@ option('sndio', type: 'feature', value: 'auto',
 option('ub', type: 'feature', value: 'auto',
        description: 'unify bus support')
 
+option('urma_migration', type: 'feature', value: 'disabled',
+       description: 'live migration via urma protocol support')
+
 option('ham_migration', type: 'feature', value: 'auto',
        description: 'live migration via memory semantics')
 

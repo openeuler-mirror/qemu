@@ -64,7 +64,8 @@ uint64_t migration_transferred_bytes(void)
     uint64_t multifd = stat64_get(&mig_stats.multifd_bytes);
     uint64_t rdma = stat64_get(&mig_stats.rdma_bytes);
     uint64_t qemu_file = stat64_get(&mig_stats.qemu_file_transferred);
+    uint64_t urma = stat64_get(&mig_stats.urma_bytes);
 
-    trace_migration_transferred_bytes(qemu_file, multifd, rdma);
-    return qemu_file + multifd + rdma;
+    trace_migration_transferred_bytes(qemu_file, multifd, rdma, urma);
+    return qemu_file + multifd + rdma + urma;
 }

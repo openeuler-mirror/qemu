@@ -336,6 +336,15 @@ bool migrate_postcopy_ram(void)
     return s->capabilities[MIGRATION_CAPABILITY_POSTCOPY_RAM];
 }
 
+#ifdef CONFIG_URMA_MIGRATION
+bool migrate_urma(void)
+{
+    MigrationState *s = migrate_get_current();
+
+    return s->urma_migration;
+}
+#endif
+
 bool migrate_use_ldst(void)
 {
     MigrationState *s = migrate_get_current();
@@ -360,6 +369,11 @@ bool migrate_release_ram(void)
 bool migrate_return_path(void)
 {
     MigrationState *s = migrate_get_current();
+#ifdef CONFIG_URMA_MIGRATION
+    if (migrate_urma()) {
+        return false;
+    }
+#endif
 
     return s->capabilities[MIGRATION_CAPABILITY_RETURN_PATH];
 }
