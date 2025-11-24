@@ -3902,6 +3902,11 @@ bool need_fast_migrate(void)
         return true;
     }
 #endif
+#ifdef CONFIG_HAM_MIGRATION
+    if (migrate_use_ldst()) {
+        return true;
+    }
+#endif
 
     return false;
 }
