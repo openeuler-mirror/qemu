@@ -220,6 +220,8 @@ Property migration_properties[] = {
     DEFINE_PROP_MIG_CAP("x-multifd", MIGRATION_CAPABILITY_MULTIFD),
     DEFINE_PROP_MIG_CAP("x-background-snapshot",
             MIGRATION_CAPABILITY_BACKGROUND_SNAPSHOT),
+    DEFINE_PROP_MIG_CAP("x-onecopy", MIGRATION_CAPABILITY_ONECOPY),
+    DEFINE_PROP_MIG_CAP("x-devices-parallel", MIGRATION_CAPABILITY_DEVICES_PARALLEL),
 #ifdef CONFIG_LINUX
     DEFINE_PROP_MIG_CAP("x-zero-copy-send",
             MIGRATION_CAPABILITY_ZERO_COPY_SEND),
@@ -336,6 +338,29 @@ bool migrate_postcopy_ram(void)
     return s->capabilities[MIGRATION_CAPABILITY_POSTCOPY_RAM];
 }
 
+#ifdef CONFIG_URMA_MIGRATION
+bool migrate_urma(void)
+{
+    MigrationState *s = migrate_get_current();
+
+    return s->urma_migration;
+}
+#endif
+
+bool migrate_devices_parallel(void)
+{
+    MigrationState *s = migrate_get_current();
+
+    return s->capabilities[MIGRATION_CAPABILITY_DEVICES_PARALLEL];
+}
+
+bool migrate_onecopy_ram(void)
+{
+    MigrationState *s = migrate_get_current();
+
+    return s->capabilities[MIGRATION_CAPABILITY_ONECOPY];
+}
+
 bool migrate_use_ldst(void)
 {
     MigrationState *s = migrate_get_current();
@@ -360,6 +385,11 @@ bool migrate_release_ram(void)
 bool migrate_return_path(void)
 {
     MigrationState *s = migrate_get_current();
+#ifdef CONFIG_URMA_MIGRATION
+    if (migrate_urma()) {
+        return false;
+    }
+#endif
 
     return s->capabilities[MIGRATION_CAPABILITY_RETURN_PATH];
 }
@@ -484,6 +514,8 @@ INITIALIZE_MIGRATE_CAPS_SET(check_caps_background_snapshot,
     MIGRATION_CAPABILITY_X_COLO,
     MIGRATION_CAPABILITY_VALIDATE_UUID,
     MIGRATION_CAPABILITY_ZERO_COPY_SEND,
+    MIGRATION_CAPABILITY_ONECOPY,
+    MIGRATION_CAPABILITY_DEVICES_PARALLEL,
     MIGRATION_CAPABILITY_LDST);
 
 static bool migrate_incoming_started(void)

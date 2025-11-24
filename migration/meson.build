@@ -31,6 +31,10 @@ system_ss.add(files(
   'threadinfo.c',
 ), gnutls)
 
+if have_urma_migration
+  system_ss.add(files('urma.c'))
+endif
+
 if have_ham_migration
   system_ss.add(files('ham.c'))
 endif

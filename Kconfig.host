@@ -57,5 +57,8 @@ config HV_BALLOON_POSSIBLE
 config UB
     bool
 
+config URMA_MIGRATION
+    bool
+
 config HAM_MIGRATION
     bool

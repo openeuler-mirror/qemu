@@ -54,6 +54,8 @@ meson_options_help() {
   printf "%s\n" '  --enable-tsan            enable thread sanitizer'
   printf "%s\n" '  --enable-ub              enable unify bus'
   printf "%s\n" '  --disable-ub             disable unify bus'
+  printf "%s\n" '  --enable-urma-migration  enable urma migration'
+  printf "%s\n" '  --disable-urma-migration disable urma migration'
   printf "%s\n" '  --enable-ham-migration   enable ham migration'
   printf "%s\n" '  --disable-ham-migration  disable ham migration'
   printf "%s\n" '  --firmwarepath=VALUES    search PATH for firmware files [share/qemu-'
@@ -195,6 +197,7 @@ meson_options_help() {
   printf "%s\n" '  u2f             U2F emulation support'
   printf "%s\n" '  ub              unify bus support'
   printf "%s\n" '  ham-migration   live migration via memory semantics'
+  printf "%s\n" '  urma-migration  live migration via urma protocol support'
   printf "%s\n" '  usb-redir       libusbredir support'
   printf "%s\n" '  vde             vde network backend support'
   printf "%s\n" '  vdi             vdi image format support'
@@ -523,6 +526,8 @@ _meson_option_parse() {
     --disable-ub) printf "%s" -Dub=disabled ;;
     --enable-ham-migration) printf "%s" -Dham_migration=enabled ;;
     --disable-ham-migration) printf "%s" -Dham_migration=disabled ;;
+    --enable-urma-migration) printf "%s" -Durma_migration=enabled ;;
+    --disable-urma-migration) printf "%s" -Durma_migration=disabled ;;
     --enable-usb-redir) printf "%s" -Dusb_redir=enabled ;;
     --disable-usb-redir) printf "%s" -Dusb_redir=disabled ;;
     --enable-vde) printf "%s" -Dvde=enabled ;;

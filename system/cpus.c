@@ -46,6 +46,7 @@
 #include "hw/boards.h"
 #include "hw/hw.h"
 #include "trace.h"
+#include "migration/migration.h"
 
 #ifdef CONFIG_LINUX
 
@@ -281,6 +282,7 @@ static int do_vm_stop(RunState state, bool send_stop)
         runstate_set(state);
         cpu_disable_ticks();
         pause_all_vcpus();
+        migration_downtime_start(migrate_get_current());
         trace_all_vcpus_paused();
 
         vm_state_notify(0, state);

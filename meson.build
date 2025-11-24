@@ -595,6 +595,12 @@ else
   have_ham_migration = false
 endif
 
+# urma migration
+have_urma_migration = get_option('urma_migration') \
+  .require(targetos == 'linux', error_message: 'urma_migration is supported only on Linux') \
+  .require(cpu == 'aarch64', error_message: 'urma_migration is supported only on aarch64') \
+  .allowed()
+
 # vhost
 have_vhost_user = get_option('vhost_user') \
   .disable_auto_if(targetos != 'linux') \
@@ -2304,6 +2310,7 @@ config_host_data.set('CONFIG_VHOST_USER', have_vhost_user)
 config_host_data.set('CONFIG_VHOST_CRYPTO', have_vhost_user_crypto)
 config_host_data.set('CONFIG_UB', have_ub)
 config_host_data.set('CONFIG_HAM_MIGRATION', have_ham_migration)
+config_host_data.set('CONFIG_URMA_MIGRATION', have_urma_migration)
 config_host_data.set('CONFIG_VHOST_VDPA', have_vhost_vdpa)
 config_host_data.set('CONFIG_VMNET', vmnet.found())
 config_host_data.set('CONFIG_VHOST_USER_BLK_SERVER', have_vhost_user_blk_server)
@@ -3018,6 +3025,7 @@ host_kconfig = \
   (x11.found() ? ['CONFIG_X11=y'] : []) + \
   (have_ub ? ['CONFIG_UB=y'] : []) + \
   (have_ham_migration ? ['CONFIG_HAM_MIGRATION=y'] : []) + \
+  (have_urma_migration ? ['CONFIG_URMA_MIGRATION=y'] : []) + \
   (have_vhost_user ? ['CONFIG_VHOST_USER=y'] : []) + \
   (have_vhost_vdpa ? ['CONFIG_VHOST_VDPA=y'] : []) + \
   (have_vhost_kernel ? ['CONFIG_VHOST_KERNEL=y'] : []) + \
@@ -4249,6 +4257,7 @@ summary_info += {'QOM debugging':     get_option('qom_cast_debug')}
 summary_info += {'Relocatable install': get_option('relocatable')}
 summary_info += {'ub support': have_ub}
 summary_info += {'ham migration support': have_ham_migration}
+summary_info += {'urma migration support': have_urma_migration}
 summary_info += {'vhost-kernel support': have_vhost_kernel}
 summary_info += {'vhost-net support': have_vhost_net}
 summary_info += {'vhost-user support': have_vhost_user}

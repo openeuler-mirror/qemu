@@ -1545,6 +1545,9 @@ int qemu_savevm_state_complete_precopy_non_iterable(QEMUFile *f,
     int vmdesc_len;
     SaveStateEntry *se;
     int ret;
+    int64_t start_time;
+
+    start_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
 
     QTAILQ_FOREACH(se, &savevm_state.handlers, entry) {
         if (se->vmsd && se->vmsd->early_setup) {
@@ -1601,6 +1604,8 @@ int qemu_savevm_state_complete_precopy_non_iterable(QEMUFile *f,
     ms->vmdesc = NULL;
 
     trace_vmstate_downtime_checkpoint("src-non-iterable-saved");
+
+    ms->dev_mig_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME) - start_time;
 
     return 0;
 }
