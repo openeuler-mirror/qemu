@@ -221,6 +221,7 @@ Property migration_properties[] = {
     DEFINE_PROP_MIG_CAP("x-background-snapshot",
             MIGRATION_CAPABILITY_BACKGROUND_SNAPSHOT),
     DEFINE_PROP_MIG_CAP("x-onecopy", MIGRATION_CAPABILITY_ONECOPY),
+    DEFINE_PROP_MIG_CAP("x-devices-parallel", MIGRATION_CAPABILITY_DEVICES_PARALLEL),
 #ifdef CONFIG_LINUX
     DEFINE_PROP_MIG_CAP("x-zero-copy-send",
             MIGRATION_CAPABILITY_ZERO_COPY_SEND),
@@ -345,6 +346,13 @@ bool migrate_urma(void)
     return s->urma_migration;
 }
 #endif
+
+bool migrate_devices_parallel(void)
+{
+    MigrationState *s = migrate_get_current();
+
+    return s->capabilities[MIGRATION_CAPABILITY_DEVICES_PARALLEL];
+}
 
 bool migrate_onecopy_ram(void)
 {
@@ -507,6 +515,7 @@ INITIALIZE_MIGRATE_CAPS_SET(check_caps_background_snapshot,
     MIGRATION_CAPABILITY_VALIDATE_UUID,
     MIGRATION_CAPABILITY_ZERO_COPY_SEND,
     MIGRATION_CAPABILITY_ONECOPY,
+    MIGRATION_CAPABILITY_DEVICES_PARALLEL,
     MIGRATION_CAPABILITY_LDST);
 
 static bool migrate_incoming_started(void)

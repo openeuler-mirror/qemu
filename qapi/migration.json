@@ -539,6 +539,9 @@
 #     and enter to the completion phase:suspend the source VM and
 #     synchronize all VM states to the destination host.  (Since 8.2)
 #
+# @devices-parallel: If enabled, parallel save vmstate with stop cpu.
+#     (Since 8.2)
+#
 # Features:
 #
 # @deprecated: Member @block is deprecated.  Use blockdev-mirror with
@@ -554,7 +557,7 @@
 { 'enum': 'MigrationCapability',
   'data': ['xbzrle', 'rdma-pin-all', 'auto-converge', 'zero-blocks',
            { 'name': 'compress', 'features': [ 'deprecated' ] },
-           'events', 'postcopy-ram', 'onecopy', 'ldst',
+           'events', 'postcopy-ram', 'onecopy', 'devices-parallel', 'ldst',
            { 'name': 'x-colo', 'features': [ 'unstable' ] },
            'release-ram',
            { 'name': 'block', 'features': [ 'deprecated' ] },
@@ -619,6 +622,7 @@
 #       {"state": false, "capability": "postcopy-ram"},
 #       {"state": false, "capability": "x-colo"},
 #       {"state": false, "capability": "onecopy"},
+#       {"state": false, "capability": "devices-parallel"},
 #       {"state": false, "capability": "ldst"}
 #    ]}
 ##
