@@ -134,6 +134,7 @@ static inline bool all_subpages_in_hugepage_freed(GlobalBalloonedPage *gbp, unsi
     if (hugepage_index * ULONGS_PER_HUGEPAGE < gbp->page_nr) {
         return bitmap_full(&gbp->freed_page_bitmap[hugepage_index * ULONGS_PER_HUGEPAGE], PAGES_IN_HUGEPAGE);
     }
+    return false;
 }
 
 static void mark_freed_subpage(RAMBlock *rb, ram_addr_t rb_offset)
