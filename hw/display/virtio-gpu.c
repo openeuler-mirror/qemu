@@ -31,6 +31,7 @@
 #include "qemu/module.h"
 #include "qapi/error.h"
 #include "qemu/error-report.h"
+#include "migration/migration.h"
 
 #define VIRTIO_GPU_VM_VERSION 1
 
@@ -1213,8 +1214,11 @@ static int virtio_gpu_save(QEMUFile *f, void *opaque, size_t size,
             qemu_put_be64(f, res->addrs[i]);
             qemu_put_be32(f, res->iov[i].iov_len);
         }
-        qemu_put_buffer(f, (void *)pixman_image_get_data(res->image),
-                        pixman_image_get_stride(res->image) * res->height);
+
+        if (!need_fast_migrate()) {
+            qemu_put_buffer(f, (void *)pixman_image_get_data(res->image),
+                            pixman_image_get_stride(res->image) * res->height);
+        }
     }
     qemu_put_be32(f, 0); /* end of list */
 
@@ -1310,8 +1314,11 @@ static int virtio_gpu_load(QEMUFile *f, void *opaque, size_t size,
             res->addrs[i] = qemu_get_be64(f);
             res->iov[i].iov_len = qemu_get_be32(f);
         }
-        qemu_get_buffer(f, (void *)pixman_image_get_data(res->image),
-                        pixman_image_get_stride(res->image) * res->height);
+
+        if (!need_fast_migrate()) {
+            qemu_get_buffer(f, (void *)pixman_image_get_data(res->image),
+                            pixman_image_get_stride(res->image) * res->height);
+        }
 
         if (!virtio_gpu_load_restore_mapping(g, res)) {
             pixman_image_unref(res->image);
@@ -1320,6 +1327,13 @@ static int virtio_gpu_load(QEMUFile *f, void *opaque, size_t size,
         }
 
         resource_id = qemu_get_be32(f);
+
+        if (need_fast_migrate()) {
+            iov_to_buf(res->iov, res->iov_cnt, 0,
+                       pixman_image_get_data(res->image),
+                       pixman_image_get_stride(res->image) *
+                       pixman_image_get_height(res->image));
+        }
     }
 
     /* load & apply scanout state */

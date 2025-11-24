@@ -575,4 +575,7 @@ bool memcrypt_enabled(void);
 int ram_init_touched_log(void);
 #endif
 
+bool need_fast_migrate(void);
+void migration_downtime_start(MigrationState *s);
+
 #endif

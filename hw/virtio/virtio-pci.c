@@ -1066,6 +1066,8 @@ static int kvm_virtio_pci_vector_config_use(VirtIOPCIProxy *proxy)
     return kvm_virtio_pci_vector_use_one(proxy, VIRTIO_CONFIG_IRQ_IDX);
 }
 
+#define VIRTIO_DEVICE_REQUEST_INTERVAL 20
+
 static void kvm_virtio_pci_vector_release_one(VirtIOPCIProxy *proxy,
                                               int queue_no)
 {
@@ -1085,6 +1087,16 @@ static void kvm_virtio_pci_vector_release_one(VirtIOPCIProxy *proxy,
     }
     if (vdev->use_guest_notifier_mask && k->guest_notifier_mask) {
         kvm_virtio_pci_irqfd_release(proxy, n, vector);
+#ifdef __aarch64__
+        /* kernel commit 1e9a038b7f introduce function srcu_get_delay,which
+         * result in synchronize_srcu cost a few more milliseconds if there are
+         * less than 25us between two grace periods, so we sleep 20us here
+         * to avoid the delay.
+         *
+         * Note: synchronize community plan after community optimizes it
+         */
+        usleep(VIRTIO_DEVICE_REQUEST_INTERVAL);
+#endif
     }
     kvm_virtio_pci_vq_vector_release(proxy, vector);
 }
@@ -1239,6 +1251,16 @@ static void virtio_pci_vector_mask(PCIDevice *dev, unsigned vector)
             break;
         }
         if (index < proxy->nvqs_with_notifiers) {
+#ifdef __aarch64__
+            /* kernel commit 1e9a038b7f introduce function srcu_get_delay,which
+             * result in synchronize_srcu cost a few more milliseconds if there are
+             * less than 25us between two grace periods, so we sleep 20us here
+             * to avoid the delay.
+             *
+             * Note: synchronize community plan after community optimizes it
+             */
+            usleep(VIRTIO_DEVICE_REQUEST_INTERVAL);
+#endif
             virtio_pci_one_vector_mask(proxy, index, vector, n);
         }
         vq = virtio_vector_next_queue(vq);

@@ -109,7 +109,7 @@ static int migration_maybe_pause(MigrationState *s,
                                  int new_state);
 static bool close_return_path_on_source(MigrationState *s);
 
-static void migration_downtime_start(MigrationState *s)
+void migration_downtime_start(MigrationState *s)
 {
     trace_vmstate_downtime_checkpoint("src-downtime-start");
     s->downtime_start = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
@@ -3894,3 +3894,14 @@ int ram_init_touched_log(void)
     return -EINTR;
 }
 #endif
+
+bool need_fast_migrate(void)
+{
+#ifdef CONFIG_URMA_MIGRATION
+    if (migrate_urma()) {
+        return true;
+    }
+#endif
+
+    return false;
+}
