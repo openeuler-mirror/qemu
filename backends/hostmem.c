@@ -393,7 +393,7 @@ static int mbind_by_proportions(void *ptr, const char *bind_proportions, uint64_
         long size_token;
         DECLARE_BITMAP(tmp_host_nodes, MAX_NODES + 1) = {0};
 
-        ptr = (void*)((char*)ptr + size);
+        ptr = (void*)((char *)ptr + size);
         if (memcpy(prop, proportions[i], strlen(proportions[i]) + 1) == NULL) {
             qemu_log("failed to copy propertion");
             return -1;
@@ -474,6 +474,7 @@ host_memory_backend_memory_complete(UserCreatable *uc, Error **errp)
         if (proportion != NULL) {
             if (mbind_by_proportions(ptr, proportion, sz) < 0) {
                 error_setg(errp, "failed to mbind_by_proportions");
+                free(backend->propertion);
                 return;
             }
             free(backend->propertion);
