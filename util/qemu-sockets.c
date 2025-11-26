@@ -1122,7 +1122,7 @@ SocketAddress *socket_parse(const char *str, Error **errp)
         if (inet_parse(&addr->u.inet, str + strlen("tcp:"), errp)) {
             goto fail;
         }
-#ifdef CONFIG_URMA_MIGTAION
+#ifdef CONFIG_URMA_MIGRATION
     } else if (strstart(str, "urma:", NULL) || strstart(str, "hcom:", NULL)) {
         addr->type = SOCKET_ADDRESS_TYPE_INET;
         if (inet_parse(&addr->u.inet, str + strlen("urma:"), errp)) {

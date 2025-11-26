@@ -145,6 +145,10 @@ static bool transport_supports_multi_channels(MigrationAddress *addr)
                saddr->type == SOCKET_ADDRESS_TYPE_VSOCK;
     }
 
+    if (addr->transport == MIGRATION_ADDRESS_TYPE_URMA) {
+        return true;
+    }
+
     return false;
 }
 
