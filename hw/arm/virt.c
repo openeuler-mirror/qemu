@@ -402,7 +402,7 @@ static void create_ubios_info_table_fdt(VirtMachineState *vms, MemoryRegion *mac
     qemu_log("create fdt for ubios-information-table 0x%lx\n",
              vms->memmap[VIRT_UBIOS_INFO_TABLE].base);
 
-    ub_init_ubios_info_table(vms, ROUND_UP(UBIOS_TABLE_SIZE, 4 * KiB));
+    ub_init_ubios_info_table(ROUND_UP(UBIOS_TABLE_SIZE, 4 * KiB));
 }
 #endif // CONFIG_UB
 
@@ -2086,7 +2086,7 @@ void virt_machine_done(Notifier *notifier, void *data)
 
     fw_cfg_add_extra_pci_roots(vms->bus, vms->fw_cfg);
 #ifdef CONFIG_UB
-    if (ub_dev_finally_setup(vms, &error_fatal) < 0) {
+    if (ub_dev_finally_setup(&error_fatal) < 0) {
         exit(1);
     }
 #endif // CONFIG_UB
