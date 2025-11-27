@@ -6022,3 +6022,11 @@ void kvm_set_max_apic_id(uint32_t max_apic_id)
 {
     kvm_vm_enable_cap(kvm_state, KVM_CAP_MAX_VCPU_ID, 0, max_apic_id);
 }
+
+#ifdef CONFIG_UB
+int kvm_arch_fixup_usi_route(struct kvm_irq_routing_entry *route,
+                             uint64_t address, uint32_t data, UBDevice *dev)
+{
+    return -ENOSYS;
+}
+#endif // CONFIG_UB

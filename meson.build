@@ -584,7 +584,6 @@ config_host_data.set('CONFIG_HUGEPAGE_POD', have_hugepage_pod)
 # ub
 have_ub = get_option('ub') \
   .require(targetos == 'linux', error_message: 'UB is supported only on Linux') \
-  .require(cpu == 'aarch64', error_message: 'UB is supported only on aarch64') \
   .allowed()
 
 if cpu in ['aarch64']
