@@ -19,6 +19,7 @@
 #include "qemu/cutils.h"
 #include "qemu/units.h"
 #include "hw/arm/virt.h"
+#include "hw/qdev-core.h"
 #include "hw/boards.h"
 #include "hw/qdev-properties.h"
 #include "hw/qdev-properties-system.h"
@@ -246,8 +247,9 @@ static void ub_init_ubios_rsv_mem_table(DtsRsvMemTable *rsv_mem_table, VirtMachi
     mem_range->size = 0x100000;  /* MSI_IOVA_LENGTH */
 }
 
-void ub_init_ubios_info_table(VirtMachineState *vms, uint64_t total_size)
+void ub_init_ubios_info_table(uint64_t total_size)
 {
+    VirtMachineState *vms = VIRT_MACHINE(qdev_get_machine());
     uint64_t ubios_info_tables = vms->memmap[VIRT_UBIOS_INFO_TABLE].base;
     uint64_t ubc_tables_addr = ubios_info_tables + UBIOS_INFO_TABLE_SIZE;
     uint64_t ummu_tables_addr;
@@ -307,8 +309,9 @@ void ub_init_ubios_info_table(VirtMachineState *vms, uint64_t total_size)
     cpu_physical_memory_unmap(ubios, size, true, size);
 }
 
-void ub_set_ubinfo_in_ubc_table(VirtMachineState *vms)
+void ub_set_ubinfo_in_ubc_table(void)
 {
+    VirtMachineState *vms = VIRT_MACHINE(qdev_get_machine());
     uint64_t ubios_info_tables = vms->memmap[VIRT_UBIOS_INFO_TABLE].base;
     uint64_t total_size = ROUND_UP(UBIOS_TABLE_SIZE, 4 * KiB);
     uint64_t size = total_size;
@@ -511,8 +514,9 @@ void ub_idev_ers_free_address_space(hwaddr offset)
     }
 }
 
-void build_ubrt(GArray *table_data, BIOSLinker *linker, VirtMachineState *vms)
+void build_ubrt(GArray *table_data, BIOSLinker *linker)
 {
+    VirtMachineState *vms = VIRT_MACHINE(qdev_get_machine());
     /* 3 subtables: ubc, ummu, UB Reserved Memory */
     uint8_t table_cnt = 3;
     uint64_t ubios_info_tables = vms->memmap[VIRT_UBIOS_INFO_TABLE].base;

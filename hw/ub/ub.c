@@ -1234,7 +1234,7 @@ static int ub_bus_instance_verify(Error **errp)
  * 1. check ub device bus instance type
  * 2. init the port info
  * */
-int ub_dev_finally_setup(VirtMachineState *vms, Error **errp)
+int ub_dev_finally_setup(Error **errp)
 {
     if (ub_bus_instance_verify(errp)) {
         return -1;
@@ -1248,7 +1248,7 @@ int ub_dev_finally_setup(VirtMachineState *vms, Error **errp)
         return -1;
     }
 
-    ub_set_ubinfo_in_ubc_table(vms);
+    ub_set_ubinfo_in_ubc_table();
 
     return 0;
 }

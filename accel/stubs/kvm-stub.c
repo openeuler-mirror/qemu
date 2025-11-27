@@ -13,6 +13,7 @@
 #include "qemu/osdep.h"
 #include "sysemu/kvm.h"
 #include "hw/pci/msi.h"
+#include "hw/ub/ub_usi.h"
 
 KVMState *kvm_state;
 bool kvm_kernel_irqchip;
@@ -139,3 +140,15 @@ int kvm_load_user_data(hwaddr loader_start, hwaddr image_end, hwaddr initrd_star
 {
     return -ENOSYS;
 }
+
+#ifdef CONFIG_UB
+int kvm_irqchip_add_usi_route(KVMRouteChange *c, USIMessage msg, uint32_t devid, UBDevice *udev)
+{
+    return -ENOSYS;
+}
+
+int kvm_irqchip_update_usi_route(KVMRouteChange *c, int virq, USIMessage msg, UBDevice *udev)
+{
+    return -ENOSYS;
+}
+#endif // CONFIG_UB

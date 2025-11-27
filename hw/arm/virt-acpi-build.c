@@ -1383,7 +1383,7 @@ void virt_acpi_build(VirtMachineState *vms, AcpiBuildTables *tables)
     build_dsdt(tables_blob, tables->linker, vms);
 #ifdef CONFIG_UB
     acpi_add_table(table_offsets, tables_blob);
-    build_ubrt(tables_blob, tables->linker, vms);
+    build_ubrt(tables_blob, tables->linker);
 #endif
     /* FADT MADT PPTT GTDT MCFG SPCR DBG2 pointed to by RSDT */
     acpi_add_table(table_offsets, tables_blob);

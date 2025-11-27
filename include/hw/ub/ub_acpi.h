@@ -17,7 +17,6 @@
 
 #ifndef HW_UB_ACPI_H
 #define HW_UB_ACPI_H
-#include "hw/arm/virt.h"
 #include "hw/acpi/acpi-defs.h"
 #include "hw/acpi/bios-linker-loader.h"
 #include "hw/acpi/aml-build.h"
@@ -174,12 +173,12 @@ typedef struct AcpiUbrtTable {
                           UBIOS_UMMU_TABLE_SIZE(UBIOS_UMMU_TABLE_CNT) + \
                           UBIOS_RSV_MEM_TABLE_SIZE(UBIOS_UMMU_TABLE_CNT))
 
-void ub_init_ubios_info_table(VirtMachineState *vms, uint64_t total_size);
+void ub_init_ubios_info_table(uint64_t total_size);
 hwaddr ub_idev_ers_alloc_address_space(uint64_t size, uint32_t sys_pgs);
 void ub_idev_ers_free_address_space(hwaddr offset);
 void ub_set_gpa_bits(uint8_t bits);
-void build_ubrt(GArray *table_data, BIOSLinker *linker, VirtMachineState *vms);
-void ub_set_ubinfo_in_ubc_table(VirtMachineState *vms);
+void build_ubrt(GArray *table_data, BIOSLinker *linker);
+void ub_set_ubinfo_in_ubc_table(void);
 void acpi_dsdt_add_ub(Aml *scope);
 void acpi_iort_add_ub(GArray *table_data);
 #endif
