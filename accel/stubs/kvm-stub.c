@@ -152,3 +152,14 @@ int kvm_irqchip_update_usi_route(KVMRouteChange *c, int virq, USIMessage msg, UB
     return -ENOSYS;
 }
 #endif // CONFIG_UB
+
+#ifdef CONFIG_HUGEPAGE_POD
+int kvm_update_touched_log(void)
+{
+    return -ENOSYS;
+}
+int kvm_clear_slot_dirty_bitmap(void *ram)
+{
+    return -ENOSYS;
+}
+#endif
