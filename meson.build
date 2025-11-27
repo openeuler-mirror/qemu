@@ -576,6 +576,7 @@ config_host_data.set('CONFIG_MBIND_PROPORTION', have_mbind_proportion)
 # hugepage pod
 have_hugepage_pod = get_option('hugepage_pod') \
   .require(targetos == 'linux', error_message: 'hugepage_pod is supported only on Linux') \
+  .require(cpu == 'aarch64', error_message: 'hugepage_pod is supported only on aarch64') \
   .allowed()
 
 config_host_data.set('CONFIG_HUGEPAGE_POD', have_hugepage_pod)
