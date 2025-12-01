@@ -69,10 +69,10 @@ enum {
 #define HCT_GID_BITMAP_SHM_NAME   "hct_gid_bitmap"
 #define HCT_GID_LOCK_FILE         "hct_gid_locks"
 
-#define HCT_QEMU_GIDS_BITMAP_MAX_BIT	2048
-#define HCT_QEMU_GIDS_BITMAP_MIN_BIT	1024
-#define HCT_QEMU_GIDS_SHIFT_BITS		18
-#define HCT_GIDS_PER_BLOCK				8
+#define HCT_QEMU_GIDS_BITMAP_MAX_BIT    2048
+#define HCT_QEMU_GIDS_BITMAP_MIN_BIT    1024
+#define HCT_QEMU_GIDS_SHIFT_BITS        18
+#define HCT_GIDS_PER_BLOCK                8
 
 static void hct_clear_bit(unsigned long *bitmap, int n);
 static uint32_t hct_get_bit(unsigned long *bitmap, int n);
@@ -140,34 +140,34 @@ static void hct_g_ids_lock_state_walk(struct hct_gid_bitmap *bitmap);
 // ======================== HCT IPC API ====================
 
 // HCT IPC TLV field type definitions
-#define HCT_IPC_FIELD_COMMAND		1   /* command */
-#define HCT_IPC_FIELD_CONTAINER_FD	2   /* container fd */
-#define HCT_IPC_FIELD_GROUP_FD		3   /* group fd */
-#define HCT_IPC_FIELD_DEVICE_FD		4   /* device fd */
-#define HCT_IPC_FIELD_GROUP_INFO	5   /* group info */
-#define HCT_IPC_FIELD_DEVICE_INFO	6   /* device info */
-#define HCT_IPC_FIELD_DEVICE_NAMES	7   /* device names */
-#define HCT_IPC_FIELD_VCCP_PATH		9   /* vccp device file path */
-#define HCT_IPC_FIELD_VCCP_CONTENT	10  /* vccp device file content */
-#define HCT_IPC_FIELD_ERROR_REASON	11  /* request failed reason */
+#define HCT_IPC_FIELD_COMMAND           1   /* command */
+#define HCT_IPC_FIELD_CONTAINER_FD      2   /* container fd */
+#define HCT_IPC_FIELD_GROUP_FD          3   /* group fd */
+#define HCT_IPC_FIELD_DEVICE_FD         4   /* device fd */
+#define HCT_IPC_FIELD_GROUP_INFO        5   /* group info */
+#define HCT_IPC_FIELD_DEVICE_INFO       6   /* device info */
+#define HCT_IPC_FIELD_DEVICE_NAMES      7   /* device names */
+#define HCT_IPC_FIELD_VCCP_PATH         9   /* vccp device file path */
+#define HCT_IPC_FIELD_VCCP_CONTENT      10  /* vccp device file content */
+#define HCT_IPC_FIELD_ERROR_REASON      11  /* request failed reason */
 
 // Error code definitions
-#define HCT_SUCCESS				0		/* success */
-#define HCT_ERROR_CONNECT		(-1)   /* connect error */
-#define HCT_ERROR_RECEIVE		(-2)   /* receive error */
-#define HCT_ERROR_INVALID_DATA	(-3)   /* invalid data */
+#define HCT_SUCCESS             0    /* success */
+#define HCT_ERROR_CONNECT       (-1) /* connect error */
+#define HCT_ERROR_RECEIVE       (-2) /* receive error */
+#define HCT_ERROR_INVALID_DATA  (-3) /* invalid data */
 
 // Constants
-#define HCT_DAEMON_PID_FILE		"/var/run/hctd.pid"		/* daemon pid file */
-#define HCT_DAEMON_SOCK_PATH	"/var/run/hctd.sock"	/* daemon socket path */
+#define HCT_DAEMON_PID_FILE        "/var/run/hctd.pid"  /* daemon pid file */
+#define HCT_DAEMON_SOCK_PATH    "/var/run/hctd.sock"    /* daemon socket path */
 
-#define PCI_ADDR_MAX			20   /* pci address max length */
-#define DEVICE_NAME_MAX			32   /* device name max length */
+#define PCI_ADDR_MAX            20   /* pci address max length */
+#define DEVICE_NAME_MAX         32   /* device name max length */
 
 // daemon client command type
 enum hct_daemon_req_cmd {
-    HCT_CMD_GET_ALL_DEVICES = 0x01,		/* libhct request: get all devices information */
-    HCT_CMD_GET_DEVICE_BY_NAME  = 0x02,	/* qemu request: get device info via vccp file */
+    HCT_CMD_GET_ALL_DEVICES = 0x01,        /* libhct request: get all devices information */
+    HCT_CMD_GET_DEVICE_BY_NAME  = 0x02,    /* qemu request: get device info via vccp file */
 };
 
 typedef struct hct_vccp_req {
@@ -184,11 +184,11 @@ typedef struct {
 
 // CCP device management structure
 typedef struct {
-    char pci_addr[PCI_ADDR_MAX];	/* PCI address (e.g., 0000:01:00.0) */
-    int group_id;					/* VFIO group ID */
-    int group_fd;					/* VFIO group FD */
-    int device_fd;					/* VFIO device FD */
-    int group_index;				/* Index in group array of the group this device belongs to */
+    char pci_addr[PCI_ADDR_MAX];    /* PCI address (e.g., 0000:01:00.0) */
+    int group_id;                   /* VFIO group ID */
+    int group_fd;                   /* VFIO group FD */
+    int device_fd;                  /* VFIO device FD */
+    int group_index;                /* Index in group array of the group this device belongs to */
 } hct_ccp_device_t;
 
 // Group information structure
@@ -200,16 +200,16 @@ typedef struct {
 
 // Overall client device information container
 typedef struct {
-    int container_fd;			/* VFIO container file descriptor */
-    hct_group_info_t *groups;	/* VFIO group information array */
-    int group_count;			/* Number of groups */
-    hct_ccp_device_t *devices;	/* VFIO device information array */
-    int device_count;			/* Number of devices */
+    int container_fd;           /* VFIO container file descriptor */
+    hct_group_info_t *groups;   /* VFIO group information array */
+    int group_count;            /* Number of groups */
+    hct_ccp_device_t *devices;  /* VFIO device information array */
+    int device_count;           /* Number of devices */
 } hct_client_info_t;
 
 // Internal constants for client implementation
-#define MAX_TLV_BUFFER_SIZE 2048	/* max tlv buffer size */
-#define MAX_FD_COUNT 128			/* max fd count */
+#define MAX_TLV_BUFFER_SIZE 2048    /* max tlv buffer size */
+#define MAX_FD_COUNT 128            /* max fd count */
 
 // ======================== HCT IPC API end ====================
 
@@ -230,8 +230,8 @@ typedef struct {
 #define VFIO_DEVICE_CCP_SET_MODE     _IO(VFIO_TYPE, VFIO_BASE + 32)
 #define VFIO_DEVICE_CCP_GET_MODE     _IO(VFIO_TYPE, VFIO_BASE + 33)
 
-#define SHM_DIR						"/dev/shm/"
-#define HCT_GLOBAL_SHARE_SHM_NAME	"hct_global_share"
+#define SHM_DIR                     "/dev/shm/"
+#define HCT_GLOBAL_SHARE_SHM_NAME   "hct_global_share"
 #define HCT_GLOBAL_SHARE_SHM_PATH SHM_DIR HCT_GLOBAL_SHARE_SHM_NAME
 
 #define HCT_SHARE_DEV                "/dev/hct_share"
@@ -425,7 +425,7 @@ static int pasid_get_and_init(HCTDevState *state)
 
     gid = (unsigned long *)((unsigned long)base + HCT_PASID_MEM_GID_OFFSET);
     ret = hct_g_ids_alloc(g_hct_gid_bitmap, &g_id);
-	*gid = g_id;
+    *gid = g_id;
     if (ret < 0) {
         error_report("Failed to allocate g_id, ret=%d", ret);
         goto out;
@@ -1301,7 +1301,7 @@ out:
     return ret;
 }
 
-#define VFIO_GET_REGION_ADDR(x) ((uint64_t) x << 40ULL)
+#define VFIO_GET_REGION_ADDR(x) ((uint64_t)(x) << 40ULL)
 
 /* @brief set bus master to avoid ccp stuck in vfio-pci mode */
 static int pci_vfio_set_bus_master(int dev_fd)
@@ -1858,13 +1858,14 @@ static int hct_client_send_cmd(const char *socket_path, hct_client_info_t *clien
                 current_group_index++;
                 client_info->group_count = current_group_index + 1;
 
-                /* Reallocate groups array */
-                client_info->groups = realloc(client_info->groups, sizeof(hct_group_info_t) * client_info->group_count);
                 if (!client_info->groups) {
-                    error_report("Failed to allocate memory for groups");
-                    hct_client_cleanup(client_info);
-                    close(sock);
-                    return HCT_ERROR_INVALID_DATA;
+                    client_info->groups = malloc(sizeof(hct_group_info_t) * MAX_CCP_CNT);
+                    if (!client_info->groups) {
+                        error_report("Failed to allocate memory for groups");
+                        hct_client_cleanup(client_info);
+                        close(sock);
+                        return HCT_ERROR_INVALID_DATA;
+                    }
                 }
 
                 /* Initialize new group with real group_id */
@@ -1900,16 +1901,17 @@ static int hct_client_send_cmd(const char *socket_path, hct_client_info_t *clien
                     }
                 }
 
-                /* Allocate space for new device */
-                client_info->device_count++;
-                client_info->devices = realloc(client_info->devices, sizeof(hct_ccp_device_t) * client_info->device_count);
                 if (!client_info->devices) {
-                    error_report("Failed to allocate memory for devices");
-                    hct_client_cleanup(client_info);
-                    close(sock);
-                    return HCT_ERROR_INVALID_DATA;
+                    client_info->devices = malloc(sizeof(hct_ccp_device_t) * MAX_CCP_CNT);
+                    if (!client_info->devices) {
+                        error_report("Failed to allocate memory for devices");
+                        hct_client_cleanup(client_info);
+                        close(sock);
+                        return HCT_ERROR_INVALID_DATA;
+                    }
                 }
 
+                client_info->device_count++;
                 /* Initialize new device with real pci_addr */
                 device_index = client_info->device_count - 1;
                 memset(&client_info->devices[device_index], 0, sizeof(hct_ccp_device_t));
@@ -2328,7 +2330,7 @@ static void hct_g_ids_lock_state_walk(struct hct_gid_bitmap *bitmap)
             if (gid == *(unsigned long *)((unsigned long)(hct_data.pasid_memory) + HCT_PASID_MEM_GID_OFFSET)) {
                 continue;
             }
-            if (gid >> HCT_QEMU_GIDS_SHIFT_BITS == 0) {
+            if ((gid >> HCT_QEMU_GIDS_SHIFT_BITS) == 0) {
                 continue;
             }
             offset = bit_pos * HCT_GIDS_PER_BLOCK;
