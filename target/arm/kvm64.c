@@ -908,6 +908,10 @@ int kvm_arch_init_vcpu(CPUState *cs)
     if (ret) {
         return ret;
     }
+
+    if (cpu->kvm_rme) {
+        return 0;
+    }
     /* overwrite writable ID regs with their updated property values */
     kvm_arm_writable_idregs_to_cpreg_list(cpu);
 
