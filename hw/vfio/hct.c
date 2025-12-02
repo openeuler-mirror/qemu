@@ -72,7 +72,8 @@ enum {
 #define HCT_QEMU_GIDS_BITMAP_MAX_BIT    2048
 #define HCT_QEMU_GIDS_BITMAP_MIN_BIT    1024
 #define HCT_QEMU_GIDS_SHIFT_BITS        18
-#define HCT_GIDS_PER_BLOCK                8
+#define HCT_GIDS_PER_BLOCK              8
+#define HCT_QEMU_GIDS_SHIFT_MASK        (~((1UL << HCT_QEMU_GIDS_SHIFT_BITS) - 1))
 
 static void hct_clear_bit(unsigned long *bitmap, int n);
 static uint32_t hct_get_bit(unsigned long *bitmap, int n);
@@ -215,6 +216,7 @@ typedef struct {
 
 #define MAX_CCP_CNT                  48
 #define DEF_CCP_CNT_MAX              16
+#define MAX_HW_QUEUES                5
 #define PAGE_SIZE                    4096
 #define HCT_SHARED_MEMORY_SIZE       (PAGE_SIZE * MAX_CCP_CNT)
 #define CCP_INDEX_BYTES              4
@@ -223,6 +225,7 @@ typedef struct {
 #define PCI_HCT_DEV(obj)             OBJECT_CHECK(HCTDevState, (obj), TYPE_HCT_DEV)
 #define HCT_MAX_PASID                (1 << 8)
 #define HCT_MIGRATE_VERSION          1
+#define HCT_QUEUE_NEED_INIT          0x01
 
 #define PCI_VENDOR_ID_HYGON_CCP      0x1d94
 #define PCI_DEVICE_ID_HYGON_CCP      0x1468
@@ -423,9 +426,12 @@ static int pasid_get_and_init(HCTDevState *state)
         goto out;
     }
 
+    /* check all gids to confirm if the corresponding qemu processes exist. */
+    hct_g_ids_lock_state_walk(g_hct_gid_bitmap);
+
     gid = (unsigned long *)((unsigned long)base + HCT_PASID_MEM_GID_OFFSET);
     ret = hct_g_ids_alloc(g_hct_gid_bitmap, &g_id);
-    *gid = g_id;
+        *gid = g_id;
     if (ret < 0) {
         error_report("Failed to allocate g_id, ret=%d", ret);
         goto out;
@@ -2308,6 +2314,32 @@ static int hct_g_ids_lock_state_lock(struct hct_gid_bitmap *bitmap, unsigned lon
 }
 
 /**
+ * @brief Clean up queue states for a specific gid
+ * @param gid: the gid to clean up
+ */
+static void hct_ccp_gid_queue_status_cleanup(unsigned int gid)
+{
+    uint32_t *ccp_queue_state = NULL;
+    int i = 0;
+    int j = 0;
+
+    if (!hct_data.hct_shared_memory) {
+        error_report("hct_data.hct_shared_memory is NULL, please check.\n");
+        return;
+    }
+
+    for (i = 0; i < MAX_CCP_CNT; i++) {
+        ccp_queue_state = (uint32_t *)(hct_data.hct_shared_memory + i * PAGE_SIZE);
+        for (j = 0; j < MAX_HW_QUEUES; j++) {
+            if (!ccp_queue_state[j] || ccp_queue_state[j] == HCT_QUEUE_NEED_INIT)
+                continue;
+            if ((ccp_queue_state[j] & HCT_QEMU_GIDS_SHIFT_MASK) == gid)
+                ccp_queue_state[j] = HCT_QUEUE_NEED_INIT;
+        }
+    }
+}
+
+/**
  * @brief Walk the bitmap to detect orphaned g_ids
  * @param bitmap The bitmap instance to walk
  */
@@ -2316,6 +2348,7 @@ static void hct_g_ids_lock_state_walk(struct hct_gid_bitmap *bitmap)
     struct flock lock;
     unsigned long bit_pos = 0;
     unsigned long gid = 0;
+    unsigned long gid_t = 0;
     off_t offset = 0;
 
     if (!bitmap || !bitmap->bitmap || bitmap->lock_fd < 0) {
@@ -2324,32 +2357,31 @@ static void hct_g_ids_lock_state_walk(struct hct_gid_bitmap *bitmap)
     }
 
     // Walk through all allocated bits in bitmap
-    for (bit_pos = HCT_QEMU_GIDS_BITMAP_MIN_BIT; bit_pos < HCT_QEMU_GIDS_BITMAP_MAX_BIT; bit_pos++) {
-        if (hct_get_bit(bitmap->bitmap, bit_pos)) {
-            gid = (bit_pos + 1) << HCT_QEMU_GIDS_SHIFT_BITS;
-            if (gid == *(unsigned long *)((unsigned long)(hct_data.pasid_memory) + HCT_PASID_MEM_GID_OFFSET)) {
-                continue;
-            }
-            if ((gid >> HCT_QEMU_GIDS_SHIFT_BITS) == 0) {
-                continue;
-            }
-            offset = bit_pos * HCT_GIDS_PER_BLOCK;
+    for (bit_pos = HCT_QEMU_GIDS_BITMAP_MIN_BIT;
+                bit_pos < HCT_QEMU_GIDS_BITMAP_MAX_BIT; bit_pos++) {
+        if (!hct_get_bit(bitmap->bitmap, bit_pos))
+            continue;
 
-            // Try to acquire exclusive lock for this g_id
-            lock.l_type = F_WRLCK;
-            lock.l_whence = SEEK_SET;
-            lock.l_start = offset;
-            lock.l_len = HCT_GIDS_PER_BLOCK;
+        gid = (bit_pos - HCT_QEMU_GIDS_BITMAP_MIN_BIT + 1) << HCT_QEMU_GIDS_SHIFT_BITS;
+        gid_t = *(unsigned long *)(hct_data.pasid_memory + HCT_PASID_MEM_GID_OFFSET);
+        if (gid_t && gid == gid_t)
+            continue;
 
-            if (fcntl(bitmap->lock_fd, F_GETLK, &lock) == -1) {
-                error_report("Failed to get lock file status.\n");
-                return;
-            }
-            if (lock.l_type == F_UNLCK) {
-                info_report("Detected orphaned g_id=0x%lx, cleaning up\n", gid);
-                hct_clear_bit(bitmap->bitmap, bit_pos);
-            }
-        }
+        offset = bit_pos * HCT_GIDS_PER_BLOCK;
+
+        // Try to set exclusive lock for this g_id
+        lock.l_type = F_WRLCK;
+        lock.l_whence = SEEK_SET;
+        lock.l_start = offset;
+        lock.l_len = HCT_GIDS_PER_BLOCK;
+        if (fcntl(bitmap->lock_fd, F_SETLK, &lock) == -1)
+            continue;
+
+        hct_ccp_gid_queue_status_cleanup(gid);
+
+        lock.l_type = F_UNLCK;
+        fcntl(bitmap->lock_fd, F_SETLK, &lock);
+        hct_clear_bit(bitmap->bitmap, bit_pos);
     }
 }
 
