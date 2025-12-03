@@ -738,8 +738,12 @@ static int vfio_connect_container(VFIOGroup *group, AddressSpace *as,
 
     bcontainer->listener = vfio_memory_listener;
     if (kvm_csv3_enabled()) {
-        shared_memory_listener_register(&bcontainer->listener,
-                                        bcontainer->space->as);
+        bcontainer->csv3_ram_listener = csv3_vfio_ram_listener;
+        bcontainer->csv3_mmio_listener = csv3_vfio_mmio_listener;
+        shared_memory_listener_register(&bcontainer->csv3_ram_listener,
+                                    bcontainer->space->as);
+        memory_listener_register(&bcontainer->csv3_mmio_listener,
+                                    bcontainer->space->as);
     } else {
         memory_listener_register(&bcontainer->listener, bcontainer->space->as);
     }
@@ -760,6 +764,7 @@ listener_release_exit:
     vfio_kvm_device_del_group(group);
     if (kvm_csv3_enabled()) {
         shared_memory_listener_unregister();
+        memory_listener_unregister(&bcontainer->csv3_mmio_listener);
     } else {
         memory_listener_unregister(&bcontainer->listener);
     }

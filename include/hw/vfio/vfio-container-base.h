@@ -37,6 +37,8 @@ typedef struct VFIOContainerBase {
     const VFIOIOMMUClass *ops;
     VFIOAddressSpace *space;
     MemoryListener listener;
+    MemoryListener csv3_ram_listener;
+    MemoryListener csv3_mmio_listener;
     Error *error;
     bool initialized;
     uint64_t dirty_pgsizes;
