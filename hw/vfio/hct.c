@@ -214,6 +214,7 @@ typedef struct {
 
 // ======================== HCT IPC API end ====================
 
+#define HCT_QEMU_VERSION             1
 #define MAX_CCP_CNT                  48
 #define DEF_CCP_CNT_MAX              16
 #define MAX_HW_QUEUES                5
@@ -226,6 +227,8 @@ typedef struct {
 #define HCT_MAX_PASID                (1 << 8)
 #define HCT_MIGRATE_VERSION          1
 #define HCT_QUEUE_NEED_INIT          0x01
+#define HCT_DMA_MEM_SIZE_256K        (1ull << 18) /* 256K */
+#define HCT_DMA_MEM_SIZE_8M          (1ull << 23) /* 8M */
 
 #define PCI_VENDOR_ID_HYGON_CCP      0x1d94
 #define PCI_DEVICE_ID_HYGON_CCP      0x1468
@@ -265,7 +268,6 @@ typedef struct {
 #define HCT_PASID_BAR_IDX            4
 
 #define PASID_OFFSET                 40
-#define HCT_PASID_MEM_GID_OFFSET     1024
 
 /* for migration */
 #define HCT_MIG_PROTOCOL_VER         1
@@ -288,7 +290,6 @@ static volatile struct hct_data {
     int vfio_container_fd;
     unsigned long pasid;
     unsigned long hct_shared_size;
-    uint8_t *pasid_memory;
     uint8_t *hct_shared_memory;
     uint8_t hct_version[VERSION_SIZE];
     uint8_t ccp_index[MAX_CCP_CNT];
@@ -298,7 +299,13 @@ static volatile struct hct_data {
 
 typedef struct SharedDevice {
     PCIDevice dev;
-    int shared_memory_offset;
+    int ccp_idx;
+    uint8_t *premap_memory;
+    uint32_t premap_memory_size;
+    uint8_t *share_memory;
+    uint32_t share_memory_size;
+    uint8_t *dma_memory;
+    uint32_t dma_memory_size;
 } SharedDevice;
 
 typedef struct HctDevState {
@@ -306,7 +313,8 @@ typedef struct HctDevState {
     VFIODevice vdev;
     MemoryRegion mmio;
     MemoryRegion shared;
-    MemoryRegion pasid;
+    AddressSpace dma_as;
+    MemoryListener listener;
     NotifierWithReturn precopy_notifier;
     QEMUTimer *migrate_load_timer;
     uint64_t map_size[PCI_NUM_REGIONS];
@@ -336,6 +344,12 @@ struct hct_dev_ctrl {
             unsigned long size;
         };
     };
+};
+
+struct hct_vfio_shared_memory {
+    uint32_t qemu_ver;
+    uint64_t pasid;
+    uint64_t gid;
 };
 
 enum ccp_dev_used_mode {
@@ -409,40 +423,27 @@ static int hct_get_sysfs_value(const char *path, int *val)
     return 0;
 }
 
-/*
- * the memory layout of pasid_memory is as follows:
- * offset -- 0              1024                            4096
- * a page -- |pasid(8B) --- |gid(8B) ---                    |
- */
 static int pasid_get_and_init(HCTDevState *state)
 {
-    void *base = (void *)hct_data.pasid_memory;
-    unsigned long *gid = NULL;
-    int ret = 0;
+    int ret;
 
     g_hct_gid_bitmap = hct_gid_bitmap_alloc();
     if (!g_hct_gid_bitmap) {
         error_report("Failed to allocate hct_gid_bitmap");
-        goto out;
+        return -1;
     }
 
     /* check all gids to confirm if the corresponding qemu processes exist. */
     hct_g_ids_lock_state_walk(g_hct_gid_bitmap);
 
-    gid = (unsigned long *)((unsigned long)base + HCT_PASID_MEM_GID_OFFSET);
     ret = hct_g_ids_alloc(g_hct_gid_bitmap, &g_id);
-        *gid = g_id;
     if (ret < 0) {
         error_report("Failed to allocate g_id, ret=%d", ret);
-        goto out;
-    } else {
-        hct_data.pasid = *gid >> HCT_QEMU_GIDS_SHIFT_BITS;
-        *(unsigned long *)base = (unsigned long)hct_data.pasid;
-        return 0;
+        return -1;
     }
 
-out:
-    return ret;
+    hct_data.pasid = g_id >> HCT_QEMU_GIDS_SHIFT_BITS;
+    return 0;
 }
 
 static const MemoryRegionOps hct_mmio_ops = {
@@ -488,6 +489,17 @@ static void vfio_hct_exit(PCIDevice *dev)
         state->group_fd = -1;
     }
 
+    if (state->sdev.share_memory) {
+        munmap(state->sdev.share_memory, state->sdev.share_memory_size);
+    }
+    if (state->sdev.dma_memory) {
+        munmap(state->sdev.dma_memory, state->sdev.dma_memory_size);
+    }
+    if (state->sdev.premap_memory) {
+        munmap(state->sdev.premap_memory, state->sdev.premap_memory_size);
+    }
+
+    memory_listener_unregister(&state->listener);
     hct_data.ccp_cnt--;
 
     if (hct_data.ccp_cnt == 0) {
@@ -512,10 +524,10 @@ struct VFIODeviceOps vfio_ccp_ops = {
     .vfio_compute_needs_reset = vfio_ccp_compute_needs_reset,
 };
 
-/* create BAR2, BAR3 and BAR4 space for the virtual machine. */
+/* create BAR2 and BAR3 space for the virtual machine. */
 static int vfio_hct_region_mmap(HCTDevState *state)
 {
-    int ret = 0;
+    int ret;
     int i;
     struct vfio_region_info *info;
 
@@ -525,11 +537,11 @@ static int vfio_hct_region_mmap(HCTDevState *state)
             goto out;
 
         if (info->size) {
-            state->maps[i] = mmap(NULL, info->size, PROT_READ | PROT_WRITE,
-                                  MAP_SHARED, state->vdev.fd, info->offset);
+            state->maps[i] = mmap(NULL, info->size,
+                                 PROT_READ | PROT_WRITE, MAP_SHARED,
+                                 state->vdev.fd, info->offset);
             if (state->maps[i] == MAP_FAILED) {
                 ret = -errno;
-                g_free(info);
                 error_report("vfio mmap fail\n");
                 goto out;
             }
@@ -544,24 +556,19 @@ static int vfio_hct_region_mmap(HCTDevState *state)
                                       "hct mmio", state->map_size[HCT_REG_BAR_IDX],
                                       state->maps[HCT_REG_BAR_IDX]);
 
-    memory_region_init_io(&state->shared, OBJECT(state), &hct_mmio_ops, state,
-                          "hct shared memory", PAGE_SIZE);
-    memory_region_init_ram_device_ptr(
-        &state->shared, OBJECT(state), "hct shared memory", PAGE_SIZE,
-        (void *)hct_data.hct_shared_memory +
-            state->sdev.shared_memory_offset * PAGE_SIZE);
-
-    memory_region_init_io(&state->pasid, OBJECT(state), &hct_mmio_ops, state,
-                          "hct pasid", PAGE_SIZE);
-    memory_region_init_ram_device_ptr(&state->pasid, OBJECT(state), "hct pasid",
-                                      PAGE_SIZE, hct_data.pasid_memory);
+    memory_region_init_io(&state->shared, OBJECT(state), &hct_mmio_ops,
+                          state, "hct shared memory", HCT_DMA_MEM_SIZE_8M);
+    memory_region_init_ram_device_ptr(&state->shared, OBJECT(state),
+                                      "hct shared memory", HCT_DMA_MEM_SIZE_8M,
+                                      (void *)state->sdev.share_memory);
 
     pci_register_bar(&state->sdev.dev, HCT_REG_BAR_IDX,
                      PCI_BASE_ADDRESS_SPACE_MEMORY, &state->mmio);
     pci_register_bar(&state->sdev.dev, HCT_SHARED_BAR_IDX,
                      PCI_BASE_ADDRESS_SPACE_MEMORY, &state->shared);
-    pci_register_bar(&state->sdev.dev, HCT_PASID_BAR_IDX,
-                     PCI_BASE_ADDRESS_SPACE_MEMORY, &state->pasid);
+
+    address_space_init(&state->dma_as, &state->shared, "hct-dma-as");
+    memory_listener_register(&state->listener, &state->dma_as);
 out:
     return ret;
 }
@@ -652,7 +659,7 @@ static int hct_get_ccp_index(HCTDevState *state)
         if (hct_check_duplicated_index(index))
             return -1;
 
-        state->sdev.shared_memory_offset = index;
+        state->sdev.ccp_idx = index;
     } else if (hct_data.driver == HCT_CCP_DRV_MOD_CCP || hct_data.driver == HCT_CCP_DRV_MOD_VFIO_PCI) {
         fp = fopen(state->ccp_dev_path, "r");
         if (!fp) {
@@ -670,7 +677,7 @@ static int hct_get_ccp_index(HCTDevState *state)
             error_report("Invalid vccp filename format for vfio-pci: %s", state->ccp_dev_path);
             return -1;
         }
-        state->sdev.shared_memory_offset = index;
+        state->sdev.ccp_idx = index;
         if (hct_check_duplicated_index(index)) {
             return -1;
         }
@@ -766,7 +773,7 @@ static void hct_listener_region_add(MemoryListener *listener,
         return;
     }
 
-    if (!section->mr->ram) {
+    if (!section->mr->ram || !iova) {
         return;
     }
 
@@ -812,7 +819,7 @@ static void hct_listener_region_del(MemoryListener *listener,
         return;
     }
 
-    if (!section->mr->ram) {
+    if (!section->mr->ram || !iova) {
         return;
     }
 
@@ -838,10 +845,101 @@ static void hct_listener_region_del(MemoryListener *listener,
     }
 }
 
-static MemoryListener hct_memory_listener = {
-    .region_add = hct_listener_region_add,
-    .region_del = hct_listener_region_del,
-};
+static int hct_listener_premap_memory_init(HCTDevState *state)
+{
+    void *vaddr = NULL;
+
+    /* Apply for 8M virtual address space in advance. */
+    vaddr = mmap(NULL, HCT_DMA_MEM_SIZE_8M,
+                PROT_NONE,
+                MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE,
+                -1, 0);
+    if (vaddr == MAP_FAILED) {
+        error_report("pre-mmap 8M memory fail, errno:%d.\n", errno);
+        return -1;
+    }
+
+    state->sdev.premap_memory = vaddr;
+    state->sdev.premap_memory_size = HCT_DMA_MEM_SIZE_8M;
+    return 0;
+}
+
+static int hct_shared_page_memory_init(HCTDevState *state)
+{
+    size_t maddr;
+    size_t offset;
+    void *vaddr = NULL;
+
+    maddr = (size_t)state->sdev.premap_memory;
+    offset = state->sdev.ccp_idx * PAGE_SIZE;
+    vaddr = mmap((void *)maddr, PAGE_SIZE,
+                PROT_READ | PROT_WRITE,
+                MAP_SHARED | MAP_FIXED,
+                hct_data.hct_shm_fd, offset);
+    if (vaddr == MAP_FAILED || vaddr != (void *)maddr) {
+        error_report("mmap shared memory fail, errno:%d.\n", errno);
+        return -1;
+    }
+
+    state->sdev.share_memory = vaddr;
+    state->sdev.share_memory_size = PAGE_SIZE;
+    return 0;
+}
+
+static int hct_vfio_shared_dma_memory_init(HCTDevState *state)
+{
+    struct hct_vfio_shared_memory *shr_mem = NULL;
+    size_t maddr;
+    size_t size;
+    void *vaddr = NULL;
+
+    maddr = (size_t)state->sdev.premap_memory;
+    maddr += PAGE_SIZE;
+    size = HCT_DMA_MEM_SIZE_8M - PAGE_SIZE;
+    vaddr = mmap((void *)maddr, size,
+                PROT_READ | PROT_WRITE,
+                MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED,
+                -1, 0);
+    if (vaddr == MAP_FAILED || vaddr != (void *)maddr) {
+        error_report("mmap dma memory fail, errno:%d.\n", errno);
+        return -1;
+    }
+
+    maddr -= PAGE_SIZE;
+    shr_mem = (void *)(maddr + HCT_DMA_MEM_SIZE_256K);
+    shr_mem->qemu_ver = HCT_QEMU_VERSION;
+    shr_mem->pasid = hct_data.pasid;
+    shr_mem->gid = g_id;
+
+    state->sdev.dma_memory = vaddr;
+    state->sdev.dma_memory_size = size;
+    return 0;
+}
+
+static int hct_listener_dma_memory_init(HCTDevState *state)
+{
+    if (hct_listener_premap_memory_init(state) != 0) {
+        error_report("hct_shared_page_memory_init fail.\n");
+        return -1;
+    }
+
+    if (hct_shared_page_memory_init(state) != 0) {
+        error_report("hct_shared_page_memory_init fail.\n");
+        munmap(state->sdev.premap_memory, state->sdev.premap_memory_size);
+        return -1;
+    }
+
+    if (hct_vfio_shared_dma_memory_init(state) != 0) {
+        error_report("hct_vfio_shared_dma_memory_init fail.\n");
+        munmap(state->sdev.share_memory, state->sdev.share_memory_size);
+        munmap(state->sdev.premap_memory, state->sdev.premap_memory_size);
+        return -1;
+    }
+
+    state->listener.region_add = hct_listener_region_add;
+    state->listener.region_del = hct_listener_region_del;
+    return 0;
+}
 
 static int hct_get_used_driver_walk(const char *path)
 {
@@ -1165,13 +1263,9 @@ static void hct_data_uninit(HCTDevState *state)
         hct_data.pasid = 0;
     }
 
-    if (hct_data.pasid_memory) {
-        if (g_id) {
-            hct_g_ids_free(g_hct_gid_bitmap, g_id);
-            g_id = 0;
-        }
-        munmap(hct_data.pasid_memory, PAGE_SIZE);
-        hct_data.pasid_memory = NULL;
+    if (g_id) {
+        hct_g_ids_free(g_hct_gid_bitmap, g_id);
+        g_id = 0;
     }
 
     if (hct_data.hct_shared_memory) {
@@ -1179,7 +1273,6 @@ static void hct_data_uninit(HCTDevState *state)
         hct_data.hct_shared_memory = NULL;
     }
 
-    memory_listener_unregister(&hct_memory_listener);
     precopy_remove_notifier(&state->precopy_notifier);
 
     hct_data.init = 0;
@@ -1270,15 +1363,10 @@ static int hct_data_init(HCTDevState *state)
             }
         }
 
-        hct_data.pasid_memory = mmap(NULL, PAGE_SIZE, PROT_READ | PROT_WRITE,
-                       MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-        if (hct_data.pasid_memory < 0)
-            goto unmap_shared_memory_exit;
-
         /* assign a unique pasid to each virtual machine. */
         ret = pasid_get_and_init(state);
         if (ret < 0)
-            goto unmap_pasid_memory_exit;
+            goto unmap_shared_memory_exit;
 
         ret = hct_get_vsock_guest_cid(state);
         if (ret < 0)
@@ -1289,16 +1377,10 @@ static int hct_data_init(HCTDevState *state)
         state->migrate_load_timer = NULL;
         state->migrate_support = 1;
 
-        /* perform DMA_MAP and DMA_UNMAP operations on all memories of the virtual machine. */
-        memory_listener_register(&hct_memory_listener, &address_space_memory);
-
         hct_data.init = 1;
     }
 
     return hct_get_ccp_index(state);
-
-unmap_pasid_memory_exit:
-    munmap(hct_data.pasid_memory, PAGE_SIZE);
 
 unmap_shared_memory_exit:
     munmap((void *)hct_data.hct_shared_memory, hct_data.hct_shared_size);
@@ -1392,13 +1474,27 @@ static void vfio_hct_realize(PCIDevice *pci_dev, Error **errp)
         pci_vfio_set_bus_master(state->vdev.fd);
     }
 
-    ret = vfio_hct_region_mmap(state);
+    ret = hct_listener_dma_memory_init(state);
     if (ret < 0) {
-        error_setg(errp, "hct vfio region mmap failed.");
+        error_setg(errp, "hct listener alloc dma memory fail.");
         goto detach_device_out;
     }
 
+    ret = vfio_hct_region_mmap(state);
+    if (ret < 0) {
+        error_setg(errp, "hct vfio region mmap failed.");
+        goto put_dma_mem_out;
+    }
+
     return;
+
+put_dma_mem_out:
+    if (state->sdev.share_memory)
+        munmap(state->sdev.share_memory, state->sdev.share_memory_size);
+    if (state->sdev.dma_memory)
+        munmap(state->sdev.dma_memory, state->sdev.dma_memory_size);
+    if (state->sdev.premap_memory)
+        munmap(state->sdev.premap_memory, state->sdev.premap_memory_size);
 
 detach_device_out:
     if (hct_data.driver == HCT_CCP_DRV_MOD_HCT)
@@ -2348,7 +2444,6 @@ static void hct_g_ids_lock_state_walk(struct hct_gid_bitmap *bitmap)
     struct flock lock;
     unsigned long bit_pos = 0;
     unsigned long gid = 0;
-    unsigned long gid_t = 0;
     off_t offset = 0;
 
     if (!bitmap || !bitmap->bitmap || bitmap->lock_fd < 0) {
@@ -2363,10 +2458,6 @@ static void hct_g_ids_lock_state_walk(struct hct_gid_bitmap *bitmap)
             continue;
 
         gid = (bit_pos - HCT_QEMU_GIDS_BITMAP_MIN_BIT + 1) << HCT_QEMU_GIDS_SHIFT_BITS;
-        gid_t = *(unsigned long *)(hct_data.pasid_memory + HCT_PASID_MEM_GID_OFFSET);
-        if (gid_t && gid == gid_t)
-            continue;
-
         offset = bit_pos * HCT_GIDS_PER_BLOCK;
 
         // Try to set exclusive lock for this g_id
