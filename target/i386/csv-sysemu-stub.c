@@ -50,6 +50,11 @@ void csv3_shared_region_release(uint64_t gpa, uint32_t num_pages)
 
 }
 
+void csv3_shared_region_get(uint64_t gpa, uint32_t num_pages)
+{
+
+}
+
 int csv3_set_guest_private_memory(Error **errp)
 {
     g_assert_not_reached();

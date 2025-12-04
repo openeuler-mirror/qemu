@@ -28,3 +28,9 @@ kvm_csv3_receive_encrypt_data(void *dst, int len, void *hdr, int hdr_len) "trans
 kvm_csv3_receive_encrypt_context(void *dst, int len, void *hdr, int hdr_len) "trans %p len %d hdr %p hdr_len %d"
 kvm_csv3_set_guest_private_memory(void) ""
 kvm_csv3_launch_finish_ex(char *host_data) "host_data %s"
+kvm_csv3_shared_region_release(uint64_t gpa, uint32_t num_pages) "gpa 0x%" PRIx64 " num_pages 0x%x"
+kvm_csv3_unpinned(uint64_t gpa, uint64_t hva, uint32_t num_pages) "gpa 0x%" PRIx64 " hva 0x%" PRIx64 " num_pages 0x%x"
+kvm_csv3_madvise_release(uint64_t hva, uint32_t num_pages) "hva 0x%" PRIx64 " num_pages 0x%x"
+kvm_csv3_pin_pages_count(uint64_t pin_count) "pinned count 0x%" PRIx64
+kvm_csv3_shared_region_get(uint64_t gpa, uint32_t num_pages) "gpa 0x%" PRIx64 " num_pages 0x%x"
+kvm_csv3_pinned(uint64_t gpa, uint32_t num_pages) "gpa 0x%" PRIx64 " num_pages 0x%x"
