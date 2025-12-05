@@ -44,7 +44,7 @@ void gd_gl_area_draw(VirtualConsole *vc)
 #endif
     int ww, wh, ws, y1, y2;
 
-    if (!vc->gfx.gls) {
+    if (!vc->gfx.gls || !vc->gfx.ds) {
         return;
     }
 
@@ -94,9 +94,6 @@ void gd_gl_area_draw(VirtualConsole *vc)
         }
 #endif
     } else {
-        if (!vc->gfx.ds) {
-            return;
-        }
         gtk_gl_area_make_current(GTK_GL_AREA(vc->gfx.drawing_area));
 
         surface_gl_setup_viewport(vc->gfx.gls, vc->gfx.ds, ww, wh);
