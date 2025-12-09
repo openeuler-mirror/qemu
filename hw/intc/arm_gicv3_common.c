@@ -164,6 +164,24 @@ const VMStateDescription vmstate_gicv3_gicv4 = {
     }
 };
 
+static bool gicv3_gicr_nmi_needed(void *opaque)
+{
+    GICv3CPUState *cs = opaque;
+
+    return cs->gic->nmi_enable;
+}
+
+const VMStateDescription vmstate_gicv3_gicr_nmi = {
+    .name = "arm_gicv3_cpu/gicr_nmi",
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .needed = gicv3_gicr_nmi_needed,
+    .fields = (VMStateField[]) {
+        VMSTATE_UINT32(gicr_inmir0, GICv3CPUState),
+        VMSTATE_END_OF_LIST()
+    }
+};
+
 static const VMStateDescription vmstate_gicv3_cpu = {
     .name = "arm_gicv3_cpu",
     .version_id = 1,
@@ -196,6 +214,7 @@ static const VMStateDescription vmstate_gicv3_cpu = {
         &vmstate_gicv3_cpu_virt,
         &vmstate_gicv3_cpu_sre_el1,
         &vmstate_gicv3_gicv4,
+        &vmstate_gicv3_gicr_nmi,
         NULL
     }
 };
@@ -238,6 +257,24 @@ const VMStateDescription vmstate_gicv3_gicd_no_migration_shift_bug = {
     }
 };
 
+static bool gicv3_gicd_nmi_needed(void *opaque)
+{
+    GICv3State *gic = opaque;
+
+    return gic->nmi_enable;
+}
+
+const VMStateDescription vmstate_gicv3_gicd_nmi = {
+    .name = "arm_gicv3/gicd_nmi",
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .needed = gicv3_gicd_nmi_needed,
+    .fields = (VMStateField[]) {
+        VMSTATE_UINT32_ARRAY(gicd_inmir, GICv3State, GICV3_BMP_SIZE),
+        VMSTATE_END_OF_LIST()
+    }
+};
+
 static const VMStateDescription vmstate_gicv3 = {
     .name = "arm_gicv3",
     .version_id = 1,
@@ -266,6 +303,7 @@ static const VMStateDescription vmstate_gicv3 = {
     },
     .subsections = (const VMStateDescription * []) {
         &vmstate_gicv3_gicd_no_migration_shift_bug,
+        &vmstate_gicv3_gicd_nmi,
         NULL
     }
 };
@@ -554,6 +592,7 @@ static void arm_gicv3_common_reset_hold(Object *obj)
         cs->edge_trigger = 0xffff;
         cs->gicr_igrpmodr0 = 0;
         cs->gicr_nsacr = 0;
+        cs->gicr_inmir0 = 0;
         memset(cs->gicr_ipriorityr, 0, sizeof(cs->gicr_ipriorityr));
 
         cs->hppi.prio = 0xff;
@@ -585,6 +624,7 @@ static void arm_gicv3_common_reset_hold(Object *obj)
     memset(s->gicd_ipriority, 0, sizeof(s->gicd_ipriority));
     memset(s->gicd_irouter, 0, sizeof(s->gicd_irouter));
     memset(s->gicd_nsacr, 0, sizeof(s->gicd_nsacr));
+    memset(s->gicd_inmir, 0, sizeof(s->gicd_inmir));
     /* GICD_IROUTER are UNKNOWN at reset so in theory the guest must
      * write these to get sane behaviour and we need not populate the
      * pointer cache here; however having the cache be different for

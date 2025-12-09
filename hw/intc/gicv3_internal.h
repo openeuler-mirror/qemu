@@ -52,6 +52,7 @@
 #define GICD_SGIR            0x0F00
 #define GICD_CPENDSGIR       0x0F10
 #define GICD_SPENDSGIR       0x0F20
+#define GICD_INMIR           0x0F80
 #define GICD_IROUTER         0x6000
 #define GICD_IDREGS          0xFFD0
 
@@ -67,6 +68,8 @@
 #define GICD_CTLR_DS                (1U << 6)
 #define GICD_CTLR_E1NWF             (1U << 7)
 #define GICD_CTLR_RWP               (1U << 31)
+
+#define GICD_TYPER_NMI              (1U << 9)
 
 #define GICD_TYPER_LPIS_SHIFT          17
 
@@ -109,6 +112,7 @@
 #define GICR_ICFGR1           (GICR_SGI_OFFSET + 0x0C04)
 #define GICR_IGRPMODR0        (GICR_SGI_OFFSET + 0x0D00)
 #define GICR_NSACR            (GICR_SGI_OFFSET + 0x0E00)
+#define GICR_INMIR0           (GICR_SGI_OFFSET + 0x0F80)
 
 /* VLPI redistributor registers, offsets from VLPI_base */
 #define GICR_VPROPBASER       (GICR_VLPI_OFFSET + 0x70)

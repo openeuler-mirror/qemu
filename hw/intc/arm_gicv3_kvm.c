@@ -397,6 +397,9 @@ static void kvm_arm_gicv3_put(GICv3State *s)
         reg = c->gicr_iactiver0;
         kvm_gicr_access(s, GICR_ISACTIVER0, ncpu, &reg, true);
 
+        reg = c->gicr_inmir0;
+        kvm_gicr_access(s, GICR_INMIR0, ncpu, &reg, true);
+
         for (i = 0; i < GIC_INTERNAL; i += 4) {
             reg = c->gicr_ipriorityr[i] |
                 (c->gicr_ipriorityr[i + 1] << 8) |
@@ -452,6 +455,9 @@ static void kvm_arm_gicv3_put(GICv3State *s)
 
     /* s->gicd_ipriority[] -> GICD_IPRIORITYRn */
     kvm_dist_put_priority(s, GICD_IPRIORITYR, s->gicd_ipriority);
+
+    /* s->gicd_inmir bitmap -> GICD_INMIRn */
+    kvm_dist_putbmp(s, GICD_INMIR, 0, s->gicd_inmir);
 
     /* CPU Interface state (one per CPU) */
 
@@ -561,6 +567,8 @@ static void kvm_arm_gicv3_get(GICv3State *s)
         c->gicr_ipendr0 = reg;
         kvm_gicr_access(s, GICR_ISACTIVER0, ncpu, &reg, false);
         c->gicr_iactiver0 = reg;
+        kvm_gicr_access(s, GICR_INMIR0, ncpu, &reg, false);
+        c->gicr_inmir0 = reg;
 
         for (i = 0; i < GIC_INTERNAL; i += 4) {
             kvm_gicr_access(s, GICR_IPRIORITYR + i, ncpu, &reg, false);
@@ -609,6 +617,9 @@ static void kvm_arm_gicv3_get(GICv3State *s)
 
     /* GICD_IPRIORITYRn -> s->gicd_ipriority[] */
     kvm_dist_get_priority(s, GICD_IPRIORITYR, s->gicd_ipriority);
+
+    /* GICD_INMIRn -> s->gicd_inmir bitmap */
+    kvm_dist_getbmp(s, GICD_INMIR, s->gicd_inmir);
 
     /* GICD_IROUTERn -> s->gicd_irouter[irq] */
     for (i = GIC_INTERNAL; i < s->num_irq; i++) {
@@ -809,6 +820,22 @@ static void kvm_gicv3_init_cpu_reginfo(CPUState *cs)
     define_arm_cp_regs(ARM_CPU(cs), gicv3_cpuif_reginfo);
 }
 
+static bool kvm_gicv3_check_nmi(GICv3State *s)
+{
+    uint32_t typer = 0;
+
+    if (kvm_device_access(s->dev_fd,
+                         KVM_DEV_ARM_VGIC_GRP_DIST_REGS,
+                         KVM_VGIC_ATTR(GICD_TYPER, 0),
+                         &typer,
+                         false,
+                         NULL)) {
+        return false;
+    }
+
+    return (typer & GICD_TYPER_NMI) != 0;
+}
+
 static void kvm_arm_gicv3_realize(DeviceState *dev, Error **errp)
 {
     GICv3State *s = KVM_ARM_GICV3(dev);
@@ -917,6 +944,12 @@ static void kvm_arm_gicv3_realize(DeviceState *dev, Error **errp)
     if (kvm_device_check_attr(s->dev_fd, KVM_DEV_ARM_VGIC_GRP_CTRL,
                               KVM_DEV_ARM_VGIC_SAVE_PENDING_TABLES)) {
         qemu_add_vm_change_state_handler(vm_change_state_handler, s);
+    }
+
+    if (kvm_gicv3_check_nmi(s)) {
+        s->nmi_enable = true;
+    } else {
+        s->nmi_enable = false;
     }
 }
 

@@ -173,6 +173,7 @@ struct GICv3CPUState {
     uint32_t edge_trigger; /* ICFGR0 and ICFGR1 even bits */
     uint32_t gicr_igrpmodr0;
     uint32_t gicr_nsacr;
+    uint32_t gicr_inmir0;
     uint8_t gicr_ipriorityr[GIC_INTERNAL];
     /* VLPI_base page registers */
     uint64_t gicr_vpropbaser;
@@ -247,6 +248,7 @@ struct GICv3State {
     uint32_t num_irq;
     uint32_t revision;
     bool lpi_enable;
+    bool nmi_enable;
     bool security_extn;
     bool force_8bit_prio;
     bool irq_reset_nonsecure;
@@ -279,6 +281,7 @@ struct GICv3State {
      */
     GICv3CPUState *gicd_irouter_target[GICV3_MAXIRQ];
     uint32_t gicd_nsacr[DIV_ROUND_UP(GICV3_MAXIRQ, 16)];
+    uint32_t gicd_inmir[GICV3_BMP_SIZE];
 
     Notifier cpu_update_notifier;
     GICv3CPUState *cpu;
