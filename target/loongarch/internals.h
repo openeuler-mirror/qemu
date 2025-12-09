@@ -60,6 +60,7 @@ int get_physical_address(CPULoongArchState *env, hwaddr *physical,
                          int *prot, target_ulong address,
                          MMUAccessType access_type, int mmu_idx);
 hwaddr loongarch_cpu_get_phys_page_debug(CPUState *cpu, vaddr addr);
+uint64_t loongarch_palen_mask(CPULoongArchState *env);
 
 #ifdef CONFIG_TCG
 bool loongarch_cpu_tlb_fill(CPUState *cs, vaddr address, int size,

@@ -217,10 +217,12 @@ static void init_cmdline(struct loongarch_boot_info *info, void *p, void *start)
 
 static uint64_t cpu_loongarch_virt_to_phys(void *opaque, uint64_t addr)
 {
-    return addr & MAKE_64BIT_MASK(0, TARGET_PHYS_ADDR_SPACE_BITS);
+    uint64_t *phys_addr_mask = opaque;
+    return addr & *phys_addr_mask;
 }
 
 static int64_t load_loongarch_linux_image(const char *filename,
+                                          uint64_t phys_addr_mask,
                                           uint64_t *kernel_entry,
                                           uint64_t *kernel_low,
                                           uint64_t *kernel_high)
@@ -251,10 +253,8 @@ static int64_t load_loongarch_linux_image(const char *filename,
     }
 
     /* Early kernel versions may have those fields in virtual address */
-    *kernel_entry = extract64(le64_to_cpu(hdr->kernel_entry),
-                              0, TARGET_PHYS_ADDR_SPACE_BITS);
-    *kernel_low = extract64(le64_to_cpu(hdr->load_offset),
-                            0, TARGET_PHYS_ADDR_SPACE_BITS);
+    *kernel_entry = le64_to_cpu(hdr->kernel_entry) & phys_addr_mask;
+    *kernel_low = le64_to_cpu(hdr->load_offset) & phys_addr_mask;
     *kernel_high = *kernel_low + size;
 
     rom_add_blob_fixed(filename, buffer, size, *kernel_low);
@@ -303,19 +303,21 @@ static ram_addr_t alloc_initrd_memory(struct loongarch_boot_info *info,
     exit(1);
 }
 
-static int64_t load_kernel_info(struct loongarch_boot_info *info)
+static int64_t load_kernel_info(struct loongarch_boot_info *info,
+                                uint64_t phys_addr_mask)
 {
     uint64_t kernel_entry, kernel_low, kernel_high, initrd_offset = 0;
-    ssize_t kernel_size, initrd_size;
+    ssize_t kernel_size;
 
     kernel_size = load_elf(info->kernel_filename, NULL,
-                           cpu_loongarch_virt_to_phys, NULL,
+                           cpu_loongarch_virt_to_phys, &phys_addr_mask,
                            &kernel_entry, &kernel_low,
-                           &kernel_high, NULL, 0,
+                           &kernel_high, NULL, ELFDATA2LSB,
                            EM_LOONGARCH, 1, 0);
-    kernel_entry = cpu_loongarch_virt_to_phys(NULL, kernel_entry);
+    kernel_entry = cpu_loongarch_virt_to_phys(&phys_addr_mask, kernel_entry);
     if (kernel_size < 0) {
         kernel_size = load_loongarch_linux_image(info->kernel_filename,
+                                                 phys_addr_mask,
                                                  &kernel_entry, &kernel_low,
                                                  &kernel_high);
     }
@@ -328,15 +330,16 @@ static int64_t load_kernel_info(struct loongarch_boot_info *info)
     }
 
     if (info->initrd_filename) {
-        initrd_size = get_image_size(info->initrd_filename);
+        ssize_t initrd_size = get_image_size(info->initrd_filename);
         if (initrd_size > 0) {
+            initrd_offset = ROUND_UP(kernel_high + 4 * kernel_size, 64 * KiB);
             initrd_offset = alloc_initrd_memory(info, initrd_offset,
                                                 initrd_size);
             initrd_size = load_image_targphys(info->initrd_filename,
                                               initrd_offset, initrd_size);
         }
 
-        if (initrd_size == (target_ulong)-1) {
+        if (initrd_size == -1) {
             error_report("could not load initial ram disk '%s'",
                          info->initrd_filename);
             exit(1);
@@ -394,14 +397,15 @@ static void init_boot_rom(MachineState *ms,
 }
 
 static void loongarch_direct_kernel_boot(MachineState *ms,
-                                         struct loongarch_boot_info *info)
+                                         struct loongarch_boot_info *info,
+                                         uint64_t phys_addr_mask)
 {
     void *p, *bp;
     int64_t kernel_addr = VIRT_FLASH0_BASE;
     uint64_t *data;
 
     if (info->kernel_filename) {
-        kernel_addr = load_kernel_info(info);
+        kernel_addr = load_kernel_info(info, phys_addr_mask);
     } else {
         if (!qtest_enabled()) {
             warn_report("No kernel provided, booting from flash drive.");
@@ -428,7 +432,8 @@ static void loongarch_direct_kernel_boot(MachineState *ms,
     g_free(bp);
 }
 
-void loongarch_load_kernel(MachineState *ms, struct loongarch_boot_info *info)
+void loongarch_load_kernel(MachineState *ms, struct loongarch_boot_info *info,
+                           uint64_t phys_addr_mask)
 {
     LoongArchVirtMachineState *lvms = LOONGARCH_VIRT_MACHINE(ms);
 
@@ -439,6 +444,6 @@ void loongarch_load_kernel(MachineState *ms, struct loongarch_boot_info *info)
     if (lvms->bios_loaded) {
         loongarch_firmware_boot(lvms, info);
     } else {
-        loongarch_direct_kernel_boot(ms, info);
+        loongarch_direct_kernel_boot(ms, info, phys_addr_mask);
     }
 }

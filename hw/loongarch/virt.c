@@ -18,7 +18,6 @@
 #include "sysemu/reset.h"
 #include "sysemu/rtc.h"
 #include "sysemu/tcg.h"
-#include "sysemu/kvm.h"
 #include "hw/loongarch/virt.h"
 #include "exec/address-spaces.h"
 #include "hw/irq.h"
@@ -34,6 +33,7 @@
 #include "hw/misc/unimp.h"
 #include "hw/loongarch/fw_cfg.h"
 #include "target/loongarch/cpu.h"
+#include "target/loongarch/internals.h"
 #include "hw/firmware/smbios.h"
 #include "qapi/qapi-visit-common.h"
 #include "hw/acpi/generic_event_device.h"
@@ -910,6 +910,7 @@ static void virt_init(MachineState *machine)
     hwaddr base, size, ram_size = machine->ram_size;
     MachineClass *mc = MACHINE_GET_CLASS(machine);
     Object *cpuobj;
+    uint64_t phys_addr_mask = 0;
 
     if (!cpu_model) {
         cpu_model = LOONGARCH_CPU_TYPE_NAME("la464");
@@ -999,7 +1000,8 @@ static void virt_init(MachineState *machine)
     qemu_register_powerdown_notifier(&lvms->powerdown_notifier);
 
     lvms->bootinfo.ram_size = ram_size;
-    loongarch_load_kernel(machine, &lvms->bootinfo);
+    phys_addr_mask = loongarch_palen_mask(&LOONGARCH_CPU(first_cpu)->env);
+    loongarch_load_kernel(machine, &lvms->bootinfo, phys_addr_mask);
 }
 
 static void virt_get_acpi(Object *obj, Visitor *v, const char *name,
