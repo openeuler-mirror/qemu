@@ -797,8 +797,8 @@ void cpu_address_space_destroy(CPUState *cpu, int asidx)
         memory_listener_unregister(&cpuas->tcg_as_listener);
     }
 
+    cpuas->as->free_in_rcu = true;
     address_space_destroy(cpuas->as);
-    g_free_rcu(cpuas->as, rcu);
 
     if (asidx == 0) {
         /* reset the convenience alias for address space 0 */
