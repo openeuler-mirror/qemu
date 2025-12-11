@@ -56,6 +56,7 @@ qcrypto_gcrypt_hash_bytesv(QCryptoHashAlgorithm alg,
                            size_t *resultlen,
                            Error **errp)
 {
+    int i;
     gcry_error_t ret;
     gcry_md_hd_t md;
     unsigned char *digest;
