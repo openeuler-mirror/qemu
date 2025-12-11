@@ -1226,6 +1226,8 @@ int vfio_pci_igd_opregion_init(VFIOPCIDevice *vdev,
 #define ASCEND710_XLOADER_OFFSET  0x100430
 #define ASCEND310_XLOADER_SIZE    4
 #define ASCEND310_XLOADER_OFFSET  0x400
+#define ASCEND710_LARGE_TEST_SIZE    0x1000
+#define ASCEND710_LARGE_TEST_OFFSET  0x100000
 
 typedef struct VFIOAscendBarQuirk {
     struct VFIOPCIDevice *vdev;
@@ -1296,6 +1298,79 @@ static void vfio_probe_ascend910_bar0_quirk(VFIOPCIDevice *vdev, int nr)
     QLIST_INSERT_HEAD(&vdev->bars[nr].quirks, quirk, next);
 }
 
+static uint64_t virtcca_vfio_ascend_710bar2_quirk_read(void *opaque,
+                                       hwaddr addr, unsigned size)
+{
+    VFIOAscendBarQuirk *quirk = opaque;
+    VFIOPCIDevice *vdev = quirk->vdev;
+
+    return vfio_region_read(&vdev->bars[quirk->bar].region,
+                            addr + quirk->offset, size);
+}
+
+static void virtcca_vfio_ascend_710bar2_quirk_write(void *opaque, hwaddr addr,
+                                    uint64_t data, unsigned size)
+{
+    VFIOAscendBarQuirk *quirk = opaque;
+    VFIOPCIDevice *vdev = quirk->vdev;
+    hwaddr offset_addr = addr + quirk->offset;
+
+    if ((offset_addr >= ASCEND710_XLOADER_OFFSET &&
+         offset_addr < ASCEND710_XLOADER_OFFSET + ASCEND710_XLOADER_SIZE) ||
+        (offset_addr >= ASCEND710_XLOADER_OFFSET + ASCEND710_2P_BASE &&
+         offset_addr < ASCEND710_XLOADER_OFFSET + ASCEND710_XLOADER_SIZE + ASCEND710_2P_BASE)) {
+        qemu_log("modifying RO region is not allowed! addr=0x%"
+            HWADDR_PRIx ", data=0x%" PRIx64 ", size=%d\n",
+            offset_addr, data, size);
+        return;
+    }
+    vfio_region_write(&vdev->bars[quirk->bar].region, offset_addr, data, size);
+}
+
+static const MemoryRegionOps virtcca_vfio_710_ascend_intercept_bar2_regs_quirk = {
+     .read = virtcca_vfio_ascend_710bar2_quirk_read,
+     .write = virtcca_vfio_ascend_710bar2_quirk_write,
+     .endianness = DEVICE_LITTLE_ENDIAN,
+};
+
+/*
+ * Intercepts w/r to the 4K-aligned memory region containing the xloader-updating register.
+ * In virtCCA scenarios, the guest VM also cannot directly enable xloader-updating. Furthermore,
+ * other registers within this 4K region are not accessible from user mode. so we permit write
+ * access to this region expect xloader-updating register via vfio_region_write.
+ */
+static void virtcca_vfio_probe_ascend710_bar2_quirk(VFIOPCIDevice *vdev, VFIOQuirk *quirk,
+                                                    VFIOAscendBarQuirk *bar2_quirk, int devnum, int nr)
+{
+    bar2_quirk[0].offset = ASCEND710_LARGE_TEST_OFFSET;
+
+    memory_region_init_io(&quirk->mem[0], OBJECT(vdev),
+                          &virtcca_vfio_710_ascend_intercept_bar2_regs_quirk,
+                          &bar2_quirk[0],
+                          "vfio-ascend710-bar2-1p-intercept-regs-quirk",
+                          ASCEND710_LARGE_TEST_SIZE);
+    memory_region_add_subregion_overlap(vdev->bars[nr].region.mem,
+                                        bar2_quirk[0].offset,
+                                        &quirk->mem[0], 1);
+
+    if (devnum == ASCEND710_2P_DEVNUM) {
+        bar2_quirk[1].vdev = vdev;
+        bar2_quirk[1].offset = (ASCEND710_2P_BASE + ASCEND710_LARGE_TEST_OFFSET);
+        bar2_quirk[1].bar = nr;
+
+        memory_region_init_io(&quirk->mem[1], OBJECT(vdev),
+                              &virtcca_vfio_710_ascend_intercept_bar2_regs_quirk,
+                              &bar2_quirk[1],
+                              "vfio-ascend710-bar2-2p-intercept-regs-quirk",
+                              ASCEND710_LARGE_TEST_SIZE);
+        memory_region_add_subregion_overlap(vdev->bars[nr].region.mem,
+                                            bar2_quirk[1].offset,
+                                            &quirk->mem[1], 1);
+    }
+
+    QLIST_INSERT_HEAD(&vdev->bars[nr].quirks, quirk, next);
+}
+
 static void vfio_probe_ascend710_bar2_quirk(VFIOPCIDevice *vdev, int nr)
 {
     VFIOQuirk *quirk;
@@ -1328,6 +1403,10 @@ static void vfio_probe_ascend710_bar2_quirk(VFIOPCIDevice *vdev, int nr)
     bar2_quirk[0].vdev = vdev;
     bar2_quirk[0].offset = ASCEND710_XLOADER_OFFSET;
     bar2_quirk[0].bar = nr;
+
+    if (virtcca_cvm_enabled()) {
+        return virtcca_vfio_probe_ascend710_bar2_quirk(vdev, quirk, bar2_quirk, devnum, nr);
+    }
 
     /*
      * intercept w/r to the xloader-updating register,
