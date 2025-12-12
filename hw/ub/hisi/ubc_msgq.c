@@ -222,14 +222,14 @@ void msgq_process_task(void *opaque, uint64_t val)
     uint16_t cnt;
     uint32_t ci = ub_get_long(s->msgq_reg + SQ_CI);
     uint32_t pi = ub_get_long(s->msgq_reg + SQ_PI);
-    uint32_t depth = ub_get_long(s->msgq_reg + SQ_DEPTH);
+    uint32_t depth = s->msgq.sq_depth;
 
     if (!s->msgq.sq_base_addr_gpa) {
         /* not ready */
         return;
     }
 
-    if (depth > HI_MSGQ_MAX_DEPTH || depth < HI_MSGQ_MIN_DEPTH || ci >= depth || pi >= depth) {
+    if (ci >= depth || pi >= depth) {
         qemu_log("Invalid arguments: ci=%u pi=%u depth=%u\n", ci, pi, depth);
         return;
     }
