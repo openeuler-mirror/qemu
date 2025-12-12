@@ -77,6 +77,7 @@ void handle_enum_cna_config_request(BusControllerState *s,
     HiMsgCqe cqe;
     char guid[UB_DEV_GUID_STRING_LENGTH + 1] = {0};
 
+    assert(HI_MSG_SQE_PLD_SIZE > ENUM_PKT_HEADER_SIZE + sizeof(EnumPldScanHeader));
     scan_header = g_malloc0(sizeof(EnumPldScanHeader));
     if (dma_memory_read(&address_space_memory,
                         (unsigned long)(buf + ENUM_PKT_HEADER_SIZE),
@@ -85,7 +86,15 @@ void handle_enum_cna_config_request(BusControllerState *s,
         g_free(scan_header);
         return;
     }
+
     header_sz = ENUM_PKT_HEADER_SIZE + calc_enum_pld_header_size(scan_header, true) + ENUM_NA_CFG_REQ_SIZE;
+    if (HI_MSG_SQE_PLD_SIZE < header_sz) {
+        qemu_log("unexpect msgq sqe pld size(0x%x) < prepare read payload size(0x%lx)\n",
+                 HI_MSG_SQE_PLD_SIZE, header_sz);
+        g_free(scan_header);
+        return;
+    }
+
     g_free(scan_header);
     payload = g_malloc0(header_sz);
     if (dma_memory_read(&address_space_memory, (unsigned long)(buf),
@@ -169,6 +178,7 @@ void handle_enum_cna_query_request(BusControllerState *s,
     uint64_t emulated_offset;
     size_t forward_path_size;
 
+    assert(HI_MSG_SQE_PLD_SIZE > ENUM_PKT_HEADER_SIZE + sizeof(EnumPldScanHeader));
     scan_header = g_malloc0(sizeof(EnumPldScanHeader));
     if (dma_memory_read(&address_space_memory,
                         (unsigned long)(buf + ENUM_PKT_HEADER_SIZE),
@@ -177,7 +187,15 @@ void handle_enum_cna_query_request(BusControllerState *s,
         g_free(scan_header);
         return;
     }
+
     header_sz = ENUM_PKT_HEADER_SIZE + calc_enum_pld_header_size(scan_header, true) + ENUM_NA_QRY_REQ_SIZE;
+    if (HI_MSG_SQE_PLD_SIZE < header_sz) {
+        qemu_log("unexpect msgq sqe pld size(0x%x) < prepare read payload size(0x%lx)\n",
+                 HI_MSG_SQE_PLD_SIZE, header_sz);
+        g_free(scan_header);
+        return;
+    }
+
     g_free(scan_header);
     payload = g_malloc0(header_sz);
     if (dma_memory_read(&address_space_memory, (unsigned long)(buf),

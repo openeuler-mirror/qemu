@@ -69,6 +69,21 @@ static void (*msgq_handlers[])(void *opaque, HiMsgSqe *sqe, void *payload) = {
     [UB_MSG_CODE_POOL]  = handle_msg_pool,
 };
 
+static bool paddr_is_validate(BusControllerState *s, uint32_t paddr)
+{
+    uint32_t payload_start_offset = s->msgq.sq_depth * HI_MSG_SQE_SIZE;;
+    uint32_t payload_end_offset = s->msgq.sq_sz;
+
+    if (paddr < payload_start_offset || paddr > payload_end_offset - HI_MSG_SQE_PLD_SIZE) {
+        qemu_log("invalid paddr %u, expect paddr in [0x%x, 0x%x]\n",
+                 paddr, payload_start_offset, payload_end_offset);
+        return false;
+    }
+    trace_paddr_is_validate(payload_start_offset, payload_end_offset, paddr);
+
+    return true;
+}
+
 static void handle_task_type_msg(BusControllerState *s, HiMsgSqe *sqe)
 {
     MsgPktHeader *payload = NULL;
@@ -82,12 +97,12 @@ static void handle_task_type_msg(BusControllerState *s, HiMsgSqe *sqe)
         return;
     }
 
-    if (p_addr + HI_MSG_SQE_PLD_SIZE > s->msgq.sq_sz) {
-        qemu_log("invalid p_addr %u, total size %ld\n",
-                 p_addr, s->msgq.sq_sz);
+    if (!paddr_is_validate(s, p_addr)) {
+        qemu_log("invalid p_addr 0x%x\n", p_addr);
         return;
     }
 
+    assert(HI_MSG_SQE_PLD_SIZE > sizeof(MsgPktHeader));
     payload = g_malloc0(sizeof(MsgPktHeader));
     if (dma_memory_read(&address_space_memory, s->msgq.sq_base_addr_gpa + p_addr,
                         payload, sizeof(MsgPktHeader), MEMTXATTRS_UNSPECIFIED)) {
@@ -97,6 +112,13 @@ static void handle_task_type_msg(BusControllerState *s, HiMsgSqe *sqe)
     }
     plen = payload->msgetah.plen;
     g_free(payload);
+
+    if (HI_MSG_SQE_PLD_SIZE - sizeof(MsgPktHeader) < plen) {
+        qemu_log("unexpect msgq seq ply size(0x%x) - MsgPktHeader(0x%lx) < plen(0x%x)\n",
+                 HI_MSG_SQE_PLD_SIZE, sizeof(MsgPktHeader), plen);
+        return;
+    }
+
     payload = g_malloc0(sizeof(MsgPktHeader) + plen);
     if (dma_memory_read(&address_space_memory, s->msgq.sq_base_addr_gpa + p_addr,
                         payload, sizeof(MsgPktHeader) + plen, MEMTXATTRS_UNSPECIFIED)) {
@@ -118,9 +140,8 @@ static void handle_task_type_enum(BusControllerState *s, HiMsgSqe *sqe)
     void *payload = NULL;
     uint32_t p_addr = sqe->p_addr;
 
-    if (p_addr + HI_MSG_SQE_PLD_SIZE > s->msgq.sq_sz) {
-        qemu_log("invalid p_addr %u, total size %ld\n",
-                 p_addr, s->msgq.sq_sz);
+    if (!paddr_is_validate(s, p_addr)) {
+        qemu_log("invalid p_addr 0x%x\n", p_addr);
         return;
     }
 
@@ -171,12 +192,12 @@ static void handle_task_type_hisi_private(BusControllerState *s, HiMsgSqe *sqe)
         return;
     }
 
-    if (p_addr + HI_MSG_SQE_PLD_SIZE > s->msgq.sq_sz) {
-        qemu_log("invalid p_addr %u, total size %ld\n",
-                 p_addr, s->msgq.sq_sz);
+    if (!paddr_is_validate(s, p_addr)) {
+        qemu_log("invalid p_addr 0x%x\n", p_addr);
         return;
     }
 
+    assert(HI_MSG_SQE_PLD_SIZE > sizeof(HiEuCfgReq));
     payload = g_malloc0(sizeof(HiEuCfgReq));
     if (dma_memory_read(&address_space_memory, s->msgq.sq_base_addr_gpa + p_addr,
                         payload, sizeof(HiEuCfgReq), MEMTXATTRS_UNSPECIFIED)) {
@@ -255,16 +276,32 @@ void msgq_sq_init(void *opaque)
     uint32_t addr_l = ub_get_long(s->msgq_reg + SQ_ADDR_L);
     uint32_t addr_h = ub_get_long(s->msgq_reg + SQ_ADDR_H);
     uint32_t depth = ub_get_long(s->msgq_reg + SQ_DEPTH);
-    uint64_t size = (uint64_t)depth * (HI_MSG_SQE_SIZE + HI_MSG_SQE_PLD_SIZE);
+    uint64_t size = 0;
+    uint64_t sq_base_addr_gpa = addr_l | ((uint64_t)addr_h << 32);
 
-    s->msgq.sq_base_addr_gpa = addr_l | ((uint64_t)addr_h << 32);
-    if (size != depth * (HI_MSG_SQE_SIZE + HI_MSG_SQE_PLD_SIZE)) {
-        qemu_log("sq size %lu != %lu, depth=%u\n", size,
-                 depth * (HI_MSG_SQE_SIZE + HI_MSG_SQE_PLD_SIZE), depth);
+    if (s->msgq.sq_inited) {
+        qemu_log("cannot init msgq repeat: gpa(0x%" PRIu64 "), depth(%u)\n",
+                 sq_base_addr_gpa, depth);
         return;
     }
+
+    if (depth > HI_MSGQ_MAX_DEPTH || depth < HI_MSGQ_MIN_DEPTH) {
+        qemu_log("invalid depth value %u, expect depth [%u, %u]\n",
+                 depth, HI_MSGQ_MIN_DEPTH, HI_MSGQ_MAX_DEPTH);
+        return;
+    }
+
+    if (sq_base_addr_gpa == 0) {
+        qemu_log("invalid sq_base_addr_gpa is 0\n");
+        return;
+    }
+
+    size = (uint64_t)depth * (HI_MSG_SQE_SIZE + HI_MSG_SQE_PLD_SIZE);
     s->msgq.sq_sz = size;
-    trace_msgq_sq_init(s->msgq.sq_base_addr_gpa, depth);
+    s->msgq.sq_depth = depth;
+    s->msgq.sq_base_addr_gpa = sq_base_addr_gpa;
+    s->msgq.sq_inited = true;
+    trace_msgq_sq_init(sq_base_addr_gpa, depth, size);
 }
 
 void msgq_cq_init(void *opaque)
@@ -273,16 +310,32 @@ void msgq_cq_init(void *opaque)
     uint32_t addr_l = ub_get_long(s->msgq_reg + CQ_ADDR_L);
     uint32_t addr_h = ub_get_long(s->msgq_reg + CQ_ADDR_H);
     uint32_t depth = ub_get_long(s->msgq_reg + CQ_DEPTH);
-    uint64_t size = (uint64_t)depth * HI_MSG_CQE_SIZE;
+    uint64_t size = 0;
+    uint64_t cq_base_addr_gpa = addr_l | ((uint64_t)addr_h << 32);
 
-    s->msgq.cq_base_addr_gpa = addr_l | ((uint64_t)addr_h << 32);
-    if (size != depth * HI_MSG_CQE_SIZE) {
-        qemu_log("cq size %lu != %lu, depth=%u\n", size,
-                 depth * HI_MSG_CQE_SIZE, depth);
+    if (s->msgq.cq_inited) {
+        qemu_log("cannot init msgq repeat: gpa(0x%" PRIu64 "), depth(%u)\n",
+                 cq_base_addr_gpa, depth);
         return;
     }
+
+    if (depth > HI_MSGQ_MAX_DEPTH || depth < HI_MSGQ_MIN_DEPTH) {
+        qemu_log("invalid depth value %u, expect depth [%u, %u]\n",
+                 depth, HI_MSGQ_MIN_DEPTH, HI_MSGQ_MAX_DEPTH);
+        return;
+    }
+
+    if (cq_base_addr_gpa == 0) {
+        qemu_log("invalid cq_base_addr_gpa is 0\n");
+        return;
+    }
+
+    size = (uint64_t)depth * (HI_MSG_SQE_SIZE + HI_MSG_SQE_PLD_SIZE);
     s->msgq.cq_sz = size;
-    trace_msgq_cq_init(s->msgq.cq_base_addr_gpa, depth);
+    s->msgq.cq_depth = depth;
+    s->msgq.cq_base_addr_gpa = cq_base_addr_gpa;
+    s->msgq.cq_inited = true;
+    trace_msgq_cq_init(cq_base_addr_gpa, depth, size);
 }
 
 void msgq_rq_init(void *opaque)
@@ -291,25 +344,39 @@ void msgq_rq_init(void *opaque)
     uint32_t addr_l = ub_get_long(s->msgq_reg + RQ_ADDR_L);
     uint32_t addr_h = ub_get_long(s->msgq_reg + RQ_ADDR_H);
     uint32_t depth = ub_get_long(s->msgq_reg + RQ_DEPTH);
-    uint64_t size = (uint64_t)depth * HI_MSG_RQE_SIZE;
+    uint64_t size = 0;
+    uint64_t rq_base_addr_gpa = addr_l | ((uint64_t)addr_h << 32);
 
-    s->msgq.rq_base_addr_gpa = addr_l | ((uint64_t)addr_h << 32);
-    if (size != depth * HI_MSG_RQE_SIZE) {
-        qemu_log("rq size %lu != %u, depth=%u\n", size,
-                 depth * HI_MSG_RQE_SIZE, depth);
+    if (s->msgq.rq_inited) {
+        qemu_log("cannot init msgq repeat: gpa(0x%" PRIu64 "), depth(%u)\n",
+                 rq_base_addr_gpa, depth);
         return;
     }
+
+    if (depth > HI_MSGQ_MAX_DEPTH || depth < HI_MSGQ_MIN_DEPTH) {
+        qemu_log("invalid depth value %u, expect depth [%u, %u]\n",
+                 depth, HI_MSGQ_MIN_DEPTH, HI_MSGQ_MAX_DEPTH);
+        return;
+    }
+
+    if (rq_base_addr_gpa == 0) {
+        qemu_log("invalid cq_base_addr_gpa is 0\n");
+        return;
+    }
+
+    size = (uint64_t)depth * (HI_MSG_SQE_SIZE + HI_MSG_SQE_PLD_SIZE);
     s->msgq.rq_sz = size;
-    trace_msgq_rq_init(s->msgq.rq_base_addr_gpa, depth);
+    s->msgq.rq_depth = depth;
+    s->msgq.rq_base_addr_gpa = rq_base_addr_gpa;
+    s->msgq.rq_inited = true;
+    trace_msgq_rq_init(rq_base_addr_gpa, depth, size);
 }
 
 void msgq_handle_rst(void *opaque)
 {
     BusControllerState *s = opaque;
-    uint32_t old = ub_get_long(s->msgq_reg + SQ_CI);
 
-    qemu_log("BusControllerState receive reset event, "
-             "clear SQ_CI(%u -> 0).\n", old);
+    qemu_log("BusControllerState receive reset event, clear msgq reg info to 0.\n");
     ub_set_long(s->msgq_reg + SQ_CI, 0);
     ub_set_long(s->msgq_reg + SQ_ADDR_L, 0);
     ub_set_long(s->msgq_reg + SQ_ADDR_H, 0);
