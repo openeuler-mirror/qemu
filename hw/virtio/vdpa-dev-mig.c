@@ -18,6 +18,7 @@
 #include <sys/ioctl.h>
 #include <linux/vhost.h>
 #include "qemu/osdep.h"
+#include "qemu/cutils.h"
 #include "hw/virtio/vhost.h"
 #include "hw/virtio/vdpa-dev.h"
 #include "hw/virtio/virtio-bus.h"
@@ -332,10 +333,13 @@ static void vdpa_migration_state_notifier(Notifier *notifier, void *data)
 
 void vdpa_migration_register(VhostVdpaDevice *vdev)
 {
+    char id[256] = "";
+
     vdev->vmstate = qdev_add_vm_change_state_handler(DEVICE(vdev),
                                                      vdpa_dev_vmstate_change,
                                                      DEVICE(vdev));
-    register_savevm_live("vdpa", -1, 1,
+    strpadcpy(id, sizeof(id), vdev->vhostdev, '\0');
+    register_savevm_live(id, -1, 1,
                          &savevm_vdpa_handlers, DEVICE(vdev));
     vdev->migration_state.notify = vdpa_migration_state_notifier;
     migration_add_notifier(&vdev->migration_state, vdpa_migration_state_notifier);
@@ -343,7 +347,10 @@ void vdpa_migration_register(VhostVdpaDevice *vdev)
 
 void vdpa_migration_unregister(VhostVdpaDevice *vdev)
 {
+    char id[256] = "";
+    strpadcpy(id, sizeof(id), vdev->vhostdev, '\0');
+
     migration_remove_notifier(&vdev->migration_state);
-    unregister_savevm(NULL, "vdpa", DEVICE(vdev));
+    unregister_savevm(NULL, id, DEVICE(vdev));
     qemu_del_vm_change_state_handler(vdev->vmstate);
 }
