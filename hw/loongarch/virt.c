@@ -719,9 +719,9 @@ static MemTxResult virt_iocsr_misc_write(void *opaque, hwaddr addr, uint64_t val
             lvms->misc_status |= BIT_ULL(IOCSRM_DMSI_EN);
         }
 
-        features = address_space_ldl(&lvms->as_iocsr,
-                                     EXTIOI_VIRT_BASE + EXTIOI_VIRT_CONFIG,
-                                     attrs, NULL);
+        features = address_space_ldl_le(&lvms->as_iocsr,
+                                        EXTIOI_VIRT_BASE + EXTIOI_VIRT_CONFIG,
+                                        attrs, NULL);
         if (val & BIT_ULL(IOCSRM_EXTIOI_EN)) {
             features |= BIT(EXTIOI_ENABLE);
         }
@@ -729,9 +729,9 @@ static MemTxResult virt_iocsr_misc_write(void *opaque, hwaddr addr, uint64_t val
             features |= BIT(EXTIOI_ENABLE_INT_ENCODE);
         }
 
-        address_space_stl(&lvms->as_iocsr,
-                          EXTIOI_VIRT_BASE + EXTIOI_VIRT_CONFIG,
-                          features, attrs, NULL);
+        address_space_stl_le(&lvms->as_iocsr,
+                             EXTIOI_VIRT_BASE + EXTIOI_VIRT_CONFIG,
+                             features, attrs, NULL);
     }
 
     return MEMTX_OK;
@@ -774,9 +774,9 @@ static MemTxResult virt_iocsr_misc_read(void *opaque, hwaddr addr,
             break;
         }
 
-        features = address_space_ldl(&lvms->as_iocsr,
-                                     EXTIOI_VIRT_BASE + EXTIOI_VIRT_CONFIG,
-                                     attrs, NULL);
+        features = address_space_ldl_le(&lvms->as_iocsr,
+                                        EXTIOI_VIRT_BASE + EXTIOI_VIRT_CONFIG,
+                                        attrs, NULL);
         if (features & BIT(EXTIOI_ENABLE)) {
             ret |= BIT_ULL(IOCSRM_EXTIOI_EN);
         }
