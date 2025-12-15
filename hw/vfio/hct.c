@@ -1177,6 +1177,7 @@ static int hct_migrate_precopy_notifier(NotifierWithReturn *notifier, void *data
     }
 
     info_report("%s: recieved HCT_MIG_MSG_ACK.", __func__);
+    state->migrate_support = 1;
     ret = 0;
 
 exit:
