@@ -178,6 +178,7 @@ static void handle_enum_query_request(BusControllerState *s, HiMsgSqe *sqe,
     EnumTopoQueryRspPdu *rsp_pdu;
     HiMsgCqe cqe;
 
+    assert(HI_MSG_SQE_PLD_SIZE > ENUM_PKT_HEADER_SIZE + sizeof(EnumPldScanHeader));
     scan_header = g_malloc0(sizeof(EnumPldScanHeader));
     if (dma_memory_read(&address_space_memory,
                         (unsigned long)(buf + ENUM_PKT_HEADER_SIZE),
@@ -186,7 +187,15 @@ static void handle_enum_query_request(BusControllerState *s, HiMsgSqe *sqe,
         g_free(scan_header);
         return;
     }
+
     header_sz = ENUM_PKT_HEADER_SIZE + calc_enum_pld_header_size(scan_header, true) + ENUM_TOPO_QUERY_REQ_SIZE;
+    if (HI_MSG_SQE_PLD_SIZE < header_sz) {
+        qemu_log("unexpect msgq sqe pld size(0x%x) < prepare read payload size(0x%lx)\n",
+                 HI_MSG_SQE_PLD_SIZE, header_sz);
+        g_free(scan_header);
+        return;
+    }
+
     g_free(scan_header);
     payload = g_malloc0(header_sz);
     if (dma_memory_read(&address_space_memory, (unsigned long)(buf),

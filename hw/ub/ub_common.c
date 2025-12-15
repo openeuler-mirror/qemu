@@ -29,7 +29,7 @@ uint32_t fill_rq(BusControllerState *s, void *rsp, uint32_t rsp_size)
     uint32_t ci = ub_get_long(s->msgq_reg + RQ_CI);
     uint32_t pi = ub_get_long(s->msgq_reg + RQ_PI);
     uint32_t pi_new;
-    uint32_t depth = ub_get_long(s->msgq_reg + RQ_DEPTH);
+    uint32_t depth = s->msgq.rq_depth;
     uint32_t remain;
     hwaddr dst_rqe;
 
@@ -38,7 +38,7 @@ uint32_t fill_rq(BusControllerState *s, void *rsp, uint32_t rsp_size)
         return UINT32_MAX;
     }
 
-    if (depth > HI_MSGQ_MAX_DEPTH || depth < HI_MSGQ_MIN_DEPTH || ci >= depth || pi >= depth) {
+    if (ci >= depth || pi >= depth) {
         qemu_log("Invalid RQ indices: ci=%u pi=%u depth=%u\n", ci, pi, depth);
         return UINT32_MAX;
     }
@@ -61,11 +61,11 @@ uint32_t fill_cq(BusControllerState *s, HiMsgCqe *cqe)
 {
     uint32_t ci = ub_get_long(s->msgq_reg + CQ_CI);
     uint32_t pi = ub_get_long(s->msgq_reg + CQ_PI);
-    uint32_t depth = ub_get_long(s->msgq_reg + CQ_DEPTH);
+    uint32_t depth = s->msgq.rq_depth;
     uint32_t remain;
     hwaddr dst_cqe;
 
-    if (depth > HI_MSGQ_MAX_DEPTH || depth < HI_MSGQ_MIN_DEPTH || ci >= depth || pi >= depth) {
+    if (ci >= depth || pi >= depth) {
         qemu_log("Invalid CQ indices: ci=%u pi=%u depth=%u\n", ci, pi, depth);
         return UINT32_MAX;
     }

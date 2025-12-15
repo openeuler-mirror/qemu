@@ -289,10 +289,16 @@ typedef struct HiMsgSqePld {
 typedef struct HiMsgqInfo {
     uint64_t sq_base_addr_gpa;
     uint64_t sq_sz;
+    uint32_t sq_depth;
+    bool sq_inited;
     uint64_t cq_base_addr_gpa;
     uint64_t cq_sz;
+    uint32_t cq_depth;
+    bool cq_inited;
     uint64_t rq_base_addr_gpa;
     uint64_t rq_sz;
+    uint32_t rq_depth;
+    bool rq_inited;
 } HiMsgqInfo;
 
 typedef enum HiMsgqIdx {

@@ -202,11 +202,11 @@ static uint32_t get_dw_mask(uint8_t byte_enable)
 static void ub_cfg_rw(BusControllerState *s, HiMsgSqe *sqe,
                       MsgPktHeader *header)
 {
-    CfgMsgPldReq *payload = (CfgMsgPldReq *)header->payload;
+    CfgMsgPldReq *payload = NULL;
     CfgMsgPkt rsp_pkt;
     uint32_t local = sqe->local;
-    uint64_t cfg_offset = (uint64_t)payload->req_addr * DWORD_SIZE;
-    uint32_t entity = payload->entity_idx;
+    uint64_t cfg_offset = 0;
+    uint32_t entity = 0;
     uint32_t dcna = header->nth.dcna;
     UBDevice *ub_dev = NULL;
     uint32_t dw_mask;
@@ -217,6 +217,9 @@ static void ub_cfg_rw(BusControllerState *s, HiMsgSqe *sqe,
                  header->msgetah.plen);
         return;
     }
+    payload = (CfgMsgPldReq *)header->payload;
+    cfg_offset = (uint64_t)payload->req_addr * DWORD_SIZE;
+    entity = payload->entity_idx;
     memset(&rsp_pkt, 0, sizeof(CfgMsgPkt));
     memcpy(&rsp_pkt.header, header, sizeof(MsgPktHeader));
 
