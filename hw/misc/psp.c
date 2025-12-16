@@ -19,10 +19,18 @@
 #include "exec/address-spaces.h"
 #include "exec/ramblock.h"
 #include "hw/i386/e820_memory_layout.h"
+#include "migration/migration.h"
+#include "migration/misc.h"
 #include <sys/ioctl.h>
 
 #define TYPE_PSP_DEV "psp"
 OBJECT_DECLARE_SIMPLE_TYPE(PSPDevState, PSP_DEV)
+
+#define VPSP_MIGRATE_VERSION                1
+#define HUGEPAGE_SIZE                       (1024*1024*2)
+
+static int vpsp_dev_pre_save(void *opaque);
+static int vpsp_dev_post_load(void *opaque, int version_id);
 
 struct PSPDevState {
     /* Private */
@@ -30,6 +38,8 @@ struct PSPDevState {
 
     /* Public */
     Notifier shutdown_notifier;
+    NotifierWithReturn precopy_notifier;
+
     int dev_fd;
     bool enabled;
 
@@ -41,6 +51,30 @@ struct PSPDevState {
     uint32_t vid;
     /* pinned hugepage numbers */
     int hp_num;
+
+    uint32_t img_len;
+    uint8_t *key_img;
+    uint32_t ctx_len;
+    uint8_t *cmd_ctx;
+};
+
+static const VMStateDescription vmstate_vpsp_dev = {
+    .name = "vpsp-dev",
+    .version_id = VPSP_MIGRATE_VERSION,
+    .minimum_version_id = VPSP_MIGRATE_VERSION,
+    .pre_save = vpsp_dev_pre_save,
+    .post_load = vpsp_dev_post_load,
+    .fields = (VMStateField[]) {
+        VMSTATE_UINT32(img_len, PSPDevState),
+        VMSTATE_VBUFFER_ALLOC_UINT32(key_img,
+                                     PSPDevState, 0, 0,
+                                     img_len),
+        VMSTATE_UINT32(ctx_len, PSPDevState),
+        VMSTATE_VBUFFER_ALLOC_UINT32(cmd_ctx,
+                                     PSPDevState, 0, 0,
+                                     ctx_len),
+        VMSTATE_END_OF_LIST()
+    }
 };
 
 #define PSP_DEV_PATH "/dev/hygon_psp_config"
@@ -57,7 +91,21 @@ enum VPSP_DEV_CTRL_OPCODE {
     VPSP_OP_SET_DEFAULT_VID_PERMISSION,
     VPSP_OP_GET_DEFAULT_VID_PERMISSION,
     VPSP_OP_SET_GPA,
+    VPSP_OP_BACKUP_KEY,
+    VPSP_OP_RESTORE_KEY,
+    VPSP_OP_BACKUP_CTX,
+    VPSP_OP_RESTORE_CTX,
 };
+
+typedef struct key_img_ctl {
+    unsigned int img_len;
+    void *key_img_ptr;
+} __attribute__ ((packed)) key_img_ctl_t;
+
+typedef struct cmd_ctx_ctl {
+    unsigned int buffer_len;
+    void *cmd_ctx_ptr;
+} __attribute__ ((packed)) cmd_ctx_ctl_t;
 
 struct psp_dev_ctrl {
     unsigned char op;
@@ -70,9 +118,203 @@ struct psp_dev_ctrl {
             uint64_t gpa_start;
             uint64_t gpa_end;
         } gpa;
+        key_img_ctl_t key_img_ctl;
+        cmd_ctx_ctl_t cmd_ctx_ctl;
         unsigned char reserved[128];
     } __attribute__ ((packed)) data;
 };
+
+static int vpsp_dev_backup_key_img(struct PSPDevState *state)
+{
+    int ret = 0;
+    uint32_t img_buffer_len = 0;
+    struct psp_dev_ctrl ctrl = { 0 };
+
+    if (state && state->dev_fd) {
+        if (state->enabled && state->vid) {
+            ctrl.op = VPSP_OP_BACKUP_KEY;
+
+            // get actual key image buffer length
+            ctrl.data.key_img_ctl.img_len = 0;
+            if (ioctl(state->dev_fd, PSP_IOC_VPSP_OPT, &ctrl) < 0) {
+                error_report("ioctl VPSP_OP_BACKUP_KEY: %d", -errno);
+                return -1;
+            }
+
+            img_buffer_len = ctrl.data.key_img_ctl.img_len;
+            // no key images need to migrate
+            if (unlikely(img_buffer_len == 0))
+                return 0;
+
+            // free last key images
+            if (unlikely(state->key_img))
+                g_free(state->key_img);
+
+            state->key_img = g_malloc0(img_buffer_len);
+            if (!state->key_img) {
+                error_report("g_malloc0 failed: %d", -errno);
+                return -1;
+            }
+
+            // get key images backup buffer
+            ctrl.data.key_img_ctl.img_len = img_buffer_len;
+            ctrl.data.key_img_ctl.key_img_ptr = state->key_img;
+            ret = ioctl(state->dev_fd, PSP_IOC_VPSP_OPT, &ctrl);
+            if (ret < 0) {
+                error_report("ioctl VPSP_OP_BACKUP_KEY: %d", -errno);
+                return -1;
+            }
+
+            state->img_len = ctrl.data.key_img_ctl.img_len;
+        }
+    }
+
+    return 0;
+}
+
+static int vpsp_dev_restore_key_img(struct PSPDevState *state)
+{
+    int ret = 0;
+    struct psp_dev_ctrl ctrl = { 0 };
+
+    if (state && state->dev_fd) {
+        if (state->enabled && state->vid && state->img_len) {
+            if (!state->key_img) {
+                error_report("PSPDevState load invalid, key_img is null\n");
+                return -1;
+            }
+
+            ctrl.op = VPSP_OP_RESTORE_KEY;
+            ctrl.data.key_img_ctl.img_len = state->img_len;
+            ctrl.data.key_img_ctl.key_img_ptr = state->key_img;
+            if (ioctl(state->dev_fd, PSP_IOC_VPSP_OPT, &ctrl) < 0) {
+                error_report("ioctl VPSP_OP_RESTORE_KEY: %d", -errno);
+                return -1;
+            }
+
+            // release key_img buffer, for migrate again
+            g_free(state->key_img);
+            state->key_img = NULL;
+            state->img_len = 0;
+        }
+    }
+
+    return ret;
+}
+
+static int vpsp_dev_backup_cmd_ctx(struct PSPDevState *state)
+{
+    int ret = 0;
+    uint32_t buffer_len = 0;
+    struct psp_dev_ctrl ctrl = { 0 };
+
+    if (state && state->dev_fd) {
+        if (state->enabled && state->vid) {
+            ctrl.op = VPSP_OP_BACKUP_CTX;
+
+            // get actual cmd context serialization buffer length
+            ctrl.data.cmd_ctx_ctl.buffer_len = 0;
+            if (ioctl(state->dev_fd, PSP_IOC_VPSP_OPT, &ctrl) < 0) {
+                error_report("ioctl VPSP_OP_BACKUP_CTX: %d", -errno);
+                return -1;
+            }
+
+            buffer_len = ctrl.data.cmd_ctx_ctl.buffer_len;
+            // no cmd ctx need to migrate
+            if (buffer_len == 0)
+                return 0;
+
+            // free last cmd_ctx buffer
+            if (unlikely(state->cmd_ctx))
+                g_free(state->cmd_ctx);
+
+            state->cmd_ctx = g_malloc0(buffer_len);
+            if (!state->cmd_ctx) {
+                error_report("g_malloc0 failed: %d", -errno);
+                return -1;
+            }
+
+            ctrl.data.cmd_ctx_ctl.buffer_len = buffer_len;
+            ctrl.data.cmd_ctx_ctl.cmd_ctx_ptr = state->cmd_ctx;
+            ret = ioctl(state->dev_fd, PSP_IOC_VPSP_OPT, &ctrl);
+            if (ret < 0) {
+                error_report("ioctl VPSP_OP_BACKUP_CTX: %d", -errno);
+                return -1;
+            }
+            state->ctx_len = ctrl.data.cmd_ctx_ctl.buffer_len;
+        }
+    }
+
+    return 0;
+}
+
+static int vpsp_dev_restore_cmd_ctx(struct PSPDevState *state)
+{
+    struct psp_dev_ctrl ctrl = { 0 };
+
+    if (state && state->dev_fd) {
+        if (state->enabled && state->vid && state->ctx_len) {
+            if (!state->cmd_ctx) {
+                error_report("PSPDevState load invalid, cmd_ctx is null\n");
+                return -1;
+            }
+
+            ctrl.op = VPSP_OP_RESTORE_CTX;
+            ctrl.data.cmd_ctx_ctl.buffer_len = state->ctx_len;
+            ctrl.data.cmd_ctx_ctl.cmd_ctx_ptr = state->cmd_ctx;
+
+            if (ioctl(state->dev_fd, PSP_IOC_VPSP_OPT, &ctrl) < 0) {
+                error_report("ioctl PSP_IOC_VPSP_OPT: %d", -errno);
+                return -1;
+            }
+
+            // release cmd ctx buffer, for migrate again
+            g_free(state->cmd_ctx);
+            state->cmd_ctx = NULL;
+            state->ctx_len = 0;
+        }
+    }
+
+    return 0;
+}
+
+static int vpsp_dev_pre_save(void *opaque)
+{
+    int ret = 0;
+    struct PSPDevState *state = opaque;
+
+    /**
+     * Back up the key image in the final stage
+     * to ensure the key image is up-to-date
+     */
+    ret = vpsp_dev_backup_key_img(opaque);
+
+    if (ret && state->key_img) {
+        g_free(state->key_img);
+        state->key_img = NULL;
+        state->img_len = 0;
+    }
+    return ret;
+}
+
+static int vpsp_dev_post_load(void *opaque, int version_id)
+{
+    int ret = 0;
+
+    /**
+     * During load, there are no sequencing requirements
+     * between restore of the key image and cmd_ctx
+     */
+    ret = vpsp_dev_restore_cmd_ctx(opaque);
+    if (ret)
+        return ret;
+
+    ret = vpsp_dev_restore_key_img(opaque);
+    if (ret)
+        return ret;
+
+    return ret;
+}
 
 static MemoryRegion *find_memory_region_by_name(MemoryRegion *root, const char *name) {
     MemoryRegion *subregion;
@@ -89,6 +331,47 @@ static MemoryRegion *find_memory_region_by_name(MemoryRegion *root, const char *
     }
 
     return NULL;
+}
+
+static int precopy_state_notifier(NotifierWithReturn *notifier, void *data)
+{
+    int ret = 0, i;
+    PrecopyNotifyData *pnd = data;
+    char mr_name[128] = {0};
+    MemoryRegion *find_mr = NULL;
+    PSPDevState *state = container_of(notifier, PSPDevState, precopy_notifier);
+
+    if (pnd->reason != PRECOPY_NOTIFY_COMPLETE)
+        goto end;
+
+    /**
+     * The host kernel will then check each cmd_ctx
+     * to confirm all cmd_ctx are completed.
+     */
+    ret = vpsp_dev_backup_cmd_ctx(state);
+    if (ret)
+        goto end;
+
+    for (i = 0 ; i < state->hp_num; ++i) {
+        sprintf(mr_name, "mem2-%d", i);
+        find_mr = find_memory_region_by_name(get_system_memory(), mr_name);
+        if (!find_mr) {
+            error_report("fail to find memory region by name %s.", mr_name);
+            ret = -ENOMEM;
+            goto end;
+        }
+
+        /* ensure mem2 memoryregion is migrated during downtime */
+        memory_region_set_dirty(find_mr, 0, HUGEPAGE_SIZE);
+    }
+
+end:
+    if (ret && state->cmd_ctx) {
+        g_free(state->cmd_ctx);
+        state->cmd_ctx = NULL;
+        state->ctx_len = 0;
+    }
+    return ret;
 }
 
 static int pin_user_hugepage(int fd, uint64_t vaddr)
@@ -269,6 +552,9 @@ static void psp_dev_realize(DeviceState *dev, Error **errp)
     state->shutdown_notifier.notify = psp_dev_shutdown_notify;
     qemu_register_shutdown_notifier(&state->shutdown_notifier);
 
+    state->precopy_notifier.notify = precopy_state_notifier;
+    precopy_add_notifier(&state->precopy_notifier);
+
     return;
 del_vid:
     ctrl.op = VPSP_OP_VID_DEL;
@@ -288,6 +574,8 @@ static void psp_dev_class_init(ObjectClass *klass, void *data)
 
     dc->desc = "PSP Device";
     dc->realize = psp_dev_realize;
+    dc->vmsd = &vmstate_vpsp_dev;
+
     set_bit(DEVICE_CATEGORY_MISC, dc->categories);
     device_class_set_props(dc, psp_dev_properties);
 }
