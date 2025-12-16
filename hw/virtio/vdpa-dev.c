@@ -223,10 +223,6 @@ vhost_vdpa_device_get_config(VirtIODevice *vdev, uint8_t *config)
     uint8_t *new_config;
     int ret;
 
-    if (s->vdev_id != VIRTIO_ID_BLOCK) {
-        goto out;
-    }
-
     new_config = g_malloc0(s->config_size);
     ret = vhost_dev_get_config(&s->dev, new_config, s->config_size, NULL);
     if (ret < 0) {
@@ -236,7 +232,6 @@ vhost_vdpa_device_get_config(VirtIODevice *vdev, uint8_t *config)
     memcpy(s->config, new_config, s->config_size);
 free:
     g_free(new_config);
-out:
     memcpy(config, s->config, s->config_size);
 }
 
