@@ -919,6 +919,11 @@ static void ummu_glb_int_enable(UMMUState *u, UMMUUSIVectorType type)
     USIMessage msg;
     uint32_t interrupt_id = UMMU_INTERRUPT_ID;
 
+    if (!kvm_usi_via_irqfd_enabled()) {
+        qemu_log("kvm usi via irqfd disabled.\n");
+        return;
+    }
+
     if (type == UMMU_USI_VECTOR_EVETQ) {
         msg = ummu_get_eventq_usi_message(u);
     } else {

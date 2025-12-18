@@ -112,6 +112,7 @@ bool kvm_readonly_mem_allowed;
 bool kvm_vm_attributes_allowed;
 bool kvm_msi_use_devid;
 bool kvm_csv3_allowed;
+bool kvm_usi_via_irqfd_allowed;
 static bool kvm_has_guest_debug;
 static int kvm_sstep_flags;
 static bool kvm_immediate_exit;
@@ -2421,6 +2422,7 @@ static void kvm_irqchip_create(KVMState *s)
      */
     kvm_async_interrupts_allowed = true;
     kvm_halt_in_kernel_allowed = true;
+    kvm_usi_via_irqfd_allowed = true;
 
     kvm_init_irq_routing(s);
 

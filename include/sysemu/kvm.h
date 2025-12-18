@@ -40,6 +40,7 @@ extern bool kvm_async_interrupts_allowed;
 extern bool kvm_halt_in_kernel_allowed;
 extern bool kvm_resamplefds_allowed;
 extern bool kvm_msi_via_irqfd_allowed;
+extern bool kvm_usi_via_irqfd_allowed;
 extern bool kvm_gsi_routing_allowed;
 extern bool kvm_gsi_direct_mapping;
 extern bool kvm_readonly_mem_allowed;
@@ -110,6 +111,15 @@ extern bool kvm_csv3_allowed;
 #define kvm_resamplefds_enabled() (kvm_resamplefds_allowed)
 
 /**
+ * kvm_usi_via_irqfd_enabled:
+ *
+ * Returns: true if we can route a USI (UB Signaled Interrupt)
+ * to a KVM CPU via an irqfd. This requires that the kernel supports
+ * this and that we're running in a configuration that permits it.
+ */
+#define kvm_usi_via_irqfd_enabled() (kvm_usi_via_irqfd_allowed)
+
+/**
  * kvm_msi_via_irqfd_enabled:
  *
  * Returns: true if we can route a PCI MSI (Message Signaled Interrupt)
@@ -174,6 +184,7 @@ extern bool kvm_csv3_allowed;
 #define kvm_irqfds_enabled() (false)
 #define kvm_resamplefds_enabled() (false)
 #define kvm_msi_via_irqfd_enabled() (false)
+#define kvm_usi_via_irqfd_enabled() (false)
 #define kvm_gsi_routing_allowed() (false)
 #define kvm_gsi_direct_mapping() (false)
 #define kvm_readonly_mem_enabled() (false)
