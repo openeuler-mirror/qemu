@@ -392,7 +392,6 @@ void csv3_shared_region_dma_unmap(uint64_t start, uint64_t end)
                 QTAILQ_REMOVE(&s->dma_map_regions_list, pos, list);
                 g_free(pos);
             }
-            break;
         }
         if ((start + size) <= curr_end) {
             break;
