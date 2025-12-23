@@ -33,7 +33,6 @@
 #include "hw/qdev-properties.h"
 #include "internals.h"
 #include "cpu-features.h"
-#include "cpregs.h"
 #include "cpu-custom.h"
 
 /* convert between <register>_IDX and SYS_<register> */
