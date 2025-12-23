@@ -720,6 +720,9 @@ process_incoming_migration_co(void *opaque)
                                     true)) {
             goto fail;
         }
+
+        /* enable autostart during urma migration to reduce downtime */
+        autostart = true;
     }
 #endif
 
