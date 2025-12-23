@@ -973,27 +973,29 @@ static int ub_dev_set_neighbor_info(UBDevice *dev, Error **errp)
     uint32_t local_port_idx;
     uint32_t neighbor_port_idx;
     UBDevice *neighbor_dev;
+    int ret = -1;
 
     neighbor_info_str = strtok(dev->port.neighbors_cmd, "+");
+    if (strlen(neighbor_info_str) >= UB_DEV_ID_LEN) {
+        qemu_log("unexpect neighbor_info_str(%s) is too long, please check\n", neighbor_info_str);
+        goto free;
+    }
+
     while (neighbor_info_str != NULL) {
-        int ret = sscanf(neighbor_info_str, "%u:%[^:]:%u",
+        int num = sscanf(neighbor_info_str, "%u:%[^:]:%u",
                          &local_port_idx, neighbor_id, &neighbor_port_idx);
         neighbor_info_str = strtok(NULL, "+");
-        if (ret < 3) {
+        if (num < 3) {
             qemu_log("port info format is incorrect %s\n", neighbor_info_str);
             error_setg(errp, "port info format is incorrect %s\n", neighbor_info_str);
-            g_free(dev->port.neighbors_cmd);
-            dev->port.neighbors_cmd = NULL;
-            return -1;
+            goto free;
         }
         if (local_port_idx >= dev->port.port_num) {
             qemu_log("%s local port info is illegal, port idx:%u port num %u\n",
                      dev->qdev.id, local_port_idx, dev->port.port_num);
             error_setg(errp, "%s local port info is illegal, port idx:%u port num %u\n",
                        dev->qdev.id, local_port_idx, dev->port.port_num);
-            g_free(dev->port.neighbors_cmd);
-            dev->port.neighbors_cmd = NULL;
-            return -1;
+            goto free;
         }
 
         neighbor_dev = ub_find_device_by_id(neighbor_id);
@@ -1002,25 +1004,19 @@ static int ub_dev_set_neighbor_info(UBDevice *dev, Error **errp)
                      dev->qdev.id, local_port_idx, neighbor_id);
             error_setg(errp, "%s:%u neighbor_dev not exist %s\n",
                        dev->qdev.id, local_port_idx, neighbor_id);
-            g_free(dev->port.neighbors_cmd);
-            dev->port.neighbors_cmd = NULL;
-            return -1;
+            goto free;
         }
         if (neighbor_dev == dev) {
             qemu_log("%s can not connect to itself\n", dev->qdev.id);
             error_setg(errp, "%s can not connect to itself\n", dev->qdev.id);
-            g_free(dev->port.neighbors_cmd);
-            dev->port.neighbors_cmd = NULL;
-            return -1;
+            goto free;
         }
         if (neighbor_port_idx >= neighbor_dev->port.port_num) {
             qemu_log("%s neighbor port info is illegal, port idx:%u port num %u\n",
                      dev->qdev.id, neighbor_port_idx, neighbor_dev->port.port_num);
             error_setg(errp, "%s neighbor port info is illegal, port idx:%u port num %u\n",
                        dev->qdev.id, neighbor_port_idx, neighbor_dev->port.port_num);
-            g_free(dev->port.neighbors_cmd);
-            dev->port.neighbors_cmd = NULL;
-            return -1;
+            goto free;
         }
         /* ub device can only connect with ub controller or ub switch */
         if ((dev->dev_type & UB_TYPE_DEVICE) &&
@@ -1029,9 +1025,7 @@ static int ub_dev_set_neighbor_info(UBDevice *dev, Error **errp)
                      "ub controller or ub switch\n", dev->qdev.id, neighbor_dev->qdev.id);
             error_setg(errp,"%s can not connect with %s ub device can only connect with "
                        "ub controller or ub switch\n", dev->qdev.id, neighbor_dev->qdev.id);
-            g_free(dev->port.neighbors_cmd);
-            dev->port.neighbors_cmd = NULL;
-            return -1;
+            goto free;
         }
         /* Check whether the neighbor information of the two ends matches. */
         if (dev->port.neighbors[local_port_idx].neighbor_dev) {
@@ -1060,9 +1054,7 @@ static int ub_dev_set_neighbor_info(UBDevice *dev, Error **errp)
                            dev->qdev.id,
                            dev->port.neighbors[local_port_idx].local_port_idx);
 
-                g_free(dev->port.neighbors_cmd);
-                dev->port.neighbors_cmd = NULL;
-                return -1;
+                goto free;
             }
         }
         dev->port.neighbors[local_port_idx].local_port_idx = local_port_idx;
@@ -1072,15 +1064,16 @@ static int ub_dev_set_neighbor_info(UBDevice *dev, Error **errp)
         /* set remote neighbor_dev */
         if (ub_dev_set_neighbor_dev_neighbor_info(local_port_idx, neighbor_port_idx, dev,
                                                   neighbor_dev, errp) < 0) {
-            g_free(dev->port.neighbors_cmd);
-            dev->port.neighbors_cmd = NULL;
-            return -1;
+            goto free;
         }
         ub_config_set_port_basic(&dev->port.neighbors[local_port_idx], dev);
     }
+    ret = 0;
+
+free:
     g_free(dev->port.neighbors_cmd);
     dev->port.neighbors_cmd = NULL;
-    return 0;
+    return ret;
 }
 
 static int ub_dev_init_port_info_by_cmd(Error **errp)

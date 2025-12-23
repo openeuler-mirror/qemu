@@ -41,8 +41,15 @@ static void enum_set_cna_config_space(uint8_t opcode, EnumCnaCfgReq *cna_cfg_req
 
     if (opcode == UB_ENUM_CNA_MGMT_PORT) {
         uint16_t port_idx = cna_cfg_req->port_idx;
-        uint64_t offset = UB_PORT_SLICE_START + port_idx * UB_PORT_SZ;
+        uint64_t offset;
 
+        if (port_idx >= dev->port.port_num) {
+            qemu_log("unexpect port_idx(%u) > udev(%s) port_num(%u)\n",
+                     port_idx, dev->qdev.id, dev->port.port_num);
+            return;
+        }
+
+        offset = UB_PORT_SLICE_START + port_idx * UB_PORT_SZ;
         emulated_offset = ub_cfg_offset_to_emulated_offset(offset, true);
         port_basic = (ConfigPortBasic *)(dev->config + emulated_offset);
         port_basic->port_cna = cna_cfg_req->cna;
