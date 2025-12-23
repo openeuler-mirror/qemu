@@ -32,10 +32,19 @@
 static void enum_get_port_info_from_config_space(UBDevice *dev, uint16_t port_idx,
                                                  EnumTlvPortInfo *port_info)
 {
-    uint64_t offset = UB_PORT_SLICE_START + port_idx * UB_PORT_SZ;
-    uint64_t emulated_offset = ub_cfg_offset_to_emulated_offset(offset, true);
-    ConfigPortBasic *port_basic = (ConfigPortBasic *)(dev->config + emulated_offset);
+    uint64_t offset;
+    uint64_t emulated_offset;
+    ConfigPortBasic *port_basic = NULL;
 
+    if (port_idx >= dev->port.port_num) {
+        qemu_log("unexpect port_idx(%u) > udev(%s) port_num(%u)\n",
+                 port_idx, dev->qdev.id, dev->port.port_num);
+        return;
+    }
+
+    offset = UB_PORT_SLICE_START + port_idx * UB_PORT_SZ;
+    emulated_offset = ub_cfg_offset_to_emulated_offset(offset, true);
+    port_basic = (ConfigPortBasic *)(dev->config + emulated_offset);
     memset(port_info, 0, sizeof(EnumTlvPortInfo));
     port_info->bits0.len = sizeof(EnumTlvPortInfo);
     port_info->bits0.type = TLV_PORT_INFO;
