@@ -38,12 +38,12 @@ QEMU_BUILD_BUG_ON(HOST_MEM_POLICY_DEFAULT != MPOL_DEFAULT);
 QEMU_BUILD_BUG_ON(HOST_MEM_POLICY_PREFERRED != MPOL_PREFERRED);
 QEMU_BUILD_BUG_ON(HOST_MEM_POLICY_BIND != MPOL_BIND);
 QEMU_BUILD_BUG_ON(HOST_MEM_POLICY_INTERLEAVE != MPOL_INTERLEAVE);
+#endif
 
 #ifdef CONFIG_MBIND_PROPORTION
 #define PROPORTION_MAX_NUM 11
 #define PER_PROPORTION_MAX_LENGTH 32
 #define PROPORTION_MAX_LENGTH 512
-#endif
 #endif
 
 char *
@@ -348,7 +348,7 @@ size_t host_memory_backend_pagesize(HostMemoryBackend *memdev)
 }
 
 #ifdef CONFIG_MBIND_PROPORTION
-static int mbind_by_proportions(void *ptr, const char *bind_proportions, uint64_t sz)
+static void mbind_by_proportions(void *ptr, const char *bind_proportions, uint64_t sz, Error **errp)
 {
     char proportion_str[PROPORTION_MAX_LENGTH];
     char proportions[PROPORTION_MAX_NUM][PER_PROPORTION_MAX_LENGTH];
@@ -359,62 +359,71 @@ static int mbind_by_proportions(void *ptr, const char *bind_proportions, uint64_
     uint64_t size_total = 0;
 
     if (strlen(bind_proportions) >= PROPORTION_MAX_LENGTH) {
-        qemu_log("the lenth of bind_proportions is too long, max len is %d\n", PROPORTION_MAX_LENGTH);
-        return -1;
+        error_setg(errp, "Length of bind_proportions config is too long");
+        return;
     }
-    if (memcpy(proportion_str, bind_proportions, strlen(bind_proportions) + 1) == NULL) {
-        qemu_log("failed to copy bind_proportions\n");
-        return -1;
-    }
+    memcpy(proportion_str, bind_proportions, strlen(bind_proportions) + 1);
     proportions_num = 0;
     token = strtok(proportion_str, ":");
     while (token != NULL) {
-        if (strlen(token) + 1 >= PER_PROPORTION_MAX_LENGTH ) {
-            qemu_log("bind_proportions token is too long, max len is %d\n", PER_PROPORTION_MAX_LENGTH);
-            return -1;
+        if (strlen(token) >= PER_PROPORTION_MAX_LENGTH) {
+            error_setg(errp, "Length of bind_proportion token %zu is too long", strlen(token));
+            return;
         }
-        if (memcpy(proportions[proportions_num], token, strlen(token) + 1) == NULL) {
-            qemu_log("failed to copy token\n");
-            return -1;
-        }
+        memcpy(proportions[proportions_num], token, strlen(token) + 1);
         proportions_num++;
         if (proportions_num >= PROPORTION_MAX_NUM) {
-            qemu_log("invalid proportions number, max is %d\n", PROPORTION_MAX_NUM);
-            return -1;
+            error_setg(errp, "Invalid proportions number, max is %d", PROPORTION_MAX_NUM - 1);
+            return;
         }
         token = strtok(NULL, ":");
     }
 
     for (i = 0; i < proportions_num; i++) {
         unsigned long tmp_lastbit, tmp_maxnode;
-        char prop[PROPORTION_MAX_LENGTH];
+        char prop[PER_PROPORTION_MAX_LENGTH];
         char *end, *prop_token, *pos;
         long int node_id;
         long size_token;
         DECLARE_BITMAP(tmp_host_nodes, MAX_NODES + 1) = {0};
 
         ptr = (void*)((char *)ptr + size);
-        if (memcpy(prop, proportions[i], strlen(proportions[i]) + 1) == NULL) {
-            qemu_log("failed to copy propertion");
-            return -1;
+        if (strlen(proportions[i]) >= PER_PROPORTION_MAX_LENGTH) {
+            error_setg(errp, "Length of bind_proportion token %zu is too long", strlen(proportions[i]));
+            return;
         }
+        memcpy(prop, proportions[i], strlen(proportions[i]) + 1);
         prop_token = strtok(prop, "-");
         if (prop_token == NULL) {
-            return -1;
+            error_setg(errp, "Invalid bind node and size config");
+            return;
         }
         size_token = strtol(prop_token, &end, 10);
         if (*end != '\0') {
-            return -1;
+            error_setg(errp, "Invalid size format: '%s' (expected number)", prop_token);
+            return;
         }
         size = size_token * MiB;
         size_total += size;
         prop_token = strtok(NULL, "-");
+        if (prop_token == NULL) {
+            error_setg(errp, "Missing node specification in token: %s", proportions[i]);
+            return;
+        }
         pos = strstr(prop_token, "node");
+        if (pos == NULL) {
+            error_setg(errp, "Invalid node info in token: %s", prop_token);
+            return;
+        }
         pos += strlen("node");
         node_id = strtol(pos, &end, 10);
         if (*end != '\0') {
-            perror("failed to convert node_id from string to number");
-            return -1;
+            error_setg(errp, "Failed to convert node_id from string to number");
+            return;
+        }
+        if (node_id < 0 || node_id > MAX_NODES) {
+            error_setg(errp, "Invalid node id %ld", node_id);
+            return;
         }
         bitmap_set(tmp_host_nodes, node_id, 1);
         tmp_lastbit = find_last_bit(tmp_host_nodes, MAX_NODES);
@@ -423,16 +432,15 @@ static int mbind_by_proportions(void *ptr, const char *bind_proportions, uint64_
         mbind_ret = mbind(ptr, size, MPOL_BIND, tmp_host_nodes, tmp_maxnode + 1,
             MPOL_MF_STRICT | MPOL_MF_MOVE);
         if (mbind_ret < 0) {
-            perror("failed to mbind address to host node");
-            return -1;
+            error_setg_errno(errp, errno, "Failed to mbind address to host node");
+            return;
         }
     }
     if (size_total != sz) {
-        qemu_log("invalid proportion config, length %" PRIu64 " is not same as "
-            "all tokens '%" PRIu64 "'", sz, size_total);
-            return -1;
+        error_setg(errp, "Invalid propertion size config");
+        return;
     }
-    return 0;
+    return;
 }
 #endif
 
@@ -472,10 +480,10 @@ host_memory_backend_memory_complete(UserCreatable *uc, Error **errp)
 #ifdef CONFIG_MBIND_PROPORTION
         const char *proportion = backend->propertion;
         if (proportion != NULL) {
-            if (mbind_by_proportions(ptr, proportion, sz) < 0) {
-                error_setg(errp, "failed to mbind_by_proportions");
+            mbind_by_proportions(ptr, proportion, sz, &local_err);
+            if (local_err) {
                 free(backend->propertion);
-                return;
+                goto out;
             }
             free(backend->propertion);
             goto prealloc;
