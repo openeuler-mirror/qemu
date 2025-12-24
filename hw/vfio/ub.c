@@ -521,6 +521,11 @@ static int vfio_usi_vector_do_use(UBDevice *udev, uint16_t nr, USIMessage *msg,
     int ret;
     Error *err = NULL;
 
+    if (!kvm_usi_via_irqfd_enabled()) {
+        qemu_log("kvm usi via irqfd disabled.\n");
+        return 0;
+    }
+
     vector = &vdev->usi_vectors[nr];
     if (!vector->use) {
         vfio_vector_init(vdev, nr);
