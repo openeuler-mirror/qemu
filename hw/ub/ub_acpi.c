@@ -362,6 +362,25 @@ static void ub_idev_ers_address_space_manage_init(void)
              g_idevErsAddrSpaceManage.base_addr, g_idevErsAddrSpaceManage.size);
 }
 
+static bool ers_addr_size_is_validate(uint64_t size, uint32_t sys_pgs)
+{
+    uint64_t max_support_size;
+
+    if (!sys_pgs) {
+        max_support_size = UINT64_MAX / UB_CFG1_BASIC_SYSTEM_GRANULE_SIZE_4K;
+    } else {
+        max_support_size = UINT64_MAX / UB_CFG1_BASIC_SYSTEM_GRANULE_SIZE_64K;
+    }
+
+    if (size >= max_support_size) {
+        qemu_log("ers addr size %" PRIu64 " is too big, expect size < %" PRIu64 "\n",
+                 size, max_support_size);
+        return false;
+    }
+
+    return true;
+}
+
 hwaddr ub_idev_ers_alloc_address_space(uint64_t size, uint32_t sys_pgs)
 {
     UBIdevErsAddrSpaceNode *free_node = NULL;
@@ -375,6 +394,10 @@ hwaddr ub_idev_ers_alloc_address_space(uint64_t size, uint32_t sys_pgs)
     if (!g_idevErsAddrSpaceManage.init) {
         g_idevErsAddrSpaceManage.init = true;
         ub_idev_ers_address_space_manage_init();
+    }
+
+    if (!ers_addr_size_is_validate(size, sys_pgs)) {
+        return UINT64_MAX;
     }
 
     /* according UB Spec, if sys_pgs 0, unit is 4Kbytes, then unit is 64Kbytes */
