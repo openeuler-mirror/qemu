@@ -147,7 +147,7 @@ static int ummu_mapt_get_cmdq_base(UMMUState *u, dma_addr_t base_addr, uint32_t 
     dma_addr_t addr = base_addr + qid * MAPT_CMDQ_CTXT_BASE_BYTES;
 
     ret = dma_memory_read(&address_space_memory, addr, base, sizeof(*base),
-                          MEMTXATTRS_UNSPECIFIED);
+                          MEMTXATTRS_MEMORY);
     if (ret != MEMTX_OK) {
         qemu_log("Cannot fetch mapt cmdq ctx at address=0x%lx\n", addr);
         return -EINVAL;
@@ -168,7 +168,7 @@ static int ummu_mapt_update_cmdq_base(UMMUState *u, dma_addr_t base_addr, uint32
     for (i = 0; i < ARRAY_SIZE(base->word); i++, addr += sizeof(uint32_t)) {
         uint32_t tmp = cpu_to_le32(base->word[i]);
         if (dma_memory_write(&address_space_memory, addr, &tmp,
-                             sizeof(uint32_t), MEMTXATTRS_UNSPECIFIED)) {
+                             sizeof(uint32_t), MEMTXATTRS_MEMORY)) {
             qemu_log("dma failed to write to addr 0x%lx\n", addr);
             return -1;
         }
@@ -731,7 +731,7 @@ static void mcmdq_check_pa_continuity_fill_result(UMMUMcmdQueue *mcmdq, bool con
     addr = MCMD_QUE_BASE_ADDR(&mcmdq->queue) +
            MCMD_QUE_RD_IDX(&mcmdq->queue) * mcmdq->queue.entry_size;
     if (dma_memory_write(&address_space_memory, addr + CHECK_PA_CONTINUITY_RESULT_OFFSET,
-                         &result, sizeof(result), MEMTXATTRS_UNSPECIFIED)) {
+                         &result, sizeof(result), MEMTXATTRS_MEMORY)) {
         qemu_log("dma failed to wirte result(0x%x) to addr 0x%lx\n", result, addr);
         return;
     }
@@ -824,7 +824,7 @@ static MemTxResult ummu_cmdq_fetch_cmd(UMMUMcmdQueue *mcmdq, UMMUMcmdqCmd *cmd)
     mcmdq_base_addr = MCMD_QUE_BASE_ADDR(&mcmdq->queue);
     addr = mcmdq_base_addr + MCMD_QUE_RD_IDX(&mcmdq->queue) * mcmdq->queue.entry_size;
     ret = dma_memory_read(&address_space_memory, addr, cmd, sizeof(UMMUMcmdqCmd),
-                          MEMTXATTRS_UNSPECIFIED);
+                          MEMTXATTRS_MEMORY);
     if (ret != MEMTX_OK) {
         qemu_log("addr 0x%lx failed to fectch mcmdq cmd\n", addr);
         return ret;
@@ -977,7 +977,7 @@ static MemTxResult ummu_mapt_cmdq_fetch_cmd(MAPTCmdqBase *base, MAPTCmd *cmd)
     int ret, i;
 
     ret = dma_memory_read(&address_space_memory, addr, cmd, sizeof(*cmd),
-                          MEMTXATTRS_UNSPECIFIED);
+                          MEMTXATTRS_MEMORY);
     if (ret != MEMTX_OK) {
         qemu_log("addr 0x%lx failed to fectch mapt ucmdq cmd.\n", addr);
         return ret;
@@ -997,7 +997,7 @@ static void ummu_mapt_cplq_add_entry(MAPTCmdqBase *base, MAPTCmdCpl *cpl)
     uint32_t tmp = cpu_to_le32(*(uint32_t *)cpl);
 
     if (dma_memory_write(&address_space_memory, addr, &tmp,
-                         sizeof(tmp), MEMTXATTRS_UNSPECIFIED)) {
+                         sizeof(tmp), MEMTXATTRS_MEMORY)) {
         qemu_log("dma failed to wirte cpl entry to addr 0x%lx\n", addr);
     }
 }
@@ -1759,7 +1759,7 @@ static int ummu_get_tecte(UMMUState *ummu, dma_addr_t addr, TECTE *tecte)
     int ret, i;
 
     ret = dma_memory_read(&address_space_memory, addr, tecte, sizeof(*tecte),
-                          MEMTXATTRS_UNSPECIFIED);
+                          MEMTXATTRS_MEMORY);
     if (ret != MEMTX_OK) {
         qemu_log("Cannot fetch tecte at address=0x%lx\n", addr);
         return -EINVAL;
@@ -1810,7 +1810,7 @@ static int ummu_find_tecte(UMMUState *ummu, uint32_t tecte_tag, TECTE *tecte)
         l1ptr = (dma_addr_t)(tect_base_addr + l1_tecte_offset * sizeof(l1_tecte_desc));
 
         ret = dma_memory_read(&address_space_memory, l1ptr, &l1_tecte_desc,
-                              sizeof(l1_tecte_desc), MEMTXATTRS_UNSPECIFIED);
+                              sizeof(l1_tecte_desc), MEMTXATTRS_MEMORY);
         if (ret != MEMTX_OK) {
             qemu_log("dma read failed for tecte level1 desc.\n");
             return -EINVAL;
@@ -1864,7 +1864,7 @@ static int ummu_get_tcte(UMMUState *ummu, dma_addr_t addr,
     uint64_t *_tcte;
 
     ret = dma_memory_read(&address_space_memory, addr, tcte, sizeof(*tcte),
-                          MEMTXATTRS_UNSPECIFIED);
+                          MEMTXATTRS_MEMORY);
     if (ret != MEMTX_OK) {
         qemu_log("Cannot fetch tcte at address=0x%lx\n", addr);
         return -EINVAL;
@@ -1902,7 +1902,7 @@ static int ummu_find_tcte(UMMUState *ummu, UMMUTransCfg *cfg, uint32_t tid,
     l1idx = tid >> TCT_SPLIT_64K;
     tct_lv1_addr = cfg->tct_ptr + l1idx * sizeof(tct_desc);
     ret = dma_memory_read(&address_space_memory, tct_lv1_addr, &tct_desc, sizeof(tct_desc),
-                          MEMTXATTRS_UNSPECIFIED);
+                          MEMTXATTRS_MEMORY);
     if (ret != MEMTX_OK) {
         event->type = EVT_TCT_FETCH;
         qemu_log("failed to dma read tct lv1 entry.\n");
@@ -2137,7 +2137,7 @@ static MemTxResult eventq_write(UMMUEventQueue *q, UMMUEvent *evt_in)
     base_addr = EVENT_QUE_BASE_ADDR(&q->queue);
     addr = base_addr + EVENT_QUE_WR_IDX(&q->queue) * q->queue.entry_size;
     ret = dma_memory_write(&address_space_memory, addr, &evt, sizeof(UMMUEvent),
-                           MEMTXATTRS_UNSPECIFIED);
+                           MEMTXATTRS_MEMORY);
     if (ret != MEMTX_OK) {
         return ret;
     }
