@@ -89,7 +89,7 @@ static uint32_t enum_query_get_slice0_resv_size(void)
     return size;
 }
 
-static uint16_t enum_query_get_max_num_ports(EnumPldScanHeader *scan_header)
+static uint16_t enum_query_get_max_num_ports(void)
 {
     return (ENUM_TOPO_QUERY_RSP_PDU_MAX_LEN - ENUM_PLD_SCAN_PDU_COMMON_SIZE -
             enum_query_get_slice0_resv_size()) / sizeof(EnumTlvPortInfo);
@@ -239,7 +239,7 @@ static void handle_enum_query_request(BusControllerState *s, HiMsgSqe *sqe,
     }
 
     slice_id = scan_pdu->common.bits.slice_id;
-    max_num_ports = enum_query_get_max_num_ports(scan_header);
+    max_num_ports = enum_query_get_max_num_ports();
     port_idx_start = slice_id * max_num_ports;
 
     remain_num_ports = dev->port.port_num - port_idx_start;
