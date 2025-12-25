@@ -89,7 +89,7 @@ static uint32_t enum_query_get_slice0_resv_size(void)
     return size;
 }
 
-static uint16_t enum_query_get_max_num_ports(EnumPldScanHeader *scan_header)
+static uint16_t enum_query_get_max_num_ports(void)
 {
     return (ENUM_TOPO_QUERY_RSP_PDU_MAX_LEN - ENUM_PLD_SCAN_PDU_COMMON_SIZE -
             enum_query_get_slice0_resv_size()) / sizeof(EnumTlvPortInfo);
@@ -222,6 +222,7 @@ static void handle_enum_query_request(BusControllerState *s, HiMsgSqe *sqe,
         header->upi != UB_CP_UPI) {
         qemu_log("invalid enum pkt header, please check the driver inside guestos:"
                  " cfg %u nth_nlp %u upi 0x%x\n", ulh->cfg, cnth->nth_nlp, header->upi);
+        g_free(payload);
         return;
     }
 
@@ -233,11 +234,12 @@ static void handle_enum_query_request(BusControllerState *s, HiMsgSqe *sqe,
     dev = ub_find_device_by_guid(&scan_pdu_com->guid);
     if (!dev) {
         qemu_log("can not find device by guid %s\n", guid_str);
+        g_free(payload);
         return;
     }
 
     slice_id = scan_pdu->common.bits.slice_id;
-    max_num_ports = enum_query_get_max_num_ports(scan_header);
+    max_num_ports = enum_query_get_max_num_ports();
     port_idx_start = slice_id * max_num_ports;
 
     remain_num_ports = dev->port.port_num - port_idx_start;
@@ -283,6 +285,7 @@ static void handle_enum_query_request(BusControllerState *s, HiMsgSqe *sqe,
     cqe.status = CQE_SUCCESS;
     cqe.rq_pi = fill_rq(s, rsp_buf, rsp_size);
     (void)fill_cq(s, &cqe);
+    g_free(payload);
     g_free(rsp_buf);
 }
 // #pragma GCC pop_options

@@ -32,6 +32,7 @@ uint32_t fill_rq(BusControllerState *s, void *rsp, uint32_t rsp_size)
     uint32_t depth = s->msgq.rq_depth;
     uint32_t remain;
     hwaddr dst_rqe;
+    uint32_t require;
 
     if (!s->msgq.rq_base_addr_gpa) {
         qemu_log("rq_base_addr_gpa is NULL\n");
@@ -43,16 +44,18 @@ uint32_t fill_rq(BusControllerState *s, void *rsp, uint32_t rsp_size)
         return UINT32_MAX;
     }
 
+    require = DIV_ROUND_UP(rsp_size, HI_MSG_RQE_SIZE);
     remain = depth - (pi + depth - ci) % depth;
-    if (remain < 1) {
-        qemu_log("RQ is full! depth=%u ci=%u pi=%u\n", depth, ci, pi);
+    if (remain < require + 1) {
+        qemu_log("RQ is full! require: %u, remain %u, depth %u, ci %u, pi %u\n",
+                 require + 1, remain, depth, ci, pi);
         return UINT32_MAX;
     }
 
     dst_rqe = (uint64_t)((uint8_t *)s->msgq.rq_base_addr_gpa + pi * HI_MSG_RQE_SIZE);
     dma_memory_write(&address_space_memory, dst_rqe, rsp, rsp_size,
                      MEMTXATTRS_UNSPECIFIED);
-    pi_new = (pi + DIV_ROUND_UP((rsp_size), HI_MSG_RQE_SIZE)) % depth;
+    pi_new = (pi + require) % depth;
     ub_set_long(s->msgq_reg + RQ_PI, pi_new);
     return pi;
 }
