@@ -73,7 +73,10 @@ typedef struct UMMUKVTblEntry {
 } UMMUKVTblEntry;
 
 #define UMMU_MAX_MCMDQS 32
-#define UMMU_TECTE_TAG_MAX_NUM 32
+/* ub bus driver max support create 1024 bus instance */
+#define UB_BUS_INSTACE_MAX_NUM 1024
+#define UMMU_TECTE_TAG_MAX_NUM UB_BUS_INSTACE_MAX_NUM
+#define UMMU_KVTBL_ENTRY_MAX_NUM UB_BUS_INSTACE_MAX_NUM
 struct UMMUState {
     /* <private> */
     SysBusDevice  dev;
@@ -112,6 +115,7 @@ struct UMMUState {
     GHashTable *ummu_devs;
     GHashTable *configs;
     QLIST_HEAD(, UMMUKVTblEntry) kvtbl;
+    uint32_t kvtbl_entrys;
 };
 
 struct UMMUBaseClass {

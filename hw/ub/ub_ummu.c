@@ -449,6 +449,11 @@ static void mcmdq_cmd_create_kvtbl(UMMUState *u, UMMUMcmdqCmd *cmd, uint8_t mcmd
 
     trace_mcmdq_cmd_create_kvtbl(mcmdq_idx, dst_eid, tecte_tag);
 
+    if (u->kvtbl_entrys >= UMMU_KVTBL_ENTRY_MAX_NUM) {
+        qemu_log("kvtbl_entrys reach max value %u\n", u->kvtbl_entrys);
+        return;
+    }
+
     QLIST_FOREACH(entry, &u->kvtbl, list) {
         if (entry->dst_eid == dst_eid) {
             qemu_log("update kvtlb dst_eid(0x%x) tecte_tag from 0x%x to 0x%x\n",
@@ -467,6 +472,7 @@ static void mcmdq_cmd_create_kvtbl(UMMUState *u, UMMUMcmdqCmd *cmd, uint8_t mcmd
     entry->dst_eid = dst_eid;
     entry->tecte_tag = tecte_tag;
     QLIST_INSERT_HEAD(&u->kvtbl, entry, list);
+    u->kvtbl_entrys++;
 }
 
 static void mcmdq_cmd_delete_kvtbl(UMMUState *u, UMMUMcmdqCmd *cmd, uint8_t mcmdq_idx)
@@ -484,6 +490,7 @@ static void mcmdq_cmd_delete_kvtbl(UMMUState *u, UMMUMcmdqCmd *cmd, uint8_t mcmd
 
     if (entry) {
         QLIST_REMOVE(entry, list);
+        u->kvtbl_entrys--;
         g_free(entry);
     } else {
         qemu_log("cannot find dst_eid(0x%x) entry in kvtbl.\n", dst_eid);
@@ -592,13 +599,12 @@ static void ummu_config_tecte(UMMUState *u, uint32_t tecte_tag)
         return;
     }
 
-    g_hash_table_foreach(u->ummu_devs, ummu_install_nested_tecte, &tecte);
     if (u->tecte_tag_num >= UMMU_TECTE_TAG_MAX_NUM) {
         qemu_log("unexpect tecte tag num over %u\n", UMMU_TECTE_TAG_MAX_NUM);
         return;
-    } else {
-        u->tecte_tag_cache[u->tecte_tag_num++] = tecte_tag;
     }
+    g_hash_table_foreach(u->ummu_devs, ummu_install_nested_tecte, &tecte);
+    u->tecte_tag_cache[u->tecte_tag_num++] = tecte_tag;
 }
 
 static void ummu_invalidate_cache(UMMUState *u, UMMUMcmdqCmd *cmd);
@@ -1674,6 +1680,7 @@ static void ummu_base_realize(DeviceState *dev, Error **errp)
     u->ummu_devs = g_hash_table_new_full(NULL, NULL, NULL, g_free);
     u->configs = g_hash_table_new_full(NULL, NULL, NULL, g_free);
     QLIST_INIT(&u->kvtbl);
+    u->kvtbl_entrys = 0;
     if (u->primary_bus) {
         ub_setup_iommu(u->primary_bus, &ummu_ops, u);
     } else {
@@ -1694,12 +1701,23 @@ static void ummu_base_realize(DeviceState *dev, Error **errp)
     }
 }
 
+static void ummu_kvtbl_reset(UMMUState *u)
+{
+    UMMUKVTblEntry *entry = NULL;
+    UMMUKVTblEntry *next_entry = NULL;
+
+    QLIST_FOREACH_SAFE(entry, &u->kvtbl, list, next_entry) {
+        QLIST_REMOVE(entry, list);
+        u->kvtbl_entrys--;
+        g_free(entry);
+    }
+}
+
 static void ummu_base_unrealize(DeviceState *dev)
 {
     UMMUState *u = UB_UMMU(dev);
     SysBusDevice *sysdev = SYS_BUS_DEVICE(dev);
-    UMMUKVTblEntry *entry = NULL;
-    UMMUKVTblEntry *next_entry = NULL;
+
 
     ub_remove_ummu_list(u);
     if (sysdev->parent_obj.id) {
@@ -1718,15 +1736,14 @@ static void ummu_base_unrealize(DeviceState *dev)
         u->configs = NULL;
     }
 
-    QLIST_FOREACH_SAFE(entry, &u->kvtbl, list, next_entry) {
-        QLIST_REMOVE(entry, list);
-        g_free(entry);
-    }
+    ummu_kvtbl_reset(u);
 }
 
 static void ummu_base_reset(DeviceState *dev)
 {
-    /* reset ummu relative struct later */
+    UMMUState *u = UB_UMMU(dev);
+
+    ummu_kvtbl_reset(u);
 }
 
 static Property ummu_dev_properties[] = {
