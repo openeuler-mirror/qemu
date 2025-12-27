@@ -124,6 +124,7 @@ void handle_enum_cna_config_request(BusControllerState *s,
                  "ulh.cfg %u cnth.nth_nlp %u upi 0x%x cmd %u\n",
                  header->ulh.cfg, header->cnth.nth_nlp, header->upi,
                  cna_cfg_req->common.bits.cmd);
+        g_free(payload);
         return;
     }
 
@@ -160,6 +161,7 @@ void handle_enum_cna_config_request(BusControllerState *s,
     cqe.status = CQE_SUCCESS;
     cqe.rq_pi = fill_rq(s, rsp_buf, rsp_size);
     (void)fill_cq(s, &cqe);
+    g_free(payload);
     g_free(rsp_buf);
 }
 
@@ -225,6 +227,7 @@ void handle_enum_cna_query_request(BusControllerState *s,
                  "ulh.cfg %u cnth.nth_nlp %u upi 0x%x cmd %u\n",
                  header->ulh.cfg, header->cnth.nth_nlp, header->upi,
                  cna_query_req->common.bits.cmd);
+        g_free(payload);
         return;
     }
 
@@ -232,6 +235,7 @@ void handle_enum_cna_query_request(BusControllerState *s,
     dev = ub_find_device_by_guid(&cna_query_req->common.guid);
     if (!dev) {
         qemu_log("failed to find dev by guid %s\n", guid);
+        g_free(payload);
         return;
     }
 
@@ -270,5 +274,6 @@ void handle_enum_cna_query_request(BusControllerState *s,
     cqe.status = CQE_SUCCESS;
     cqe.rq_pi = fill_rq(s, rsp_buf, rsp_size);
     (void)fill_cq(s, &cqe);
+    g_free(payload);
     g_free(rsp_buf);
 }
