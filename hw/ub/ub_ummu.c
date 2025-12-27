@@ -747,6 +747,8 @@ static void mcmdq_cmd_null(UMMUState *u, UMMUMcmdqCmd *cmd, uint8_t mcmdq_idx)
     ram_addr_t rb_offset;
     RAMBlock *rb = NULL;
     size_t rb_page_size = 0;
+#define PAGESZ_4K 0x1000
+    uint64_t map_size = PAGESZ_4K;
 
     if (CMD_NULL_SUBOP(cmd) != CMD_NULL_SUBOP_CHECK_PA_CONTINUITY) {
         qemu_log("current cannot process CMD_NULL subop %u.\n", CMD_NULL_SUBOP(cmd));
@@ -755,15 +757,16 @@ static void mcmdq_cmd_null(UMMUState *u, UMMUMcmdqCmd *cmd, uint8_t mcmdq_idx)
 
     size = CMD_NULL_CHECK_PA_CONTI_SIZE(cmd);
     addr = CMD_NULL_CHECK_PA_CONTI_ADDR(cmd);
-    hva = cpu_physical_memory_map(addr, &size, false);
+    hva = cpu_physical_memory_map(addr, &map_size, false);
     rb = qemu_ram_block_from_host(hva, false, &rb_offset);
     if (rb) {
         rb_page_size = qemu_ram_pagesize(rb);
     } else {
-        qemu_log("failed to get ram block from host(%p)\n", hva);
+        qemu_log("failed to get ram block from host(%p) map_size(%" PRIu64 ")\n", hva, map_size);
     }
+    cpu_physical_memory_unmap(hva, map_size, false, 0);
 
-    trace_mcmdq_cmd_null(mcmdq_idx, addr, hva, size, rb_page_size);
+    trace_mcmdq_cmd_null(mcmdq_idx, addr, hva, size, rb_page_size, map_size);
 
 #define PAGESZ_2M 0x200000
     if (rb_page_size < PAGESZ_2M) {
