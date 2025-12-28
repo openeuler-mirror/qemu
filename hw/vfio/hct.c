@@ -20,6 +20,8 @@
 #include <sys/file.h>
 #include <sys/socket.h>
 #include <linux/vm_sockets.h>
+#include <numaif.h>
+#include <numa.h>
 
 #include "qemu/osdep.h"
 #include "qemu/queue.h"
@@ -235,6 +237,7 @@ typedef struct {
 
 #define VFIO_DEVICE_CCP_SET_MODE     _IO(VFIO_TYPE, VFIO_BASE + 32)
 #define VFIO_DEVICE_CCP_GET_MODE     _IO(VFIO_TYPE, VFIO_BASE + 33)
+#define VFIO_DEVICE_GET_PCI_ADDR     _IO(VFIO_TYPE, VFIO_BASE + 34)
 
 #define SHM_DIR                     "/dev/shm/"
 #define HCT_GLOBAL_SHARE_SHM_NAME   "hct_global_share"
@@ -268,6 +271,7 @@ typedef struct {
 #define HCT_PASID_BAR_IDX            4
 
 #define PASID_OFFSET                 40
+#define HCT_INSTANCE_MAX             1024
 
 /* for migration */
 #define HCT_MIG_PROTOCOL_VER         1
@@ -328,6 +332,7 @@ typedef struct HctDevState {
     int group_fd;       /* vfio group fd */
     int group_id;       /* vfio group id */
     int lock_fd;        /* vccp flock fd for this device only */
+    int numa_id;
     bool migrate_abort_err;
 } HCTDevState;
 
@@ -344,6 +349,16 @@ struct hct_dev_ctrl {
             unsigned long size;
         };
     };
+};
+
+struct hct_shr_pg_cfg {
+    uint32_t ccp_queue_state[MAX_HW_QUEUES];
+    uint64_t mdev_bitmap[HCT_BITMAP_SIZE(HCT_INSTANCE_MAX)];
+    uint64_t userid[MAX_HW_QUEUES];
+    uint32_t vq_work_mode[MAX_HW_QUEUES];
+    uint32_t dev_lock_state;
+    uint32_t dev_init_state;
+    uint32_t numa_node;
 };
 
 struct hct_vfio_shared_memory {
@@ -370,6 +385,13 @@ enum hct_ccp_driver_mode_type {
     HCT_CCP_DRV_MOD_VFIO_PCI,
 };
 
+struct hct_ccp_pci_addr {
+    uint32_t domain;
+    uint8_t bus;
+    uint8_t devid;
+    uint8_t function;
+    uint8_t numa_node;
+};
 
 /* @brief vfio-pci mapping function */
 static int vfio_hct_dma_map_vfio_pci(int container_fd, void *vaddr, uint64_t iova, uint64_t size);
@@ -591,6 +613,7 @@ static int hct_check_duplicated_index(int index)
 static int hct_ccp_set_mode(HCTDevState *state)
 {
     char fpath[PATH_MAX] = {0};
+    struct hct_ccp_pci_addr addr = {0};
     uint32_t loops= 0;
     uint32_t max_loops = 10000;
     int fd;
@@ -615,6 +638,14 @@ static int hct_ccp_set_mode(HCTDevState *state)
         close(fd);
         return -1;
     }
+
+    ret = ioctl(fd, VFIO_DEVICE_GET_PCI_ADDR, &addr);
+    if (ret < 0) {
+        error_report("get numa node of the ccp device fail.\n");
+        close(fd);
+        return -1;
+    }
+    state->numa_id = addr.numa_node;
 
     return 0;
 }
@@ -845,6 +876,25 @@ static void hct_listener_region_del(MemoryListener *listener,
     }
 }
 
+static void hct_memory_do_mbind(void *mem, size_t size, int node)
+{
+    struct bitmask *bmp = NULL;
+    int max_node = numa_max_node();
+
+    if (numa_available() < 0 || node > max_node)
+        return;
+
+    bmp = numa_allocate_nodemask();
+    if (!bmp)
+        return;
+
+    numa_bitmask_setbit(bmp, node);
+    if (mbind(mem, size, MPOL_PREFERRED, bmp->maskp, max_node + 1, 0))
+        error_report("mbind for node:%d fail, errno:%d.\n", node, errno);
+
+    numa_bitmask_free(bmp);
+}
+
 static int hct_listener_premap_memory_init(HCTDevState *state)
 {
     void *vaddr = NULL;
@@ -866,6 +916,7 @@ static int hct_listener_premap_memory_init(HCTDevState *state)
 
 static int hct_shared_page_memory_init(HCTDevState *state)
 {
+    struct hct_shr_pg_cfg *shr_pg = NULL;
     size_t maddr;
     size_t offset;
     void *vaddr = NULL;
@@ -880,6 +931,10 @@ static int hct_shared_page_memory_init(HCTDevState *state)
         error_report("mmap shared memory fail, errno:%d.\n", errno);
         return -1;
     }
+
+    shr_pg = (struct hct_shr_pg_cfg *)vaddr;
+    if (shr_pg->numa_node != state->numa_id)
+        shr_pg->numa_node = state->numa_id;
 
     state->sdev.share_memory = vaddr;
     state->sdev.share_memory_size = PAGE_SIZE;
@@ -935,6 +990,10 @@ static int hct_listener_dma_memory_init(HCTDevState *state)
         munmap(state->sdev.premap_memory, state->sdev.premap_memory_size);
         return -1;
     }
+
+    hct_memory_do_mbind(state->sdev.dma_memory,
+                        state->sdev.dma_memory_size,
+                        state->numa_id);
 
     state->listener.region_add = hct_listener_region_add;
     state->listener.region_del = hct_listener_region_del;
@@ -1628,6 +1687,7 @@ static int vfio_hct_init_from_daemon(HCTDevState *state)
     hct_ccp_device_t *device_info = NULL;
     hct_group_info_t *group_info = NULL;
     char vccp_content[256] = {0};
+    char path[PATH_MAX] = {0};
     char bdf[PCI_ADDR_MAX] = {0};
     FILE *fp = NULL;
     int ret = 0;
@@ -1656,6 +1716,12 @@ static int vfio_hct_init_from_daemon(HCTDevState *state)
     if (type_char == 'v') {
         if (sscanf(vccp_content, "v %*d %*d %15s", bdf) != 1) {
             error_report("Invalid vfio-pci vccp file %s", state->ccp_dev_path);
+            return -EINVAL;
+        }
+
+        snprintf(path, sizeof(path), "/sys/bus/pci/devices/%s/numa_node", bdf);
+        if (hct_get_sysfs_value(path, &state->numa_id)) {
+            error_report("get numa node from %s fail.\n", path);
             return -EINVAL;
         }
     }
