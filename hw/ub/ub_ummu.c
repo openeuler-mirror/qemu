@@ -147,7 +147,7 @@ static int ummu_mapt_get_cmdq_base(UMMUState *u, dma_addr_t base_addr, uint32_t 
     dma_addr_t addr = base_addr + qid * MAPT_CMDQ_CTXT_BASE_BYTES;
 
     ret = dma_memory_read(&address_space_memory, addr, base, sizeof(*base),
-                          MEMTXATTRS_UNSPECIFIED);
+                          MEMTXATTRS_MEMORY);
     if (ret != MEMTX_OK) {
         qemu_log("Cannot fetch mapt cmdq ctx at address=0x%lx\n", addr);
         return -EINVAL;
@@ -168,7 +168,7 @@ static int ummu_mapt_update_cmdq_base(UMMUState *u, dma_addr_t base_addr, uint32
     for (i = 0; i < ARRAY_SIZE(base->word); i++, addr += sizeof(uint32_t)) {
         uint32_t tmp = cpu_to_le32(base->word[i]);
         if (dma_memory_write(&address_space_memory, addr, &tmp,
-                             sizeof(uint32_t), MEMTXATTRS_UNSPECIFIED)) {
+                             sizeof(uint32_t), MEMTXATTRS_MEMORY)) {
             qemu_log("dma failed to write to addr 0x%lx\n", addr);
             return -1;
         }
@@ -449,6 +449,11 @@ static void mcmdq_cmd_create_kvtbl(UMMUState *u, UMMUMcmdqCmd *cmd, uint8_t mcmd
 
     trace_mcmdq_cmd_create_kvtbl(mcmdq_idx, dst_eid, tecte_tag);
 
+    if (u->kvtbl_entrys >= UMMU_KVTBL_ENTRY_MAX_NUM) {
+        qemu_log("kvtbl_entrys reach max value %u\n", u->kvtbl_entrys);
+        return;
+    }
+
     QLIST_FOREACH(entry, &u->kvtbl, list) {
         if (entry->dst_eid == dst_eid) {
             qemu_log("update kvtlb dst_eid(0x%x) tecte_tag from 0x%x to 0x%x\n",
@@ -467,6 +472,7 @@ static void mcmdq_cmd_create_kvtbl(UMMUState *u, UMMUMcmdqCmd *cmd, uint8_t mcmd
     entry->dst_eid = dst_eid;
     entry->tecte_tag = tecte_tag;
     QLIST_INSERT_HEAD(&u->kvtbl, entry, list);
+    u->kvtbl_entrys++;
 }
 
 static void mcmdq_cmd_delete_kvtbl(UMMUState *u, UMMUMcmdqCmd *cmd, uint8_t mcmdq_idx)
@@ -484,6 +490,7 @@ static void mcmdq_cmd_delete_kvtbl(UMMUState *u, UMMUMcmdqCmd *cmd, uint8_t mcmd
 
     if (entry) {
         QLIST_REMOVE(entry, list);
+        u->kvtbl_entrys--;
         g_free(entry);
     } else {
         qemu_log("cannot find dst_eid(0x%x) entry in kvtbl.\n", dst_eid);
@@ -592,13 +599,12 @@ static void ummu_config_tecte(UMMUState *u, uint32_t tecte_tag)
         return;
     }
 
-    g_hash_table_foreach(u->ummu_devs, ummu_install_nested_tecte, &tecte);
     if (u->tecte_tag_num >= UMMU_TECTE_TAG_MAX_NUM) {
         qemu_log("unexpect tecte tag num over %u\n", UMMU_TECTE_TAG_MAX_NUM);
         return;
-    } else {
-        u->tecte_tag_cache[u->tecte_tag_num++] = tecte_tag;
     }
+    g_hash_table_foreach(u->ummu_devs, ummu_install_nested_tecte, &tecte);
+    u->tecte_tag_cache[u->tecte_tag_num++] = tecte_tag;
 }
 
 static void ummu_invalidate_cache(UMMUState *u, UMMUMcmdqCmd *cmd);
@@ -731,7 +737,7 @@ static void mcmdq_check_pa_continuity_fill_result(UMMUMcmdQueue *mcmdq, bool con
     addr = MCMD_QUE_BASE_ADDR(&mcmdq->queue) +
            MCMD_QUE_RD_IDX(&mcmdq->queue) * mcmdq->queue.entry_size;
     if (dma_memory_write(&address_space_memory, addr + CHECK_PA_CONTINUITY_RESULT_OFFSET,
-                         &result, sizeof(result), MEMTXATTRS_UNSPECIFIED)) {
+                         &result, sizeof(result), MEMTXATTRS_MEMORY)) {
         qemu_log("dma failed to wirte result(0x%x) to addr 0x%lx\n", result, addr);
         return;
     }
@@ -747,6 +753,8 @@ static void mcmdq_cmd_null(UMMUState *u, UMMUMcmdqCmd *cmd, uint8_t mcmdq_idx)
     ram_addr_t rb_offset;
     RAMBlock *rb = NULL;
     size_t rb_page_size = 0;
+#define PAGESZ_4K 0x1000
+    uint64_t map_size = PAGESZ_4K;
 
     if (CMD_NULL_SUBOP(cmd) != CMD_NULL_SUBOP_CHECK_PA_CONTINUITY) {
         qemu_log("current cannot process CMD_NULL subop %u.\n", CMD_NULL_SUBOP(cmd));
@@ -755,15 +763,16 @@ static void mcmdq_cmd_null(UMMUState *u, UMMUMcmdqCmd *cmd, uint8_t mcmdq_idx)
 
     size = CMD_NULL_CHECK_PA_CONTI_SIZE(cmd);
     addr = CMD_NULL_CHECK_PA_CONTI_ADDR(cmd);
-    hva = cpu_physical_memory_map(addr, &size, false);
+    hva = cpu_physical_memory_map(addr, &map_size, false);
     rb = qemu_ram_block_from_host(hva, false, &rb_offset);
     if (rb) {
         rb_page_size = qemu_ram_pagesize(rb);
     } else {
-        qemu_log("failed to get ram block from host(%p)\n", hva);
+        qemu_log("failed to get ram block from host(%p) map_size(%" PRIu64 ")\n", hva, map_size);
     }
+    cpu_physical_memory_unmap(hva, map_size, false, 0);
 
-    trace_mcmdq_cmd_null(mcmdq_idx, addr, hva, size, rb_page_size);
+    trace_mcmdq_cmd_null(mcmdq_idx, addr, hva, size, rb_page_size, map_size);
 
 #define PAGESZ_2M 0x200000
     if (rb_page_size < PAGESZ_2M) {
@@ -824,7 +833,7 @@ static MemTxResult ummu_cmdq_fetch_cmd(UMMUMcmdQueue *mcmdq, UMMUMcmdqCmd *cmd)
     mcmdq_base_addr = MCMD_QUE_BASE_ADDR(&mcmdq->queue);
     addr = mcmdq_base_addr + MCMD_QUE_RD_IDX(&mcmdq->queue) * mcmdq->queue.entry_size;
     ret = dma_memory_read(&address_space_memory, addr, cmd, sizeof(UMMUMcmdqCmd),
-                          MEMTXATTRS_UNSPECIFIED);
+                          MEMTXATTRS_MEMORY);
     if (ret != MEMTX_OK) {
         qemu_log("addr 0x%lx failed to fectch mcmdq cmd\n", addr);
         return ret;
@@ -977,7 +986,7 @@ static MemTxResult ummu_mapt_cmdq_fetch_cmd(MAPTCmdqBase *base, MAPTCmd *cmd)
     int ret, i;
 
     ret = dma_memory_read(&address_space_memory, addr, cmd, sizeof(*cmd),
-                          MEMTXATTRS_UNSPECIFIED);
+                          MEMTXATTRS_MEMORY);
     if (ret != MEMTX_OK) {
         qemu_log("addr 0x%lx failed to fectch mapt ucmdq cmd.\n", addr);
         return ret;
@@ -997,7 +1006,7 @@ static void ummu_mapt_cplq_add_entry(MAPTCmdqBase *base, MAPTCmdCpl *cpl)
     uint32_t tmp = cpu_to_le32(*(uint32_t *)cpl);
 
     if (dma_memory_write(&address_space_memory, addr, &tmp,
-                         sizeof(tmp), MEMTXATTRS_UNSPECIFIED)) {
+                         sizeof(tmp), MEMTXATTRS_MEMORY)) {
         qemu_log("dma failed to wirte cpl entry to addr 0x%lx\n", addr);
     }
 }
@@ -1671,6 +1680,7 @@ static void ummu_base_realize(DeviceState *dev, Error **errp)
     u->ummu_devs = g_hash_table_new_full(NULL, NULL, NULL, g_free);
     u->configs = g_hash_table_new_full(NULL, NULL, NULL, g_free);
     QLIST_INIT(&u->kvtbl);
+    u->kvtbl_entrys = 0;
     if (u->primary_bus) {
         ub_setup_iommu(u->primary_bus, &ummu_ops, u);
     } else {
@@ -1691,12 +1701,23 @@ static void ummu_base_realize(DeviceState *dev, Error **errp)
     }
 }
 
+static void ummu_kvtbl_reset(UMMUState *u)
+{
+    UMMUKVTblEntry *entry = NULL;
+    UMMUKVTblEntry *next_entry = NULL;
+
+    QLIST_FOREACH_SAFE(entry, &u->kvtbl, list, next_entry) {
+        QLIST_REMOVE(entry, list);
+        u->kvtbl_entrys--;
+        g_free(entry);
+    }
+}
+
 static void ummu_base_unrealize(DeviceState *dev)
 {
     UMMUState *u = UB_UMMU(dev);
     SysBusDevice *sysdev = SYS_BUS_DEVICE(dev);
-    UMMUKVTblEntry *entry = NULL;
-    UMMUKVTblEntry *next_entry = NULL;
+
 
     ub_remove_ummu_list(u);
     if (sysdev->parent_obj.id) {
@@ -1715,15 +1736,14 @@ static void ummu_base_unrealize(DeviceState *dev)
         u->configs = NULL;
     }
 
-    QLIST_FOREACH_SAFE(entry, &u->kvtbl, list, next_entry) {
-        QLIST_REMOVE(entry, list);
-        g_free(entry);
-    }
+    ummu_kvtbl_reset(u);
 }
 
 static void ummu_base_reset(DeviceState *dev)
 {
-    /* reset ummu relative struct later */
+    UMMUState *u = UB_UMMU(dev);
+
+    ummu_kvtbl_reset(u);
 }
 
 static Property ummu_dev_properties[] = {
@@ -1759,7 +1779,7 @@ static int ummu_get_tecte(UMMUState *ummu, dma_addr_t addr, TECTE *tecte)
     int ret, i;
 
     ret = dma_memory_read(&address_space_memory, addr, tecte, sizeof(*tecte),
-                          MEMTXATTRS_UNSPECIFIED);
+                          MEMTXATTRS_MEMORY);
     if (ret != MEMTX_OK) {
         qemu_log("Cannot fetch tecte at address=0x%lx\n", addr);
         return -EINVAL;
@@ -1810,7 +1830,7 @@ static int ummu_find_tecte(UMMUState *ummu, uint32_t tecte_tag, TECTE *tecte)
         l1ptr = (dma_addr_t)(tect_base_addr + l1_tecte_offset * sizeof(l1_tecte_desc));
 
         ret = dma_memory_read(&address_space_memory, l1ptr, &l1_tecte_desc,
-                              sizeof(l1_tecte_desc), MEMTXATTRS_UNSPECIFIED);
+                              sizeof(l1_tecte_desc), MEMTXATTRS_MEMORY);
         if (ret != MEMTX_OK) {
             qemu_log("dma read failed for tecte level1 desc.\n");
             return -EINVAL;
@@ -1864,7 +1884,7 @@ static int ummu_get_tcte(UMMUState *ummu, dma_addr_t addr,
     uint64_t *_tcte;
 
     ret = dma_memory_read(&address_space_memory, addr, tcte, sizeof(*tcte),
-                          MEMTXATTRS_UNSPECIFIED);
+                          MEMTXATTRS_MEMORY);
     if (ret != MEMTX_OK) {
         qemu_log("Cannot fetch tcte at address=0x%lx\n", addr);
         return -EINVAL;
@@ -1902,7 +1922,7 @@ static int ummu_find_tcte(UMMUState *ummu, UMMUTransCfg *cfg, uint32_t tid,
     l1idx = tid >> TCT_SPLIT_64K;
     tct_lv1_addr = cfg->tct_ptr + l1idx * sizeof(tct_desc);
     ret = dma_memory_read(&address_space_memory, tct_lv1_addr, &tct_desc, sizeof(tct_desc),
-                          MEMTXATTRS_UNSPECIFIED);
+                          MEMTXATTRS_MEMORY);
     if (ret != MEMTX_OK) {
         event->type = EVT_TCT_FETCH;
         qemu_log("failed to dma read tct lv1 entry.\n");
@@ -2137,7 +2157,7 @@ static MemTxResult eventq_write(UMMUEventQueue *q, UMMUEvent *evt_in)
     base_addr = EVENT_QUE_BASE_ADDR(&q->queue);
     addr = base_addr + EVENT_QUE_WR_IDX(&q->queue) * q->queue.entry_size;
     ret = dma_memory_write(&address_space_memory, addr, &evt, sizeof(UMMUEvent),
-                           MEMTXATTRS_UNSPECIFIED);
+                           MEMTXATTRS_MEMORY);
     if (ret != MEMTX_OK) {
         return ret;
     }

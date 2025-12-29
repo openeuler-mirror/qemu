@@ -54,7 +54,7 @@ uint32_t fill_rq(BusControllerState *s, void *rsp, uint32_t rsp_size)
 
     dst_rqe = (uint64_t)((uint8_t *)s->msgq.rq_base_addr_gpa + pi * HI_MSG_RQE_SIZE);
     dma_memory_write(&address_space_memory, dst_rqe, rsp, rsp_size,
-                     MEMTXATTRS_UNSPECIFIED);
+                     MEMTXATTRS_MEMORY);
     pi_new = (pi + require) % depth;
     ub_set_long(s->msgq_reg + RQ_PI, pi_new);
     return pi;
@@ -86,7 +86,7 @@ uint32_t fill_cq(BusControllerState *s, HiMsgCqe *cqe)
 
     dst_cqe = (uint64_t)((HiMsgCqe *)s->msgq.cq_base_addr_gpa + pi);
     dma_memory_write(&address_space_memory, dst_cqe, cqe,
-                     sizeof(HiMsgCqe), MEMTXATTRS_UNSPECIFIED);
+                     sizeof(HiMsgCqe), MEMTXATTRS_MEMORY);
     ub_set_long(s->msgq_reg + CQ_PI, ++pi % depth);
 
     return pi;

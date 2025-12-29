@@ -105,7 +105,7 @@ static void handle_task_type_msg(BusControllerState *s, HiMsgSqe *sqe)
     assert(HI_MSG_SQE_PLD_SIZE > sizeof(MsgPktHeader));
     payload = g_malloc0(sizeof(MsgPktHeader));
     if (dma_memory_read(&address_space_memory, s->msgq.sq_base_addr_gpa + p_addr,
-                        payload, sizeof(MsgPktHeader), MEMTXATTRS_UNSPECIFIED)) {
+                        payload, sizeof(MsgPktHeader), MEMTXATTRS_MEMORY)) {
         qemu_log("Failed to read sq_base_addr_gpa entry\n");
         g_free(payload);
         return;
@@ -121,7 +121,7 @@ static void handle_task_type_msg(BusControllerState *s, HiMsgSqe *sqe)
 
     payload = g_malloc0(sizeof(MsgPktHeader) + plen);
     if (dma_memory_read(&address_space_memory, s->msgq.sq_base_addr_gpa + p_addr,
-                        payload, sizeof(MsgPktHeader) + plen, MEMTXATTRS_UNSPECIFIED)) {
+                        payload, sizeof(MsgPktHeader) + plen, MEMTXATTRS_MEMORY)) {
         qemu_log("Failed to read sq_base_addr_gpa entry\n");
         g_free(payload);
         return;
@@ -200,7 +200,7 @@ static void handle_task_type_hisi_private(BusControllerState *s, HiMsgSqe *sqe)
     assert(HI_MSG_SQE_PLD_SIZE > sizeof(HiEuCfgReq));
     payload = g_malloc0(sizeof(HiEuCfgReq));
     if (dma_memory_read(&address_space_memory, s->msgq.sq_base_addr_gpa + p_addr,
-                        payload, sizeof(HiEuCfgReq), MEMTXATTRS_UNSPECIFIED)) {
+                        payload, sizeof(HiEuCfgReq), MEMTXATTRS_MEMORY)) {
         qemu_log("Failed to read sq_base_addr_gpa entry\n");
         g_free(payload);
         return;
@@ -238,7 +238,7 @@ void msgq_process_task(void *opaque, uint64_t val)
     cnt = (pi + depth - ci) % depth;
     for (i = 0; i < cnt; i++) {
         if (dma_memory_read(&address_space_memory, (unsigned long)((HiMsgSqe *)s->msgq.sq_base_addr_gpa + ci),
-                            sqe, sizeof(HiMsgSqe), MEMTXATTRS_UNSPECIFIED)) {
+                            sqe, sizeof(HiMsgSqe), MEMTXATTRS_MEMORY)) {
             qemu_log("Failed to read sq_base_addr_gpa entry\n");
             g_free(sqe);
             return;

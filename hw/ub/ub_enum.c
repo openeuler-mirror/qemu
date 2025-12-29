@@ -191,7 +191,7 @@ static void handle_enum_query_request(BusControllerState *s, HiMsgSqe *sqe,
     scan_header = g_malloc0(sizeof(EnumPldScanHeader));
     if (dma_memory_read(&address_space_memory,
                         (unsigned long)(buf + ENUM_PKT_HEADER_SIZE),
-                        scan_header, sizeof(EnumPldScanHeader), MEMTXATTRS_UNSPECIFIED)) {
+                        scan_header, sizeof(EnumPldScanHeader), MEMTXATTRS_MEMORY)) {
         qemu_log("Failed to read sq_base_addr_gpa entry\n");
         g_free(scan_header);
         return;
@@ -208,7 +208,7 @@ static void handle_enum_query_request(BusControllerState *s, HiMsgSqe *sqe,
     g_free(scan_header);
     payload = g_malloc0(header_sz);
     if (dma_memory_read(&address_space_memory, (unsigned long)(buf),
-                        payload, header_sz, MEMTXATTRS_UNSPECIFIED)) {
+                        payload, header_sz, MEMTXATTRS_MEMORY)) {
         qemu_log("Failed to read sq_base_addr_gpa entry\n");
         g_free(payload);
         return;
