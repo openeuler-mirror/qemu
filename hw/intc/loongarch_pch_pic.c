@@ -22,7 +22,6 @@ static void pch_pic_update_irq(LoongArchPCHPIC *s, uint64_t mask, int level)
 {
     uint64_t val;
     int irq;
-    int kvm_irq;
 
     if (level) {
         val = mask & s->intirr & ~s->int_mask;
@@ -30,10 +29,7 @@ static void pch_pic_update_irq(LoongArchPCHPIC *s, uint64_t mask, int level)
             irq = ctz64(val);
             s->intisr |= MAKE_64BIT_MASK(irq, 1);
             if (kvm_enabled() && kvm_irqchip_in_kernel()) {
-                kvm_irq = (
-                KVM_LOONGARCH_IRQ_TYPE_IOAPIC << KVM_LOONGARCH_IRQ_TYPE_SHIFT)
-                | (0 <<  KVM_LOONGARCH_IRQ_VCPU_SHIFT) | s->htmsi_vector[irq];
-                kvm_set_irq(kvm_state, kvm_irq, !!level);
+                kvm_set_irq(kvm_state, s->htmsi_vector[irq], !!level);
             } else {
                 qemu_set_irq(s->parent_irq[s->htmsi_vector[irq]], 1);
             }
@@ -48,10 +44,7 @@ static void pch_pic_update_irq(LoongArchPCHPIC *s, uint64_t mask, int level)
             irq = ctz64(val);
             s->intisr &= ~MAKE_64BIT_MASK(irq, 1);
             if (kvm_enabled() && kvm_irqchip_in_kernel()) {
-                kvm_irq = (
-                KVM_LOONGARCH_IRQ_TYPE_IOAPIC << KVM_LOONGARCH_IRQ_TYPE_SHIFT)
-                | (0 <<  KVM_LOONGARCH_IRQ_VCPU_SHIFT) | s->htmsi_vector[irq];
-                kvm_set_irq(kvm_state, kvm_irq, !!level);
+                kvm_set_irq(kvm_state, s->htmsi_vector[irq], !!level);
             } else {
                 qemu_set_irq(s->parent_irq[s->htmsi_vector[irq]], 0);
             }

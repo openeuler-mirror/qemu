@@ -87,13 +87,8 @@ static int kvm_loongarch_pch_pic_post_load(void *opaque, int version_id)
 
 static void kvm_pch_pic_handler(void *opaque, int irq, int level)
 {
-    int kvm_irq;
-
     if (kvm_enabled()) {
-        kvm_irq = \
-            (KVM_LOONGARCH_IRQ_TYPE_IOAPIC << KVM_LOONGARCH_IRQ_TYPE_SHIFT)
-            | (0 <<  KVM_LOONGARCH_IRQ_VCPU_SHIFT) | irq;
-        kvm_set_irq(kvm_state, kvm_irq, !!level);
+        kvm_set_irq(kvm_state, irq, !!level);
     }
 }
 
