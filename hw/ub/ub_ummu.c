@@ -34,6 +34,7 @@
 #include "hw/ub/ub_ubc.h"
 #include "qemu/error-report.h"
 #include "trace.h"
+#include "sysemu/iommufd.h"
 
 static const char *const mcmdq_cmd_strings[MCMDQ_CMD_MAX] = {
     [CMD_SYNC]                   = "CMD_SYNC",
@@ -240,6 +241,12 @@ static uint64_t ummu_reg_readl(UMMUState *u, hwaddr offset)
     switch (offset) {
         case A_CAP0...A_CAP6:
             val = u->cap[(offset - A_CAP0) / 4];
+            break;
+        case A_IIDR:
+            val = u->iidr;
+            break;
+        case A_AIDR:
+            val = u->aidr;
             break;
         case A_CTRL0:
             val = u->ctrl[0];
@@ -1326,6 +1333,36 @@ static const MemoryRegionOps ummu_reg_ops = {
     },
 };
 
+static int ummu_iommu_get_info(UMMUDevice *ummu_dev, uint32_t *data_type,
+                               uint32_t data_len, void *data)
+{
+    if (!ummu_dev || !ummu_dev->idev) {
+        return -ENOENT;
+    }
+
+    return iommufd_device_get_info(ummu_dev->idev, data_type, data_len, data);
+}
+
+static int ummu_init_hw_regs(UMMUDevice *ummu_dev)
+{
+    struct iommu_hw_info_ummu *info = &ummu_dev->info;
+    uint32_t data_type;
+    int ret;
+
+    ret = ummu_iommu_get_info(ummu_dev, &data_type, sizeof(*info), info);
+    if (ret) {
+        error_report("Failed to get UMMU device info");
+        return ret;
+    }
+
+    if (data_type != IOMMU_HW_INFO_TYPE_UMMU) {
+        error_report("Wrong data type (%u)!, expect (%u)", data_type, IOMMU_HW_INFO_TYPE_UMMU);
+        return -ENOENT;
+    }
+
+    return 0;
+}
+
 static void ummu_registers_init(UMMUState *u)
 {
     int i;
@@ -1594,6 +1631,8 @@ static bool ummu_dev_set_iommu_dev(UBBus *bus, void *opaque, uint32_t eid,
     ummu_dev->viommu = u->viommu;
     QLIST_INSERT_HEAD(&u->viommu->device_list, ummu_dev, next);
 
+    u->set_custom_config(u);
+
     return true;
 }
 
@@ -1660,6 +1699,43 @@ static void ub_remove_ummu_list(UMMUState *u)
     QLIST_REMOVE(u, node);
 }
 
+static void ummu_set_custom_config(UMMUState *u)
+{
+    uint32_t val;
+    UMMUDevice *ummu_dev = NULL;
+
+    if (!u->viommu) {
+        qemu_log("Failed to get host ummu info, viommu is NULL\n");
+        return;
+    }
+
+    ummu_dev = QLIST_FIRST(&u->viommu->device_list);
+    if (!ummu_dev) {
+        qemu_log("Failed to get host ummu info, ummu_dev is NULL\n");
+        return;
+    }
+
+    if((ummu_dev->info.iidr && ummu_dev->info.aidr) || !ummu_init_hw_regs(ummu_dev)) {
+        val = FIELD_EX32(ummu_dev->info.iidr, IIDR, PROD_REVISION);
+        u->iidr = FIELD_DP32(u->iidr, IIDR, PROD_REVISION, val);
+        qemu_log("IIDR, PROD_REVISION:%u\n", val);
+        val = FIELD_EX32(ummu_dev->info.iidr, IIDR, PROD_VARIANT);
+        u->iidr = FIELD_DP32(u->iidr, IIDR, PROD_VARIANT, val);
+        qemu_log("IIDR, PROD_VARIANT:%u\n", val);
+        val = FIELD_EX32(ummu_dev->info.iidr, IIDR, PROD_ID);
+        u->iidr = FIELD_DP32(u->iidr, IIDR, PROD_ID, val);
+        qemu_log("IIDR, PROD_ID:%u\n", val);
+        val = FIELD_EX32(ummu_dev->info.aidr, AIDR, ARCH_MINOR_REV);
+        u->aidr = FIELD_DP32(u->aidr, AIDR, ARCH_MINOR_REV, val);
+        qemu_log("AIDR, ARCH_MINOR_REV:%u\n", val);
+        val = FIELD_EX32(ummu_dev->info.aidr, AIDR, ARCH_MAJOR_REV);
+        u->aidr = FIELD_DP32(u->aidr, AIDR, ARCH_MAJOR_REV, val);
+        qemu_log("AIDR, ARCH_MAJOR_REV:%u\n", val);
+    } else {
+        qemu_log("Failed to get host ummu info\n");
+    }
+}
+
 static void ummu_base_realize(DeviceState *dev, Error **errp)
 {
     static uint8_t NO = 0;
@@ -1675,6 +1751,7 @@ static void ummu_base_realize(DeviceState *dev, Error **errp)
 
     memset(u->usi_virq, -1, sizeof(u->usi_virq));
     ummu_registers_init(u);
+    u->set_custom_config = ummu_set_custom_config;
     ub_save_ummu_list(u);
 
     u->ummu_devs = g_hash_table_new_full(NULL, NULL, NULL, g_free);

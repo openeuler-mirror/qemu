@@ -529,4 +529,27 @@ static const TypeInfo types[] = {
         .abstract = true,
     }
 };
+
+int iommufd_device_get_info(HostIOMMUDeviceIOMMUFD *idev,
+                            enum iommu_hw_info_type *type,
+                            uint32_t len, void *data)
+{
+    struct iommu_hw_info info = {
+        .size = sizeof(info),
+        .flags = 0,
+        .dev_id = idev->devid,
+        .data_len = len,
+        .data_uptr = (uintptr_t)data,
+    };
+    int ret;
+
+    ret = ioctl(idev->iommufd->fd, IOMMU_GET_HW_INFO, &info);
+    if (ret) {
+        error_report("Failed to get info!");
+    } else {
+        *type = info.out_data_type;
+    }
+
+    return ret;
+}
 DEFINE_TYPES(types)
