@@ -153,11 +153,8 @@ static void ub_dev_clear_cfg1(UBDevice *dev)
     cfg1_basic = (UbCfg1Basic *)(dev->config + offset);
     cfg1_basic->elr = 0;
     cfg1_basic->elr_done = 0;
-    cfg1_basic->mig_ctrl = 0;
     cfg1_basic->sys_pgs = 0;
     cfg1_basic->eid_upi_tab = 0;
-    cfg1_basic->ctp_tb_bypass = 0;
-    cfg1_basic->crystal_dma_en = 0;
     cfg1_basic->dev_token_id = 0;
     cfg1_basic->bus_access_en = 0;
     cfg1_basic->dev_rs_access_en = 0;
@@ -307,7 +304,6 @@ static void ub_init_wmask(UBDevice *ub_dev)
     memset(&cfg0_basic_wmask->fm_eid, 0xff, sizeof(UbEid));
     cfg0_basic_wmask->net_addr_info.primary_cna = 0xffffff;
     cfg0_basic_wmask->upi = ~0;
-    cfg0_basic_wmask->dev_rst = ~0;
     cfg0_basic_wmask->mtu_cfg = ~0;
     cfg0_basic_wmask->cc_en = ~0;
     cfg0_basic_wmask->th_en = ~0;
@@ -323,18 +319,13 @@ static void ub_init_wmask(UBDevice *ub_dev)
     cfg0_emq_cap_wmask->error_msg_que_ctrlr.correctable_err_report_enable = ~0;
     cfg0_emq_cap_wmask->error_msg_que_ctrlr.uncorrectable_nonfatal_err_report_enable = ~0;
     cfg0_emq_cap_wmask->error_msg_que_ctrlr.uncorrectable_fatal_err_report_enable = ~0;
-    cfg0_emq_cap_wmask->error_msg_que_ctrlr.interrupt_generation_enable = ~0;
 
     /* cfg1 basic */
     emulated_offset = ub_cfg_offset_to_emulated_offset(UB_CFG1_BASIC_START, true);
     cfg1_basic_wmask = (UbCfg1Basic *)(ub_dev->wmask + emulated_offset);
     memset(cfg1_basic_wmask, 0, sizeof(UbCfg1Basic));
-    cfg1_basic_wmask->elr = ~0;
-    cfg1_basic_wmask->mig_ctrl = ~0;
     cfg1_basic_wmask->sys_pgs = ~0;
     cfg1_basic_wmask->eid_upi_tab = ~0UL;
-    cfg1_basic_wmask->ctp_tb_bypass = ~0;
-    cfg1_basic_wmask->crystal_dma_en = ~0;
     cfg1_basic_wmask->dev_token_id = ~0;
     cfg1_basic_wmask->bus_access_en = ~0;
     cfg1_basic_wmask->dev_rs_access_en = ~0;
@@ -915,7 +906,7 @@ static void ub_config_set_port_basic(NeighborInfo *info, UBDevice *dev)
 
     /* set wmask */
     port_basic_wmask->port_cna = ~0;
-    port_basic_wmask->port_reset = ~0;
+    port_basic_w1cmask->port_reset = ~0;
 }
 // #pragma GCC pop_options
 
@@ -1453,12 +1444,8 @@ static void ub_dev_get_cfg0_info(Monitor *mon, UBDevice *udev)
                   cfg0->support_feature.bits.route_table_supported);
     monitor_printf(mon, "│%-24s│%-45u│\n", "cfg0:feat.upi",
                   cfg0->support_feature.bits.upi_supported);
-    monitor_printf(mon, "│%-24s│%-45u│\n", "cfg0:feat.broker",
-                  cfg0->support_feature.bits.broker_supported);
     monitor_printf(mon, "│%-24s│%-45u│\n", "cfg0:feat.switch",
                   cfg0->support_feature.bits.switch_supported);
-    monitor_printf(mon, "│%-24s│%-45u│\n", "config0:feat.rsv",
-                  cfg0->support_feature.bits.rsv);
     monitor_printf(mon, "│%-24s│%-45u│\n", "cfg0:feat.cc",
                   cfg0->support_feature.bits.cc_supported);
     monitor_printf(mon, "│%-24s│0x%-8x0x%-8x0x%-8x0x%-13x│\n",
@@ -1525,8 +1512,6 @@ static void ub_dev_get_cfg1_info(Monitor *mon, UBDevice *udev)
                   cfg1->support_feature.bits.ers1s);
     monitor_printf(mon, "│%-24s│%-45u│\n", "cfg1:feat.ers2s",
                   cfg1->support_feature.bits.ers2s);
-    monitor_printf(mon, "│%-24s│%-45u│\n", "config1:feat.cdmas",
-                  cfg1->support_feature.bits.cdmas);
     monitor_printf(mon, "│%-24s│%-45u│\n", "config1:feat.matt_juris",
                   cfg1->support_feature.bits.matt_juris);
     for (i = 0; i < UB_NUM_REGIONS; i++) {
@@ -1536,14 +1521,6 @@ static void ub_dev_get_cfg1_info(Monitor *mon, UBDevice *udev)
     }
     monitor_printf(mon, "│%-24s│%-20u%-25u│\n", "cfg1:elr elr_done",
                   cfg1->elr, cfg1->elr_done);
-    monitor_printf(mon, "│%-24s│%-20u%-25u│\n", "cfg1:mig ctrl stat",
-                  cfg1->mig_ctrl, cfg1->mig_status);
-    monitor_printf(mon, "│%-24s│%-45u│\n", "cfg1:tpid u num",
-                  cfg1->tpid_num);
-    monitor_printf(mon, "│%-24s│%-45u│\n", "cfg1:ctp_tb_bypass",
-                  cfg1->ctp_tb_bypass);
-    monitor_printf(mon, "│%-24s│%-45u│\n", "cfg1:crystal_dma_en",
-                  cfg1->crystal_dma_en);
     monitor_printf(mon, "│%-24s│0x%-21lx0x%-20x│\n", "cfg1:eid_upi tab ten",
                   cfg1->eid_upi_tab, cfg1->eid_upi_ten);
     monitor_printf(mon, "│%-24s│%-45u│\n", "cfg1:bus_access_en",

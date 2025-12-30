@@ -146,9 +146,9 @@ typedef struct __attribute__ ((__packed__)) Cfg0SupportFeature {
             uint8_t mtu_supported : 3;
             uint8_t route_table_supported : 1;
             uint8_t upi_supported : 1;
-            uint8_t broker_supported : 1;
+            uint8_t rsv1 : 1;
             uint8_t switch_supported : 1;
-            uint8_t rsv : 1;
+            uint8_t rsv2 : 1;
             uint8_t cc_supported : 1;
         } bits;
     };
@@ -182,8 +182,8 @@ typedef struct __attribute__ ((__packed__)) UbCfg0Basic {
     /* dw26~dw30 */
     ConfigNetAddrInfo net_addr_info; // RW
     /* dw31~dw44 */
-    uint32_t upi : 16; // RW
-    uint32_t rsv1 : 16;
+    uint32_t upi : 15; // RW
+    uint32_t rsv1 : 17;
     uint32_t module_id : 16; // HwInit
     uint32_t vendor_id : 16;
     uint32_t dev_rst : 1; // RW
@@ -237,7 +237,7 @@ typedef struct __attribute__ ((__packed__)) UbSlotInfo {
     uint32_t rsv10 : 31;
     uint8_t pdsc_st : 1;
     uint32_t rsv11 : 31;
-    /* dw14~dw17 */
+    /* dw14~dw15 */
     uint32_t rsv[2];
 } UbSlotInfo;
 
@@ -255,9 +255,7 @@ typedef struct __attribute__ ((__packed__)) ErrorMsgQueCtrl {
     uint64_t correctable_err_report_enable : 1;
     uint64_t uncorrectable_nonfatal_err_report_enable : 1;
     uint64_t uncorrectable_fatal_err_report_enable : 1;
-    uint64_t rsv_1 : 5;
-    uint64_t interrupt_generation_enable : 1 ;
-    uint64_t rsv_2 : 55;
+    uint64_t rsv_1 : 61;
 } ErrorMsgQueCtrl;
 
 typedef struct __attribute__ ((__packed__)) UbCfg0EmqCap {
@@ -277,7 +275,7 @@ typedef struct __attribute__ ((__packed__)) Cfg1SupportFeature {
             uint8_t ers0s : 1;
             uint8_t ers1s : 1;
             uint8_t ers2s : 1;
-            uint8_t cdmas : 1;
+            uint8_t rsv3 : 1;
             uint8_t matt_juris : 1;
         } bits;
     };
@@ -377,7 +375,7 @@ typedef struct __attribute__ ((__packed__)) UbCfg1IntType1Cap {
     uint32_t interrupt_enable : 1;
     uint32_t rsv1 : 31;
     /* dw2 */
-    uint32_t support_int_num : 3;
+    uint32_t support_interrupt_num : 3;
     uint32_t rsv2 : 29;
     /* dw3 */
     uint32_t interrupt_enable_num : 3;
@@ -426,12 +424,9 @@ typedef struct __attribute__ ((__packed__)) UbCfg1Basic {
     uint32_t rsv1 : 31;
     uint32_t elr_done : 1;
     uint32_t rsv2 : 31;
-    uint32_t mig_ctrl : 8;
-    uint32_t rsv3 : 24;
-    uint32_t mig_status : 8;
-    uint32_t rsv4 : 24;
-    uint32_t ers_att : 3;
-    uint32_t rsv5 : 29;
+    uint32_t rsv3;
+    uint32_t rsv4;
+    uint32_t rsv5;
     uint32_t sys_pgs : 1;
     uint32_t rsv6 : 31;
     uint64_t eid_upi_tab;
@@ -440,12 +435,9 @@ typedef struct __attribute__ ((__packed__)) UbCfg1Basic {
     uint64_t rsv8;
     uint32_t class_code : 16;
     uint32_t rsv9 : 16;
-    uint32_t tpid_num : 16;
-    uint32_t rsv10 : 16;
-    uint32_t ctp_tb_bypass : 1;
-    uint32_t rsv11 : 31;
-    uint32_t crystal_dma_en : 1;
-    uint32_t rsv12 : 31;
+    uint32_t rsv10;
+    uint32_t rsv11;
+    uint32_t rsv12;
     uint32_t dev_token_id : 20;
     uint32_t rsv13 : 12;
     uint32_t bus_access_en : 1;
@@ -497,8 +489,8 @@ typedef struct __attribute__ ((__packed__)) UbRouteTable {
 
 /* slice header default value, unit (4 bytes) */
 #define UB_SLICE_VERSION                0x0
-#define UB_CFG0_BASIC_SLICE_USED_SIZE   0x24
-#define UB_CFG1_BASIC_SLICE_USED_SIZE   0x20
+#define UB_CFG0_BASIC_SLICE_USED_SIZE   0x2C
+#define UB_CFG1_BASIC_SLICE_USED_SIZE   0x30
 #define UB_PORT_BASIC_SLICE_USED_SIZE   0x11
 
 /* ub dev cap */
