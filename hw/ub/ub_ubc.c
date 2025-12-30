@@ -269,7 +269,6 @@ static void ub_bus_controller_space_cfg0_init(UBDevice *ub_dev)
     support_feature->bits.mtu_supported = 1;
     support_feature->bits.route_table_supported = SUPPORTED;
     support_feature->bits.upi_supported = SUPPORTED;
-    support_feature->bits.broker_supported = NOT_SUPPORTED;
     support_feature->bits.switch_supported = SUPPORTED;
     support_feature->bits.cc_supported = NOT_SUPPORTED;
     /* SHP CAP */
@@ -312,7 +311,6 @@ static void ub_bus_controller_space_cfg1_init(UBDevice *ub_dev)
     support_feature->bits.ers0s = SUPPORTED;
     support_feature->bits.ers1s = NOT_SUPPORTED;
     support_feature->bits.ers2s = SUPPORTED;
-    support_feature->bits.cdmas = SUPPORTED;
     support_feature->bits.matt_juris = UB_DRIVE;
     cfg1_basic->ers_space_size[0] = UBC_ERS0_SPACE_SIZE;
     cfg1_basic->ers_space_size[1] = UBC_ERS1_SPACE_SIZE;
@@ -360,7 +358,6 @@ static void ub_bus_controller_wmask_init(UBDevice *ub_dev)
     dec_cap_mask->decoder_ctrl.decoder_en = ~0;
     memset(&dec_cap_mask->dec_matt_ba, 0xff, sizeof(dec_cap_mask->dec_matt_ba));
     memset(&dec_cap_mask->dec_mmio_ba, 0xff, sizeof(dec_cap_mask->dec_mmio_ba));
-    memset(&dec_cap_mask->dev_usi_idx, 0xff, sizeof(dec_cap_mask->dev_usi_idx));
     dec_cap_mask->decoder_cmdq_cfg.cmdq_en = ~0;
     dec_cap_mask->decoder_cmdq_cfg.cmdq_size_use = ~0;
     dec_cap_mask->decoder_cmdq_prod.cmdq_wr_idx = ~0;
@@ -388,7 +385,6 @@ static void ub_bus_controller_w1cmask_init(UBDevice *ub_dev)
     memset(cfg0_shp_w1cmask, 0, UB_SLICE_SZ);
     for (int i = 0; i < cfg0_shp->slot_num; ++i) {
         cfg0_shp_w1cmask->slot_info[i].pp_st = ~0;
-        cfg0_shp_w1cmask->slot_info[i].pd_st = ~0;
         cfg0_shp_w1cmask->slot_info[i].pdsc_st = ~0;
     }
 }
