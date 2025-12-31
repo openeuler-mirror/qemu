@@ -23,6 +23,15 @@
 #include <linux/iommufd.h>
 
 /* ummu spec register define */
+REG32(IIDR, 0x0000)
+    FIELD(IIDR, PROD_REVISION,         0, 4)
+    FIELD(IIDR, PROD_VARIANT,          4, 4)
+    FIELD(IIDR, PROD_ID,               8, 12)
+
+REG32(AIDR, 0x0004)
+    FIELD(AIDR, ARCH_MINOR_REV,        0, 4)
+    FIELD(AIDR, ARCH_MAJOR_REV,        4, 4)
+
 REG32(CAP0, 0x0010)
     FIELD(CAP0, DSTEID_SIZE,           0, 8)
     FIELD(CAP0, TOKENID_SIZE,          8, 5)
@@ -536,6 +545,7 @@ typedef struct UMMUDevice {
     UBDevice *udev;
     UMMUVdev *vdev;
     QLIST_ENTRY(UMMUDevice) next;
+    struct iommu_hw_info_ummu info;
 } UMMUDevice;
 
 typedef struct UMMUTransCfg {

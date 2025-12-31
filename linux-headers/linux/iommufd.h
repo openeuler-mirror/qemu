@@ -548,6 +548,13 @@ struct iommu_hw_info_arm_smmuv3 {
 	__u32 aidr;
 };
 
+struct iommu_hw_info_ummu {
+	__u32 flags;
+	__u32 __reserved;
+	__u32 iidr;
+	__u32 aidr;
+};
+
 /**
  * enum iommu_hw_info_type - IOMMU Hardware Info Types
  * @IOMMU_HW_INFO_TYPE_NONE: Used by the drivers that do not report hardware
@@ -559,6 +566,7 @@ enum iommu_hw_info_type {
 	IOMMU_HW_INFO_TYPE_NONE = 0,
 	IOMMU_HW_INFO_TYPE_INTEL_VTD = 1,
 	IOMMU_HW_INFO_TYPE_ARM_SMMUV3 = 2,
+	IOMMU_HW_INFO_TYPE_UMMU = 3,
 };
 
 /**

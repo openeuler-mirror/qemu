@@ -18,6 +18,7 @@
 #include "exec/hwaddr.h"
 #include "exec/cpu-common.h"
 #include "sysemu/host_iommu_device.h"
+#include <linux/iommufd.h>
 
 #define TYPE_IOMMUFD_BACKEND "iommufd"
 OBJECT_DECLARE_TYPE(IOMMUFDBackend, IOMMUFDBackendClass, IOMMUFD_BACKEND)
@@ -141,4 +142,8 @@ typedef struct IOMMUFDVdev {
 struct IOMMUFDVdev *iommufd_backend_alloc_vdev(HostIOMMUDeviceIOMMUFD *idev,
                                                IOMMUFDViommu *viommu,
                                                uint64_t virt_id);
+
+int iommufd_device_get_info(HostIOMMUDeviceIOMMUFD *idev,
+                            enum iommu_hw_info_type *type,
+                            uint32_t len, void *data);
 #endif
