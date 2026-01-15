@@ -2406,11 +2406,10 @@ static void arm_cpu_unrealizefn(DeviceState *dev)
     ARMCPUClass *acc = ARM_CPU_GET_CLASS(dev);
     ARMCPU *cpu = ARM_CPU(dev);
     CPUARMState *env = &cpu->env;
-    CPUState *cs = CPU(dev);
-    bool has_secure;
 
 #ifndef CONFIG_USER_ONLY
-    has_secure = cpu->has_el3 || arm_feature(env, ARM_FEATURE_M_SECURITY);
+    CPUState *cs = CPU(dev);
+    bool has_secure = cpu->has_el3 || arm_feature(env, ARM_FEATURE_M_SECURITY);
 
     /* rock 'n' un-roll, whatever happened in the arm_cpu_realizefn cleanly */
     cpu_address_space_destroy(cs, ARMASIdx_NS);
