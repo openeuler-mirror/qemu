@@ -25,6 +25,7 @@ bool kvm_gsi_direct_mapping;
 bool kvm_allowed;
 bool kvm_readonly_mem_allowed;
 bool kvm_msi_use_devid;
+bool kvm_usi_via_irqfd_allowed;
 
 bool virtcca_cvm_allowed;
 
