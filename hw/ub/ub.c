@@ -324,6 +324,7 @@ static void ub_init_wmask(UBDevice *ub_dev)
     emulated_offset = ub_cfg_offset_to_emulated_offset(UB_CFG1_BASIC_START, true);
     cfg1_basic_wmask = (UbCfg1Basic *)(ub_dev->wmask + emulated_offset);
     memset(cfg1_basic_wmask, 0, sizeof(UbCfg1Basic));
+    cfg1_basic_wmask->elr = ~0;
     cfg1_basic_wmask->sys_pgs = ~0;
     cfg1_basic_wmask->eid_upi_tab = ~0UL;
     cfg1_basic_wmask->dev_token_id = ~0;
