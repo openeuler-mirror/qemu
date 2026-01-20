@@ -26,14 +26,31 @@ static void kvm_ipi_access_regs(int fd, uint64_t addr,
 
 static int kvm_loongarch_ipi_pre_save(void *opaque)
 {
-    KVMLoongArchIPI *ipi = (KVMLoongArchIPI *)opaque;
-    KVMLoongArchIPIClass *ipi_class = KVM_LOONGARCH_IPI_GET_CLASS(ipi);
+    KVMLoongArchIPI *ipi = NULL;
+    KVMLoongArchIPIClass *ipi_class = NULL;
     IPICore *cpu;
     uint64_t attr;
     int cpu_id = 0;
-    int fd = ipi_class->dev_fd;
+    int fd = 0;
+    CPUState *cpu_state = NULL;
+
+    if(opaque == NULL) {
+        return 0;
+    }
+
+    ipi = (KVMLoongArchIPI *)opaque;
+    ipi_class = KVM_LOONGARCH_IPI_GET_CLASS(ipi);
+    if(ipi_class->dev_fd == 0) {
+        return 0;
+    } else {
+        fd = ipi_class->dev_fd;
+    }
 
     for (cpu_id = 0; cpu_id < ipi->num_cpu; cpu_id++) {
+        cpu_state = qemu_get_cpu(cpu_id);
+        if(!cpu_state || !cpu_state->kvm_fd) {
+            continue;
+        }
         cpu = &ipi->cpu[cpu_id];
         attr = (cpu_id << 16) | CORE_STATUS_OFF;
         kvm_ipi_access_regs(fd, attr, &cpu->status, false);
@@ -65,14 +82,31 @@ static int kvm_loongarch_ipi_pre_save(void *opaque)
 
 static int kvm_loongarch_ipi_post_load(void *opaque, int version_id)
 {
-    KVMLoongArchIPI *ipi = (KVMLoongArchIPI *)opaque;
-    KVMLoongArchIPIClass *ipi_class = KVM_LOONGARCH_IPI_GET_CLASS(ipi);
+    KVMLoongArchIPI *ipi = NULL;
+    KVMLoongArchIPIClass *ipi_class = NULL;
     IPICore *cpu;
     uint64_t attr;
     int cpu_id = 0;
-    int fd = ipi_class->dev_fd;
+    int fd = 0;
+    CPUState *cpu_state = NULL;
+
+    if(opaque == NULL) {
+        return 0;
+    }
+
+    ipi = (KVMLoongArchIPI *)opaque;
+    ipi_class = KVM_LOONGARCH_IPI_GET_CLASS(ipi);
+    if(ipi_class->dev_fd == 0) {
+        return 0;
+    } else {
+        fd = ipi_class->dev_fd;
+    }
 
     for (cpu_id = 0; cpu_id < ipi->num_cpu; cpu_id++) {
+        cpu_state = qemu_get_cpu(cpu_id);
+        if(!cpu_state || !cpu_state->kvm_fd) {
+            continue;
+        }
         cpu = &ipi->cpu[cpu_id];
         attr = (cpu_id << 16) | CORE_STATUS_OFF;
         kvm_ipi_access_regs(fd, attr, &cpu->status, true);
