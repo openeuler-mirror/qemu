@@ -1018,6 +1018,8 @@ void pflash_cfi01_legacy_drive(PFlashCFI01 *fl, DriveInfo *dinfo)
     loc_pop(&loc);
 }
 
+#define NVRAM_CONTEXT_SIZE (1 * 1024 * 1024)
+
 static void postload_update_cb(void *opaque, bool running, RunState state)
 {
     PFlashCFI01 *pfl = opaque;
@@ -1027,7 +1029,18 @@ static void postload_update_cb(void *opaque, bool running, RunState state)
     pfl->vmstate = NULL;
 
     trace_pflash_postload_cb(pfl->name);
+#ifdef __aarch64__
+    /*
+     * Only nvram, which is for saving guest's uefi settings,
+     * needs to be updated to disk.
+     * Although the size of nvram is vbi->memmap[VIRT_FLASH].size / 2 (now 64MB),
+     * the useful context of nvram is only less than 1MB as edk2 defined,
+     * so, to reduce migration downtime, just update NVRAM_SIZE of nvram to disk.
+     */
+    pflash_update(pfl, 0, NVRAM_CONTEXT_SIZE);
+#else
     pflash_update(pfl, 0, pfl->sector_len * pfl->nb_blocs);
+#endif
 }
 
 static int pflash_post_load(void *opaque, int version_id)
