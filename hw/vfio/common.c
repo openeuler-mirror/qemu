@@ -44,6 +44,9 @@
 #include "migration/blocker.h"
 #include "migration/qemu-file.h"
 #include "sysemu/tpm.h"
+#include "hw/boards.h"
+#include "hw/qdev-core.h"
+
 
 VFIODeviceList vfio_device_list =
     QLIST_HEAD_INITIALIZER(vfio_device_list);
@@ -796,6 +799,11 @@ static void vfio_listener_region_add(MemoryListener *listener,
             return;
         }
         goto fail;
+    }
+
+    MachineState *ms = MACHINE(qdev_get_machine());
+    if (ms->cgs && kvm_enabled()) {
+        ms->iommu = true;
     }
 
     return;

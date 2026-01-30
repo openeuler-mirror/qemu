@@ -22,6 +22,7 @@
 #include "exec/confidential-guest-support.h"
 #include "sysemu/kvm.h"
 #include "sysemu/runstate.h"
+#include "hw/vfio/pci.h"
 
 #define TYPE_RME_GUEST "rme-guest"
 OBJECT_DECLARE_SIMPLE_TYPE(RmeGuest, RME_GUEST)
@@ -914,4 +915,17 @@ Object *kvm_arm_rme_get_measurement_log(void)
         return OBJECT(rme_guest->log);
     }
     return NULL;
+}
+
+int kvm_arm_handle_rme_dev(CPUState *cs, struct kvm_run *run)
+{
+    ARMCPU *cpu = ARM_CPU(cs);
+
+    if (!cpu->kvm_rme) {
+        return -EINVAL;
+    }
+
+    /* Host dev bdf is valid if the dev is passthrough via VFIO */
+    run->rme_dev.vfio_dev = get_vfio_dev_bdf(run->rme_dev.guest_dev_bdf, &run->rme_dev.dev_bdf);
+    return 0;
 }

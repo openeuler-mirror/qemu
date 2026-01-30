@@ -485,6 +485,8 @@ void kvm_arm_rme_init_gpa_space(hwaddr highest_gpa, PCIBus *pci_bus);
  */
 Object *kvm_arm_rme_get_measurement_log(void);
 
+int kvm_arm_handle_rme_dev(CPUState *cs, struct kvm_run *run);
+
 int kvm_arm_get_writable_id_regs(ARMCPU *cpu, IdRegMap *idregmap);
 
 void kvm_arm_writable_idregs_to_cpreg_list(ARMCPU *cpu);

@@ -270,6 +270,7 @@ struct kvm_xen_exit {
 #define KVM_EXIT_RISCV_CSR        36
 #define KVM_EXIT_NOTIFY           37
 #define KVM_EXIT_LOONGARCH_IOCSR  38
+#define KVM_EXIT_ARM_RME_DEV      39
 
 /* For KVM_EXIT_INTERNAL_ERROR */
 /* Emulate instruction failed. */
@@ -520,6 +521,12 @@ struct kvm_run {
 #define KVM_NOTIFY_CONTEXT_INVALID	(1 << 0)
 			__u32 flags;
 		} notify;
+		/* KVM_EXIT_ARM_RME_DEV */
+		struct {
+			__u16 guest_dev_bdf;
+			__u16 dev_bdf;
+			bool vfio_dev;
+		} rme_dev;
 		/* Fix the size of the union. */
 		char padding[256];
 	};

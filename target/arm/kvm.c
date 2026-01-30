@@ -1332,6 +1332,9 @@ int kvm_arch_handle_exit(CPUState *cs, struct kvm_run *run)
     case KVM_EXIT_HYPERCALL:
         ret = kvm_arm_handle_hypercall(cs, run);
         break;
+    case KVM_EXIT_ARM_RME_DEV:
+        ret = kvm_arm_handle_rme_dev(cs, run);
+        break;
     default:
         qemu_log_mask(LOG_UNIMP, "%s: un-handled exit reason %d\n",
                       __func__, run->exit_reason);

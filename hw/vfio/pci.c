@@ -1211,6 +1211,27 @@ static void vfio_sub_page_bar_update_mapping(PCIDevice *pdev, int bar)
     memory_region_transaction_commit();
 }
 
+bool get_vfio_dev_bdf(uint16_t guest_dev_bdf, uint16_t *host_dev_bdf)
+{
+    PCIDevice *pdev = NULL;
+    VFIOPCIDevice *vdev;
+
+    pdev = pci_find_device_by_bdf(guest_dev_bdf);
+    if (!pdev) {
+        return false;
+    }
+
+    if (!object_dynamic_cast(OBJECT(pdev), TYPE_VFIO_PCI)) {
+        /* If the pci dev is not passthrough via vfio, it couldn't be realm */
+        return false;
+    }
+    vdev = VFIO_PCI(pdev);
+#define PCI_DEVFN_BITS 8
+    *host_dev_bdf = vdev->host.bus << PCI_DEVFN_BITS |
+                    PCI_DEVFN(vdev->host.slot, vdev->host.function);
+    return true;
+}
+
 /*
  * PCI config space
  */
