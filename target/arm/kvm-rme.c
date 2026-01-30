@@ -9,6 +9,8 @@
 #include "hw/boards.h"
 #include "hw/core/cpu.h"
 #include "hw/loader.h"
+#include "hw/qdev-core.h"
+#include "hw/pci/pci.h"
 #include "hw/tpm/tpm_log.h"
 #include "kvm_arm.h"
 #include "migration/blocker.h"
@@ -27,6 +29,8 @@ OBJECT_DECLARE_SIMPLE_TYPE(RmeGuest, RME_GUEST)
 #define RME_PAGE_SIZE qemu_real_host_page_size()
 
 #define RME_MEASUREMENT_LOG_SIZE    (64 * KiB)
+
+#define RME_MAX_CFG		3
 
 typedef struct RmeLogFiletype {
     uint32_t event_type;
@@ -50,8 +54,10 @@ struct RmeGuest {
     uint8_t personalization_value[ARM_RME_CONFIG_RPV_SIZE];
     RmeGuestMeasurementAlgorithm measurement_algo;
     bool use_measurement_log;
+    bool hisi_cca_enable;
 
     RmeRamRegion init_ram;
+    uint8_t ipa_bits;
     size_t num_cpus;
 
     TpmLog *log;
@@ -87,6 +93,17 @@ typedef struct {
 #define REC_CREATE_FLAG_RUNNABLE    (1 << 0)
 
 static RmeGuest *rme_guest;
+
+bool kvm_arm_rme_enabled(void)
+{
+    return !!rme_guest;
+}
+
+hwaddr rme_mask_share_bit(hwaddr addr)
+{
+    const hwaddr address_mask = MAKE_64BIT_MASK(0, rme_guest->ipa_bits - 1);
+    return addr & address_mask;
+}
 
 static int rme_init_measurement_log(MachineState *ms)
 {
@@ -399,6 +416,14 @@ static int rme_configure_one(RmeGuest *guest, uint32_t cfg, Error **errp)
         }
         cfg_str = "hash algorithm";
         break;
+    case ARM_RME_CONFIG_HISI_CCA:
+        /* By default HISI_CCA is off, there is no need to call
+         * hisi_cca_enable=0 */
+        if (!guest->hisi_cca_enable)
+            return 0;
+        args.hisi_cca_enable = (__u8)guest->hisi_cca_enable;
+        cfg_str = "hisi cca enabled";
+        break;
     default:
         g_assert_not_reached();
     }
@@ -418,6 +443,7 @@ static int rme_configure(Error **errp)
     const uint32_t config_options[] = {
         ARM_RME_CONFIG_RPV,
         ARM_RME_CONFIG_HASH_ALGO,
+        ARM_RME_CONFIG_HISI_CCA,
     };
 
     for (option = 0; option < ARRAY_SIZE(config_options); option++) {
@@ -525,6 +551,52 @@ static int rme_init_cpus(Error **errp)
     return 0;
 }
 
+static void rme_map_ram_realm(hwaddr base, uint64_t size)
+{
+    int ret;
+
+    struct kvm_cap_arm_rme_map_ram_args init_args = {
+        .ram_base = base,
+        .ram_size = size,
+    };
+
+    ret = kvm_vm_enable_cap(kvm_state, KVM_CAP_ARM_RME, 0, KVM_CAP_ARM_RME_MAP_RAM_HISI_CCA,
+                            (intptr_t)&init_args);
+    if (ret) {
+        error_report("RME: failed to map ram range (0x%"HWADDR_PRIx", 0x%"HWADDR_PRIx"): %s",
+                     base, size, strerror(-ret));
+        exit(1);
+    }
+}
+
+static void rme_map_ram(hwaddr base, size_t size, GSList *ram_regions)
+{
+    uint64_t last_end = base;
+    GSList *current = ram_regions;
+
+    while (current != NULL) {
+        RmeRamRegion *region = (RmeRamRegion*)current->data;
+        if (region->base >= base + size) {
+            break;
+        }
+        if (base >= region->base + region->size) {
+            current = current->next;
+            continue;
+        }
+
+        if (region->base > last_end) {
+            rme_map_ram_realm(last_end, region->base - last_end);
+        }
+
+        last_end = region->base + region->size;
+        current = current->next;
+    }
+
+    if (base + size > last_end) {
+        rme_map_ram_realm(last_end, base + size - last_end);
+    }
+}
+
 static int rme_create_realm(Error **errp)
 {
     int ret;
@@ -549,6 +621,13 @@ static int rme_create_realm(Error **errp)
     }
 
     g_slist_foreach(rme_guest->ram_regions, rme_populate_ram_region, errp);
+
+    // rust-rmm：enable DA
+    MachineState *ms = MACHINE(qdev_get_machine());
+    if (ms->iommu || rme_guest->hisi_cca_enable) {
+        rme_map_ram(rme_guest->init_ram.base, rme_guest->init_ram.size, rme_guest->ram_regions);
+    }
+
     g_slist_free_full(g_steal_pointer(&rme_guest->ram_regions), g_free);
     if (*errp) {
         return -1;
@@ -645,6 +724,20 @@ static void rme_set_measurement_log(Object *obj, bool value, Error **errp)
     guest->use_measurement_log = value;
 }
 
+static bool rme_get_hisi_cca_enable(Object *obj, Error **errp)
+{
+    RmeGuest *guest = RME_GUEST(obj);
+
+    return guest->hisi_cca_enable;
+}
+
+static void rme_set_hisi_cca_enable(Object *obj, bool value, Error **errp)
+{
+    RmeGuest *guest = RME_GUEST(obj);
+
+    guest->hisi_cca_enable = value;
+}
+
 static void rme_guest_class_init(ObjectClass *oc, void *data)
 {
     object_class_property_add_str(oc, "personalization-value", rme_get_rpv,
@@ -665,6 +758,12 @@ static void rme_guest_class_init(ObjectClass *oc, void *data)
                                    rme_set_measurement_log);
     object_class_property_set_description(oc, "measurement-log",
             "Enable/disable Realm measurement log");
+
+    object_class_property_add_bool(oc, "hisi-cca-enable",
+                                   rme_get_hisi_cca_enable,
+                                   rme_set_hisi_cca_enable);
+    object_class_property_set_description(oc, "hisi-cca-enable",
+            "Enable/disable hisi cca");
 }
 
 static void rme_guest_init(Object *obj)
@@ -705,8 +804,8 @@ static void rme_rom_load_notify(Notifier *notifier, void *data)
     }
 
     region = g_new0(RmeRamRegion, 1);
-    region->base = rom->addr;
-    region->size = rom->len;
+    region->base = QEMU_ALIGN_DOWN(rom->addr, RME_PAGE_SIZE);
+    region->size = QEMU_ALIGN_UP(rom->addr + rom->len, RME_PAGE_SIZE) - region->base;
     /*
      * TODO: double-check lifetime. Is data is still available when we measure
      * it, while writing the log. Should be fine since data is kept for the next
@@ -779,6 +878,16 @@ void kvm_arm_rme_init_guest_ram(hwaddr base, size_t size)
         rme_guest->init_ram.size = size;
     }
 }
+
+void kvm_arm_rme_init_gpa_space(hwaddr highest_gpa, PCIBus *pci_bus)
+{
+    const unsigned int ipa_bits = 64 - clz64(highest_gpa) + 1;
+    if (!rme_guest) {
+        return;
+     }
+
+    rme_guest->ipa_bits = ipa_bits;
+ }
 
 int kvm_arm_rme_vcpu_init(CPUState *cs)
 {

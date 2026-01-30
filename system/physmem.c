@@ -369,6 +369,10 @@ address_space_translate_internal(AddressSpaceDispatch *d, hwaddr addr, hwaddr *x
     MemoryRegion *mr;
     Int128 diff;
 
+    if (kvm_arm_rme_enabled()) {
+        addr = rme_mask_share_bit(addr);
+    }
+
     section = address_space_lookup_region(d, addr, resolve_subpage);
     /* Compute offset within MemoryRegionSection */
     addr -= section->offset_within_address_space;

@@ -56,6 +56,11 @@ void qmp_stop(Error **errp)
         return;
     }
 
+    if (kvm_arm_rme_enabled()) {
+        qemu_log("qmp stop is received and realm does not support it\n");
+        return;
+    }
+
     /* if there is a dump in background, we should wait until the dump
      * finished */
     if (qemu_system_dump_in_progress()) {

@@ -121,6 +121,16 @@ bool kvm_arm_supports_user_irq(void)
     return false;
 }
 
+bool kvm_arm_rme_enabled(void)
+{
+    return false;
+}
+
+hwaddr rme_mask_share_bit(hwaddr addr)
+{
+    return addr;
+}
+
 void kvm_update_hdbss_cap(bool enable, int hdbss_buffer_size)
 {
     g_assert_not_reached();
