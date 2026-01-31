@@ -310,11 +310,12 @@ uint32_t sysfs_get_bus_instance_eid_by_guid(UbGuid *guid)
         /*                           0       1       2       3
          * /sys/bus/ub/instance: guid:xxx type:xxx eid:xxx upi:xxx
          */
-        g_autofree char **eid_str = g_strsplit(line, " ", 4);
+        char **eid_str = g_strsplit(line, " ", 4);
         if (eid_str && eid_str[2]) {
             sscanf(eid_str[2], "eid:%05x", &eid);
             qemu_log("find ubus instance eid 0x%x by guid %s\n", eid, guid_str);
         }
+        g_strfreev(eid_str);
     }
 
     if (eid == UINT32_MAX) {
@@ -352,11 +353,12 @@ uint32_t sysfs_get_bus_instance_type_by_eid(uint32_t eid)
         /*                           0       1       2       3
          * /sys/bus/ub/instance: guid:xxx type:xxx eid:xxx upi:xxx
          */
-        g_autofree char **type = g_strsplit(line, " ", 4);
+        char **type = g_strsplit(line, " ", 4);
         if (type && type[1]) {
             sscanf(type[1] + strlen("type:"), "%d", &bus_instance_type);
             qemu_log("bus instance eid(0x%x) type is %d.\n", eid, bus_instance_type);
         }
+        g_strfreev(type);
     }
 
     if (bus_instance_type == UBUS_INSTANCE_UNKNOW) {
