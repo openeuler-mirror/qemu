@@ -3039,8 +3039,6 @@ static void machvirt_init(MachineState *machine)
                                vms->fw_cfg, OBJECT(vms));
     }
 
-    kvm_arm_rme_init_gpa_space(vms->highest_gpa, vms->bus);
-
     create_measurement_log(vms);
 
     vms->bootinfo.ram_size = machine->ram_size;
