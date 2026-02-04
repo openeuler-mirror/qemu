@@ -1414,28 +1414,30 @@ exit:
     return ret;
 }
 
-static void hct_client_connect_timer_cb(void *opaque)
+static void *hct_client_connect_timer_thread(void *opaque)
 {
     HCTDevState *state = opaque;
     int msg[16];
     int MAX_LOOP_TIMES = 10;
-    static int loops = 0;
-    int ret = 0;
+    int loops = 0;
+    int ret;
 
-    /* [0]:magic [1]:version [2]:op [3]:sync_state */
-    msg[0] = HCT_MIG_MSG_MAGIC;
-    msg[1] = HCT_MIG_PROTOCOL_VER;
-    msg[2] = HCT_MIGRATION_DONE;
-    msg[3] = 0;
-    ret = hct_client_send_msg(state, (char *)msg, sizeof(msg), 0);
-    if (ret == -EAGAIN) {
-        if (++loops > MAX_LOOP_TIMES) {
-            error_report("%s: loops = %d, connect failed.", __func__, loops);
-            goto exit;
+    while (1) {
+        /* [0]:magic [1]:version [2]:op [3]:sync_state */
+        msg[0] = HCT_MIG_MSG_MAGIC;
+        msg[1] = HCT_MIG_PROTOCOL_VER;
+        msg[2] = HCT_MIGRATION_DONE;
+        msg[3] = 0;
+        ret = hct_client_send_msg(state, (char *)msg, sizeof(msg), 0);
+        if (ret == -EAGAIN) {
+            if (++loops > MAX_LOOP_TIMES) {
+                error_report("%s: loops = %d, connect failed.", __func__, loops);
+                goto exit;
+            }
+            sleep(1);
+            continue;
         }
-        timer_mod(state->migrate_load_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) +
-                            NANOSECONDS_PER_SECOND * 2); /* 2s */
-        return;
+        break;
     }
 
     if (ret != 0 || msg[0] != HCT_MIG_MSG_MAGIC || msg[3] != HCT_MIG_MSG_ACK) {
@@ -1445,10 +1447,19 @@ static void hct_client_connect_timer_cb(void *opaque)
     info_report("%s: recieved HCT_MIG_MSG_ACK.", __func__);
 
 exit:
+    close(state->client_fd);
+    return NULL;
+}
+
+static void hct_client_connect_timer_cb(void *opaque)
+{
+    HCTDevState *state = opaque;
+    QemuThread thread;
+
+    qemu_thread_create(&thread, "hct_migration_done", hct_client_connect_timer_thread,
+                       state, QEMU_THREAD_JOINABLE);
     timer_free(state->migrate_load_timer);
     state->migrate_load_timer = NULL;
-    close(state->client_fd);
-    loops = 0;
 }
 
 static int hct_dev_post_load(void *opaque, int version_id)
