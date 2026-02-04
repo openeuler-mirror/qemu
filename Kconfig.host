@@ -57,6 +57,9 @@ config HV_BALLOON_POSSIBLE
 config UB
     bool
 
+config UBMEM_VMMU
+    bool
+
 config URMA_MIGRATION
     bool
 

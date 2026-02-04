@@ -365,12 +365,18 @@ REG32(UMMU_MEM_USI_ATTR, 0x4D9C)
 /* according to UB SPEC, if range val is 31, invalid all tecte */
 #define CMD_TECTE_RANGE_INVILID_ALL(x)     ((x) == 31)
 #define CMD_NULL_SUBOP_CHECK_PA_CONTINUITY 1
+#ifdef CONFIG_UBMEM_VMMU
+#define CMD_NULL_SUBOP_CHECK_UBMEM_VMMU_SUPPORT 2
+#endif
 #define CMD_NULL_SUBOP(x)                  extract32((x)->word[0], 8, 8)
 #define CMD_NULL_CHECK_PA_CONTI_SIZE(x)    (1 << extract32((x)->word[0], 24, 6))
 #define CMD_NULL_CHECK_PA_CONTI_ADDR(x)    ((*(uint64_t *)&(x)->word[2]) & GENMASK_ULL(47, 12))
 #define UMMU_RUN_IN_VM_FLAG                0x10
 #define PA_CONTINUITY                      0x00
 #define PA_NOT_CONTINUITY                  0x01
+#ifdef CONFIG_UBMEM_VMMU
+#define UBMEM_UMMU_NOT_SUPPORT             0x00
+#endif
 
 #define MCMDQ_BASE_ADDR_MASK               ~0xf0UL
 #define MCMDQ_IDX_MASK                     0xf0

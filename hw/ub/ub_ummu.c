@@ -752,7 +752,8 @@ static void mcmdq_check_pa_continuity_fill_result(UMMUMcmdQueue *mcmdq, bool con
     qemu_log("mcmdq check pa continuity update result(0x%x) success.\n", result);
 }
 
-static void mcmdq_cmd_null(UMMUState *u, UMMUMcmdqCmd *cmd, uint8_t mcmdq_idx)
+static void mcmdq_cmd_pa_continuity(UMMUState *u, UMMUMcmdqCmd *cmd,
+                                     uint8_t mcmdq_idx)
 {
     uint64_t size;
     uint64_t addr;
@@ -762,11 +763,6 @@ static void mcmdq_cmd_null(UMMUState *u, UMMUMcmdqCmd *cmd, uint8_t mcmdq_idx)
     size_t rb_page_size = 0;
 #define PAGESZ_4K 0x1000
     uint64_t map_size = PAGESZ_4K;
-
-    if (CMD_NULL_SUBOP(cmd) != CMD_NULL_SUBOP_CHECK_PA_CONTINUITY) {
-        qemu_log("current cannot process CMD_NULL subop %u.\n", CMD_NULL_SUBOP(cmd));
-        return;
-    }
 
     size = CMD_NULL_CHECK_PA_CONTI_SIZE(cmd);
     addr = CMD_NULL_CHECK_PA_CONTI_ADDR(cmd);
@@ -786,6 +782,46 @@ static void mcmdq_cmd_null(UMMUState *u, UMMUMcmdqCmd *cmd, uint8_t mcmdq_idx)
         mcmdq_check_pa_continuity_fill_result(&u->mcmdqs[mcmdq_idx], false);
     } else {
         mcmdq_check_pa_continuity_fill_result(&u->mcmdqs[mcmdq_idx], true);
+    }
+}
+
+#ifdef CONFIG_UBMEM_VMMU
+static void mcmdq_check_ubmem_vmmu_support(UMMUMcmdQueue *mcmdq)
+{
+    dma_addr_t addr;
+    uint8_t result = UBMEM_UMMU_NOT_SUPPORT;
+
+    addr = MCMD_QUE_BASE_ADDR(&mcmdq->queue) +
+           MCMD_QUE_RD_IDX(&mcmdq->queue) * mcmdq->queue.entry_size;
+#define CHECK_UBMEM_VMMU_SUPPORT_RESULT_OFFSET 0x2
+    if (dma_memory_write(&address_space_memory,
+                         addr + CHECK_UBMEM_VMMU_SUPPORT_RESULT_OFFSET,
+                         &result, sizeof(result), MEMTXATTRS_MEMORY)) {
+        qemu_log("dma failed to wirte ubmem vmmu support result(0x%x) "
+                 "to addr 0x%lx\n", result, addr);
+        return;
+    }
+    qemu_log("mcmdq check ubmem vmmu support update result(0x%x) "
+             "success.\n", result);
+}
+#endif
+
+static void mcmdq_cmd_null(UMMUState *u, UMMUMcmdqCmd *cmd, uint8_t mcmdq_idx)
+{
+
+    switch (CMD_NULL_SUBOP(cmd)) {
+    case CMD_NULL_SUBOP_CHECK_PA_CONTINUITY:
+        mcmdq_cmd_pa_continuity(u, cmd, mcmdq_idx);
+        break;
+#ifdef CONFIG_UBMEM_VMMU
+    case CMD_NULL_SUBOP_CHECK_UBMEM_VMMU_SUPPORT:
+        mcmdq_check_ubmem_vmmu_support(&u->mcmdqs[mcmdq_idx]);
+        break;
+#endif
+    default:
+        qemu_log("ummu cannot handle null cmd subop 0x%x\n",
+                    CMD_NULL_SUBOP(cmd));
+        return;
     }
 }
 

@@ -54,6 +54,8 @@ meson_options_help() {
   printf "%s\n" '  --enable-tsan            enable thread sanitizer'
   printf "%s\n" '  --enable-ub              enable unify bus'
   printf "%s\n" '  --disable-ub             disable unify bus'
+  printf "%s\n" '  --enable-ubmem-vmmu      enable UBMEM VMMU device'
+  printf "%s\n" '  --disable-ubmem-vmmu     disable UBMEM VMMU device'
   printf "%s\n" '  --enable-urma-migration  enable urma migration'
   printf "%s\n" '  --disable-urma-migration disable urma migration'
   printf "%s\n" '  --enable-ham-migration   enable ham migration'

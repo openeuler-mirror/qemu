@@ -100,6 +100,9 @@
 #include "hw/ub/ub_common.h"
 #include "hw/ub/ub_config.h"
 #endif // CONFIG_UB
+#ifdef CONFIG_UBMEM_VMMU
+#include "hw/misc/ubmem_vmmu.h"
+#endif
 
 #define DEFINE_VIRT_MACHINE_LATEST(major, minor, latest) \
     static void virt_##major##_##minor##_class_init(ObjectClass *oc, \
@@ -219,6 +222,12 @@ static MemMapEntry extended_memmap[] = {
     [VIRT_HIGH_PCIE_ECAM] =     { 0x0, 256 * MiB },
     /* Second PCIe window */
     [VIRT_HIGH_PCIE_MMIO] =     { 0x0, 512 * GiB },
+#ifdef CONFIG_UBMEM_VMMU
+    /* ubmem vmmu mmio window */
+    [VIRT_UBMEM_VMMU_REG] =     { 0x0, UBMEM_VMMU_REG_SIZE },
+    /* ubmem vmmu memory window */
+    [VIRT_UBMEM_VMMU_MEM] =     { 0x0, UBMEM_VMMU_MEM_SIZE },
+#endif
 #ifdef CONFIG_UB
     /* ub mmio window */
     [VIRT_HIGH_UB_MMIO] =       { 0x0, UBIOS_MMIOS_SIZE_PER_UBC * UBIOS_UBC_TABLE_CNT},
@@ -2124,6 +2133,10 @@ static inline bool *virt_get_high_memmap_enabled(VirtMachineState *vms,
         &vms->highmem_redists,
         &vms->highmem_ecam,
         &vms->highmem_mmio,
+#ifdef CONFIG_UBMEM_VMMU
+        &vms->ubmem_vmmu_reg,
+        &vms->ubmem_vmmu_mem,
+#endif
 #ifdef CONFIG_UB
         &vms->highmem_ub_mmio,
         &vms->highmem_idev_ers,
@@ -4164,6 +4177,9 @@ static void virt_machine_class_init(ObjectClass *oc, void *data)
     machine_class_allow_dynamic_sysbus_dev(mc, TYPE_RAMFB_DEVICE);
     machine_class_allow_dynamic_sysbus_dev(mc, TYPE_VFIO_PLATFORM);
     machine_class_allow_dynamic_sysbus_dev(mc, TYPE_ARM_SMMUV3_ACCEL);
+#ifdef CONFIG_UBMEM_VMMU
+    machine_class_allow_dynamic_sysbus_dev(mc, TYPE_UBMEM_VMMU);
+#endif
 #ifdef CONFIG_TPM
     machine_class_allow_dynamic_sysbus_dev(mc, TYPE_TPM_TIS_SYSBUS);
 #endif
@@ -4409,7 +4425,10 @@ static void virt_instance_init(Object *obj)
     vms->ub_cluster_mode = false;
     vms->fm_deployment = false;
 #endif
-
+#ifdef CONFIG_UBMEM_VMMU
+    vms->ubmem_vmmu_reg = true;
+    vms->ubmem_vmmu_mem = true;
+#endif
     vms->irqmap = a15irqmap;
 
     virt_flash_create(vms);

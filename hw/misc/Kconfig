@@ -204,4 +204,9 @@ config PSP_DEV
     bool
     default y
 
+config HW_UBMEM_VMMU
+    bool
+    default y if UBMEM_VMMU
+    depends on UB && ARM
+
 source macio/Kconfig
