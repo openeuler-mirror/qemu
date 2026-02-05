@@ -644,6 +644,7 @@ static void process_incoming_migration_bh(void *opaque)
 {
     Error *local_err = NULL;
     MigrationIncomingState *mis = opaque;
+    int64_t start_time;
 
     trace_vmstate_downtime_checkpoint("dst-precopy-bh-enter");
 
@@ -681,7 +682,9 @@ static void process_incoming_migration_bh(void *opaque)
     if (!global_state_received() ||
         global_state_get_runstate() == RUN_STATE_RUNNING) {
         if (autostart) {
+            start_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
             vm_start();
+            qemu_log("vm start cost time: %ld ms\n", qemu_clock_get_ms(QEMU_CLOCK_REALTIME) - start_time);
         } else {
             runstate_set(RUN_STATE_PAUSED);
         }
@@ -2727,6 +2730,7 @@ static int migration_completion_precopy(MigrationState *s,
                                         int *current_active_state)
 {
     int ret;
+    int64_t start_time;
 
     qemu_mutex_lock_iothread();
     migration_downtime_start(s);
@@ -2735,6 +2739,7 @@ static int migration_completion_precopy(MigrationState *s,
     s->vm_old_state = runstate_get();
     global_state_store();
 
+    start_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
     ret = migration_stop_vm(RUN_STATE_FINISH_MIGRATE);
     trace_migration_completion_vm_stop(ret);
     if (ret < 0) {
@@ -2752,9 +2757,12 @@ static int migration_completion_precopy(MigrationState *s,
      * to remember to reactivate them if migration fails or is cancelled.
      */
     s->block_inactive = !migrate_colo();
+    qemu_log("stop vm cost time: %ld ms\n", qemu_clock_get_ms(QEMU_CLOCK_REALTIME) - start_time);
     migration_rate_set(RATE_LIMIT_DISABLED);
+    start_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
     ret = qemu_savevm_state_complete_precopy(s->to_dst_file, false,
                                              s->block_inactive);
+    s->precopy_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME) - start_time;
 out_unlock:
     qemu_mutex_unlock_iothread();
     return ret;

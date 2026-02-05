@@ -486,8 +486,12 @@ struct MigrationState {
     int64_t urma_init_time;
     int64_t urma_exchange_time;
     int64_t last_memcpy_time;
+    int64_t precopy_time;
     int64_t ram_reg_time;
     int64_t dev_mig_time;
+    int64_t cpu_sync_time;
+    int64_t notify_time;
+    int64_t bdrv_time;
     /* Number of migration iterations */
     uint64_t iteration_num;
 };

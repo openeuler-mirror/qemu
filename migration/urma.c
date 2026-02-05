@@ -1413,8 +1413,13 @@ void record_migration_log(MigrationState *s)
     qemu_log("qmp urma resource initialization and connection cost time: %ld(ms)\n", s->urma_init_time);
     qemu_log("qmp urma exchange info cost time: %ld(ms)\n", s->urma_exchange_time);
     qemu_log("qmp ram registration cost time: %ld(ms)\n", s->ram_reg_time);
-    qemu_log("qmp device migration cost time: %ld(ms)\n", s->dev_mig_time);
-    qemu_log("qmp last memcpy cost time: %ld(ms)\n", s->last_memcpy_time);
+
+    qemu_log("qmp notify cost time: %ld(ms)\n", s->notify_time);
+    qemu_log("qmp bdrv cost time: %ld(ms)\n", s->bdrv_time);
+    qemu_log("qmp precopy cost time: %ld(ms)\n", s->precopy_time);
+    qemu_log("  > qmp cpu sync cost time: %ld(ms)\n", s->cpu_sync_time);
+    qemu_log("  > qmp device migration cost time: %ld(ms)\n", s->dev_mig_time);
+    qemu_log("  > qmp last memcpy cost time: %ld(ms)\n", s->last_memcpy_time);
     qemu_log("qmp downtime %ld(ms)\n", s->downtime);
     qemu_log("qmp setup time %ld(ms)\n", s->setup_time);
     qemu_log("qmp total time %ld(ms)\n", s->total_time);

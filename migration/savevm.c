@@ -1616,6 +1616,8 @@ int qemu_savevm_state_complete_precopy(QEMUFile *f, bool iterable_only,
     int ret;
     Error *local_err = NULL;
     bool in_postcopy = migration_in_postcopy();
+    MigrationState *s = migrate_get_current();
+    int64_t start_time;
 
     if (precopy_notify(PRECOPY_NOTIFY_COMPLETE, &local_err)) {
         error_report_err(local_err);
@@ -1623,7 +1625,9 @@ int qemu_savevm_state_complete_precopy(QEMUFile *f, bool iterable_only,
 
     trace_savevm_state_complete_precopy();
 
+    start_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
     cpu_synchronize_all_states();
+    s->cpu_sync_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME) - start_time;
 
     if (!in_postcopy || iterable_only) {
         ret = qemu_savevm_state_complete_precopy_iterable(f, in_postcopy);
