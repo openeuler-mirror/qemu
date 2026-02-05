@@ -51,6 +51,10 @@ struct PostcopyBlocktimeContext;
  */
 #define CLEAR_BITMAP_SHIFT_MAX            31
 
+#ifdef CONFIG_URMA_MIGRATION
+#define MIGRATION_URMA_BW_LIMIT (5*1000*1000)
+#endif
+
 /* This is an abstraction of a "temp huge page" for postcopy's purpose */
 typedef struct {
     /*

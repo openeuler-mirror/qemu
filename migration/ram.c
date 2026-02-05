@@ -2730,7 +2730,11 @@ static int ram_save_host_page(RAMState *rs, PageSearchStatus *pss)
                  * Allow rate limiting to happen in the middle of huge pages if
                  * something is sent in the current iteration.
                  */
-                if (pagesize_bits > 1 && tmppages > 0) {
+                bool should_limit_migration = (pagesize_bits > 1) && (tmppages > 0);
+#ifdef CONFIG_URMA_MIGRATION
+                should_limit_migration = should_limit_migration && !migrate_urma();
+#endif
+                if (should_limit_migration) {
                     migration_rate_limit();
                 }
             }
@@ -3659,6 +3663,10 @@ static int ram_save_iterate(QEMUFile *f, void *opaque)
      * to obtain the actual bandwidth.
      */
     if (migrate_urma()) {
+        ret = qemu_urma_write_flush(migrate_get_current()->urma_ctx, true);
+        if (ret < 0) {
+            qemu_file_set_error(f, ret);
+        }
         ret = qemu_flush_urma_write(migrate_get_current()->urma_ctx);
         if (ret < 0) {
             qemu_file_set_error(f, ret);
@@ -3798,6 +3806,7 @@ finish:
 
 #ifdef CONFIG_URMA_MIGRATION
     if (migrate_urma()) {
+        ret |= qemu_urma_write_flush(s->urma_ctx, true);
         ret |= qemu_flush_urma_write(s->urma_ctx);
     }
 #endif

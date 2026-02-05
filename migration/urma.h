@@ -107,6 +107,7 @@ typedef struct URMAContext {
     urma_jfc_t *jfc;
     urma_jfs_t *jfs;
     urma_jfr_t *jfr;
+    urma_cr_t *cr;
     uint64_t rid;
     urma_token_t jfr_token;
     bool event_mode;
@@ -151,5 +152,6 @@ int qemu_urma_import(URMAContext *urma);
 void urma_migration_cleanup(void);
 void record_migration_log(MigrationState *s);
 int qemu_urma_write_all(URMAContext *urma);
+int qemu_urma_write_flush(URMAContext *urma, bool force);
 
 #endif

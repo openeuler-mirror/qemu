@@ -3107,6 +3107,7 @@ static void migration_update_counters(MigrationState *s,
     /* Expected bandwidth when switching over to destination QEMU */
     double expected_bw_per_ms;
     double bandwidth;
+    uint64_t effective_bw;
 
     if (current_time < s->iteration_start_time + BUFFER_DELAY) {
         return;
@@ -3117,6 +3118,13 @@ static void migration_update_counters(MigrationState *s,
     transferred = current_bytes - s->iteration_initial_bytes;
     time_spent = current_time - s->iteration_start_time;
     bandwidth = (double)transferred / time_spent;
+    effective_bw = bandwidth;
+
+#ifdef CONFIG_URMA_MIGRATION
+    if (migrate_urma()) {
+        effective_bw = MIN(effective_bw, MIGRATION_URMA_BW_LIMIT);
+    }
+#endif
 
     if (switchover_bw) {
         /*
@@ -3126,7 +3134,7 @@ static void migration_update_counters(MigrationState *s,
         expected_bw_per_ms = switchover_bw / 1000;
     } else {
         /* If the user doesn't specify bandwidth, we use the estimated */
-        expected_bw_per_ms = bandwidth;
+        expected_bw_per_ms = effective_bw;
     }
 
     s->threshold_size = expected_bw_per_ms * migrate_downtime_limit();
