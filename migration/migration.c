@@ -282,13 +282,22 @@ void migration_incoming_transport_cleanup(MigrationIncomingState *mis)
     }
 }
 
+#ifdef CONFIG_URMA_MIGRATION
+static void* urma_migration_cleanup_func(void* p)
+{
+    urma_migration_cleanup();
+    return NULL;
+}
+#endif
+
 void migration_incoming_state_destroy(void)
 {
     struct MigrationIncomingState *mis = migration_incoming_get_current();
 
 #ifdef CONFIG_URMA_MIGRATION
     if (migrate_urma()) {
-        urma_migration_cleanup();
+        pthread_t thread;
+        pthread_create(&thread, NULL, urma_migration_cleanup_func, NULL);
     }
 #endif
 
@@ -3429,6 +3438,9 @@ static void *migration_thread(void *opaque)
     int64_t setup_start = qemu_clock_get_ms(QEMU_CLOCK_HOST);
     MigThrError thr_error;
     bool urgent = false;
+#ifdef CONFIG_URMA_MIGRATION
+    int ret;
+#endif
 
     /* report migration thread pid to libvirt */
     qapi_event_send_migration_pid(qemu_get_thread_id());
@@ -3485,8 +3497,26 @@ static void *migration_thread(void *opaque)
 
 #ifdef CONFIG_URMA_MIGRATION
     if (migrate_urma()) {
-        qemu_exchange_urma_info(qemu_file_get_return_path(s->to_dst_file), s->urma_ctx, false);
-        qemu_urma_import(s->urma_ctx);
+        ret = qemu_urma_reg_whole_ram_blocks(s->urma_ctx);
+        if (ret) {
+            migrate_set_state(&s->state, s->state, MIGRATION_STATUS_FAILED);
+            qemu_file_set_error(s->to_dst_file, ret);
+            goto out;
+        }
+
+        ret = qemu_exchange_urma_info(qemu_file_get_return_path(s->to_dst_file), s->urma_ctx, false);
+        if (ret) {
+            migrate_set_state(&s->state, s->state, MIGRATION_STATUS_FAILED);
+            qemu_file_set_error(s->to_dst_file, ret);
+            goto out;
+        }
+
+        ret = qemu_urma_import(s->urma_ctx);
+        if (ret) {
+            migrate_set_state(&s->state, s->state, MIGRATION_STATUS_FAILED);
+            qemu_file_set_error(s->to_dst_file, ret);
+            goto out;
+        }
     }
 #endif
 

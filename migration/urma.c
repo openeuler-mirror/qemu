@@ -623,7 +623,7 @@ static void qemu_urma_unreg_ram_blocks(URMAContext *urma)
     qemu_log("unreg all ram blocks success.\n");
 }
 
-static int qemu_urma_reg_whole_ram_blocks(URMAContext *urma)
+int qemu_urma_reg_whole_ram_blocks(URMAContext *urma)
 {
     int i;
     int64_t start_time;
@@ -715,7 +715,7 @@ static int qemu_urma_init_all(URMAContext *urma, bool pin_all)
         goto err;
     }
 
-    if (urma->pin_all) {
+    if (urma->pin_all && urma->is_incoming) {
         ret = qemu_urma_reg_whole_ram_blocks(urma);
         if (ret) {
             goto err;

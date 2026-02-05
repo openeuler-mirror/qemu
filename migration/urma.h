@@ -152,6 +152,7 @@ int qemu_urma_import(URMAContext *urma);
 void urma_migration_cleanup(void);
 void record_migration_log(MigrationState *s);
 int qemu_urma_write_all(URMAContext *urma);
+int qemu_urma_reg_whole_ram_blocks(URMAContext *urma);
 int qemu_urma_write_flush(URMAContext *urma, bool force);
 
 #endif
