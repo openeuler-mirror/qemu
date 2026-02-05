@@ -828,6 +828,7 @@ static inline bool migration_bitmap_clear_dirty(RAMState *rs,
                                                 unsigned long page)
 {
     bool ret;
+    MigrationState *s = migrate_get_current();
 
     /*
      * Clear dirty bitmap if needed.  This _must_ be called before we
@@ -837,7 +838,9 @@ static inline bool migration_bitmap_clear_dirty(RAMState *rs,
      * the page in the chunk we clear the remote dirty bitmap for all.
      * Clearing it earlier won't be a problem, but too late will.
      */
-    migration_clear_memory_region_dirty_bitmap(rb, page);
+    if (!s->migration_finish) {
+        migration_clear_memory_region_dirty_bitmap(rb, page);
+    }
 
     ret = test_and_clear_bit(page, rb->bmap);
     if (ret) {
@@ -3559,6 +3562,9 @@ static int ram_save_iterate(QEMUFile *f, void *opaque)
     int i;
     int64_t t0;
     int done = 0;
+    MigrationState *s = migrate_get_current();
+
+    s->migration_finish = false;
 
     if (blk_mig_bulk_active()) {
         /* Avoid transferring ram during bulk phase of block migration as
@@ -3716,6 +3722,7 @@ static int ram_save_complete(QEMUFile *f, void *opaque)
     rs->last_stage = !migration_in_colo_state();
 
 #ifdef CONFIG_URMA_MIGRATION
+    s->migration_finish = true;
     if (migrate_urma() && migrate_onecopy_ram()) {
         start_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
         ret = qemu_urma_write_all(s->urma_ctx);
@@ -3811,6 +3818,7 @@ finish:
     }
 #endif
 
+    s->migration_finish = false;
     s->last_memcpy_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME) - start_time;
     return ret;
 }
