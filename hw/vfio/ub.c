@@ -188,6 +188,7 @@ static void vfio_populate_device(VFIOUBDevice *vdev, Error **errp)
         return;
     }
     vdev->config_offset = reg_info->offset;
+    g_free(reg_info);
 }
 
 static void vfio_ers_prepare(VFIOUBDevice *vdev, uint8_t nr)
