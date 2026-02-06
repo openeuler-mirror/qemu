@@ -474,6 +474,45 @@ static void acpi_dsdt_add_gpio(Aml *scope, const MemMapEntry *gpio_memmap,
     aml_append(scope, dev);
 }
 
+#ifdef CONFIG_UBMEM_VMMU
+static void build_ubmem_vmmu_aml(VirtMachineState *vms, Aml *table)
+{
+    Aml *crs = aml_resource_template();
+    Aml *dev_node = aml_device("UBM");
+    const MemMapEntry *reg_memmap = &vms->memmap[VIRT_UBMEM_VMMU_REG];
+    const MemMapEntry *mem_memmap = &vms->memmap[VIRT_UBMEM_VMMU_MEM];
+
+    aml_append(dev_node, aml_name_decl("_HID", aml_string("HISI0591")));
+
+    aml_append(crs, aml_qword_memory(
+        AML_POS_DECODE,
+        AML_MIN_FIXED,
+        AML_MAX_FIXED,
+        AML_NON_CACHEABLE,
+        AML_READ_WRITE,
+        0,
+        reg_memmap->base,
+        reg_memmap->base + reg_memmap->size - 1,
+        0,
+        reg_memmap->size));
+
+    aml_append(crs, aml_qword_memory(
+        AML_POS_DECODE,
+        AML_MIN_FIXED,
+        AML_MAX_FIXED,
+        AML_CACHEABLE,
+        AML_READ_WRITE,
+        0,
+        mem_memmap->base,
+        mem_memmap->base + mem_memmap->size - 1,
+        0,
+        mem_memmap->size));
+
+    aml_append(dev_node, aml_name_decl("_CRS", crs));
+    aml_append(table, dev_node);
+}
+#endif
+
 #ifdef CONFIG_TPM
 static void acpi_dsdt_add_tpm(Aml *scope, VirtMachineState *vms)
 {
@@ -1332,6 +1371,11 @@ build_dsdt(GArray *table_data, BIOSLinker *linker, VirtMachineState *vms)
 
 #ifdef CONFIG_UB
     acpi_dsdt_add_ub(scope);
+#endif
+#ifdef CONFIG_UBMEM_VMMU
+    if (vms->ubmem_vmmu_realized) {
+        build_ubmem_vmmu_aml(vms, scope);
+    }
 #endif
 
     aml_append(dsdt, scope);

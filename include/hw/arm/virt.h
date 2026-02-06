@@ -154,6 +154,10 @@ enum {
     VIRT_HIGH_GIC_REDIST2 =  VIRT_LOWMEMMAP_LAST,
     VIRT_HIGH_PCIE_ECAM,
     VIRT_HIGH_PCIE_MMIO,
+#ifdef CONFIG_UBMEM_VMMU
+    VIRT_UBMEM_VMMU_REG,
+    VIRT_UBMEM_VMMU_MEM,
+#endif
 #ifdef CONFIG_UB
     VIRT_HIGH_UB_MMIO,
     VIRT_UB_IDEV_ERS,
@@ -239,6 +243,11 @@ struct VirtMachineState {
     bool fm_deployment;
     UBBus *ub_bus;
 #endif // CONFIG_UB
+#ifdef CONFIG_UBMEM_VMMU
+    bool ubmem_vmmu_mem;
+    bool ubmem_vmmu_reg;
+    bool ubmem_vmmu_realized;
+#endif
     bool its;
     bool tcg_its;
     bool virt;

@@ -293,6 +293,8 @@ option('sndio', type: 'feature', value: 'auto',
 
 option('ub', type: 'feature', value: 'auto',
        description: 'unify bus support')
+option('ubmem_vmmu', type: 'feature', value: 'auto',
+       description: 'UBMEM VMMU device support')
 
 option('urma_migration', type: 'feature', value: 'disabled',
        description: 'live migration via urma protocol support')

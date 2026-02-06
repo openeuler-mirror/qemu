@@ -586,6 +586,12 @@ have_ub = get_option('ub') \
   .require(targetos == 'linux', error_message: 'UB is supported only on Linux') \
   .allowed()
 
+# ubmem_vmmu
+have_ubmem_vmmu = get_option('ubmem_vmmu') \
+  .require(have_ub, error_message: 'ubmem_vmmu requires ub to be enabled') \
+  .require(cpu == 'aarch64', error_message: 'ubmem_vmmu is supported only on aarch64') \
+  .allowed()
+
 if cpu in ['aarch64']
   # ham migration
   have_ham_migration = get_option('ham_migration') \
@@ -2309,6 +2315,7 @@ config_host_data.set('CONFIG_VHOST_KERNEL', have_vhost_kernel)
 config_host_data.set('CONFIG_VHOST_USER', have_vhost_user)
 config_host_data.set('CONFIG_VHOST_CRYPTO', have_vhost_user_crypto)
 config_host_data.set('CONFIG_UB', have_ub)
+config_host_data.set('CONFIG_UBMEM_VMMU', have_ubmem_vmmu)
 config_host_data.set('CONFIG_HAM_MIGRATION', have_ham_migration)
 config_host_data.set('CONFIG_URMA_MIGRATION', have_urma_migration)
 config_host_data.set('CONFIG_VHOST_VDPA', have_vhost_vdpa)
@@ -3024,6 +3031,7 @@ host_kconfig = \
   (opengl.found() ? ['CONFIG_OPENGL=y'] : []) + \
   (x11.found() ? ['CONFIG_X11=y'] : []) + \
   (have_ub ? ['CONFIG_UB=y'] : []) + \
+  (have_ubmem_vmmu ? ['CONFIG_UBMEM_VMMU=y'] : []) + \
   (have_ham_migration ? ['CONFIG_HAM_MIGRATION=y'] : []) + \
   (have_urma_migration ? ['CONFIG_URMA_MIGRATION=y'] : []) + \
   (have_vhost_user ? ['CONFIG_VHOST_USER=y'] : []) + \
@@ -4256,6 +4264,7 @@ summary_info += {'D-Bus display':     dbus_display}
 summary_info += {'QOM debugging':     get_option('qom_cast_debug')}
 summary_info += {'Relocatable install': get_option('relocatable')}
 summary_info += {'ub support': have_ub}
+summary_info += {'ubmem-vmmu support': have_ubmem_vmmu}
 summary_info += {'ham migration support': have_ham_migration}
 summary_info += {'urma migration support': have_urma_migration}
 summary_info += {'vhost-kernel support': have_vhost_kernel}
