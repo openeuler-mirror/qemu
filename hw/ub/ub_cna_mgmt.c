@@ -106,7 +106,7 @@ void handle_enum_cna_config_request(BusControllerState *s,
     g_free(scan_header);
     payload = g_malloc0(total_sz);
     if (dma_memory_read(&address_space_memory, (unsigned long)(buf),
-                        payload, total_sz, MEMTXATTRS_UNSPECIFIED)) {
+                        payload, total_sz, MEMTXATTRS_MEMORY)) {
         qemu_log("Failed to read sq_base_addr_gpa entry\n");
         g_free(payload);
         return;
