@@ -71,6 +71,7 @@ void handle_enum_cna_config_request(BusControllerState *s,
     /* req message */
     void *payload;
     size_t header_sz;
+    size_t total_sz;
     EnumPktHeader *header;
     EnumPldScanHeader *scan_header;
     EnumCnaCfgReq *cna_cfg_req;
@@ -94,18 +95,18 @@ void handle_enum_cna_config_request(BusControllerState *s,
         return;
     }
 
-    header_sz = ENUM_PKT_HEADER_SIZE + calc_enum_pld_header_size(scan_header, true) + ENUM_NA_CFG_REQ_SIZE;
-    if (HI_MSG_SQE_PLD_SIZE < header_sz) {
+    total_sz = ENUM_PKT_HEADER_SIZE + calc_enum_pld_header_size(scan_header, true) + ENUM_NA_CFG_REQ_SIZE;
+    if (HI_MSG_SQE_PLD_SIZE < total_sz) {
         qemu_log("unexpect msgq sqe pld size(0x%x) < prepare read payload size(0x%lx)\n",
-                 HI_MSG_SQE_PLD_SIZE, header_sz);
+                 HI_MSG_SQE_PLD_SIZE, total_sz);
         g_free(scan_header);
         return;
     }
 
     g_free(scan_header);
-    payload = g_malloc0(header_sz);
+    payload = g_malloc0(total_sz);
     if (dma_memory_read(&address_space_memory, (unsigned long)(buf),
-                        payload, header_sz, MEMTXATTRS_UNSPECIFIED)) {
+                        payload, total_sz, MEMTXATTRS_UNSPECIFIED)) {
         qemu_log("Failed to read sq_base_addr_gpa entry\n");
         g_free(payload);
         return;
@@ -115,6 +116,13 @@ void handle_enum_cna_config_request(BusControllerState *s,
     scan_header = (EnumPldScanHeader *)((uint8_t *)payload + ENUM_PKT_HEADER_SIZE);
     header_sz = ENUM_PKT_HEADER_SIZE +
                 calc_enum_pld_header_size(scan_header, true);
+    if (header_sz + ENUM_NA_CFG_REQ_SIZE > total_sz) {
+        qemu_log("calculate incorrect header size %lu, expect %lu\n",
+                 header_sz, total_sz - ENUM_NA_CFG_REQ_SIZE);
+        g_free(payload);
+        return;
+    }
+
     cna_cfg_req = (EnumCnaCfgReq *)((uint8_t *)payload + header_sz);
     if (header->ulh.cfg != UB_CLAN_LINK_CFG ||
         header->cnth.nth_nlp != NTH_NLP_WITHOUT_TPH ||
@@ -171,6 +179,7 @@ void handle_enum_cna_query_request(BusControllerState *s,
     /* req message */
     void *payload;
     size_t header_sz;
+    size_t total_sz;
     EnumPktHeader *header;
     EnumPldScanHeader *scan_header;
     EnumCnaQueryReq *cna_query_req;
@@ -197,18 +206,18 @@ void handle_enum_cna_query_request(BusControllerState *s,
         return;
     }
 
-    header_sz = ENUM_PKT_HEADER_SIZE + calc_enum_pld_header_size(scan_header, true) + ENUM_NA_QRY_REQ_SIZE;
-    if (HI_MSG_SQE_PLD_SIZE < header_sz) {
+    total_sz = ENUM_PKT_HEADER_SIZE + calc_enum_pld_header_size(scan_header, true) + ENUM_NA_QRY_REQ_SIZE;
+    if (HI_MSG_SQE_PLD_SIZE < total_sz) {
         qemu_log("unexpect msgq sqe pld size(0x%x) < prepare read payload size(0x%lx)\n",
-                 HI_MSG_SQE_PLD_SIZE, header_sz);
+                 HI_MSG_SQE_PLD_SIZE, total_sz);
         g_free(scan_header);
         return;
     }
 
     g_free(scan_header);
-    payload = g_malloc0(header_sz);
+    payload = g_malloc0(total_sz);
     if (dma_memory_read(&address_space_memory, (unsigned long)(buf),
-                        payload, header_sz, MEMTXATTRS_MEMORY)) {
+                        payload, total_sz, MEMTXATTRS_MEMORY)) {
         qemu_log("Failed to read sq_base_addr_gpa entry\n");
         g_free(payload);
         return;
@@ -217,7 +226,14 @@ void handle_enum_cna_query_request(BusControllerState *s,
     header = (EnumPktHeader *)payload;
     scan_header = (EnumPldScanHeader *)((uint8_t *)payload + ENUM_PKT_HEADER_SIZE);
     header_sz = ENUM_PKT_HEADER_SIZE +
-            calc_enum_pld_header_size(scan_header, true);
+                calc_enum_pld_header_size(scan_header, true);
+    if (header_sz + ENUM_NA_QRY_REQ_SIZE > total_sz) {
+        qemu_log("calculate incorrect header size %lu, expect %lu\n",
+                 header_sz, total_sz - ENUM_NA_QRY_REQ_SIZE);
+        g_free(payload);
+        return;
+    }
+
     cna_query_req = (EnumCnaQueryReq *)((uint8_t *)payload + header_sz);
     if (header->ulh.cfg != UB_CLAN_LINK_CFG ||
         header->cnth.nth_nlp != NTH_NLP_WITHOUT_TPH ||

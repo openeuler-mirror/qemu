@@ -169,6 +169,7 @@ static void handle_enum_query_request(BusControllerState *s, HiMsgSqe *sqe,
     /* req message */
     void *payload;
     size_t header_sz;
+    size_t total_sz;
     EnumPktHeader *header;
     struct ClanNetworkHeader *cnth;
     struct UbLinkHeader *ulh;
@@ -197,18 +198,18 @@ static void handle_enum_query_request(BusControllerState *s, HiMsgSqe *sqe,
         return;
     }
 
-    header_sz = ENUM_PKT_HEADER_SIZE + calc_enum_pld_header_size(scan_header, true) + ENUM_TOPO_QUERY_REQ_SIZE;
-    if (HI_MSG_SQE_PLD_SIZE < header_sz) {
+    total_sz = ENUM_PKT_HEADER_SIZE + calc_enum_pld_header_size(scan_header, true) + ENUM_TOPO_QUERY_REQ_SIZE;
+    if (HI_MSG_SQE_PLD_SIZE < total_sz) {
         qemu_log("unexpect msgq sqe pld size(0x%x) < prepare read payload size(0x%lx)\n",
-                 HI_MSG_SQE_PLD_SIZE, header_sz);
+                 HI_MSG_SQE_PLD_SIZE, total_sz);
         g_free(scan_header);
         return;
     }
 
     g_free(scan_header);
-    payload = g_malloc0(header_sz);
+    payload = g_malloc0(total_sz);
     if (dma_memory_read(&address_space_memory, (unsigned long)(buf),
-                        payload, header_sz, MEMTXATTRS_MEMORY)) {
+                        payload, total_sz, MEMTXATTRS_MEMORY)) {
         qemu_log("Failed to read sq_base_addr_gpa entry\n");
         g_free(payload);
         return;
@@ -228,6 +229,13 @@ static void handle_enum_query_request(BusControllerState *s, HiMsgSqe *sqe,
 
     scan_header = (EnumPldScanHeader *)((uint8_t *)payload + ENUM_PKT_HEADER_SIZE);
     header_sz = ENUM_PKT_HEADER_SIZE + calc_enum_pld_header_size(scan_header, true);
+    if (header_sz + ENUM_TOPO_QUERY_REQ_SIZE > total_sz) {
+        qemu_log("calculate incorrect header size %lu, expect %lu\n",
+                 header_sz, total_sz - ENUM_TOPO_QUERY_REQ_SIZE);
+        g_free(payload);
+        return;
+    }
+
     scan_pdu = (EnumTopoQueryReq *)((uint8_t *)payload + header_sz);
     scan_pdu_com = (EnumPldScanPduCommon *)scan_pdu;
     ub_device_get_str_from_guid(&scan_pdu_com->guid, guid_str, UB_DEV_GUID_STRING_LENGTH + 1);
