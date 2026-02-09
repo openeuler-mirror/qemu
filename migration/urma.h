@@ -29,6 +29,7 @@
 
 #define URMA_SO_PATH "liburma.so.0"
 #define URMA_TOKEN_LEN 32
+#define URMA_JFS_WR_LIST_LEN 256
 
 typedef struct QEMU_PACKED URMADestBlock {
     uint64_t remote_host_addr;
@@ -107,10 +108,16 @@ typedef struct URMAContext {
     urma_jfc_t *jfc;
     urma_jfs_t *jfs;
     urma_jfr_t *jfr;
+    urma_cr_t *cr;
     uint64_t rid;
     urma_token_t jfr_token;
     bool event_mode;
     int max_jfs_depth;
+
+    urma_jfs_wr_t jfs_wr_list[URMA_JFS_WR_LIST_LEN];
+    urma_sge_t src_sge[URMA_JFS_WR_LIST_LEN];
+    urma_sge_t dst_sge[URMA_JFS_WR_LIST_LEN];
+    int nr_wr_polling;
 
     int client_sockfd;
     int listen_fd;
@@ -151,5 +158,7 @@ int qemu_urma_import(URMAContext *urma);
 void urma_migration_cleanup(void);
 void record_migration_log(MigrationState *s);
 int qemu_urma_write_all(URMAContext *urma);
+int qemu_urma_reg_whole_ram_blocks(URMAContext *urma);
+int qemu_urma_write_flush(URMAContext *urma, bool force);
 
 #endif

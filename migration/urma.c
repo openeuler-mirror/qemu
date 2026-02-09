@@ -50,7 +50,7 @@
 #include <dlfcn.h>
 #include "crypto/random.h"
 
-#define URMA_REG_CHUNK_SHIFT 24  /* 16 MB */
+#define URMA_REG_CHUNK_SHIFT 21  /* 2 MB */
 
 /* Do not merge data if larger than this. */
 #define URMA_CHUNK_MERGE_MAX    (1 << URMA_REG_CHUNK_SHIFT)
@@ -95,6 +95,7 @@ int (*urma_poll_jfc_p)(urma_jfc_t *jfc, int cr_cnt, urma_cr_t *cr);
 urma_status_t (*urma_user_ctl_p)(urma_context_t *ctx, urma_user_ctl_in_t *in, urma_user_ctl_out_t *out);
 urma_status_t (*urma_set_context_opt_p)(urma_context_t *ctx, urma_opt_name_t opt_name,
     const void *opt_value, size_t opt_len);
+urma_status_t (*urma_post_jfs_wr_p)(urma_jfs_t *jfs, urma_jfs_wr_t *wr, urma_jfs_wr_t **bad_wr);
 
 typedef struct dl_functions {
     const char *func_name;
@@ -130,6 +131,7 @@ dl_functions urma_dlfunc_list[] = {
     {.func_name = "urma_poll_jfc", .func = (void **)&urma_poll_jfc_p},
     {.func_name = "urma_user_ctl", .func = (void **)&urma_user_ctl_p},
     {.func_name = "urma_set_context_opt", .func = (void **)&urma_set_context_opt_p},
+    {.func_name = "urma_post_jfs_wr", .func = (void **)&urma_post_jfs_wr_p},
 };
 
 static void urma_dlfunc_list_set_null(void)
@@ -412,6 +414,29 @@ static urma_device_t *qemu_get_urma_device(URMAContext *ctx)
     return urma_dev;
 }
 
+static int qemu_init_jfs_post_list(URMAContext *urma)
+{
+    int i;
+    urma_jfs_wr_t *wr;
+    urma_jfs_wr_flag_t flag = { 0 };
+
+    flag.bs.complete_enable = 1;
+
+    for (i = 0; i < URMA_JFS_WR_LIST_LEN; i++) {
+        wr = &urma->jfs_wr_list[i];
+
+        wr->opcode = URMA_OPC_WRITE;
+        wr->flag = flag;
+        wr->rw.src.num_sge = 1;
+        wr->rw.src.sge = &urma->src_sge[i];
+        wr->rw.dst.num_sge = 1;
+        wr->rw.dst.sge = &urma->dst_sge[i];
+        wr->next = NULL;
+    }
+
+    return 0;
+}
+
 static int qemu_get_random_u32(uint32_t *rand_value)
 {
     char random_char[URMA_TOKEN_LEN / CHAR_BIT];
@@ -426,116 +451,6 @@ static int qemu_get_random_u32(uint32_t *rand_value)
     memcpy(rand_value, random_char, sizeof(uint32_t));
 
     return 0;
-}
-
-static int qemu_urma_init_context(URMAContext *ctx)
-{
-    int eid_index, ret;
-    urma_context_aggr_mode_t aggr_mode = URMA_AGGR_MODE_BALANCE;
-
-    ctx->event_mode = false;
-
-    urma_device_t *urma_dev = qemu_get_urma_device(ctx);
-    if (urma_dev == NULL) {
-        qemu_log("URMA: urma get device failed, errno: %d\n", errno);
-        return -EINVAL;
-    }
-
-    ret = urma_query_device_p(urma_dev, &ctx->dev_attr);
-    if (ret) {
-        qemu_log("URMA: Failed to query device %s, ret: %d, errno: %d\n", urma_dev->name, ret, errno);
-        return ret;
-    }
-
-    eid_index = qemu_get_urma_eid_index(urma_dev);
-    if (eid_index < 0) {
-        qemu_log("URMA: Failed to get eid index, ret: %d, errno: %d.\n", eid_index, errno);
-        return eid_index;
-    }
-
-    ctx->urma_ctx = urma_create_context_p(urma_dev, (uint32_t)eid_index);
-    if (ctx->urma_ctx == NULL) {
-        qemu_log("URMA: Failed to create instance with eid: %d, errno: %d.\n", eid_index, errno);
-        return -EINVAL;
-    }
-
-    ret = urma_set_context_opt_p(ctx->urma_ctx, URMA_OPT_AGGR_MODE, &aggr_mode, sizeof(aggr_mode));
-    if (ret) {
-        qemu_log("URMA: Failed to do urma_set_context_opt, ret: %d, errno: %d\n", ret, errno);
-    }
-
-    ctx->jfce = urma_create_jfce_p(ctx->urma_ctx);
-    if (ctx->jfce == NULL) {
-        qemu_log("URMA: Failed to create jfce, errno: %d.\n", errno);
-        goto err_del_ctx;
-    }
-
-    urma_jfc_cfg_t jfc_cfg = {
-        .depth = ctx->dev_attr.dev_cap.max_jfc_depth,
-        .flag = {.value = 0},
-        .jfce = ctx->jfce,
-        .user_ctx = (uint64_t)NULL,
-    };
-    ctx->jfc = urma_create_jfc_p(ctx->urma_ctx, &jfc_cfg);
-    if (ctx->jfc == NULL) {
-        qemu_log("URMA: Failed to create jfc, errno: %d\n", errno);
-        goto err_del_jfce;
-    }
-
-    urma_jfs_cfg_t jfs_cfg = {
-        .depth = ctx->dev_attr.dev_cap.max_jfs_depth,
-        .trans_mode = URMA_TM_RM,
-        .priority = URMA_MAX_PRIORITY, /* Highest priority */
-        .max_sge = 1,
-        .max_inline_data = 0,
-        .rnr_retry = URMA_TYPICAL_RNR_RETRY,
-        .err_timeout = URMA_TYPICAL_ERR_TIMEOUT,
-        .jfc = ctx->jfc,
-        .flag.bs.multi_path = 1,
-        .user_ctx = (uint64_t)NULL
-    };
-    ctx->jfs = urma_create_jfs_p(ctx->urma_ctx, &jfs_cfg);
-    if (ctx->jfs == NULL) {
-        qemu_log("URMA: Failed to create jfs, errno: %d\n", errno);
-        goto err_del_jfc;
-    }
-
-    ctx->max_jfs_depth = ctx->dev_attr.dev_cap.max_jfs_depth;
-
-    if (qemu_get_random_u32(&ctx->jfr_token.token) < 0) {
-        qemu_log("get jfr random token failed, errno: %d\n", errno);
-        goto err_del_jfs;
-    }
-
-    urma_jfr_cfg_t jfr_cfg = {
-        .depth = ctx->dev_attr.dev_cap.max_jfr_depth,
-        .max_sge = 1,
-        .flag.bs.tag_matching = URMA_NO_TAG_MATCHING,
-        .trans_mode = URMA_TM_RM,
-        .min_rnr_timer = URMA_TYPICAL_MIN_RNR_TIMER,
-        .jfc = ctx->jfc,
-        .token_value = ctx->jfr_token,
-        .id = 0
-    };
-    ctx->jfr = urma_create_jfr_p(ctx->urma_ctx, &jfr_cfg);
-    if (ctx->jfr == NULL) {
-        qemu_log("Failed to create jfr, errno: %d\n", errno);
-        goto err_del_jfs;
-    }
-
-    qemu_log("init urma context success.\n");
-    return 0;
-
-err_del_jfs:
-    urma_delete_jfs_p(ctx->jfs);
-err_del_jfc:
-    urma_delete_jfc_p(ctx->jfc);
-err_del_jfce:
-    urma_delete_jfce_p(ctx->jfce);
-err_del_ctx:
-    (void)urma_delete_context_p(ctx->urma_ctx);
-
-    return -EINVAL;
 }
 
 static void qemu_urma_cleanup_context(URMAContext *ctx)
@@ -577,6 +492,127 @@ static void qemu_urma_cleanup_context(URMAContext *ctx)
     qemu_log("clean up urma context success.\n");
 }
 
+static int qemu_urma_init_context(URMAContext *ctx)
+{
+    int eid_index, ret;
+    urma_context_aggr_mode_t aggr_mode = URMA_AGGR_MODE_BALANCE;
+
+    ctx->event_mode = false;
+
+    urma_dev_name = URMA_DEV_DEFAULT_NAME;
+    urma_dev_idx = URMA_DEV_DEFAULT_IDX;
+
+    ret = qemu_init_jfs_post_list(ctx);
+    if (ret) {
+        qemu_log("URMA: Failed to init jfr post list, errno: %d\n", errno);
+        return ret;
+    }
+
+    urma_device_t *urma_dev = qemu_get_urma_device(ctx);
+    if (urma_dev == NULL) {
+        qemu_log("URMA: urma get device failed, errno: %d\n", errno);
+        return -EINVAL;
+    }
+
+    ret = urma_query_device_p(urma_dev, &ctx->dev_attr);
+    if (ret) {
+        qemu_log("URMA: Failed to query device %s, ret: %d, errno: %d\n", urma_dev->name, ret, errno);
+        return ret;
+    }
+
+    eid_index = qemu_get_urma_eid_index(urma_dev);
+    if (eid_index < 0) {
+        qemu_log("URMA: Failed to get eid index, ret: %d, errno: %d.\n", eid_index, errno);
+        return eid_index;
+    }
+
+    ctx->urma_ctx = urma_create_context_p(urma_dev, (uint32_t)eid_index);
+    if (ctx->urma_ctx == NULL) {
+        qemu_log("URMA: Failed to create instance with eid: %d, errno: %d.\n", eid_index, errno);
+        return -EINVAL;
+    }
+
+    if (migrate_onecopy_ram()) {
+        qemu_log("Set aggr_mode balance during onecopy\n");
+        ret = urma_set_context_opt_p(ctx->urma_ctx, URMA_OPT_AGGR_MODE, &aggr_mode, sizeof(aggr_mode));
+        if (ret) {
+            qemu_log("URMA: Failed to do urma_set_context_opt, ret: %d, errno: %d\n", ret, errno);
+        }
+    }
+
+    ctx->jfce = urma_create_jfce_p(ctx->urma_ctx);
+    if (ctx->jfce == NULL) {
+        qemu_log("URMA: Failed to create jfce, errno: %d.\n", errno);
+        goto err;
+    }
+
+    urma_jfc_cfg_t jfc_cfg = {
+        .depth = ctx->dev_attr.dev_cap.max_jfc_depth,
+        .flag = {.value = 0},
+        .jfce = ctx->jfce,
+        .user_ctx = (uint64_t)NULL,
+    };
+    ctx->jfc = urma_create_jfc_p(ctx->urma_ctx, &jfc_cfg);
+    if (ctx->jfc == NULL) {
+        qemu_log("URMA: Failed to create jfc, errno: %d\n", errno);
+        goto err;
+    }
+
+    urma_jfs_cfg_t jfs_cfg = {
+        .depth = ctx->dev_attr.dev_cap.max_jfs_depth,
+        .trans_mode = URMA_TM_RM,
+        .priority = URMA_MAX_PRIORITY, /* Highest priority */
+        .max_sge = 1,
+        .max_inline_data = 0,
+        .rnr_retry = URMA_TYPICAL_RNR_RETRY,
+        .err_timeout = URMA_TYPICAL_ERR_TIMEOUT,
+        .jfc = ctx->jfc,
+        .flag.bs.multi_path = 1,
+        .user_ctx = (uint64_t)NULL
+    };
+    ctx->jfs = urma_create_jfs_p(ctx->urma_ctx, &jfs_cfg);
+    if (ctx->jfs == NULL) {
+        qemu_log("URMA: Failed to create jfs, errno: %d\n", errno);
+        goto err;
+    }
+
+    ctx->max_jfs_depth = ctx->dev_attr.dev_cap.max_jfs_depth;
+
+    ctx->cr = g_new0(urma_cr_t, ctx->max_jfs_depth);
+    if (ctx->cr == NULL) {
+        qemu_log("URMA: Failed to malloc cr, errno: %d\n", errno);
+        goto err;
+    }
+
+    if (qemu_get_random_u32(&ctx->jfr_token.token) < 0) {
+        qemu_log("get jfr random token failed, errno: %d\n", errno);
+        goto err;
+    }
+
+    urma_jfr_cfg_t jfr_cfg = {
+        .depth = ctx->dev_attr.dev_cap.max_jfr_depth,
+        .max_sge = 1,
+        .flag.bs.tag_matching = URMA_NO_TAG_MATCHING,
+        .trans_mode = URMA_TM_RM,
+        .min_rnr_timer = URMA_TYPICAL_MIN_RNR_TIMER,
+        .jfc = ctx->jfc,
+        .token_value = ctx->jfr_token,
+        .id = 0
+    };
+    ctx->jfr = urma_create_jfr_p(ctx->urma_ctx, &jfr_cfg);
+    if (ctx->jfr == NULL) {
+        qemu_log("Failed to create jfr, errno: %d\n", errno);
+        goto err;
+    }
+
+    qemu_log("init urma context success.\n");
+    return 0;
+
+err:
+    qemu_urma_cleanup_context(ctx);
+    return -EINVAL;
+}
+
 static int urma_init_lib(void)
 {
     int ret;
@@ -612,7 +648,7 @@ static void qemu_urma_unreg_ram_blocks(URMAContext *urma)
     qemu_log("unreg all ram blocks success.\n");
 }
 
-static int qemu_urma_reg_whole_ram_blocks(URMAContext *urma)
+int qemu_urma_reg_whole_ram_blocks(URMAContext *urma)
 {
     int i;
     int64_t start_time;
@@ -704,7 +740,7 @@ static int qemu_urma_init_all(URMAContext *urma, bool pin_all)
         goto err;
     }
 
-    if (urma->pin_all) {
+    if (urma->pin_all && urma->is_incoming) {
         ret = qemu_urma_reg_whole_ram_blocks(urma);
         if (ret) {
             goto err;
@@ -956,7 +992,6 @@ static int poll_jfc_wait(URMAContext *ctx, urma_cr_t *cr)
             ctx->nb_polling -= cnt;
         }
 
-        usleep(1);
     }
 
 err:
@@ -967,26 +1002,16 @@ err:
 
 int qemu_flush_urma_write(URMAContext *urma)
 {
-    urma_cr_t *cr = NULL;
-
-    if (!urma) {
+    if (!urma || !urma->cr) {
         qemu_log("enter qemu_flush_urma_write when the urma is uninitialized!\n");
         return -EINVAL;
     }
 
-    cr = g_new0(urma_cr_t, urma->max_jfs_depth);
-    if (cr == NULL) {
-        qemu_log("Failed to alloc urma cr\n");
-        return -EINVAL;
-    }
-
-    if (poll_jfc_wait(urma, cr) != 0) {
+    if (poll_jfc_wait(urma, urma->cr) != 0) {
         qemu_log("Failed to poll jfc, errno: %d\n", errno);
-        g_free(cr);
         return -EINVAL;
     }
 
-    g_free(cr);
     return 0;
 }
 
@@ -1035,28 +1060,54 @@ int qemu_urma_write_all(URMAContext *urma)
 
 static int qemu_urma_write_one(URMAContext *urma,
                                int current_index, uint64_t current_addr,
-                               uint64_t length)
+                               uint64_t length, bool force)
 {
     uintptr_t local_addr, remote_addr, offset;
     URMALocalBlock *block = &(urma->local_ram_blocks.block[current_index]);
-    urma_jfs_wr_flag_t flag = { 0 };
+    urma_jfs_wr_t *wr, *bad_wr = NULL;
+    urma_status_t ret;
 
     if (block->is_ram_block) {
         offset = current_addr - block->offset;
         local_addr = (uintptr_t)(block->local_host_addr + offset);
         remote_addr = (uintptr_t)(block->remote_seg.ubva.va + offset);
-        flag.bs.complete_enable = 1;
 
-        if (urma_write_p(urma->jfs, urma->tjfr, block->import_tseg, block->local_tseg,
-                       remote_addr, local_addr, length,
-                       flag, (uintptr_t)urma->rid) != URMA_SUCCESS) {
-            qemu_log("Failed to do urma_write, local addr: %lx, remote addr: %lx, size: %lx, errno: %d\n",
-                     local_addr, remote_addr, length, errno);
+        if (urma->nr_wr_polling < 0 || urma->nr_wr_polling >= URMA_JFS_WR_LIST_LEN) {
+            qemu_log("Invalid nr wr polling number: %d.\n", urma->nr_wr_polling);
             return -EINVAL;
         }
 
-        urma->nb_polling++;
-        if (urma->nb_polling >= urma->max_jfs_depth) {
+        urma->src_sge[urma->nr_wr_polling].addr = local_addr;
+        urma->src_sge[urma->nr_wr_polling].len = length;
+        urma->src_sge[urma->nr_wr_polling].tseg = block->local_tseg;
+
+        urma->dst_sge[urma->nr_wr_polling].addr = remote_addr;
+        urma->dst_sge[urma->nr_wr_polling].len = length;
+        urma->dst_sge[urma->nr_wr_polling].tseg = block->import_tseg;
+
+        wr = &urma->jfs_wr_list[urma->nr_wr_polling];
+        wr->user_ctx = urma->rid;
+        wr->tjetty = urma->tjfr;
+        wr->next = NULL;
+
+        if (urma->nr_wr_polling > 0) {
+            urma->jfs_wr_list[urma->nr_wr_polling - 1].next = wr;
+        }
+        urma->nr_wr_polling++;
+
+        if (force || urma->nr_wr_polling >= URMA_JFS_WR_LIST_LEN) {
+            ret = urma_post_jfs_wr_p(urma->jfs, urma->jfs_wr_list, &bad_wr);
+            if (ret != URMA_SUCCESS) {
+                qemu_log("Failed to do urma_post_jfs_wr, local addr: %lx, remote addr: %lx, size: %lx, ret: %d, errno: %d\n",
+                        local_addr, remote_addr, length, ret, errno);
+                return -EINVAL;
+            }
+
+            urma->nb_polling += urma->nr_wr_polling;
+            urma->nr_wr_polling = 0;
+        }
+
+        if (force || urma->nb_polling >= urma->max_jfs_depth) {
             if (qemu_flush_urma_write(urma) < 0) {
                 qemu_log("Failed to flush urma write, errno: %d\n", errno);
                 return -EINVAL;
@@ -1071,7 +1122,7 @@ static int qemu_urma_write_one(URMAContext *urma,
     return 0;
 }
 
-static int qemu_urma_write_flush(URMAContext *urma)
+int qemu_urma_write_flush(URMAContext *urma, bool force)
 {
     int ret;
 
@@ -1080,7 +1131,7 @@ static int qemu_urma_write_flush(URMAContext *urma)
     }
 
     ret = qemu_urma_write_one(urma, urma->current_index, urma->current_addr,
-                              urma->current_length);
+                              urma->current_length, force);
     if (ret < 0) {
         return ret;
     }
@@ -1103,7 +1154,7 @@ static int qemu_urma_write(URMAContext *urma,
 
     /* If we cannot merge it, we flush the current buffer first. */
     if (!qemu_urma_buffer_mergable(urma, current_addr, len)) {
-        ret = qemu_urma_write_flush(urma);
+        ret = qemu_urma_write_flush(urma, false);
         if (ret) {
             return ret;
         }
@@ -1120,7 +1171,7 @@ static int qemu_urma_write(URMAContext *urma,
 
     /* flush it if buffer is too large */
     if (urma->current_length >= URMA_CHUNK_MERGE_MAX) {
-        return qemu_urma_write_flush(urma);
+        return qemu_urma_write_flush(urma, true);
     }
 
     return 0;
@@ -1362,8 +1413,13 @@ void record_migration_log(MigrationState *s)
     qemu_log("qmp urma resource initialization and connection cost time: %ld(ms)\n", s->urma_init_time);
     qemu_log("qmp urma exchange info cost time: %ld(ms)\n", s->urma_exchange_time);
     qemu_log("qmp ram registration cost time: %ld(ms)\n", s->ram_reg_time);
-    qemu_log("qmp device migration cost time: %ld(ms)\n", s->dev_mig_time);
-    qemu_log("qmp last memcpy cost time: %ld(ms)\n", s->last_memcpy_time);
+
+    qemu_log("qmp notify cost time: %ld(ms)\n", s->notify_time);
+    qemu_log("qmp bdrv cost time: %ld(ms)\n", s->bdrv_time);
+    qemu_log("qmp precopy cost time: %ld(ms)\n", s->precopy_time);
+    qemu_log("  > qmp cpu sync cost time: %ld(ms)\n", s->cpu_sync_time);
+    qemu_log("  > qmp device migration cost time: %ld(ms)\n", s->dev_mig_time);
+    qemu_log("  > qmp last memcpy cost time: %ld(ms)\n", s->last_memcpy_time);
     qemu_log("qmp downtime %ld(ms)\n", s->downtime);
     qemu_log("qmp setup time %ld(ms)\n", s->setup_time);
     qemu_log("qmp total time %ld(ms)\n", s->total_time);

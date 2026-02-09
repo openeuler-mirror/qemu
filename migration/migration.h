@@ -51,6 +51,10 @@ struct PostcopyBlocktimeContext;
  */
 #define CLEAR_BITMAP_SHIFT_MAX            31
 
+#ifdef CONFIG_URMA_MIGRATION
+#define MIGRATION_URMA_BW_LIMIT (5*1000*1000)
+#endif
+
 /* This is an abstraction of a "temp huge page" for postcopy's purpose */
 typedef struct {
     /*
@@ -482,8 +486,13 @@ struct MigrationState {
     int64_t urma_init_time;
     int64_t urma_exchange_time;
     int64_t last_memcpy_time;
+    int64_t precopy_time;
     int64_t ram_reg_time;
     int64_t dev_mig_time;
+    int64_t cpu_sync_time;
+    int64_t notify_time;
+    int64_t bdrv_time;
+    bool migration_finish;
     /* Number of migration iterations */
     uint64_t iteration_num;
 };

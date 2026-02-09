@@ -282,13 +282,22 @@ void migration_incoming_transport_cleanup(MigrationIncomingState *mis)
     }
 }
 
+#ifdef CONFIG_URMA_MIGRATION
+static void* urma_migration_cleanup_func(void* p)
+{
+    urma_migration_cleanup();
+    return NULL;
+}
+#endif
+
 void migration_incoming_state_destroy(void)
 {
     struct MigrationIncomingState *mis = migration_incoming_get_current();
 
 #ifdef CONFIG_URMA_MIGRATION
     if (migrate_urma()) {
-        urma_migration_cleanup();
+        pthread_t thread;
+        pthread_create(&thread, NULL, urma_migration_cleanup_func, NULL);
     }
 #endif
 
@@ -635,6 +644,7 @@ static void process_incoming_migration_bh(void *opaque)
 {
     Error *local_err = NULL;
     MigrationIncomingState *mis = opaque;
+    int64_t start_time;
 
     trace_vmstate_downtime_checkpoint("dst-precopy-bh-enter");
 
@@ -672,7 +682,9 @@ static void process_incoming_migration_bh(void *opaque)
     if (!global_state_received() ||
         global_state_get_runstate() == RUN_STATE_RUNNING) {
         if (autostart) {
+            start_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
             vm_start();
+            qemu_log("vm start cost time: %ld ms\n", qemu_clock_get_ms(QEMU_CLOCK_REALTIME) - start_time);
         } else {
             runstate_set(RUN_STATE_PAUSED);
         }
@@ -2718,6 +2730,7 @@ static int migration_completion_precopy(MigrationState *s,
                                         int *current_active_state)
 {
     int ret;
+    int64_t start_time;
 
     qemu_mutex_lock_iothread();
     migration_downtime_start(s);
@@ -2726,6 +2739,7 @@ static int migration_completion_precopy(MigrationState *s,
     s->vm_old_state = runstate_get();
     global_state_store();
 
+    start_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
     ret = migration_stop_vm(RUN_STATE_FINISH_MIGRATE);
     trace_migration_completion_vm_stop(ret);
     if (ret < 0) {
@@ -2743,9 +2757,12 @@ static int migration_completion_precopy(MigrationState *s,
      * to remember to reactivate them if migration fails or is cancelled.
      */
     s->block_inactive = !migrate_colo();
+    qemu_log("stop vm cost time: %ld ms\n", qemu_clock_get_ms(QEMU_CLOCK_REALTIME) - start_time);
     migration_rate_set(RATE_LIMIT_DISABLED);
+    start_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
     ret = qemu_savevm_state_complete_precopy(s->to_dst_file, false,
                                              s->block_inactive);
+    s->precopy_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME) - start_time;
 out_unlock:
     qemu_mutex_unlock_iothread();
     return ret;
@@ -3107,6 +3124,7 @@ static void migration_update_counters(MigrationState *s,
     /* Expected bandwidth when switching over to destination QEMU */
     double expected_bw_per_ms;
     double bandwidth;
+    uint64_t effective_bw;
 
     if (current_time < s->iteration_start_time + BUFFER_DELAY) {
         return;
@@ -3117,6 +3135,13 @@ static void migration_update_counters(MigrationState *s,
     transferred = current_bytes - s->iteration_initial_bytes;
     time_spent = current_time - s->iteration_start_time;
     bandwidth = (double)transferred / time_spent;
+    effective_bw = bandwidth;
+
+#ifdef CONFIG_URMA_MIGRATION
+    if (migrate_urma()) {
+        effective_bw = MIN(effective_bw, MIGRATION_URMA_BW_LIMIT);
+    }
+#endif
 
     if (switchover_bw) {
         /*
@@ -3126,7 +3151,7 @@ static void migration_update_counters(MigrationState *s,
         expected_bw_per_ms = switchover_bw / 1000;
     } else {
         /* If the user doesn't specify bandwidth, we use the estimated */
-        expected_bw_per_ms = bandwidth;
+        expected_bw_per_ms = effective_bw;
     }
 
     s->threshold_size = expected_bw_per_ms * migrate_downtime_limit();
@@ -3421,6 +3446,9 @@ static void *migration_thread(void *opaque)
     int64_t setup_start = qemu_clock_get_ms(QEMU_CLOCK_HOST);
     MigThrError thr_error;
     bool urgent = false;
+#ifdef CONFIG_URMA_MIGRATION
+    int ret;
+#endif
 
     /* report migration thread pid to libvirt */
     qapi_event_send_migration_pid(qemu_get_thread_id());
@@ -3477,8 +3505,26 @@ static void *migration_thread(void *opaque)
 
 #ifdef CONFIG_URMA_MIGRATION
     if (migrate_urma()) {
-        qemu_exchange_urma_info(qemu_file_get_return_path(s->to_dst_file), s->urma_ctx, false);
-        qemu_urma_import(s->urma_ctx);
+        ret = qemu_urma_reg_whole_ram_blocks(s->urma_ctx);
+        if (ret) {
+            migrate_set_state(&s->state, s->state, MIGRATION_STATUS_FAILED);
+            qemu_file_set_error(s->to_dst_file, ret);
+            goto out;
+        }
+
+        ret = qemu_exchange_urma_info(qemu_file_get_return_path(s->to_dst_file), s->urma_ctx, false);
+        if (ret) {
+            migrate_set_state(&s->state, s->state, MIGRATION_STATUS_FAILED);
+            qemu_file_set_error(s->to_dst_file, ret);
+            goto out;
+        }
+
+        ret = qemu_urma_import(s->urma_ctx);
+        if (ret) {
+            migrate_set_state(&s->state, s->state, MIGRATION_STATUS_FAILED);
+            qemu_file_set_error(s->to_dst_file, ret);
+            goto out;
+        }
     }
 #endif
 
