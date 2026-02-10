@@ -61,6 +61,7 @@ stanza like the following::
          imply PCI_DEVICES
          imply VFIO_AMD_XGBE
          imply VFIO_XGMAC
+         imply VFIO_HISI_MMCD
          select A15MPCORE
          select ACPI
          select ARM_SMMUV3

@@ -117,6 +117,7 @@ ERROR_RULE_LIST = [
     {'device':'usb-storage', 'expected':True},             # drive property not set
     {'device':'vfio-amd-xgbe', 'expected':True},           # -device vfio-amd-xgbe: vfio error: wrong host device name
     {'device':'vfio-calxeda-xgmac', 'expected':True},      # -device vfio-calxeda-xgmac: vfio error: wrong host device name
+    {'device':'vfio-hisi-mmcd', 'expected':True},           # -device vfio-hisi-mmcd: vfio error: wrong host device name
     {'device':'vfio-pci', 'expected':True},                # No provided host device
     {'device':'vfio-pci-igd-lpc-bridge', 'expected':True}, # VFIO dummy ISA/LPC bridge must have address 1f.0
     {'device':'vhost-scsi.*', 'expected':True},            # vhost-scsi: missing wwpn

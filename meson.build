@@ -607,6 +607,11 @@ have_urma_migration = get_option('urma_migration') \
   .require(cpu == 'aarch64', error_message: 'urma_migration is supported only on aarch64') \
   .allowed()
 
+have_pas_expansion = false
+if get_option('pas_expansion')
+  have_pas_expansion = true
+endif
+
 # vhost
 have_vhost_user = get_option('vhost_user') \
   .disable_auto_if(targetos != 'linux') \
@@ -2304,6 +2309,7 @@ if get_option('tcg').allowed()
   config_host_data.set('CONFIG_TCG_INTERPRETER', tcg_arch == 'tci')
 endif
 config_host_data.set('CONFIG_TPM', have_tpm)
+config_host_data.set('CONFIG_PAS_EXPANSION', have_pas_expansion)
 config_host_data.set('CONFIG_TSAN', get_option('tsan'))
 config_host_data.set('CONFIG_USB_LIBUSB', libusb.found())
 config_host_data.set('CONFIG_VDE', vde.found())
@@ -3025,6 +3031,7 @@ have_ivshmem = config_host_data.get('CONFIG_EVENTFD')
 host_kconfig = \
   (get_option('fuzzing') ? ['CONFIG_FUZZ=y'] : []) + \
   (have_tpm ? ['CONFIG_TPM=y'] : []) + \
+  (have_pas_expansion ? ['CONFIG_PAS_EXPANSION=y'] : []) + \
   (pixman.found() ? ['CONFIG_PIXMAN=y'] : []) + \
   (spice.found() ? ['CONFIG_SPICE=y'] : []) + \
   (have_ivshmem ? ['CONFIG_IVSHMEM=y'] : []) + \
@@ -4274,6 +4281,7 @@ summary_info += {'vhost-user-crypto support': have_vhost_user_crypto}
 summary_info += {'vhost-user-blk server support': have_vhost_user_blk_server}
 summary_info += {'vhost-vdpa support': have_vhost_vdpa}
 summary_info += {'build guest agent': have_ga}
+summary_info += {'pas_expansion support': have_pas_expansion}
 summary(summary_info, bool_yn: true, section: 'Configurable features')
 
 # Compilation information

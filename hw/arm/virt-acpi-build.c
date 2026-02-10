@@ -60,6 +60,9 @@
 #include "hw/acpi/viot.h"
 #include "kvm_arm.h"
 #include "hw/virtio/virtio-acpi.h"
+#ifdef CONFIG_PAS_EXPANSION
+#include "hw/vfio/vfio-hisi-mmcd.h"
+#endif
 #ifdef CONFIG_UB
 #include "hw/ub/ub_acpi.h"
 #endif
@@ -544,6 +547,51 @@ static void acpi_dsdt_add_tpm(Aml *scope, VirtMachineState *vms)
                                   (uint32_t)memory_region_size(sbdev_mr),
                                   AML_READ_WRITE));
     aml_append(dev, aml_name_decl("_CRS", crs));
+    aml_append(scope, dev);
+}
+#endif
+
+#ifdef CONFIG_PAS_EXPANSION
+static void acpi_dsdt_add_hisi_mmcd(Aml *scope, VirtMachineState *vms)
+{
+    Object *obj = object_resolve_path_type("", TYPE_VFIO_HISI_MMCD, NULL);
+    if (!obj) {
+        return;
+    }
+    SysBusDevice *sbdev = SYS_BUS_DEVICE(obj);
+    PlatformBusDevice *pbus = PLATFORM_BUS_DEVICE(vms->platform_bus_dev);
+    hwaddr pbus_base = vms->memmap[VIRT_PLATFORM_BUS].base;
+    VFIOPlatformDevice *vdev = VFIO_PLATFORM_DEVICE(obj);
+    VFIODevice *vbasedev = &vdev->vbasedev;
+    g_autofree char *tmpname = g_strdup(vbasedev->name);
+    char *colon = strchr(tmpname, ':');
+    if (colon) {
+        *colon = '\0';
+    }
+    Aml *dev = aml_device("MMCD");
+    aml_append(dev, aml_name_decl("_HID", aml_string("%s", tmpname)));
+    aml_append(dev, aml_name_decl("_UID", aml_int(0)));
+    Aml *crs = aml_resource_template();
+    for (int i = 0; i < vbasedev->num_regions; i++) {
+        MemoryRegion *region = sysbus_mmio_get_region(sbdev, i);
+        if (!region) {
+            continue;
+        }
+        hwaddr region_base = platform_bus_get_mmio_addr(pbus, sbdev, i);
+        hwaddr region_size = memory_region_size(region);
+        region_base += pbus_base;
+        aml_append(crs,
+                   aml_qword_memory(AML_POS_DECODE, AML_MIN_FIXED,
+                                    AML_MAX_FIXED, AML_NON_CACHEABLE,
+                                    AML_READ_WRITE, 0, region_base,
+                                    region_base + region_size - 1, 0, region_size));
+    }
+    aml_append(dev, aml_name_decl("_CRS", crs));
+    Aml *rst_method = aml_method("_RST", 0, AML_NOTSERIALIZED);
+    aml_append(dev, rst_method);
+    Aml *sta_method = aml_method("_STA", 0, AML_NOTSERIALIZED);
+    aml_append(sta_method, aml_return(aml_int(0xF)));
+    aml_append(dev, sta_method);
     aml_append(scope, dev);
 }
 #endif
@@ -1371,6 +1419,9 @@ build_dsdt(GArray *table_data, BIOSLinker *linker, VirtMachineState *vms)
 
 #ifdef CONFIG_UB
     acpi_dsdt_add_ub(scope);
+#endif
+#ifdef CONFIG_PAS_EXPANSION
+    acpi_dsdt_add_hisi_mmcd(scope, vms);
 #endif
 #ifdef CONFIG_UBMEM_VMMU
     if (vms->ubmem_vmmu_realized) {
