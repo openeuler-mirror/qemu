@@ -290,6 +290,11 @@ static void qemu_urma_free_blocks(URMAContext *urma)
 
         g_free(block->block_name);
         block->block_name = NULL;
+
+        if (urma->blockmap) {
+            g_hash_table_destroy(urma->blockmap);
+            urma->blockmap = NULL;
+        }
     }
 
     g_free(local->block);
