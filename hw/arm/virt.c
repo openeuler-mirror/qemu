@@ -42,6 +42,9 @@
 #include "hw/block/flash.h"
 #include "hw/vfio/vfio-calxeda-xgmac.h"
 #include "hw/vfio/vfio-amd-xgbe.h"
+#ifdef CONFIG_PAS_EXPANSION
+#include "hw/vfio/vfio-hisi-mmcd.h"
+#endif
 #include "hw/display/ramfb.h"
 #include "net/net.h"
 #include "sysemu/device_tree.h"
@@ -185,7 +188,9 @@ static const MemMapEntry base_memmap[] = {
     [VIRT_CPUFREQ] =            { 0x0b000000, 0x00010000 },
     [VIRT_SMMU_ACCEL] =        { 0x0b010000, 0x00ff0000},
     /* ...repeating for a total of NUM_VIRTIO_TRANSPORTS, each of that size */
+#if !defined(CONFIG_PAS_EXPANSION)
     [VIRT_PLATFORM_BUS] =       { 0x0c000000, 0x02000000 },
+#endif
     [VIRT_SECURE_MEM] =         { 0x0e000000, 0x01000000 },
     [VIRT_PCIE_MMIO] =          { 0x10000000, 0x2eff0000 },
     [VIRT_PCIE_PIO] =           { 0x3eff0000, 0x00010000 },
@@ -220,6 +225,9 @@ static MemMapEntry extended_memmap[] = {
     /* Additional 64 MB redist region (can contain up to 512 redistributors) */
     [VIRT_HIGH_GIC_REDIST2] =   { 0x0, 64 * MiB },
     [VIRT_HIGH_PCIE_ECAM] =     { 0x0, 256 * MiB },
+#ifdef CONFIG_PAS_EXPANSION
+    [VIRT_PLATFORM_BUS] =       { 0x0, 8 * GiB },
+#endif
     /* Second PCIe window */
     [VIRT_HIGH_PCIE_MMIO] =     { 0x0, 512 * GiB },
 #ifdef CONFIG_UBMEM_VMMU
@@ -1962,7 +1970,11 @@ static void create_platform_bus(VirtMachineState *vms)
     dev = qdev_new(TYPE_PLATFORM_BUS_DEVICE);
     dev->id = g_strdup(TYPE_PLATFORM_BUS_DEVICE);
     qdev_prop_set_uint32(dev, "num_irqs", PLATFORM_BUS_NUM_IRQS);
+#ifdef CONFIG_PAS_EXPANSION
+    qdev_prop_set_uint64(dev, "mmio_size", vms->memmap[VIRT_PLATFORM_BUS].size);
+#else
     qdev_prop_set_uint32(dev, "mmio_size", vms->memmap[VIRT_PLATFORM_BUS].size);
+#endif
     sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
     vms->platform_bus_dev = dev;
 
@@ -2145,6 +2157,9 @@ static inline bool *virt_get_high_memmap_enabled(VirtMachineState *vms,
         &vms->highmem_ub_mem_cc,
         &vms->highmem_ub_mem_nc,
 #endif // CONFIG_UB
+#ifdef CONFIG_PAS_EXPANSION
+        &vms->highmem_platform_bus,
+#endif
     };
 
     assert(ARRAY_SIZE(extended_memmap) - VIRT_LOWMEMMAP_LAST ==
@@ -4424,6 +4439,9 @@ static void virt_instance_init(Object *obj)
     vms->highmem_ub_mem_nc = true;
     vms->ub_cluster_mode = false;
     vms->fm_deployment = false;
+#endif
+#ifdef CONFIG_PAS_EXPANSION
+    vms->highmem_platform_bus = true;
 #endif
 #ifdef CONFIG_UBMEM_VMMU
     vms->ubmem_vmmu_reg = true;

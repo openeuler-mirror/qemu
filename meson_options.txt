@@ -109,6 +109,8 @@ option('dbus_display', type: 'feature', value: 'auto',
        description: '-display dbus support')
 option('tpm', type : 'feature', value : 'auto',
        description: 'TPM support')
+option('pas_expansion', type : 'boolean', value : false,
+       description: 'expand the address space of the platform bus')
 
 # Do not enable it by default even for Mingw32, because it doesn't
 # work on Wine.

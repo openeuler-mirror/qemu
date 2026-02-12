@@ -42,6 +42,12 @@ config VFIO_IGD
     default y if PC_PCI
     depends on VFIO_PCI
 
+config VFIO_HISI_MMCD
+    bool
+    default y
+    select VFIO
+    depends on VFIO_PLATFORM
+
 config VFIO_HCT
     bool
     default y

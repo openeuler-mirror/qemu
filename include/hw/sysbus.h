@@ -7,7 +7,11 @@
 #include "exec/memory.h"
 #include "qom/object.h"
 
+#ifdef CONFIG_PAS_EXPANSION
+#define QDEV_MAX_MMIO 64
+#else
 #define QDEV_MAX_MMIO 32
+#endif
 #define QDEV_MAX_PIO 32
 
 #define TYPE_SYSTEM_BUS "System"

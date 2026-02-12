@@ -136,7 +136,9 @@ enum {
     VIRT_KAE_DEVICE,
     VIRT_PCIE_PIO,
     VIRT_PCIE_ECAM,
+#if !defined(CONFIG_PAS_EXPANSION)
     VIRT_PLATFORM_BUS,
+#endif
     VIRT_GPIO,
     VIRT_SECURE_UART,
     VIRT_SECURE_MEM,
@@ -153,6 +155,9 @@ enum {
 enum {
     VIRT_HIGH_GIC_REDIST2 =  VIRT_LOWMEMMAP_LAST,
     VIRT_HIGH_PCIE_ECAM,
+#ifdef CONFIG_PAS_EXPANSION
+    VIRT_PLATFORM_BUS,
+#endif
     VIRT_HIGH_PCIE_MMIO,
 #ifdef CONFIG_UBMEM_VMMU
     VIRT_UBMEM_VMMU_REG,
@@ -247,6 +252,9 @@ struct VirtMachineState {
     bool ubmem_vmmu_mem;
     bool ubmem_vmmu_reg;
     bool ubmem_vmmu_realized;
+#endif
+#ifdef CONFIG_PAS_EXPANSION
+    bool highmem_platform_bus;
 #endif
     bool its;
     bool tcg_its;
