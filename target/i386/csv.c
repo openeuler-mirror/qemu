@@ -12,10 +12,12 @@
  */
 
 #include "qemu/osdep.h"
+#include "qemu/base64.h"
 #include "qemu/error-report.h"
 #include "qapi/error.h"
 #include "sysemu/kvm.h"
 #include "exec/address-spaces.h"
+#include "exec/ramblock.h"
 #include "migration/blocker.h"
 #include "migration/qemu-file.h"
 #include "migration/misc.h"
@@ -32,6 +34,8 @@
 #include "cpu.h"
 #include "sev.h"
 #include "csv.h"
+
+uint32_t csv3_pin_pages_count = 0;
 
 bool csv_kvm_cpu_reset_inhibit;
 uint32_t kvm_hygon_coco_ext;
@@ -198,6 +202,45 @@ err:
     return ret;
 }
 
+void
+csv3_launch_finish_ex(char *host_data)
+{
+    int ret, fw_error;
+    g_autofree guchar *blob = NULL;
+    gsize len;
+    struct kvm_csv3_launch_finish_ex *finish_ex = NULL;
+
+    if (!host_data) {
+        exit(1);
+    }
+
+    blob = qbase64_decode(host_data, -1, &len, NULL);
+
+    if (!blob) {
+        exit(1);
+    }
+
+    if (len != KVM_CSV3_HOST_DATA_SIZE) {
+        error_report("%s: host_data length of %" G_GSIZE_FORMAT
+                     " not equal to %d",
+                     __func__, len, KVM_CSV3_HOST_DATA_SIZE);
+        exit(1);
+    }
+
+    finish_ex = g_malloc0(sizeof(struct kvm_csv3_launch_finish_ex));
+    memcpy(finish_ex->host_data, blob, len);
+
+    trace_kvm_csv3_launch_finish_ex(host_data);
+    ret = csv3_ioctl(KVM_CSV3_LAUNCH_FINISH_EX, finish_ex, &fw_error);
+    if (ret) {
+        error_report("%s: CSV3 LAUNCH_FINISH_EX ret=%d fw_error=%d '%s'",
+                     __func__, ret, fw_error, fw_error_to_str(fw_error));
+        exit(1);
+    }
+
+    g_free(finish_ex);
+}
+
 int csv3_shared_region_dma_map(uint64_t start, uint64_t end)
 {
     MemoryRegionSection section;
@@ -273,35 +316,176 @@ end:
 void csv3_shared_region_release(uint64_t gpa, uint32_t num_pages)
 {
     struct kvm_csv3_handle_memory mem = { 0 };
-    MemoryRegion *mr = NULL;
+    uint64_t gpa_start = gpa;
+    uint64_t gpa_end = gpa + ((uint64_t)num_pages << TARGET_PAGE_BITS);
+    uint64_t length;
+    RAMBlock *block = NULL;
+    ram_addr_t offset;
     void *hva;
     int ret;
 
-    if (!csv3_enabled())
+    if (!csv3_enabled() ||
+        !(kvm_hygon_coco_ext_inuse & KVM_CAP_HYGON_COCO_EXT_CSV3_SP_MGR))
         return;
 
     if (!gpa || !num_pages)
         return;
 
-    mem.gpa = (__u64)gpa;
-    mem.num_pages = (__u32)num_pages;
-    mem.opcode = (__u32)KVM_CSV3_RELEASE_SHARED_MEMORY;
+    trace_kvm_csv3_shared_region_release(gpa, num_pages);
 
-    /* unpin the pages */
-    ret = csv3_ioctl(KVM_CSV3_HANDLE_MEMORY, &mem, NULL);
-    if (ret <= 0) {
-        if (ret < 0)
-            error_report("%s: CSV3 unpin failed ret %d", __func__, ret);
+    while (gpa_start < gpa_end) {
+        MemoryRegionSection mrs = memory_region_find(get_system_memory(),
+                                                     gpa_start,
+                                                     gpa_end - gpa_start);
+
+        /* No valid MemoryRegion intersects the range [gpa_start, gpa_end). */
+        if (!mrs.mr) {
+            break;
+        }
+
+        gpa_start = (uint64_t)mrs.offset_within_address_space;
+        length = int128_get64(mrs.size);
+
+        /* Only handle guest ram. */
+        if (!memory_region_is_ram(mrs.mr) ||
+            memory_region_is_romd(mrs.mr) ||
+            memory_region_is_rom(mrs.mr) ||
+            !strcmp(memory_region_name(mrs.mr), "system.flash0") ||
+            !strcmp(memory_region_name(mrs.mr), "system.flash1") ||
+            !strcmp(memory_region_name(mrs.mr), "vga.vram")) {
+            gpa_start += length;
+            memory_region_unref(mrs.mr);
+            continue;
+        }
+
+        hva = qemu_map_ram_ptr(mrs.mr->ram_block, mrs.offset_within_region);
+        memory_region_unref(mrs.mr);
+
+        block = qemu_ram_block_from_host(hva, false, &offset);
+        if (!block || offset < ((uint64_t)hva & (block->mr->align - 1))) {
+            gpa_start += 1 << TARGET_PAGE_BITS;
+            continue;
+        }
+
+        if (length > (block->max_length - offset)) {
+            length = block->max_length - offset;
+        }
+
+        mem.gpa = (__u64)gpa_start;
+        mem.num_pages = (__u32)(length >> TARGET_PAGE_BITS);
+        mem.opcode = (__u32)KVM_CSV3_RELEASE_SHARED_MEMORY;
+
+        /* Return error only when KVM not support this ioctl. */
+        ret = csv3_ioctl(KVM_CSV3_HANDLE_MEMORY, &mem, NULL);
+        if (ret < 0) {
+            error_report("%s: CSV3 unpin failed, ret %d", __func__, ret);
+            return;
+        }
+
+        if (mem.handled0) {
+            trace_kvm_csv3_unpinned(gpa_start, mem.start_hva, mem.unpinned);
+            qatomic_sub(&csv3_pin_pages_count, mem.unpinned);
+            gpa_start += (uint64_t)mem.handled0 << TARGET_PAGE_BITS;
+        } else {
+            gpa_start += 1 << TARGET_PAGE_BITS;
+            continue;
+        }
+
+        ret = madvise((void *)mem.start_hva,
+                      (uint64_t)mem.unpinned << TARGET_PAGE_BITS,
+                      block->fd == -1 ? MADV_DONTNEED : MADV_REMOVE);
+        /* madvise failure is not fatal. */
+        if (ret) {
+            error_report("%s: madvise [0x%llx, 0x%llx) failed:%d",
+                         __func__, mem.start_hva,
+                         mem.start_hva + ((uint64_t)mem.unpinned << TARGET_PAGE_BITS) - 1, ret);
+        } else {
+            trace_kvm_csv3_madvise_release(mem.start_hva, mem.unpinned);
+        }
+    }
+
+    trace_kvm_csv3_pin_pages_count(qatomic_read(&csv3_pin_pages_count));
+}
+
+void csv3_shared_region_get(uint64_t gpa, uint32_t num_pages)
+{
+    struct kvm_csv3_handle_memory mem = { 0 };
+    uint64_t gpa_start = gpa;
+    uint64_t gpa_end = gpa + ((uint64_t)num_pages << TARGET_PAGE_BITS);
+    uint64_t length;
+    RAMBlock *block = NULL;
+    ram_addr_t offset;
+    void *hva;
+    int ret;
+
+    if (!csv3_enabled() ||
+        !(kvm_hygon_coco_ext_inuse & KVM_CAP_HYGON_COCO_EXT_CSV3_SP_MGR))
         return;
+
+    if (!gpa || !num_pages)
+        return;
+
+    trace_kvm_csv3_shared_region_get(gpa, num_pages);
+
+    while (gpa_start < gpa_end) {
+        MemoryRegionSection mrs = memory_region_find(get_system_memory(),
+                                                     gpa_start,
+                                                     gpa_end - gpa_start);
+
+        /* No valid MemoryRegion intersects the range [gpa_start, gpa_end). */
+        if (!mrs.mr) {
+            break;
+        }
+
+        gpa_start = (uint64_t)mrs.offset_within_address_space;
+        length = int128_get64(mrs.size);
+
+        /* Only handle guest ram. */
+        if (!memory_region_is_ram(mrs.mr) ||
+            memory_region_is_romd(mrs.mr) ||
+            memory_region_is_rom(mrs.mr) ||
+            !strcmp(memory_region_name(mrs.mr), "system.flash0") ||
+            !strcmp(memory_region_name(mrs.mr), "system.flash1") ||
+            !strcmp(memory_region_name(mrs.mr), "vga.vram")) {
+            gpa_start += length;
+            memory_region_unref(mrs.mr);
+            continue;
+        }
+
+        hva = qemu_map_ram_ptr(mrs.mr->ram_block, mrs.offset_within_region);
+        memory_region_unref(mrs.mr);
+
+        block = qemu_ram_block_from_host(hva, false, &offset);
+        if (!block || offset < ((uint64_t)hva & (block->mr->align - 1))) {
+            gpa_start += 1 << TARGET_PAGE_BITS;
+            continue;
+        }
+
+        if (length > (block->max_length - offset)) {
+            length = block->max_length - offset;
+        }
+
+        mem.gpa = (__u64)gpa_start;
+        mem.num_pages = (__u32)(length >> TARGET_PAGE_BITS);
+        mem.opcode = (__u32)KVM_CSV3_GET_SHARED_MEMORY;
+
+        /* Return error only when KVM not support this ioctl. */
+        ret = csv3_ioctl(KVM_CSV3_HANDLE_MEMORY, &mem, NULL);
+        if (ret < 0) {
+            error_report("%s: CSV3 pin failed, ret %d", __func__, ret);
+            return;
+        }
+
+        if (mem.handled1) {
+            trace_kvm_csv3_pinned(gpa_start, mem.pinned);
+            qatomic_add(&csv3_pin_pages_count, mem.pinned);
+            gpa_start += (uint64_t)mem.handled1 << TARGET_PAGE_BITS;
+        } else {
+            gpa_start += 1 << TARGET_PAGE_BITS;
+        }
     }
 
-    /* drop the pages */
-    hva = gpa2hva(&mr, gpa, num_pages << TARGET_PAGE_BITS, NULL);
-    if (hva) {
-        ret = madvise(hva, num_pages << TARGET_PAGE_BITS, MADV_DONTNEED);
-        if (ret)
-            error_report("%s: madvise failed %d", __func__, ret);
-    }
+    trace_kvm_csv3_pin_pages_count(qatomic_read(&csv3_pin_pages_count));
 }
 
 void csv3_shared_region_dma_unmap(uint64_t start, uint64_t end)
@@ -352,7 +536,6 @@ void csv3_shared_region_dma_unmap(uint64_t start, uint64_t end)
                 QTAILQ_REMOVE(&s->dma_map_regions_list, pos, list);
                 g_free(pos);
             }
-            break;
         }
         if ((start + size) <= curr_end) {
             break;

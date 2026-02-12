@@ -806,6 +806,7 @@ static void vfio_disconnect_container(VFIOGroup *group)
     if (QLIST_EMPTY(&container->group_list)) {
         if (kvm_csv3_enabled()) {
             shared_memory_listener_unregister();
+            memory_listener_unregister(&bcontainer->csv3_mmio_listener);
         } else {
             memory_listener_unregister(&bcontainer->listener);
         }

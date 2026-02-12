@@ -75,6 +75,7 @@ struct SevGuestState {
     char *user_id;
     char *secret_header_file;
     char *secret_file;
+    char *host_data;
 
     /* runtime state */
     uint32_t handle;
@@ -425,6 +426,37 @@ sev_guest_set_secret_file(Object *obj, const char *value, Error **errp)
 }
 
 static char *
+sev_guest_get_host_data(Object *obj, Error **errp)
+{
+    SevGuestState *s = SEV_GUEST(obj);
+
+    return g_strdup(s->host_data);
+}
+
+static void
+sev_guest_set_host_data(Object *obj, const char *value, Error **errp)
+{
+    SevGuestState *s = SEV_GUEST(obj);
+    g_autofree guchar *blob = NULL;
+    gsize len;
+
+    s->host_data = g_strdup(value);
+
+    blob = qbase64_decode(s->host_data, -1, &len, errp);
+
+    if (!blob) {
+        return;
+    }
+
+    // The host-data length must be 64 bytes
+    if (len != 64) {
+        error_setg(errp, "parameter length of %" G_GSIZE_FORMAT
+                   " not equal to 64", len);
+        return;
+    }
+}
+
+static char *
 sev_guest_get_sev_device(Object *obj, Error **errp)
 {
     SevGuestState *sev = SEV_GUEST(obj);
@@ -492,6 +524,11 @@ sev_guest_class_init(ObjectClass *oc, void *data)
                                   sev_guest_set_secret_file);
     object_class_property_set_description(oc, "secret-file",
             "file of the guest owner's secret");
+    object_class_property_add_str(oc, "host-data",
+                                  sev_guest_get_host_data,
+                                  sev_guest_set_host_data);
+    object_class_property_set_description(oc, "host-data",
+            "base64-encoded host supplied data");
 }
 
 static void
@@ -1012,6 +1049,13 @@ sev_launch_finish(SevGuestState *sev)
 {
     int ret, error;
 
+    if (csv3_enabled() &&
+        sev->host_data &&
+        (kvm_hygon_coco_ext_inuse & KVM_CAP_HYGON_COCO_EXT_CSV3_LFINISH_EX)) {
+         csv3_launch_finish_ex(sev->host_data);
+         goto common_finish;
+    }
+
     trace_kvm_sev_launch_finish();
     ret = sev_ioctl(sev->sev_fd, KVM_SEV_LAUNCH_FINISH, 0, &error);
     if (ret) {
@@ -1020,6 +1064,7 @@ sev_launch_finish(SevGuestState *sev)
         exit(1);
     }
 
+common_finish:
     sev_set_guest_state(sev, SEV_STATE_RUNNING);
 
     /* add migration blocker */

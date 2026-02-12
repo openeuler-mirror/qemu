@@ -30,6 +30,11 @@ int csv3_launch_encrypt_vmcb(void)
     g_assert_not_reached();
 }
 
+void csv3_launch_finish_ex(char *host_data)
+{
+    g_assert_not_reached();
+}
+
 int csv3_shared_region_dma_map(uint64_t start, uint64_t end)
 {
     return 0;
@@ -41,6 +46,11 @@ void csv3_shared_region_dma_unmap(uint64_t start, uint64_t end)
 }
 
 void csv3_shared_region_release(uint64_t gpa, uint32_t num_pages)
+{
+
+}
+
+void csv3_shared_region_get(uint64_t gpa, uint32_t num_pages)
 {
 
 }

@@ -5651,7 +5651,7 @@ SRST
                  -object secret,id=sec0,keyid=secmaster0,format=base64,\\
                      data=$SECRET,iv=$(<iv.b64)
 
-    ``-object sev-guest,id=id,cbitpos=cbitpos,reduced-phys-bits=val,[sev-device=string,policy=policy,handle=handle,dh-cert-file=file,session-file=file,kernel-hashes=on|off,user-id=id,secret-header-file=file,secret-file=file]``
+    ``-object sev-guest,id=id,cbitpos=cbitpos,reduced-phys-bits=val,[sev-device=string,policy=policy,handle=handle,dh-cert-file=file,session-file=file,kernel-hashes=on|off,user-id=id,secret-header-file=file,secret-file=file,host-data=string]``
         Create a Secure Encrypted Virtualization (SEV) guest object,
         which can be used to provide the guest memory encryption support
         on AMD processors.
@@ -5703,6 +5703,9 @@ SRST
 
         The ``secret-file`` set the file of the guest owner's secret, this
         only support on Hygon CPUs. (Since 8.2)
+
+        The ``host-data`` set the host supplied data. (encoded with base64)
+        (Since 8.2)
 
         e.g to launch a SEV guest
 
