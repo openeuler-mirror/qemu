@@ -419,7 +419,6 @@ static uint64_t ub_er_address(UBDevice *dev, uint8_t ers, uint64_t size)
     }
 
     new_addr = cfg1_basic->ers_ubba[ers];
-    new_addr &= ~(size -1);
     last_addr = new_addr + size - 1;
     /* NOTE: we do not support wrapping */
     if (last_addr <= new_addr || last_addr == UB_ER_UNMAPPED) {
@@ -1161,7 +1160,6 @@ void ub_register_ers(UBDevice *dev, uint8_t region_num, MemoryRegion *memory)
     UbCfg1Basic *cfg1_basic_wmask;
     uint64_t size = memory_region_size(memory);
     uint64_t emulated_offset;
-    uint64_t wmask;
 
     if (region_num >= UB_NUM_REGIONS) {
         qemu_log("invalid region_num %u\n", region_num);
@@ -1178,11 +1176,10 @@ void ub_register_ers(UBDevice *dev, uint8_t region_num, MemoryRegion *memory)
     r->size = size;
     r->memory = memory;
     r->address_space = ub_get_bus(dev)->address_space_mem;
-    wmask = ~(size - 1);
     /* Mark that the ers is RW */
     emulated_offset = ub_cfg_offset_to_emulated_offset(UB_CFG1_BASIC_START, true);
     cfg1_basic_wmask = (UbCfg1Basic *)(dev->wmask + emulated_offset);
-    ub_set_quad((uint8_t *)&cfg1_basic_wmask->ers_ubba[region_num], wmask);
+    memset(&cfg1_basic_wmask->ers_ubba[region_num], 0xff, sizeof(uint64_t));
 }
 
 uint32_t ub_interrupt_id(UBDevice *udev)
