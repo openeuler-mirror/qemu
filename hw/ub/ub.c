@@ -164,15 +164,12 @@ static void ub_reset_regions(UBDevice *dev)
 {
     UbCfg1Basic *cfg1_basic;
     uint64_t offset;
-    UBIORegion *region;
     int i;
 
     offset = ub_cfg_offset_to_emulated_offset(UB_CFG1_BASIC_START, true);
     cfg1_basic = (UbCfg1Basic *)(dev->config + offset);
 
     for (i = 0; i < UB_NUM_REGIONS; i++) {
-        region = &dev->io_regions[i];
-        region->addr = UB_ER_UNMAPPED;
         cfg1_basic->ers_ubba[i] = UB_ER_UNMAPPED;
     }
     qemu_log("ub device(%s %s) clear ubba\n",
