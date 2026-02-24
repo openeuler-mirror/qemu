@@ -234,6 +234,9 @@ struct VirtMachineState {
     bool highmem;
     bool highmem_compact;
     bool highmem_ecam;
+#ifdef CONFIG_PAS_EXPANSION
+    bool highmem_platform_bus;
+#endif
     bool highmem_mmio;
     bool highmem_redists;
 #ifdef CONFIG_UB
@@ -252,9 +255,6 @@ struct VirtMachineState {
     bool ubmem_vmmu_mem;
     bool ubmem_vmmu_reg;
     bool ubmem_vmmu_realized;
-#endif
-#ifdef CONFIG_PAS_EXPANSION
-    bool highmem_platform_bus;
 #endif
     bool its;
     bool tcg_its;
