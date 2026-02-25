@@ -2144,6 +2144,9 @@ static inline bool *virt_get_high_memmap_enabled(VirtMachineState *vms,
     bool *enabled_array[] = {
         &vms->highmem_redists,
         &vms->highmem_ecam,
+#ifdef CONFIG_PAS_EXPANSION
+        &vms->highmem_platform_bus,
+#endif
         &vms->highmem_mmio,
 #ifdef CONFIG_UBMEM_VMMU
         &vms->ubmem_vmmu_reg,
@@ -2157,9 +2160,6 @@ static inline bool *virt_get_high_memmap_enabled(VirtMachineState *vms,
         &vms->highmem_ub_mem_cc,
         &vms->highmem_ub_mem_nc,
 #endif // CONFIG_UB
-#ifdef CONFIG_PAS_EXPANSION
-        &vms->highmem_platform_bus,
-#endif
     };
 
     assert(ARRAY_SIZE(extended_memmap) - VIRT_LOWMEMMAP_LAST ==

@@ -437,8 +437,8 @@ _meson_option_parse() {
     --disable-pa) printf "%s" -Dpa=disabled ;;
     --enable-parallels) printf "%s" -Dparallels=enabled ;;
     --disable-parallels) printf "%s" -Dparallels=disabled ;;
-    --enable-pas-expansion) printf "%s" -Dpas_expansion=enabled ;;
-    --disable-pas-expansion) printf "%s" -Dpas_expansion=disabled ;;
+    --enable-pas-expansion) printf "%s" -Dpas_expansion=true ;;
+    --disable-pas-expansion) printf "%s" -Dpas_expansion=false ;;
     --enable-pipewire) printf "%s" -Dpipewire=enabled ;;
     --disable-pipewire) printf "%s" -Dpipewire=disabled ;;
     --enable-pixman) printf "%s" -Dpixman=enabled ;;
