@@ -90,6 +90,8 @@ typedef struct URMAContext {
 
     bool pin_all;
 
+    bool ram_discard_disabled;
+
     GHashTable *blockmap;
 
     /*

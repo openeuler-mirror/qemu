@@ -648,7 +648,10 @@ static void qemu_urma_unreg_ram_blocks(URMAContext *urma)
         }
     }
 
-    ram_block_discard_disable(false);
+    if (urma->ram_discard_disabled) {
+        ram_block_discard_disable(false);
+        urma->ram_discard_disabled = false;
+    }
 
     qemu_log("unreg all ram blocks success.\n");
 }
@@ -673,8 +676,10 @@ int qemu_urma_reg_whole_ram_blocks(URMAContext *urma)
 
     start_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
 
-    /* disable memory ballon before register seg */
-    ram_block_discard_disable(true);
+    if (!urma->ram_discard_disabled) {
+        ram_block_discard_disable(true);
+        urma->ram_discard_disabled = true;
+    }
 
     for (i = 0; i < local->nb_blocks; i++) {
         URMALocalBlock *block = &local->block[i];
