@@ -420,6 +420,15 @@ static int vfio_get_iommu_type(VFIOContainer *container,
         }
     }
 
+    if (kvm_arm_rme_enabled()) {
+        if (ioctl(container->fd, VFIO_CHECK_EXTENSION, VFIO_TYPE1_IOMMU_RME)) {
+            return VFIO_TYPE1_IOMMU_RME;
+        } else {
+            error_setg(errp, "cannot find rme IOMMU model");
+            return -EINVAL;
+        }
+    }
+
     for (i = 0; i < ARRAY_SIZE(iommu_types); i++) {
         if (ioctl(container->fd, VFIO_CHECK_EXTENSION, iommu_types[i])) {
             return iommu_types[i];
@@ -440,6 +449,7 @@ static const VFIOIOMMUClass *vfio_get_iommu_class(int iommu_type, Error **errp)
     case VFIO_TYPE1v2_IOMMU:
     case VFIO_TYPE1_IOMMU:
     case VFIO_TYPE1v2_S_IOMMU:
+    case VFIO_TYPE1_IOMMU_RME:
         klass = object_class_by_name(TYPE_VFIO_IOMMU_LEGACY);
         break;
     case VFIO_SPAPR_TCE_v2_IOMMU:
@@ -939,7 +949,7 @@ static int vfio_get_device(VFIOGroup *group, const char *name,
         return -1;
     }
 
-    if (!virtcca_cvm_enabled() && (info->flags & VFIO_DEVICE_FLAGS_SECURE)) {
+    if (!virtcca_cvm_enabled() && !kvm_arm_rme_enabled() && (info->flags & VFIO_DEVICE_FLAGS_SECURE)) {
         error_setg(errp, "Normal vm cannot use confidential device.");
         return -1;
     }

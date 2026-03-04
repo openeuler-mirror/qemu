@@ -236,4 +236,6 @@ void vfio_display_finalize(VFIOPCIDevice *vdev);
 
 extern const VMStateDescription vfio_display_vmstate;
 
+bool get_vfio_dev_bdf(uint16_t guest_dev_bdf, uint16_t *host_dev_bdf);
+
 #endif /* HW_VFIO_VFIO_PCI_H */

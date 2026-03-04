@@ -22,3 +22,17 @@ bool write_list_to_kvmstate(ARMCPU *cpu, int level)
 {
     g_assert_not_reached();
 }
+
+void kvm_arm_rme_init_gpa_space(hwaddr highest_gpa, PCIBus *pci_bus)
+{
+}
+
+bool kvm_arm_rme_enabled(void)
+{
+    return false;
+}
+
+hwaddr rme_mask_share_bit(hwaddr addr)
+{
+    return addr;
+}

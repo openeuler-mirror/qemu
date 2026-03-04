@@ -2054,6 +2054,23 @@ PCIDevice *pci_find_device(PCIBus *bus, int bus_num, uint8_t devfn)
     return bus->devices[devfn];
 }
 
+PCIDevice *pci_find_device_by_bdf(uint16_t bdf)
+{
+    PCIHostState *host_bridge;
+    PCIDevice *dev = NULL;
+    int bus = PCI_BUS_NUM(bdf);
+    uint8_t devfn = PCI_BDF_TO_DEVFN(bdf);
+
+    QLIST_FOREACH(host_bridge, &pci_host_bridges, next) {
+        dev = pci_find_device(host_bridge->bus, bus, devfn);
+        if (dev) {
+            return dev;
+        }
+    }
+
+    return NULL;
+}
+
 #define ONBOARD_INDEX_MAX (16 * 1024 - 1)
 
 static void pci_qdev_realize(DeviceState *qdev, Error **errp)

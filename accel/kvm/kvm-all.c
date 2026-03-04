@@ -3338,6 +3338,16 @@ bool kvm_arm_supports_user_irq(void)
     return kvm_check_extension(kvm_state, KVM_CAP_ARM_USER_IRQ);
 }
 
+bool __attribute__((weak)) kvm_arm_rme_enabled(void)
+{
+    return false;
+}
+
+hwaddr __attribute__((weak)) rme_mask_share_bit(hwaddr addr)
+{
+    return addr;
+}
+
 void kvm_update_hdbss_cap(bool enable, int hdbss_buffer_size)
 {
     KVMState *s = kvm_state;

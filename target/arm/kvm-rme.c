@@ -9,6 +9,7 @@
 #include "hw/boards.h"
 #include "hw/core/cpu.h"
 #include "hw/loader.h"
+#include "hw/qdev-core.h"
 #include "hw/pci/pci.h"
 #include "hw/tpm/tpm_log.h"
 #include "kvm_arm.h"
@@ -21,6 +22,7 @@
 #include "exec/confidential-guest-support.h"
 #include "sysemu/kvm.h"
 #include "sysemu/runstate.h"
+#include "hw/vfio/pci.h"
 
 #define TYPE_RME_GUEST "rme-guest"
 OBJECT_DECLARE_SIMPLE_TYPE(RmeGuest, RME_GUEST)
@@ -29,40 +31,13 @@ OBJECT_DECLARE_SIMPLE_TYPE(RmeGuest, RME_GUEST)
 
 #define RME_MEASUREMENT_LOG_SIZE    (64 * KiB)
 
+#define RME_MAX_CFG		3
+
 typedef struct RmeLogFiletype {
     uint32_t event_type;
     /* Description copied into the log event */
     const char *desc;
 } RmeLogFiletype;
-
-/*
- * Realms have a split guest-physical address space: the bottom half is private
- * to the realm, and the top half is shared with the host. Within QEMU, we use a
- * merged view of both halves. Most of RAM is private to the guest and not
- * accessible to us, but the guest shares some pages with us.
- *
- * For DMA, devices generally target the shared half (top) of the guest address
- * space. Only the devices trusted by the guest (using mechanisms like TDISP for
- * device authentication) can access the bottom half.
- *
- * RealmDmaRegion performs remapping of top-half accesses to system memory.
- */
-struct RealmDmaRegion {
-    IOMMUMemoryRegion parent_obj;
-};
-
-#define TYPE_REALM_DMA_REGION "realm-dma-region"
-OBJECT_DECLARE_SIMPLE_TYPE(RealmDmaRegion, REALM_DMA_REGION)
-OBJECT_DEFINE_SIMPLE_TYPE(RealmDmaRegion, realm_dma_region,
-                          REALM_DMA_REGION, IOMMU_MEMORY_REGION);
-
-typedef struct RealmPrivateSharedListener {
-    MemoryRegion *mr;
-    hwaddr offset_within_region;
-    uint64_t granularity;
-    PrivateSharedListener listener;
-    QLIST_ENTRY(RealmPrivateSharedListener) rpsl_next;
-} RealmPrivateSharedListener;
 
 typedef struct {
     hwaddr base;
@@ -80,15 +55,11 @@ struct RmeGuest {
     uint8_t personalization_value[ARM_RME_CONFIG_RPV_SIZE];
     RmeGuestMeasurementAlgorithm measurement_algo;
     bool use_measurement_log;
+    bool hisi_cca_enable;
 
     RmeRamRegion init_ram;
     uint8_t ipa_bits;
     size_t num_cpus;
-
-    RealmDmaRegion *dma_region;
-    QLIST_HEAD(, RealmPrivateSharedListener) ram_discard_list;
-    MemoryListener memory_listener;
-    AddressSpace dma_as;
 
     TpmLog *log;
     GHashTable *images;
@@ -123,6 +94,17 @@ typedef struct {
 #define REC_CREATE_FLAG_RUNNABLE    (1 << 0)
 
 static RmeGuest *rme_guest;
+
+bool kvm_arm_rme_enabled(void)
+{
+    return !!rme_guest;
+}
+
+hwaddr rme_mask_share_bit(hwaddr addr)
+{
+    const hwaddr address_mask = MAKE_64BIT_MASK(0, rme_guest->ipa_bits - 1);
+    return addr & address_mask;
+}
 
 static int rme_init_measurement_log(MachineState *ms)
 {
@@ -435,6 +417,14 @@ static int rme_configure_one(RmeGuest *guest, uint32_t cfg, Error **errp)
         }
         cfg_str = "hash algorithm";
         break;
+    case ARM_RME_CONFIG_HISI_CCA:
+        /* By default HISI_CCA is off, there is no need to call
+         * hisi_cca_enable=0 */
+        if (!guest->hisi_cca_enable)
+            return 0;
+        args.hisi_cca_enable = (__u8)guest->hisi_cca_enable;
+        cfg_str = "hisi cca enabled";
+        break;
     default:
         g_assert_not_reached();
     }
@@ -454,6 +444,7 @@ static int rme_configure(Error **errp)
     const uint32_t config_options[] = {
         ARM_RME_CONFIG_RPV,
         ARM_RME_CONFIG_HASH_ALGO,
+        ARM_RME_CONFIG_HISI_CCA,
     };
 
     for (option = 0; option < ARRAY_SIZE(config_options); option++) {
@@ -561,6 +552,52 @@ static int rme_init_cpus(Error **errp)
     return 0;
 }
 
+static void rme_map_ram_realm(hwaddr base, uint64_t size)
+{
+    int ret;
+
+    struct kvm_cap_arm_rme_map_ram_args init_args = {
+        .ram_base = base,
+        .ram_size = size,
+    };
+
+    ret = kvm_vm_enable_cap(kvm_state, KVM_CAP_ARM_RME, 0, KVM_CAP_ARM_RME_MAP_RAM_HISI_CCA,
+                            (intptr_t)&init_args);
+    if (ret) {
+        error_report("RME: failed to map ram range (0x%"HWADDR_PRIx", 0x%"HWADDR_PRIx"): %s",
+                     base, size, strerror(-ret));
+        exit(1);
+    }
+}
+
+static void rme_map_ram(hwaddr base, size_t size, GSList *ram_regions)
+{
+    uint64_t last_end = base;
+    GSList *current = ram_regions;
+
+    while (current != NULL) {
+        RmeRamRegion *region = (RmeRamRegion*)current->data;
+        if (region->base >= base + size) {
+            break;
+        }
+        if (base >= region->base + region->size) {
+            current = current->next;
+            continue;
+        }
+
+        if (region->base > last_end) {
+            rme_map_ram_realm(last_end, region->base - last_end);
+        }
+
+        last_end = region->base + region->size;
+        current = current->next;
+    }
+
+    if (base + size > last_end) {
+        rme_map_ram_realm(last_end, base + size - last_end);
+    }
+}
+
 static int rme_create_realm(Error **errp)
 {
     int ret;
@@ -585,6 +622,13 @@ static int rme_create_realm(Error **errp)
     }
 
     g_slist_foreach(rme_guest->ram_regions, rme_populate_ram_region, errp);
+
+    // rust-rmm：enable DA
+    MachineState *ms = MACHINE(qdev_get_machine());
+    if (ms->iommu || rme_guest->hisi_cca_enable) {
+        rme_map_ram(rme_guest->init_ram.base, rme_guest->init_ram.size, rme_guest->ram_regions);
+    }
+
     g_slist_free_full(g_steal_pointer(&rme_guest->ram_regions), g_free);
     if (*errp) {
         return -1;
@@ -681,6 +725,20 @@ static void rme_set_measurement_log(Object *obj, bool value, Error **errp)
     guest->use_measurement_log = value;
 }
 
+static bool rme_get_hisi_cca_enable(Object *obj, Error **errp)
+{
+    RmeGuest *guest = RME_GUEST(obj);
+
+    return guest->hisi_cca_enable;
+}
+
+static void rme_set_hisi_cca_enable(Object *obj, bool value, Error **errp)
+{
+    RmeGuest *guest = RME_GUEST(obj);
+
+    guest->hisi_cca_enable = value;
+}
+
 static void rme_guest_class_init(ObjectClass *oc, void *data)
 {
     object_class_property_add_str(oc, "personalization-value", rme_get_rpv,
@@ -701,6 +759,12 @@ static void rme_guest_class_init(ObjectClass *oc, void *data)
                                    rme_set_measurement_log);
     object_class_property_set_description(oc, "measurement-log",
             "Enable/disable Realm measurement log");
+
+    object_class_property_add_bool(oc, "hisi-cca-enable",
+                                   rme_get_hisi_cca_enable,
+                                   rme_set_hisi_cca_enable);
+    object_class_property_set_description(oc, "hisi-cca-enable",
+            "Enable/disable hisi cca");
 }
 
 static void rme_guest_init(Object *obj)
@@ -715,7 +779,6 @@ static void rme_guest_init(Object *obj)
 
 static void rme_guest_finalize(Object *obj)
 {
-    memory_listener_unregister(&rme_guest->memory_listener);
 }
 
 static gint rme_compare_ram_regions(gconstpointer a, gconstpointer b)
@@ -742,8 +805,8 @@ static void rme_rom_load_notify(Notifier *notifier, void *data)
     }
 
     region = g_new0(RmeRamRegion, 1);
-    region->base = rom->addr;
-    region->size = rom->len;
+    region->base = QEMU_ALIGN_DOWN(rom->addr, RME_PAGE_SIZE);
+    region->size = QEMU_ALIGN_UP(rom->addr + rom->len, RME_PAGE_SIZE) - region->base;
     /*
      * TODO: double-check lifetime. Is data is still available when we measure
      * it, while writing the log. Should be fine since data is kept for the next
@@ -817,6 +880,16 @@ void kvm_arm_rme_init_guest_ram(hwaddr base, size_t size)
     }
 }
 
+void kvm_arm_rme_init_gpa_space(hwaddr highest_gpa, PCIBus *pci_bus)
+{
+    const unsigned int ipa_bits = 64 - clz64(highest_gpa) + 1;
+    if (!rme_guest) {
+        return;
+     }
+
+    rme_guest->ipa_bits = ipa_bits;
+ }
+
 int kvm_arm_rme_vcpu_init(CPUState *cs)
 {
     ARMCPU *cpu = ARM_CPU(cs);
@@ -836,195 +909,23 @@ int kvm_arm_rme_vm_type(MachineState *ms)
     return 0;
 }
 
-static int rme_ram_discard_notify(StateChangeListener *scl,
-                                  MemoryRegionSection *section,
-                                  bool populate)
-{
-    hwaddr gpa, next;
-    IOMMUTLBEvent event;
-    const hwaddr end = section->offset_within_address_space +
-                       int128_get64(section->size);
-    const hwaddr address_mask = MAKE_64BIT_MASK(0, rme_guest->ipa_bits - 1);
-    PrivateSharedListener *psl = container_of(scl, PrivateSharedListener, scl);
-    RealmPrivateSharedListener *rpsl = container_of(psl, RealmPrivateSharedListener,
-                                                 listener);
-
-    assert(rme_guest->dma_region != NULL);
-
-    event.type = populate ? IOMMU_NOTIFIER_MAP : IOMMU_NOTIFIER_UNMAP;
-    event.entry.target_as = &address_space_memory;
-    event.entry.perm = populate ? IOMMU_RW : IOMMU_NONE;
-    event.entry.addr_mask = rpsl->granularity - 1;
-
-    assert(end <= address_mask);
-
-    /*
-     * Create IOMMU mappings from the top half of the address space to the RAM
-     * region.
-     */
-    for (gpa = section->offset_within_address_space; gpa < end; gpa = next) {
-        event.entry.iova = gpa + address_mask + 1;
-        event.entry.translated_addr = gpa;
-        memory_region_notify_iommu(IOMMU_MEMORY_REGION(rme_guest->dma_region),
-                                   0, event);
-
-        next = ROUND_UP(gpa + 1, rpsl->granularity);
-        next = MIN(next, end);
-    }
-
-    return 0;
-}
-
-static int rme_ram_discard_notify_populate(StateChangeListener *scl,
-                                           MemoryRegionSection *section)
-{
-    return rme_ram_discard_notify(scl, section, /* populate */ true);
-}
-
-static int rme_ram_discard_notify_discard(StateChangeListener *scl,
-                                           MemoryRegionSection *section)
-{
-    return rme_ram_discard_notify(scl, section, /* populate */ false);
-}
-
-/* Install a RAM discard listener */
-static void rme_listener_region_add(MemoryListener *listener,
-                                    MemoryRegionSection *section)
-{
-    RealmPrivateSharedListener *rpsl;
-    GenericStateManager *gsm = memory_region_get_generic_state_manager(section->mr);
-
-
-    if (!gsm) {
-        return;
-    }
-
-    rpsl = g_new0(RealmPrivateSharedListener, 1);
-    rpsl->mr = section->mr;
-    rpsl->offset_within_region = section->offset_within_region;
-    rpsl->granularity = generic_state_manager_get_min_granularity(gsm,
-                                                                  section->mr);
-    QLIST_INSERT_HEAD(&rme_guest->ram_discard_list, rpsl, rpsl_next);
-
-    private_shared_listener_init(&rpsl->listener,
-                                 rme_ram_discard_notify_populate,
-                                 rme_ram_discard_notify_discard, true);
-    generic_state_manager_register_listener(gsm, &rpsl->listener.scl, section);
-}
-
-static void rme_listener_region_del(MemoryListener *listener,
-                                    MemoryRegionSection *section)
-{
-    RealmPrivateSharedListener *rpsl;
-    GenericStateManager *gsm = memory_region_get_generic_state_manager(section->mr);
-
-    if (!gsm) {
-        return;
-    }
-
-    QLIST_FOREACH(rpsl, &rme_guest->ram_discard_list, rpsl_next) {
-        if (MEMORY_REGION(rpsl->mr) == section->mr &&
-            rpsl->offset_within_region == section->offset_within_region) {
-            generic_state_manager_unregister_listener(gsm, &rpsl->listener.scl);
-            g_free(rpsl);
-            break;
-        }
-    }
-}
-
-static AddressSpace *rme_dma_get_address_space(PCIBus *bus, void *opaque,
-                                               int devfn)
-{
-    return &rme_guest->dma_as;
-}
-
-static const PCIIOMMUOps rme_dma_ops = {
-    .get_address_space = rme_dma_get_address_space,
-};
-
-void kvm_arm_rme_init_gpa_space(hwaddr highest_gpa, PCIBus *pci_bus)
-{
-    RealmDmaRegion *dma_region;
-    const unsigned int ipa_bits = 64 - clz64(highest_gpa) + 1;
-
-    if (!rme_guest) {
-        return;
-    }
-
-    assert(ipa_bits < 64);
-
-    /*
-     * Setup a DMA translation from the shared top half of the guest-physical
-     * address space to our merged view of RAM.
-     */
-    dma_region = g_new0(RealmDmaRegion, 1);
-
-    memory_region_init_iommu(dma_region, sizeof(*dma_region),
-                             TYPE_REALM_DMA_REGION, OBJECT(rme_guest),
-                             "realm-dma-region", 1ULL << ipa_bits);
-    address_space_init(&rme_guest->dma_as, MEMORY_REGION(dma_region),
-                       TYPE_REALM_DMA_REGION);
-    rme_guest->dma_region = dma_region;
-
-    pci_setup_iommu(pci_bus, &rme_dma_ops, NULL);
-
-    /*
-     * Install notifiers to forward RAM discard changes to the IOMMU notifiers
-     * (ie. tell VFIO to map shared pages and unmap private ones).
-     */
-    rme_guest->memory_listener = (MemoryListener) {
-        .name = "rme",
-        .region_add = rme_listener_region_add,
-        .region_del = rme_listener_region_del,
-    };
-    memory_listener_register(&rme_guest->memory_listener,
-                             &address_space_memory);
-
-    rme_guest->ipa_bits = ipa_bits;
-}
-
-static void realm_dma_region_init(Object *obj)
-{
-}
-
-static IOMMUTLBEntry realm_dma_region_translate(IOMMUMemoryRegion *mr,
-                                                hwaddr addr,
-                                                IOMMUAccessFlags flag,
-                                                int iommu_idx)
-{
-    const hwaddr address_mask = MAKE_64BIT_MASK(0, rme_guest->ipa_bits - 1);
-    IOMMUTLBEntry entry = {
-        .target_as = &address_space_memory,
-        .iova = addr,
-        .translated_addr = addr & address_mask,
-        .addr_mask = address_mask,
-        .perm = IOMMU_RW,
-    };
-
-    return entry;
-}
-
-static void realm_dma_region_replay(IOMMUMemoryRegion *mr, IOMMUNotifier *n)
-{
-    /* Nothing is shared at boot */
-}
-
-static void realm_dma_region_finalize(Object *obj)
-{
-}
-
-static void realm_dma_region_class_init(ObjectClass *oc, void *data)
-{
-    IOMMUMemoryRegionClass *imrc = IOMMU_MEMORY_REGION_CLASS(oc);
-
-    imrc->translate = realm_dma_region_translate;
-    imrc->replay = realm_dma_region_replay;
-}
-
 Object *kvm_arm_rme_get_measurement_log(void)
 {
     if (rme_guest && rme_guest->log) {
         return OBJECT(rme_guest->log);
     }
     return NULL;
+}
+
+int kvm_arm_handle_rme_dev(CPUState *cs, struct kvm_run *run)
+{
+    ARMCPU *cpu = ARM_CPU(cs);
+
+    if (!cpu->kvm_rme) {
+        return -EINVAL;
+    }
+
+    /* Host dev bdf is valid if the dev is passthrough via VFIO */
+    run->rme_dev.vfio_dev = get_vfio_dev_bdf(run->rme_dev.guest_dev_bdf, &run->rme_dev.dev_bdf);
+    return 0;
 }

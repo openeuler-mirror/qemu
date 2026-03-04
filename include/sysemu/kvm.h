@@ -17,6 +17,7 @@
 #define QEMU_KVM_H
 
 #include "exec/memattrs.h"
+#include "exec/hwaddr.h"
 #include "qemu/accel.h"
 #include "qom/object.h"
 #include "linux-headers/linux/kvm.h"
@@ -50,6 +51,9 @@ extern bool kvm_csv3_allowed;
 #define kvm_enabled()           (kvm_allowed)
 #define virtcca_cvm_enabled()           (virtcca_cvm_allowed)
 #define VIRTCCA_CVM_TYPE (1UL << 8)
+
+bool kvm_arm_rme_enabled(void);
+hwaddr rme_mask_share_bit(hwaddr addr);
 /**
  * kvm_irqchip_in_kernel:
  *
@@ -177,6 +181,16 @@ extern bool kvm_csv3_allowed;
 #define kvm_enabled()           (0)
 #define virtcca_cvm_enabled()           (0)
 #define VIRTCCA_CVM_TYPE        (0)
+
+static inline bool kvm_arm_rme_enabled(void)
+{
+    return false;
+}
+
+static inline hwaddr rme_mask_share_bit(hwaddr addr)
+{
+    return addr;
+}
 #define kvm_irqchip_in_kernel() (false)
 #define kvm_irqchip_is_split() (false)
 #define kvm_async_interrupts_enabled() (false)

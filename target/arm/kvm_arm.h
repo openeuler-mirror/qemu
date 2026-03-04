@@ -466,7 +466,7 @@ int kvm_arm_rme_vcpu_init(CPUState *cs);
 void kvm_arm_rme_init_guest_ram(hwaddr base, size_t size);
 
 /**
- * kvm_arm_rme_setup_gpa
+ * kvm_arm_rme_init_gpa_space
  * @highest_gpa: highest address of the lower half of the guest address space
  * @pci_bus: The main PCI bus, for which PCI queries DMA address spaces
  *
@@ -484,6 +484,8 @@ void kvm_arm_rme_init_gpa_space(hwaddr highest_gpa, PCIBus *pci_bus);
  * Returns NULL if measurement log is disabled.
  */
 Object *kvm_arm_rme_get_measurement_log(void);
+
+int kvm_arm_handle_rme_dev(CPUState *cs, struct kvm_run *run);
 
 int kvm_arm_get_writable_id_regs(ARMCPU *cpu, IdRegMap *idregmap);
 
@@ -519,10 +521,15 @@ static inline void kvm_arm_rme_init_guest_ram(hwaddr base, size_t size)
 {
 }
 
-static inline void kvm_arm_rme_init_gpa_space(hwaddr highest_gpa,
-                                              PCIBus *pci_bus)
-{
-}
+/**
+ * kvm_arm_rme_setup_gpa
+ * @highest_gpa: highest address of the lower half of the guest address space
+ * @pci_bus: The main PCI bus, for which PCI queries DMA address spaces
+ *
+ * Setup the guest-physical address space for a Realm. Install a memory region
+ * and notifier to manage the shared upper half of the address space.
+ */
+void kvm_arm_rme_init_gpa_space(hwaddr highest_gpa, PCIBus *pci_bus);
 
 static inline Object *kvm_arm_rme_get_measurement_log(void)
 {

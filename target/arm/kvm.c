@@ -1332,6 +1332,9 @@ int kvm_arch_handle_exit(CPUState *cs, struct kvm_run *run)
     case KVM_EXIT_HYPERCALL:
         ret = kvm_arm_handle_hypercall(cs, run);
         break;
+    case KVM_EXIT_ARM_RME_DEV:
+        ret = kvm_arm_handle_rme_dev(cs, run);
+        break;
     default:
         qemu_log_mask(LOG_UNIMP, "%s: un-handled exit reason %d\n",
                       __func__, run->exit_reason);
@@ -1546,7 +1549,16 @@ int kvm_arch_msi_data_to_gsi(uint32_t data)
 
 bool kvm_arch_cpu_check_are_resettable(void)
 {
-    return !virtcca_cvm_enabled();
+    /* A Realm cannot be reset */
+    if (kvm_arm_rme_enabled()) {
+        return false;
+    }
+
+    if (virtcca_cvm_enabled()) {
+        return false;
+    }
+
+    return true;
 }
 
 static void kvm_arch_get_eager_split_size(Object *obj, Visitor *v,

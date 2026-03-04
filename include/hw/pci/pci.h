@@ -684,4 +684,5 @@ static inline void pci_irq_deassert(PCIDevice *pci_dev)
 MSIMessage pci_get_msi_message(PCIDevice *dev, int vector);
 void pci_set_power(PCIDevice *pci_dev, bool state);
 
+PCIDevice *pci_find_device_by_bdf(uint16_t bdf);
 #endif
