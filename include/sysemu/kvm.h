@@ -182,15 +182,9 @@ hwaddr rme_mask_share_bit(hwaddr addr);
 #define virtcca_cvm_enabled()           (0)
 #define VIRTCCA_CVM_TYPE        (0)
 
-static inline bool kvm_arm_rme_enabled(void)
-{
-    return false;
-}
+bool kvm_arm_rme_enabled(void);
+hwaddr rme_mask_share_bit(hwaddr addr);
 
-static inline hwaddr rme_mask_share_bit(hwaddr addr)
-{
-    return addr;
-}
 #define kvm_irqchip_in_kernel() (false)
 #define kvm_irqchip_is_split() (false)
 #define kvm_async_interrupts_enabled() (false)
