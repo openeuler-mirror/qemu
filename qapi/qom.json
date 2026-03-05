@@ -987,7 +987,7 @@
 #     memory (unmeasured) and can then be read by a verifier to
 #     reconstruct the RIM.
 #
-# @ccal-enable: if true, ccal support is enabled (default: false)
+# @hisi-cca-enable: if true, cca support is enabled (default: false)
 #
 # Since: 10.0
 ##
@@ -995,7 +995,6 @@
   'data': { '*personalization-value': 'str',
             '*measurement-algorithm': 'RmeGuestMeasurementAlgorithm',
             '*measurement-log': 'bool',
-            '*ccal-enable': 'bool' ,
             '*hisi-cca-enable': 'bool' } }
 
 ##

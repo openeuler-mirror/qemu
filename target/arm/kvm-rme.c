@@ -418,8 +418,7 @@ static int rme_configure_one(RmeGuest *guest, uint32_t cfg, Error **errp)
         cfg_str = "hash algorithm";
         break;
     case ARM_RME_CONFIG_HISI_CCA:
-        /* By default HISI_CCA is off, there is no need to call
-         * hisi_cca_enable=0 */
+        /* By default HISI_CCA is off, there is no need to call hisi_cca_enable=0 */
         if (!guest->hisi_cca_enable)
             return 0;
         args.hisi_cca_enable = (__u8)guest->hisi_cca_enable;
