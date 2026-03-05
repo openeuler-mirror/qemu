@@ -311,7 +311,7 @@ static int qemu_urma_init_ram_blocks(URMAContext *urma)
     int ret;
 
     if (urma->blockmap != NULL) {
-        qemu_log("Ram blocks have been inited before! blockmap is %p\n", urma->blockmap);
+        qemu_log("Ram blocks have been inited before!\n");
         return -EINVAL;
     }
 
@@ -648,7 +648,10 @@ static void qemu_urma_unreg_ram_blocks(URMAContext *urma)
         }
     }
 
-    ram_block_discard_disable(false);
+    if (urma->ram_discard_disabled) {
+        ram_block_discard_disable(false);
+        urma->ram_discard_disabled = false;
+    }
 
     qemu_log("unreg all ram blocks success.\n");
 }
@@ -673,8 +676,10 @@ int qemu_urma_reg_whole_ram_blocks(URMAContext *urma)
 
     start_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
 
-    /* disable memory ballon before register seg */
-    ram_block_discard_disable(true);
+    if (!urma->ram_discard_disabled) {
+        ram_block_discard_disable(true);
+        urma->ram_discard_disabled = true;
+    }
 
     for (i = 0; i < local->nb_blocks; i++) {
         URMALocalBlock *block = &local->block[i];
@@ -694,7 +699,7 @@ int qemu_urma_reg_whole_ram_blocks(URMAContext *urma)
 
         block->local_tseg = urma_register_seg_p(urma->urma_ctx, &seg_cfg);
         if (block->local_tseg == NULL) {
-            qemu_log("URMA: Failed to register RAM block: %s, va: %p, size: %ld\n", block->block_name, block->local_host_addr, block->length);
+            qemu_log("URMA: Failed to register RAM block: %s, size: %ld\n", block->block_name, block->length);
             goto err;
         }
     }
@@ -1045,8 +1050,8 @@ int qemu_urma_write_all(URMAContext *urma)
             if (urma_write_p(urma->jfs, urma->tjfr, block->import_tseg, block->local_tseg,
                        remote_addr, local_addr, length,
                        flag, urma->rid) != URMA_SUCCESS) {
-                qemu_log("Failed to do urma_write, local addr: %lx, remote addr: %lx, size: %lx, errno: %d\n",
-                         local_addr, remote_addr, length, errno);
+                qemu_log("Failed to do urma_write, block: %s, size: %zu, errno: %d\n",
+                         block->block_name, (size_t)length, errno);
                 return -EINVAL;
             }
 
@@ -1103,8 +1108,8 @@ static int qemu_urma_write_one(URMAContext *urma,
         if (force || urma->nr_wr_polling >= URMA_JFS_WR_LIST_LEN) {
             ret = urma_post_jfs_wr_p(urma->jfs, urma->jfs_wr_list, &bad_wr);
             if (ret != URMA_SUCCESS) {
-                qemu_log("Failed to do urma_post_jfs_wr, local addr: %lx, remote addr: %lx, size: %lx, ret: %d, errno: %d\n",
-                        local_addr, remote_addr, length, ret, errno);
+                qemu_log("Failed to do urma_post_jfs_wr, block: %s, size: %zu, ret: %d, errno: %d\n",
+                        block->block_name, (size_t)length, ret, errno);
                 return -EINVAL;
             }
 
@@ -1201,8 +1206,8 @@ static int qemu_urma_save_page(QEMUFile *f, ram_addr_t block_offset,
          */
         ret = qemu_urma_write(urma, block_offset, offset, size);
         if (ret < 0) {
-            qemu_log("urma write failed, block offset: %lx, offset: %lx, size: %lx, ret: %d, errno: %d\n",
-                block_offset, offset, size, ret, errno);
+            qemu_log("urma write failed, size: %zu, ret: %d, errno: %d\n",
+                (size_t)size, ret, errno);
             return ret;
         }
     }
@@ -1247,8 +1252,8 @@ int qemu_urma_import(URMAContext *urma)
 
         block->import_tseg = urma_import_seg_p(urma->urma_ctx, &block->remote_seg, &block->remote_seg_token, 0, flag);
         if (block->import_tseg == NULL) {
-            qemu_log("Failed to import segment, block name: %s, va: %p, size: %ld, errono: %d\n",
-                block->block_name, block->local_host_addr, block->length, errno);
+            qemu_log("Failed to import segment, block name: %s, size: %ld, errno: %d\n",
+                block->block_name, block->length, errno);
             goto err;
         }
     }
