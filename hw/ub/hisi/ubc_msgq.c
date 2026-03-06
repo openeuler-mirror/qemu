@@ -22,7 +22,7 @@
 #include "hw/ub/ub_bus.h"
 #include "hw/ub/ub_ubc.h"
 #include "hw/ub/ub_config.h"
-#include "hw/ub/ub_pool.h"
+#include "hw/ub/ub_msg.h"
 #include "hw/ub/ub_sec.h"
 #include "hw/ub/ub_enum.h"
 #include "hw/ub/hisi/ubc.h"
@@ -59,12 +59,88 @@ static void handle_msg_pool(void *opaque, HiMsgSqe *sqe, void *payload)
     }
 }
 
+static void ub_obtain_entity_info_ms_fill_cq_rq(BusControllerState *s, HiMsgSqe *sqe,
+                                                MsgPktHeader *header, EntityInfoMsgPkt *rsp_pkt)
+{
+    HiMsgCqe cqe;
+    uint32_t pi;
+
+    memset(&cqe, 0, sizeof(cqe));
+    cqe.type = MSG_RSP;
+    cqe.msg_code = UB_MSG_CODE_EXCH;
+    cqe.sub_msg_code = header->msgetah.sub_msg_code;
+
+    rsp_pkt->header.nth.scna = header->nth.dcna;
+    rsp_pkt->header.nth.dcna = header->nth.scna;
+    rsp_pkt->header.deid = EID_GEN(header->seid_h, header->seid_l);
+    rsp_pkt->header.seid_h = EID_HIGH(header->deid);
+    rsp_pkt->header.seid_l = EID_LOW(header->deid);
+
+    cqe.msn = sqe->msn;
+    cqe.p_len = sizeof(EntityInfoMsgPkt) + sizeof(struct UeMap);
+    pi = fill_rq(s, rsp_pkt, sizeof(*rsp_pkt));
+    if (pi == UINT32_MAX) {
+        qemu_log("fill rq failed!\n");
+        return;
+    }
+
+    cqe.status = CQE_SUCCESS;
+    cqe.rq_pi = pi;
+    (void)fill_cq(s, &cqe);
+}
+
+static void ub_obtain_entity_info(BusControllerState *s, HiMsgSqe *sqe, MsgPktHeader *header)
+{
+    EntityInfoMsgPkt *rsp_pkt = NULL;
+    uint32_t rsp_pkt_size;
+
+    rsp_pkt_size = sizeof(EntityInfoMsgPkt) + sizeof(struct UeMap);
+    rsp_pkt = malloc(rsp_pkt_size);
+    memset(rsp_pkt, 0, rsp_pkt_size);
+    memcpy(&rsp_pkt->header, header, sizeof(rsp_pkt->header));
+    rsp_pkt->pld.rsp.entity_nums = 1;
+    rsp_pkt->pld.rsp.mue_nums = 1;
+    rsp_pkt->pld.rsp.map[0].start_entity_idx = 0;
+    rsp_pkt->pld.rsp.map[0].end_entity_idx = 0;
+    rsp_pkt->header.msgetah.rsp_status = UB_MSG_RSP_SUCCESS;
+    rsp_pkt->header.msgetah.plen = ENTITY_INFO_BASE_PLD_SIZE + sizeof(struct UeMap);
+    ub_obtain_entity_info_ms_fill_cq_rq(s, sqe, header, rsp_pkt);
+    free(rsp_pkt);
+}
+
+static void (*msgq_exch_handlers[])(BusControllerState *s, HiMsgSqe *sqe,
+                                   MsgPktHeader *header) = {
+    [UB_OBTAIN_ENTITY_INFO]     = ub_obtain_entity_info,
+    [UB_LINK_NEIGHBOR_QUERY]    = NULL,
+};
+
+static void handle_msg_exch(void *opaque, HiMsgSqe *sqe, void *payload)
+{
+    BusControllerState *s =  opaque;
+    MsgPktHeader *header = (MsgPktHeader *)payload;
+    MsgExtendedHeader *msgetah = &header->msgetah;
+
+    if (msgetah->msg_code != UB_MSG_CODE_EXCH ||
+        msgetah->sub_msg_code >= UB_EXCH_MAX_SUB_MSG_CODE) {
+        qemu_log("invalid msg code %u or sub msg code %u, "
+                 "please check the driver inside guestos\n",
+                 msgetah->msg_code, msgetah->sub_msg_code);
+        return;
+    }
+
+    if (msgq_exch_handlers[msgetah->sub_msg_code]) {
+        msgq_exch_handlers[msgetah->sub_msg_code](s, sqe, header);
+    } else {
+        qemu_log("exch don't support sub msg code %d.\n", msgetah->sub_msg_code);
+    }
+}
+
 static void (*msgq_handlers[])(void *opaque, HiMsgSqe *sqe, void *payload) = {
     [UB_MSG_CODE_RAS]  = NULL,
     [UB_MSG_CODE_LINK] = NULL,
     [UB_MSG_CODE_CFG]  = handle_msg_cfg,
     [UB_MSG_CODE_VDM]  = NULL,
-    [UB_MSG_CODE_EXCH] = NULL,
+    [UB_MSG_CODE_EXCH] = handle_msg_exch,
     [UB_MSG_CODE_SEC]  = handle_msg_sec,
     [UB_MSG_CODE_POOL]  = handle_msg_pool,
 };

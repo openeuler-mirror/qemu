@@ -1165,11 +1165,6 @@ void ub_register_ers(UBDevice *dev, uint8_t region_num, MemoryRegion *memory)
         qemu_log("invalid region_num %u\n", region_num);
         return;
     }
-    if (!is_power_of_2(size)) {
-        qemu_log("region %u is_power_of_2 check failed! size 0x%"PRIx64"\n",
-                 region_num, size);
-        return;
-    }
 
     r = &dev->io_regions[region_num];
     r->addr = UINT64_MAX;
