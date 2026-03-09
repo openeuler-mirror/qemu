@@ -95,8 +95,7 @@ static void ub_obtain_entity_info(BusControllerState *s, HiMsgSqe *sqe, MsgPktHe
     uint32_t rsp_pkt_size;
 
     rsp_pkt_size = sizeof(EntityInfoMsgPkt) + sizeof(struct UeMap);
-    rsp_pkt = malloc(rsp_pkt_size);
-    memset(rsp_pkt, 0, rsp_pkt_size);
+    rsp_pkt = g_malloc0(rsp_pkt_size);
     memcpy(&rsp_pkt->header, header, sizeof(rsp_pkt->header));
     rsp_pkt->pld.rsp.entity_nums = 1;
     rsp_pkt->pld.rsp.mue_nums = 1;
@@ -105,7 +104,7 @@ static void ub_obtain_entity_info(BusControllerState *s, HiMsgSqe *sqe, MsgPktHe
     rsp_pkt->header.msgetah.rsp_status = UB_MSG_RSP_SUCCESS;
     rsp_pkt->header.msgetah.plen = ENTITY_INFO_BASE_PLD_SIZE + sizeof(struct UeMap);
     ub_obtain_entity_info_ms_fill_cq_rq(s, sqe, header, rsp_pkt);
-    free(rsp_pkt);
+    g_free(rsp_pkt);
 }
 
 static void (*msgq_exch_handlers[])(BusControllerState *s, HiMsgSqe *sqe,
