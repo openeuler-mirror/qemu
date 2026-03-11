@@ -492,7 +492,7 @@ static int vfio_enable_vectors(VFIOUBDevice *vdev)
     irq_set = g_malloc0(argsz);
     irq_set->argsz = argsz;
     irq_set->flags = VFIO_IRQ_SET_DATA_EVENTFD | VFIO_IRQ_SET_ACTION_TRIGGER;
-    irq_set->index = VFIO_UB_MSIX_IRQ_INDEX;
+    irq_set->index = VFIO_UB_INTR_IRQ_INDEX;
     irq_set->start = 0;
     irq_set->count = vdev->nr_vectors;
     fds = (int32_t *)&irq_set->data;
@@ -552,14 +552,14 @@ static int vfio_usi_vector_do_use(UBDevice *udev, uint16_t nr, USIMessage *msg,
 
     if (vdev->nr_vectors < nr + 1) {
         vdev->nr_vectors = nr + 1;
-        vfio_disable_irqindex(&vdev->vbasedev, VFIO_UB_MSIX_IRQ_INDEX);
+        vfio_disable_irqindex(&vdev->vbasedev, VFIO_UB_INTR_IRQ_INDEX);
         ret = vfio_enable_vectors(vdev);
         if (ret < 0) {
             error_report("vfio: failed to enable vectors, %d", ret);
         }
     } else {
         fd = event_notifier_get_fd(&vector->kvm_interrupt);
-        ret = vfio_set_irq_signaling(&vdev->vbasedev, VFIO_UB_MSIX_IRQ_INDEX, nr,
+        ret = vfio_set_irq_signaling(&vdev->vbasedev, VFIO_UB_INTR_IRQ_INDEX, nr,
                                      VFIO_IRQ_SET_ACTION_TRIGGER, fd, &err);
         if (ret) {
             error_reportf_err(err, VFIO_MSG_PREFIX, vdev->vbasedev.name);
@@ -580,7 +580,7 @@ static void vfio_usi_vector_release(UBDevice *udev, uint16_t nr)
 
         qemu_log("udev(%s %s) start update fd to qemu.\n",
                  udev->name, udev->qdev.id);
-        if (vfio_set_irq_signaling(&vdev->vbasedev, VFIO_UB_MSIX_IRQ_INDEX, nr,
+        if (vfio_set_irq_signaling(&vdev->vbasedev, VFIO_UB_INTR_IRQ_INDEX, nr,
                                    VFIO_IRQ_SET_ACTION_TRIGGER, fd, &err)) {
             error_reportf_err(err, VFIO_MSG_PREFIX, vdev->vbasedev.name);
             return;
@@ -1117,7 +1117,7 @@ static void vfio_usi_disable(VFIOUBDevice *vdev)
     usi_unset_vector_notifiers(&vdev->udev);
 
     if (vdev->nr_vectors) {
-        vfio_disable_irqindex(&vdev->vbasedev, VFIO_UB_MSIX_IRQ_INDEX);
+        vfio_disable_irqindex(&vdev->vbasedev, VFIO_UB_INTR_IRQ_INDEX);
     }
     qemu_log("vfio ub device(%s %s) usi disable, vectors %d.\n",
              vdev->udev.name, vdev->udev.qdev.id, vdev->nr_vectors);
