@@ -157,7 +157,6 @@ static void ub_cfg_msg_fill_cq_rq(BusControllerState *s, HiMsgSqe *sqe, MsgPktHe
                                   CfgMsgPkt *rsp_pkt)
 {
     HiMsgCqe cqe;
-    uint32_t pi;
 
     memset(&cqe, 0, sizeof(cqe));
     cqe.type = MSG_RSP;
@@ -173,14 +172,8 @@ static void ub_cfg_msg_fill_cq_rq(BusControllerState *s, HiMsgSqe *sqe, MsgPktHe
     rsp_pkt->header.seid_l = EID_LOW(header->deid);
     cqe.msn = sqe->msn;
     cqe.p_len = MSG_CFG_PKT_SIZE;
-    pi = fill_rq(s, rsp_pkt, sizeof(CfgMsgPkt));
-    if (pi == UINT32_MAX) {
-        qemu_log("fill rq failed!\n");
-        return;
-    }
     cqe.status = CQE_SUCCESS;
-    cqe.rq_pi = pi;
-    (void)fill_cq(s, &cqe);
+    fill_rq_cq(s, rsp_pkt, sizeof(CfgMsgPkt), &cqe);
 }
 
 static uint32_t get_dw_mask(uint8_t byte_enable)

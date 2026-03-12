@@ -32,6 +32,7 @@
 #include "hw/ub/ub_config.h"
 #include "hw/ub/ub_acpi.h"
 #include "hw/ub/ub_usi.h"
+#include "hw/ub/ub_msg.h"
 #include "hw/ub/ubus_instance.h"
 #include "hw/qdev-properties.h"
 #include "hw/qdev-properties-system.h"
@@ -906,6 +907,131 @@ static bool vfio_check_guid(VFIOUBDevice *vdev, Error **errp)
     return true;
 }
 
+static void vfio_reinit_irq_handler(void *opaque)
+{
+    VFIOUBDevice *vdev = opaque;
+    UBDevice *udev = &vdev->udev;
+    UBBus *bus;
+    BusControllerState *ubc;
+    LinkChangeMsgPkt rsp_pkt;
+    HiMsgCqe cqe;
+    uint32_t scna;
+    uint16_t port_idx;
+    uint64_t offset;
+    uint64_t emulated_offset;
+    uint8_t sub_msg_code;
+    ConfigNetAddrInfo *net_addr_info;
+
+    if (!event_notifier_test_and_clear(&vdev->reinit_irq)) {
+        return;
+    }
+
+    bus = ub_get_bus(udev);
+    ubc = container_of_ubbus(bus);
+    if (!ubc) {
+        qemu_log("vfio ub device(%s %s) reinit irq handler: cannot find ubc\n",
+                 udev->name, udev->qdev.id);
+        return;
+    }
+
+    qemu_log("vfio ub device(%s %s) reinit irq handler: ubc %p\n",
+             udev->name, udev->qdev.id, (void *)ubc);
+
+    /* Only support LINK_UP */
+    sub_msg_code = UB_LINK_UP;
+
+    /* Get SCNA and port_idx from UBC's ConfigPortBasic (port 0) */
+    offset = UB_PORT_SLICE_START;  /* port_idx = 0 */
+    emulated_offset = ub_cfg_offset_to_emulated_offset(offset, true);
+    if (emulated_offset == UINT64_MAX) {
+        qemu_log("vfio ub: invalid port offset 0x%lx\n", offset);
+        return;
+    }
+
+    net_addr_info = (ConfigNetAddrInfo *)(ubc->ubc_dev->parent.config + emulated_offset);
+    scna = net_addr_info->primary_cna;
+    port_idx = udev->port.neighbors->neighbor_port_idx;
+    emulated_offset = ub_cfg_offset_to_emulated_offset(UB_CFG0_BASIC_NA_INFO_START, true);
+
+    qemu_log("vfio ub device(%s %s): link change info - SCNA=%u, sport_idx=%u, event=%s\n",
+             udev->name, udev->qdev.id, scna, port_idx,
+             sub_msg_code == UB_LINK_UP ? "UP" : "DOWN");
+
+    /* Build link change message request */
+    memset(&rsp_pkt, 0, sizeof(LinkChangeMsgPkt));
+    memset(&cqe, 0, sizeof(HiMsgCqe));
+
+    /* Set header - use MSG_REQ since this is a notification to driver */
+    rsp_pkt.header.msgetah.type = MSG_REQ;
+    rsp_pkt.header.msgetah.msg_code = UB_MSG_CODE_LINK;
+    rsp_pkt.header.msgetah.sub_msg_code = sub_msg_code;
+    rsp_pkt.header.msgetah.plen = LINK_CHANGE_MSG_PLD_SIZE;
+
+    /* Use UBC's CNA as both source and destination */
+    rsp_pkt.header.nth.scna = ubc->ubc_dev->parent.cna;
+    rsp_pkt.header.nth.dcna = ubc->ubc_dev->parent.cna;
+
+    /* Use UBC's EID for both source and destination */
+    rsp_pkt.header.seid_h = EID_HIGH(ubc->ubc_dev->parent.eid);
+    rsp_pkt.header.seid_l = EID_LOW(ubc->ubc_dev->parent.eid);
+    rsp_pkt.header.deid = ubc->ubc_dev->parent.eid;
+
+    /* Build payload: 8 bytes (resvd + SCNA + resvd + port_idx) */
+    rsp_pkt.pld.reserved1 = 0;
+    rsp_pkt.pld.scna = scna & 0xFFFFFF;
+    rsp_pkt.pld.reserved2 = 0;
+    rsp_pkt.pld.port_idx = port_idx;
+
+    /* Set CQE */
+    cqe.type = MSG_REQ;
+    cqe.msg_code = UB_MSG_CODE_LINK;
+    cqe.sub_msg_code = sub_msg_code;
+    cqe.msn = 0;
+    cqe.p_len = MSG_LINK_CHANGE_PKT_SIZE;
+    cqe.status = CQE_SUCCESS;
+
+    /* Write to RQ and CQ atomically */
+    fill_rq_cq(ubc, &rsp_pkt, sizeof(LinkChangeMsgPkt), &cqe);
+
+    qemu_log("vfio ub: link change notification sent: SCNA=%u, port_idx=%u, event=%s\n",
+             scna, port_idx, sub_msg_code == UB_LINK_UP ? "UP" : "DOWN");
+}
+
+static int vfio_enable_reinit_irq(VFIOUBDevice *vdev)
+{
+    int ret;
+    int32_t fd;
+
+    if (vdev->reinit_irq_enabled) {
+        return 0;
+    }
+
+    ret = event_notifier_init(&vdev->reinit_irq, 0);
+    if (ret) {
+        error_report("vfio: reinit irq event_notifier_init failed");
+        return ret;
+    }
+
+    qemu_set_fd_handler(event_notifier_get_fd(&vdev->reinit_irq),
+                        vfio_reinit_irq_handler, NULL, vdev);
+
+    fd = event_notifier_get_fd(&vdev->reinit_irq);
+    ret = vfio_set_irq_signaling(&vdev->vbasedev, VFIO_UB_REINIT_IRQ_INDEX, 0,
+                                 VFIO_IRQ_SET_ACTION_TRIGGER, fd, NULL);
+    if (ret) {
+        error_report("vfio: failed to enable reinit irq, ret=%d", ret);
+        qemu_set_fd_handler(event_notifier_get_fd(&vdev->reinit_irq),
+                            NULL, NULL, NULL);
+        event_notifier_cleanup(&vdev->reinit_irq);
+        return ret;
+    }
+
+    vdev->reinit_irq_enabled = true;
+    qemu_log("vfio ub device(%s %s) reinit irq enabled\n",
+             vdev->udev.name, vdev->udev.qdev.id);
+    return 0;
+}
+
 static void vfio_realize(UBDevice *udev, Error **errp)
 {
     VFIOUBDevice *vdev = VFIO_UB(udev);
@@ -1017,6 +1143,12 @@ static void vfio_realize(UBDevice *udev, Error **errp)
         vfio_ers_quirk_setup(vdev, i);
     }
 
+    ret = vfio_enable_reinit_irq(vdev);
+    if (ret) {
+        error_prepend(errp, "failed to enable reinit irq: ");
+        goto out_unset_idev;
+    }
+
     return;
 out_unset_idev:
     ub_device_unset_iommu_device(udev);
@@ -1055,6 +1187,14 @@ static void vfio_exitfn(UBDevice *udev)
         vfio_cfg1_idev_ubba_deinit(udev);
     }
     vfio_disable_interrupts(vdev);
+
+    if (vdev->reinit_irq_enabled) {
+        vfio_disable_irqindex(&vdev->vbasedev, VFIO_UB_REINIT_IRQ_INDEX);
+        qemu_set_fd_handler(event_notifier_get_fd(&vdev->reinit_irq),
+                            NULL, NULL, NULL);
+        event_notifier_cleanup(&vdev->reinit_irq);
+        vdev->reinit_irq_enabled = false;
+    }
 
     vfio_teardown_usi(vdev);
     vfio_ers_exit(vdev);

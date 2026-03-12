@@ -23,7 +23,6 @@ static void ub_sec_msg_fill_cq_rq(BusControllerState *s, HiMsgSqe *sqe, MsgPktHe
                                   QueryTokenMsgPkt *rsp_pkt)
 {
     HiMsgCqe cqe;
-    uint32_t pi;
 
     memset(&cqe, 0, sizeof(cqe));
     cqe.type = MSG_RSP;
@@ -38,15 +37,8 @@ static void ub_sec_msg_fill_cq_rq(BusControllerState *s, HiMsgSqe *sqe, MsgPktHe
 
     cqe.msn = sqe->msn;
     cqe.p_len = MSG_SEC_QUERY_TOKEN_MSG_PKT_SIZE;
-    pi = fill_rq(s, rsp_pkt, sizeof(*rsp_pkt));
-    if (pi == UINT32_MAX) {
-        qemu_log("fill rq failed!\n");
-        return;
-    }
-
     cqe.status = CQE_SUCCESS;
-    cqe.rq_pi = pi;
-    (void)fill_cq(s, &cqe);
+    fill_rq_cq(s, rsp_pkt, sizeof(*rsp_pkt), &cqe);
 }
 
 static void ub_sec_token_get_req(BusControllerState *s, HiMsgSqe *sqe, MsgPktHeader *header)

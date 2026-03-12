@@ -18,6 +18,8 @@
 #ifndef UB_MSG_H
 #define UB_MSG_H
 
+#include "hw/ub/ub_common.h"
+
 enum ub_pool_sub_msg_code {
     UB_DEV_REG,
     UB_DEV_RLS,
@@ -30,6 +32,12 @@ enum UbExchSubMsgCode {
     UB_OBTAIN_ENTITY_INFO = 2,
     UB_LINK_NEIGHBOR_QUERY = 7,
     UB_EXCH_MAX_SUB_MSG_CODE
+};
+
+enum UbLinkSubMsgCode {
+    UB_LINK_UP = 0,
+    UB_LINK_DOWN = 1,
+    UB_LINK_MAX_SUB_MSG_CODE
 };
 
 struct UeMap {
@@ -54,5 +62,28 @@ typedef struct EntityInfoMsgPkt {
     struct MsgPktHeader header;
     struct EntityInfoMsgPld pld;
 } EntityInfoMsgPkt;
+
+/*
+ * Link change message payload (8 bytes):
+ * bit[0:7]   - reserved (8bit)
+ * bit[8:31]  - SCNA (24bit)
+ * bit[32:47] - reserved (16bit)
+ * bit[48:63] - port_idx (16bit)
+ */
+typedef struct __attribute__((__packed__)) LinkChangeMsgPld {
+    // DW0
+    uint32_t scna : 24;
+    uint32_t reserved1 : 8;
+    // DW1
+    uint32_t port_idx : 16;
+    uint32_t reserved2 : 16;
+} LinkChangeMsgPld;
+#define LINK_CHANGE_MSG_PLD_SIZE 8
+#define MSG_LINK_CHANGE_PKT_SIZE (MSG_PKT_HEADER_SIZE + LINK_CHANGE_MSG_PLD_SIZE)
+
+typedef struct LinkChangeMsgPkt {
+    struct MsgPktHeader header;
+    LinkChangeMsgPld pld;
+} LinkChangeMsgPkt;
 
 #endif

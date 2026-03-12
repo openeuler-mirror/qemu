@@ -118,6 +118,7 @@ static void ub_reg_alloc(DeviceState *dev)
 
     s->msgq_reg = g_malloc0(s->msgq_reg_size);
     s->fm_msgq_reg = g_malloc0(s->fm_msgq_reg_size);
+    pthread_spin_init(&s->rq_cq_lock, PTHREAD_PROCESS_PRIVATE);
     qemu_log("alloc ub reg mem size: msgq_reg %u, "
              "fm_msgq_reg %u\n",
              s->msgq_reg_size, s->fm_msgq_reg_size);
@@ -129,6 +130,7 @@ static void ub_reg_free(DeviceState *dev)
 
     g_free(s->msgq_reg);
     g_free(s->fm_msgq_reg);
+    pthread_spin_destroy(&s->rq_cq_lock);
     qemu_log("free ub reg mem\n");
 }
 
