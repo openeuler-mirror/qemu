@@ -384,8 +384,8 @@ static void ub_config_space_init(UBDevice *ub_dev)
     ub_init_w1cmask(ub_dev);
 }
 
-void ub_default_read_config(UBDevice *dev, uint64_t offset,
-                            uint32_t *val, uint32_t dw_mask)
+int ub_default_read_config(UBDevice *dev, uint64_t offset,
+                           uint32_t *val, uint32_t dw_mask)
 {
     uint32_t read_data;
     uint64_t emulated_offset = ub_cfg_offset_to_emulated_offset(offset, false);
@@ -394,11 +394,12 @@ void ub_default_read_config(UBDevice *dev, uint64_t offset,
         *val = 0;
         qemu_log("ub default read config out of emulated range, offset "
                  "is 0x%lx\n", offset);
-        return;
+        return -EFAULT;
     }
 
     memcpy(&read_data, dev->config + emulated_offset, DWORD_SIZE);
     *val = read_data & dw_mask;
+    return 0;
 }
 
 static uint64_t ub_er_address(UBDevice *dev, uint8_t ers, uint64_t size)
@@ -463,8 +464,8 @@ static void ub_update_mappings(UBDevice *dev)
     }
 }
 
-void ub_default_write_config(UBDevice *dev, uint64_t offset,
-                             uint32_t *val, uint32_t dw_mask)
+int ub_default_write_config(UBDevice *dev, uint64_t offset,
+                            uint32_t *val, uint32_t dw_mask)
 {
     uint32_t write_data = *val;
     uint32_t dw_wmask, dw_w1cmask;
@@ -475,7 +476,7 @@ void ub_default_write_config(UBDevice *dev, uint64_t offset,
     if (emulated_offset == UINT64_MAX) {
         qemu_log("ub default write config out of emulated range, offset "
                  "is 0x%lx\n", offset);
-        return;
+        return -EFAULT;
     }
 
     dst_data = (uint32_t *)(dev->config + emulated_offset);
@@ -494,6 +495,7 @@ void ub_default_write_config(UBDevice *dev, uint64_t offset,
     if (ranges_overlap(offset, DWORD_SIZE, UB_CFG1_DEV_RS_ACCESS_EN_OFFSET, DWORD_SIZE)) {
         ub_update_mappings(dev);
     }
+    return 0;
 }
 
 static UBDevice *do_ub_register_device(UBDevice *ub_dev, const char *name, Error **errp)

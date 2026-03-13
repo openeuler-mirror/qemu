@@ -192,6 +192,31 @@ static uint32_t get_dw_mask(uint8_t byte_enable)
     return dw_mask;
 }
 
+static int err_to_msg_rsp(int err)
+{
+    if (err >= 0)
+        return err;
+
+    switch (err) {
+    case -ENOMEM:
+        return UB_MSG_RSP_EXEC_ENOMEM;
+    case -EACCES:
+        return UB_MSG_RSP_EXEC_EACCES;
+    case -EFAULT:
+        return UB_MSG_RSP_EXEC_EFAULT;
+    case -EBUSY:
+        return UB_MSG_RSP_EXEC_EBUSY;
+    case -ENODEV:
+        return UB_MSG_RSP_EXEC_ENODEV;
+    case -EINVAL:
+        return UB_MSG_RSP_EXEC_EINVAL;
+    case -ENOEXEC:
+        return UB_MSG_RSP_EXEC_ENOEXEC;
+    default:
+        return UB_MSG_RSP_UNKNOWN;
+    }
+}
+
 static void ub_cfg_rw(BusControllerState *s, HiMsgSqe *sqe,
                       MsgPktHeader *header)
 {
@@ -204,6 +229,7 @@ static void ub_cfg_rw(BusControllerState *s, HiMsgSqe *sqe,
     UBDevice *ub_dev = NULL;
     uint32_t dw_mask;
     uint64_t emulated_offset;
+    int ret;
 
     if (header->msgetah.plen != CFG_MSG_PLD_SIZE) {
         qemu_log("invalid len %u, please check driver inside guestos\n",
@@ -219,7 +245,7 @@ static void ub_cfg_rw(BusControllerState *s, HiMsgSqe *sqe,
     /* vm support only FE0(entity_idx = 0) */
     if (entity) {
         qemu_log("vm support only FE0, entity idx: %u\n", entity);
-        rsp_pkt.header.msgetah.rsp_status = UB_MSG_RSP_REG_ATTR_MISMATCH;
+        rsp_pkt.header.msgetah.rsp_status = UB_MSG_RSP_CMD_ENODEV;
         goto fill_rq_cq;
     }
     /*
@@ -241,9 +267,8 @@ static void ub_cfg_rw(BusControllerState *s, HiMsgSqe *sqe,
         }
     }
 
-    rsp_pkt.header.msgetah.rsp_status = UB_MSG_RSP_SUCCESS;
     if (cfg_offset >= ub_config_size()) {
-        rsp_pkt.header.msgetah.rsp_status = UB_MSG_RSP_INVALID_ADDR;
+        rsp_pkt.header.msgetah.rsp_status = UB_MSG_RSP_EXEC_EFAULT;
         goto fill_rq_cq;
     }
     dw_mask = get_dw_mask(payload->byte_enable);
@@ -251,8 +276,10 @@ static void ub_cfg_rw(BusControllerState *s, HiMsgSqe *sqe,
     case UB_CFG0_READ:
     case UB_CFG1_READ:
         if (ub_dev->config_read) {
-            ub_dev->config_read(ub_dev, cfg_offset, &rsp_pkt.pld.rsp.read_data, dw_mask);
+            ret = ub_dev->config_read(ub_dev, cfg_offset, &rsp_pkt.pld.rsp.read_data, dw_mask);
+            rsp_pkt.header.msgetah.rsp_status = err_to_msg_rsp(ret);
         } else {
+            rsp_pkt.header.msgetah.rsp_status = UB_MSG_RSP_EXEC_ENOEXEC;
             qemu_log("dev: %s read config func NULL\n", ub_dev->qdev.id);
         }
         break;
@@ -260,13 +287,15 @@ static void ub_cfg_rw(BusControllerState *s, HiMsgSqe *sqe,
     case UB_CFG1_WRITE:
         emulated_offset = ub_cfg_offset_to_emulated_offset(cfg_offset, false);
         if (emulated_offset != UINT64_MAX && !*((uint32_t *)(&ub_dev->wmask[emulated_offset]))) {
-            rsp_pkt.header.msgetah.rsp_status = UB_MSG_RSP_REG_ATTR_MISMATCH;
+            rsp_pkt.header.msgetah.rsp_status = UB_MSG_RSP_EXEC_EACCES;
             qemu_log("register cannot be written.\n");
             goto fill_rq_cq;
         }
         if (ub_dev->config_write) {
-            ub_dev->config_write(ub_dev, cfg_offset, &payload->write_data, dw_mask);
+            ret = ub_dev->config_write(ub_dev, cfg_offset, &payload->write_data, dw_mask);
+            rsp_pkt.header.msgetah.rsp_status = err_to_msg_rsp(ret);
         } else {
+            rsp_pkt.header.msgetah.rsp_status = UB_MSG_RSP_EXEC_ENOEXEC;
             qemu_log("dev: %s write config func NULL\n", ub_dev->qdev.id);
         }
         break;

@@ -56,7 +56,7 @@ static Property vfio_ub_dev_properties[] = {
 };
 static void vfio_disable_interrupts(VFIOUBDevice *vdev);
 static void vfio_usi_disable(VFIOUBDevice *vdev);
-static void vfio_ub_write_config(UBDevice *dev, uint64_t offset,
+static int vfio_ub_write_config(UBDevice *dev, uint64_t offset,
                                  uint32_t *val, uint32_t dw_mask);
 
 static bool vfio_ub_needed(void *opaque)
@@ -89,12 +89,18 @@ static void vfio_ub_reset(DeviceState *dev)
     }
 
     /* need after ELR */
-    vfio_ub_write_config(&vdev->udev, UB_CFG1_DEV_TOKEN_ID_OFFSET,
-                         &val, UB_TOKEN_ID_MASK);
-    vfio_ub_write_config(&vdev->udev, UB_CFG1_DEV_RS_ACCESS_EN_OFFSET,
-                         &val, UB_DEV_RS_ACCESS_EN_MASK);
-    vfio_ub_write_config(&vdev->udev, UB_CFG1_BUS_ACCESS_EN_OFFSET,
-                         &val, UB_BUS_ACCESS_EN_MASK);
+    if (vfio_ub_write_config(&vdev->udev, UB_CFG1_DEV_TOKEN_ID_OFFSET,
+                             &val, UB_TOKEN_ID_MASK)) {
+        qemu_log("UB_CFG1_DEV_TOKEN_ID write failed\n");
+    }
+    if (vfio_ub_write_config(&vdev->udev, UB_CFG1_DEV_RS_ACCESS_EN_OFFSET,
+                         &val, UB_DEV_RS_ACCESS_EN_MASK)) {
+        qemu_log("UB_CFG1_DEV_RS_ACCESS_EN write failed\n");
+    }
+    if (vfio_ub_write_config(&vdev->udev, UB_CFG1_BUS_ACCESS_EN_OFFSET,
+                         &val, UB_BUS_ACCESS_EN_MASK)) {
+        qemu_log("UB_CFG1_BUS_ACCESS_EN write failed\n");
+    }
     qemu_log("ub device(%s %s) clear 'dev_token_id',"
              "'bus_access_en' and 'dev_rs_access_en'\n",
              vdev->udev.name, vdev->udev.qdev.id);
@@ -1264,7 +1270,7 @@ static void vfio_usi_disable(VFIOUBDevice *vdev)
     vfio_usi_disable_common(vdev);
 }
 
-static void vfio_ub_read_config(UBDevice *dev, uint64_t offset,
+static int vfio_ub_read_config(UBDevice *dev, uint64_t offset,
                                 uint32_t *val, uint32_t dw_mask)
 {
     VFIOUBDevice *vdev = VFIO_UB(dev);
@@ -1272,13 +1278,14 @@ static void vfio_ub_read_config(UBDevice *dev, uint64_t offset,
     uint32_t emu_val = 0;
     uint32_t phys_val = 0;
     uint64_t emulated_offset;
+    int ret = 0;
 
     /* emu_bits bit_n: 0 means need read value from phy dev; 1 means read value from emulated config space */
     emulated_offset = ub_cfg_offset_to_emulated_offset(offset, false);
     if (emulated_offset != UINT64_MAX) {
         emu_bits = *(uint32_t *)(vdev->emulated_config_bits + emulated_offset);
         if (emu_bits) {
-            ub_default_read_config(dev, offset, &emu_val, dw_mask);
+            ret = ub_default_read_config(dev, offset, &emu_val, dw_mask);
         }
     }
 
@@ -1286,11 +1293,12 @@ static void vfio_ub_read_config(UBDevice *dev, uint64_t offset,
         != DWORD_SIZE) {
         qemu_log("read value from phys dev: %s, addr: 0x%lx failed\n", vdev->vbasedev.name, offset);
         *val = 0;
-        return;
+        return -ENOEXEC;
     }
     phys_val &= dw_mask;
     *val = (emu_val & emu_bits) | (phys_val & ~emu_bits);
     trace_vfio_ub_read_config(offset, emu_val, phys_val, *val);
+    return ret;
 }
 
 static void vfio_sub_page_ers_update_mapping(UBDevice *udev, int ers_id)
@@ -1298,13 +1306,14 @@ static void vfio_sub_page_ers_update_mapping(UBDevice *udev, int ers_id)
     /* do nothing now */
 }
 
-static void vfio_ub_write_config(UBDevice *dev, uint64_t offset,
+static int vfio_ub_write_config(UBDevice *dev, uint64_t offset,
                                  uint32_t *val, uint32_t dw_mask)
 {
     VFIOUBDevice *vdev = VFIO_UB(dev);
     uint32_t write_val = *val;
     uint32_t phys_val;
     int is_enabled, was_enabled, is_masked, was_masked;
+    int ret = 0;
 
     /* get old phys_val */
     if (pread(vdev->vbasedev.fd, &phys_val, DWORD_SIZE,
@@ -1312,7 +1321,7 @@ static void vfio_ub_write_config(UBDevice *dev, uint64_t offset,
         != DWORD_SIZE) {
         qemu_log("read value from phys dev: %s, addr: 0x%lx failed\n",
                  vdev->vbasedev.name, offset);
-        return;
+        return -ENOEXEC;
     }
     trace_vfio_ub_write_config(offset, *val, dw_mask, phys_val);
 
@@ -1322,7 +1331,7 @@ static void vfio_ub_write_config(UBDevice *dev, uint64_t offset,
         != DWORD_SIZE) {
         qemu_log("write value to phys dev: %s, addr: 0x%lx failed\n",
                  vdev->vbasedev.name, offset);
-        return;
+        return -ENOEXEC;
     }
 
     /* check whether the UBBA is updated by GuestOS */
@@ -1337,7 +1346,7 @@ static void vfio_ub_write_config(UBDevice *dev, uint64_t offset,
         }
 
         /* update cfg */
-        ub_default_write_config(dev, offset, val, dw_mask);
+        ret = ub_default_write_config(dev, offset, val, dw_mask);
         for (ers_id = 0; ers_id < UB_NUM_REGIONS; ers_id++) {
             trace_vfio_ub_write_config_ioregion(ers_id, old_addr[ers_id],
                                                 dev->io_regions[ers_id].addr,
@@ -1357,7 +1366,7 @@ static void vfio_ub_write_config(UBDevice *dev, uint64_t offset,
     } else if (ranges_overlap(offset, DWORD_SIZE,
                               UB_CFG1_CAP4_INT_TYPE2_ENABLE_OFFSET, DWORD_SIZE)) {
         was_enabled = usi_enabled(dev);
-        ub_default_write_config(dev, offset, val, dw_mask);
+        ret = ub_default_write_config(dev, offset, val, dw_mask);
         is_enabled = usi_enabled(dev);
         trace_vfio_ub_write_config_int_cap_en(*val, was_enabled, is_enabled);
         if (is_enabled && !was_enabled) {
@@ -1370,14 +1379,15 @@ static void vfio_ub_write_config(UBDevice *dev, uint64_t offset,
     } else if (ranges_overlap(offset, DWORD_SIZE,
                               UB_CFG1_CAP4_INT_TYPE2_MASK_OFFSET, DWORD_SIZE)) {
         was_masked = usi_ue_is_masked(dev);
-        ub_default_write_config(dev, offset, val, dw_mask);
+        ret = ub_default_write_config(dev, offset, val, dw_mask);
         is_masked = usi_ue_is_masked(dev);
         trace_vfio_ub_write_config_int_cap_mask(*val, was_masked, is_masked);
         usi_handle_ue_mask_update(dev, was_masked);
     } else {
         /* sync phy config space and write emulated value to emulated config space */
-        ub_default_write_config(dev, offset, val, dw_mask);
+        ret = ub_default_write_config(dev, offset, val, dw_mask);
     }
+    return ret;
 }
 
 #ifdef CONFIG_IOMMUFD

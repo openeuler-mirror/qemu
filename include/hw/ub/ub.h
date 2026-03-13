@@ -137,9 +137,9 @@ typedef struct UbPortInfo {
     bool port_info_exist;
 } UbPortInfo;
 
-typedef void UBConfigReadFunc(UBDevice *dev, uint64_t offset,
+typedef int UBConfigReadFunc(UBDevice *dev, uint64_t offset,
                               uint32_t *val, uint32_t dw_mask);
-typedef void UBConfigWriteFunc(UBDevice *dev, uint64_t offset,
+typedef int UBConfigWriteFunc(UBDevice *dev, uint64_t offset,
                                uint32_t *val, uint32_t dw_mask);
 typedef int (*USIVectorUseNotifier)(UBDevice *udev, uint16_t vector, USIMessage msg);
 typedef void (*USIVectorReleaseNotifier)(UBDevice *udev, uint16_t vector);
@@ -261,9 +261,9 @@ static inline uint64_t ub_get_quad(const uint8_t *config)
     return ldq_le_p(config);
 }
 
-void ub_default_read_config(UBDevice *dev, uint64_t offset,
+int ub_default_read_config(UBDevice *dev, uint64_t offset,
                             uint32_t *val, uint32_t dw_mask);
-void ub_default_write_config(UBDevice *dev, uint64_t offset,
+int ub_default_write_config(UBDevice *dev, uint64_t offset,
                              uint32_t *val, uint32_t dw_mask);
 UBDevice *ub_find_device_by_guid(UbGuid *guid);
 int ub_dev_finally_setup(Error **errp);
