@@ -979,6 +979,71 @@ static void aarch64_kunpeng_920_v1_initfn(Object *obj)
     aarch64_add_sve_properties(obj);
 }
 
+static void aarch64_kunpeng_920_v2_initfn(Object *obj)
+{
+    ARMCPU *cpu = ARM_CPU(obj);
+
+    cpu->dtb_compatible = "arm,arm-v8";
+    cpu->kvm_target = QEMU_KVM_ARM_TARGET_GENERIC_V8;
+    set_feature(&cpu->env, ARM_FEATURE_V8);
+    set_feature(&cpu->env, ARM_FEATURE_NEON);
+    set_feature(&cpu->env, ARM_FEATURE_GENERIC_TIMER);
+    set_feature(&cpu->env, ARM_FEATURE_AARCH64);
+    set_feature(&cpu->env, ARM_FEATURE_CBAR_RO);
+    set_feature(&cpu->env, ARM_FEATURE_EL2);
+    set_feature(&cpu->env, ARM_FEATURE_EL3);
+    set_feature(&cpu->env, ARM_FEATURE_PMU);
+
+    /* This register is present only when EL1 is capable of using AArch32 */
+    cpu->clidr = 0;
+    cpu->id_afr0 = 0x00000000;
+    cpu->isar.mvfr0 = 0;
+    cpu->isar.mvfr1 = 0;
+    cpu->isar.mvfr2 = 0;
+    cpu->isar.dbgdidr = 0;
+    SET_IDREG(&cpu->isar, ID_PFR0, 0);
+    SET_IDREG(&cpu->isar, ID_PFR1, 0);
+    SET_IDREG(&cpu->isar, ID_DFR0, 0);
+    SET_IDREG(&cpu->isar, ID_MMFR0, 0);
+    SET_IDREG(&cpu->isar, ID_MMFR1, 0);
+    SET_IDREG(&cpu->isar, ID_MMFR2, 0);
+    SET_IDREG(&cpu->isar, ID_MMFR3, 0);
+    SET_IDREG(&cpu->isar, ID_MMFR4, 0);
+    SET_IDREG(&cpu->isar, ID_ISAR0, 0);
+    SET_IDREG(&cpu->isar, ID_ISAR1, 0);
+    SET_IDREG(&cpu->isar, ID_ISAR2, 0);
+    SET_IDREG(&cpu->isar, ID_ISAR3, 0);
+    SET_IDREG(&cpu->isar, ID_ISAR4, 0);
+    SET_IDREG(&cpu->isar, ID_ISAR5, 0);
+
+    SET_IDREG(&cpu->isar, ID_AA64DFR0, 0xf010305609);
+    SET_IDREG(&cpu->isar, ID_AA64DFR1, 0x0);
+
+    SET_IDREG(&cpu->isar, ID_AA64ISAR0, 0x1221111110212120);
+    SET_IDREG(&cpu->isar, ID_AA64ISAR1, 0x11111100211002);
+
+    SET_IDREG(&cpu->isar, ID_AA64MMFR0, 0x2000022200101125);
+    SET_IDREG(&cpu->isar, ID_AA64MMFR1, 0x1000000110312122);
+    SET_IDREG(&cpu->isar, ID_AA64MMFR2, 0x1221011110000011);
+
+    SET_IDREG(&cpu->isar, ID_AA64PFR0, 0x1101001121110011);
+    SET_IDREG(&cpu->isar, ID_AA64PFR1, 0x21);
+
+    SET_IDREG(&cpu->isar, ID_AA64ZFR0, 0x110100110021);
+
+    cpu->ccsidr[0] = 0xff0000001a; /* L1 dcache */
+    cpu->ccsidr[1] = 0x1ff0000001a; /* L1 icache */
+    cpu->ccsidr[2] = 0x7ff0000003a; /* L2 cache */
+
+    cpu->midr = 0x480fd030;
+    cpu->revidr = 0x00000000;
+    cpu->ctr = 0xb444c004;
+    /* DCZID_EL0 */
+    cpu->dcz_blocksize = 0x4; /* 64 bytes */
+    cpu->num_pmu_ctrs = -1;
+    aarch64_add_sve_properties(obj);
+}
+
 static void aarch64_kunpeng_950_v1_initfn(Object *obj)
 {
     ARMCPU *cpu = ARM_CPU(obj);
@@ -1106,6 +1171,7 @@ static const ARMCPUInfo aarch64_cpus[] = {
     { .name = "cortex-a53",         .initfn = aarch64_a53_initfn },
     { .name = "Kunpeng-920",        .initfn = aarch64_kunpeng_920_initfn},
     { .name = "Kunpeng-920-V1",     .initfn = aarch64_kunpeng_920_v1_initfn},
+    { .name = "Kunpeng-920-V2",     .initfn = aarch64_kunpeng_920_v2_initfn},
     { .name = "Kunpeng-950-V1",     .initfn = aarch64_kunpeng_950_v1_initfn},
     { .name = "max",                .initfn = aarch64_max_initfn },
 #if defined(CONFIG_KVM) || defined(CONFIG_HVF)
