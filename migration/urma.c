@@ -900,7 +900,8 @@ static urma_target_jetty_t *qemu_import_jfr(URMAContext *ctx)
 {
     urma_rjfr_t remote_jfr = {
         .jfr_id = ctx->remote_jfr_id,
-        .trans_mode = URMA_TM_RM
+        .trans_mode = URMA_TM_RM,
+        .tp_type = URMA_CTP,
     };
     urma_target_jetty_t *tjfr = urma_import_jfr_p(ctx->urma_ctx, &remote_jfr, &ctx->rjfr_token);
     if (tjfr == NULL) {
