@@ -880,6 +880,7 @@ void smmu_dev_uninstall_nested_ste(SMMUDevice *sdev, bool abort)
         qemu_thread_join(&s1_hwpt->write_fault_thread);
         qemu_mutex_destroy(&s1_hwpt->fault_mutex);
         io_uring_queue_exit(&s1_hwpt->fault_ring);
+        close(s1_hwpt->out_fault_fd);
     }
 
     if (!host_iommu_device_iommufd_attach_hwpt(idev, hwpt_id, NULL)) {
