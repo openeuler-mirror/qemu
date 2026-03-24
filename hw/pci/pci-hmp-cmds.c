@@ -126,6 +126,9 @@ void hmp_info_pci(Monitor *mon, const QDict *qdict)
 
 void pcibus_dev_print(Monitor *mon, DeviceState *dev, int indent)
 {
+    if (object_dynamic_cast(OBJECT(dev), "arm-smmuv3-accel")) {
+        return;
+    }
     PCIDevice *d = (PCIDevice *)dev;
     int class = pci_get_word(d->config + PCI_CLASS_DEVICE);
     const pci_class_desc *desc = get_class_desc(class);
