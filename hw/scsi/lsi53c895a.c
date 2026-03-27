@@ -1136,6 +1136,7 @@ static void lsi_execute_script(LSIState *s)
     int insn_processed = 0;
     static int reentrancy_level;
 
+    object_ref(s);
     reentrancy_level++;
 
     s->istat1 |= LSI_ISTAT1_SRUN;
@@ -1159,6 +1160,7 @@ again:
         lsi_script_scsi_interrupt(s, LSI_SIST0_UDC, 0);
         lsi_disconnect(s);
         trace_lsi_execute_script_stop();
+        object_unref(s);
         return;
     }
     insn = read_dword(s, s->dsp);
@@ -1607,6 +1609,7 @@ again:
     trace_lsi_execute_script_stop();
 
     reentrancy_level--;
+    object_unref(s);
 }
 
 static uint8_t lsi_reg_readb(LSIState *s, int offset)
