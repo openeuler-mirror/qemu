@@ -174,12 +174,12 @@ static int virtio_scsi_parse_req(VirtIOSCSIReq *req,
     return 0;
 }
 
-static VirtIOSCSIReq *virtio_scsi_pop_req(VirtIOSCSI *s, VirtQueue *vq)
+static VirtIOSCSIReq *virtio_scsi_pop_req(VirtIOSCSI *s, VirtQueue *vq, size_t extra_req_size)
 {
-    VirtIOSCSICommon *vs = (VirtIOSCSICommon *)s;
     VirtIOSCSIReq *req;
 
-    req = virtqueue_pop(vq, sizeof(VirtIOSCSIReq) + vs->cdb_size);
+    req = virtqueue_pop(vq, sizeof(VirtIOSCSIReq) + extra_req_size);
+
     if (!req) {
         return NULL;
     }
@@ -465,7 +465,7 @@ bool virtio_scsi_handle_ctrl_vq(VirtIOSCSI *s, VirtQueue *vq)
     VirtIOSCSIReq *req;
     bool progress = false;
 
-    while ((req = virtio_scsi_pop_req(s, vq))) {
+    while ((req = virtio_scsi_pop_req(s, vq, 0))) {
         progress = true;
         virtio_scsi_handle_ctrl_req(s, req);
     }
@@ -618,13 +618,14 @@ static void virtio_scsi_fail_cmd_req(VirtIOSCSIReq *req)
     virtio_scsi_complete_cmd_req(req);
 }
 
-static int virtio_scsi_handle_cmd_req_prepare(VirtIOSCSI *s, VirtIOSCSIReq *req)
+static int virtio_scsi_handle_cmd_req_prepare(VirtIOSCSI *s, VirtIOSCSIReq *req,
+                                              size_t cdb_size)
 {
     VirtIOSCSICommon *vs = &s->parent_obj;
     SCSIDevice *d;
     int rc;
 
-    rc = virtio_scsi_parse_req(req, sizeof(VirtIOSCSICmdReq) + vs->cdb_size,
+    rc = virtio_scsi_parse_req(req, sizeof(VirtIOSCSICmdReq) + cdb_size,
                                sizeof(VirtIOSCSICmdResp) + vs->sense_size);
     if (rc < 0) {
         if (rc == -ENOTSUP) {
@@ -647,7 +648,7 @@ static int virtio_scsi_handle_cmd_req_prepare(VirtIOSCSI *s, VirtIOSCSIReq *req)
     virtio_scsi_ctx_check(s, d);
     req->sreq = scsi_req_new(d, req->req.cmd.tag,
                              virtio_scsi_get_lun(req->req.cmd.lun),
-                             req->req.cmd.cdb, vs->cdb_size, req);
+                             req->req.cmd.cdb, cdb_size, req);
 
     if (req->sreq->cmd.mode != SCSI_XFER_NONE
         && (req->sreq->cmd.mode != req->mode ||
@@ -683,13 +684,16 @@ bool virtio_scsi_handle_cmd_vq(VirtIOSCSI *s, VirtQueue *vq)
     QTAILQ_HEAD(, VirtIOSCSIReq) reqs = QTAILQ_HEAD_INITIALIZER(reqs);
 
     do {
+        VirtIOSCSICommon *vs = (VirtIOSCSICommon *)s;
+        size_t cdb_size = qatomic_read(&vs->cdb_size);
+
         if (suppress_notifications) {
             virtio_queue_set_notification(vq, 0);
         }
 
-        while ((req = virtio_scsi_pop_req(s, vq))) {
+        while ((req = virtio_scsi_pop_req(s, vq, cdb_size))) {
             progress = true;
-            ret = virtio_scsi_handle_cmd_req_prepare(s, req);
+            ret = virtio_scsi_handle_cmd_req_prepare(s, req, cdb_size);
             if (!ret) {
                 QTAILQ_INSERT_TAIL(&reqs, req, next);
             } else if (ret == -EINVAL) {
@@ -765,7 +769,7 @@ static void virtio_scsi_set_config(VirtIODevice *vdev,
     }
 
     vs->sense_size = virtio_ldl_p(vdev, &scsiconf->sense_size);
-    vs->cdb_size = virtio_ldl_p(vdev, &scsiconf->cdb_size);
+    qatomic_set(&vs->cdb_size, virtio_ldl_p(vdev, &scsiconf->cdb_size));
 }
 
 static uint64_t virtio_scsi_get_features(VirtIODevice *vdev,
@@ -806,7 +810,7 @@ void virtio_scsi_push_event(VirtIOSCSI *s, SCSIDevice *dev,
         return;
     }
 
-    req = virtio_scsi_pop_req(s, vs->event_vq);
+    req = virtio_scsi_pop_req(s, vs->event_vq, 0);
     if (!req) {
         s->events_dropped = true;
         return;
