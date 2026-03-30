@@ -461,6 +461,7 @@ static void test_query_cpu_model_expansion(const void *data)
 
     assert_has_not_feature(qts, "max", "kvm-no-adjvtime");
     assert_has_not_feature(qts, "max", "kvm-steal-time");
+    assert_has_not_feature(qts, "max", "kvm-vtimer-status");
 
     if (g_str_equal(qtest_get_arch(), "aarch64")) {
         assert_has_feature_enabled(qts, "max", "aarch64");
@@ -509,6 +510,7 @@ static void test_query_cpu_model_expansion_kvm(const void *data)
 
     if (g_str_equal(qtest_get_arch(), "aarch64")) {
         bool kvm_supports_steal_time;
+        bool kvm_supports_vtimer_status;
         bool kvm_supports_sve;
         char max_name[8], name[8];
         uint32_t max_vq, vq;
@@ -548,10 +550,12 @@ static void test_query_cpu_model_expansion_kvm(const void *data)
          */
         assert_has_feature(qts, "host", "kvm-steal-time");
         assert_has_feature(qts, "host", "sve");
+        assert_has_feature(qts, "host", "kvm-vtimer-status");
 
         resp = do_query_no_props(qts, "host");
         kvm_supports_steal_time = resp_get_feature(resp, "kvm-steal-time");
         kvm_supports_sve = resp_get_feature(resp, "sve");
+        kvm_supports_vtimer_status = resp_get_feature(resp, "kvm-vtimer-status");
         vls = resp_get_sve_vls(resp);
         qobject_unref(resp);
 
@@ -617,11 +621,18 @@ static void test_query_cpu_model_expansion_kvm(const void *data)
         } else {
             g_assert(vls == 0);
         }
+
+        if (kvm_supports_vtimer_status) {
+            /* If we have vtiemr-status then we should be able to toggle it. */
+            assert_set_feature(qts, "host", "kvm-vtimer-status", false);
+            assert_set_feature(qts, "host", "kvm-vtimer-status", true);
+        }
     } else {
         assert_has_not_feature(qts, "host", "aarch64");
         assert_has_not_feature(qts, "host", "pmu");
         assert_has_not_feature(qts, "host", "sve");
         assert_has_not_feature(qts, "host", "kvm-steal-time");
+        assert_has_not_feature(qts, "host", "kvm-vtimer-status");
     }
 
     qtest_quit(qts);

@@ -47,6 +47,9 @@
 /* See Linux kernel arch/arm64/include/asm/pvclock-abi.h */
 #define PVTIME_SIZE_PER_CPU 64
 
+/* See Linux kernel arch/arm64/include/asm/pvtimer-status-abi.h */
+#define VTIMER_STATUS_SIZE_PER_CPU 64
+
 /* ARM CLIDR_EL1 related definitions */
 /* Ctypen, bits[3(n - 1) + 2 : 3(n - 1)], for n = 1 to 7 */
 #define CTYPE_NONE     0b000
@@ -148,6 +151,7 @@ enum {
     VIRT_NVDIMM_ACPI,
     VIRT_CPUHP_ACPI,
     VIRT_PVTIME,
+    VIRT_VTIMER_STATUS,
     VIRT_LOWMEMMAP_LAST,
 };
 

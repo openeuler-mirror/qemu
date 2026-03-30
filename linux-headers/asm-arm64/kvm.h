@@ -493,6 +493,10 @@ struct kvm_cap_arm_rme_map_ram_args {
 #define KVM_ARM_VCPU_PVTIME_CTRL	2
 #define   KVM_ARM_VCPU_PVTIME_IPA	0
 
+/* Solely for avoiding conflicts with mainline */
+#define KVM_ARM_VCPU_PVTIMER_STATUS_CTRL	20
+#define   KVM_ARM_VCPU_PVTIMER_STATUS_IPA	0
+
 /* KVM_IRQ_LINE irq field index values */
 #define KVM_ARM_IRQ_VCPU2_SHIFT		28
 #define KVM_ARM_IRQ_VCPU2_MASK		0xf
