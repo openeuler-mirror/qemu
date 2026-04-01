@@ -10,8 +10,6 @@
 #include "migration/cpu.h"
 #include "sysemu/tcg.h"
 #include "vec.h"
-#include "kvm/kvm_loongarch.h"
-#include "sysemu/kvm.h"
 
 static const VMStateDescription vmstate_fpu_reg = {
     .name = "fpu_reg",

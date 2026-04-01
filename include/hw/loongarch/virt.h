@@ -49,7 +49,7 @@
 #define VIRT_PCI_IO_SIZE        0xC000
 #define VIRT_BIOS_BASE          0x1c000000UL
 #define VIRT_BIOS_SIZE          0x01000000UL
-#define VIRT_FLASH_SECTOR_SIZE  (128 * KiB)
+#define VIRT_FLASH_SECTOR_SIZE  (256 * KiB)
 #define VIRT_FLASH0_BASE        VIRT_BIOS_BASE
 #define VIRT_FLASH0_SIZE        VIRT_BIOS_SIZE
 #define VIRT_FLASH1_BASE        0x1d000000UL
@@ -114,7 +114,13 @@ struct LoongArchVirtMachineState {
     DeviceState  *acpi_ged;
     int          fdt_size;
     DeviceState *platform_bus_dev;
-    DeviceState  *extioi;
+    PFlashCFI01  *flash[2];
+    MemoryRegion system_iocsr;
+    MemoryRegion iocsr_mem;
+    AddressSpace as_iocsr;
+    struct loongarch_boot_info bootinfo;
+    DeviceState *ipi;
+    DeviceState *extioi;
     struct memmap_entry *memmap_table;
     unsigned int memmap_entries;
     uint64_t misc_feature;
@@ -123,13 +129,6 @@ struct LoongArchVirtMachineState {
     hwaddr ram_end;
     struct GPEXConfig gpex;
     bool highmem_mmio;
-    PFlashCFI01  *flash[2];
-    MemoryRegion system_iocsr;
-    MemoryRegion iocsr_mem;
-    AddressSpace as_iocsr;
-    int          features;
-    struct loongarch_boot_info bootinfo;
-    DeviceState *ipi;
 };
 
 #define TYPE_LOONGARCH_VIRT_MACHINE  MACHINE_TYPE_NAME("virt")

@@ -12,12 +12,12 @@
 #include "hw/boards.h"
 #include "hw/char/serial.h"
 #include "sysemu/kvm.h"
+#include "sysemu/tcg.h"
 #include "sysemu/sysemu.h"
 #include "sysemu/qtest.h"
 #include "sysemu/runstate.h"
 #include "sysemu/reset.h"
 #include "sysemu/rtc.h"
-#include "sysemu/tcg.h"
 #include "hw/loongarch/virt.h"
 #include "exec/address-spaces.h"
 #include "hw/irq.h"
@@ -77,7 +77,7 @@ static void virt_set_dmsi(Object *obj, Visitor *v, const char *name,
 #define DEFAULT_HIGH_PCIE_MMIO_SIZE (DEFAULT_HIGH_PCIE_MMIO_SIZE_GB * GiB)
 
 static void virt_get_veiointc(Object *obj, Visitor *v, const char *name,
-                               void *opaque, Error **errp)
+                              void *opaque, Error **errp)
 {
     LoongArchVirtMachineState *lvms = LOONGARCH_VIRT_MACHINE(obj);
     OnOffAuto veiointc = lvms->veiointc;
@@ -86,7 +86,7 @@ static void virt_get_veiointc(Object *obj, Visitor *v, const char *name,
 }
 
 static void virt_set_veiointc(Object *obj, Visitor *v, const char *name,
-                               void *opaque, Error **errp)
+                              void *opaque, Error **errp)
 {
     LoongArchVirtMachineState *lvms = LOONGARCH_VIRT_MACHINE(obj);
 
@@ -222,7 +222,6 @@ static void virt_build_smbios(LoongArchVirtMachineState *lvms)
 
     smbios_set_defaults("QEMU", product, mc->name, false,
                         true, SMBIOS_ENTRY_POINT_TYPE_64);
-
     smbios_get_tables(ms, NULL, 0, &smbios_tables, &smbios_tables_len,
                       &smbios_anchor, &smbios_anchor_len, &error_fatal);
 
@@ -529,25 +528,47 @@ static void virt_irq_init(LoongArchVirtMachineState *lvms)
     int i, start, num;
 
     /*
-     * The connection of interrupts:
-     *   +-----+    +---------+     +-------+
-     *   | IPI |--> | CPUINTC | <-- | Timer |
-     *   +-----+    +---------+     +-------+
-     *                  ^
-     *                  |
-     *            +---------+
-     *            | EIOINTC |
-     *            +---------+
-     *             ^       ^
-     *             |       |
-     *      +---------+ +---------+
-     *      | PCH-PIC | | PCH-MSI |
-     *      +---------+ +---------+
-     *        ^      ^          ^
-     *        |      |          |
-     * +--------+ +---------+ +---------+
-     * | UARTs  | | Devices | | Devices |
-     * +--------+ +---------+ +---------+
+     * Extended IRQ model.
+     *                                 |
+     * +-----------+     +-------------|--------+     +-----------+
+     * | IPI/Timer | --> | CPUINTC(0-3)|(4-255) | <-- | IPI/Timer |
+     * +-----------+     +-------------|--------+     +-----------+
+     *                         ^       |
+     *                         |
+     *                    +---------+
+     *                    | EIOINTC |
+     *                    +---------+
+     *                     ^       ^
+     *                     |       |
+     *              +---------+ +---------+
+     *              | PCH-PIC | | PCH-MSI |
+     *              +---------+ +---------+
+     *                ^      ^          ^
+     *                |      |          |
+     *         +--------+ +---------+ +---------+
+     *         | UARTs  | | Devices | | Devices |
+     *         +--------+ +---------+ +---------+
+     *
+     * Virt extended IRQ model.
+     *
+     *   +-----+    +---------------+     +-------+
+     *   | IPI |--> | CPUINTC(0-255)| <-- | Timer |
+     *   +-----+    +---------------+     +-------+
+     *                     ^
+     *                     |
+     *               +-----------+
+     *               | V-EIOINTC |
+     *               +-----------+
+     *                ^         ^
+     *                |         |
+     *         +---------+ +---------+
+     *         | PCH-PIC | | PCH-MSI |
+     *         +---------+ +---------+
+     *           ^      ^          ^
+     *           |      |          |
+     *    +--------+ +---------+ +---------+
+     *    | UARTs  | | Devices | | Devices |
+     *    +--------+ +---------+ +---------+
      *
      *
      *  Advanced Extended IRQ model
@@ -596,7 +617,6 @@ static void virt_irq_init(LoongArchVirtMachineState *lvms)
     if (virt_is_veiointc_enabled(lvms)) {
         qdev_prop_set_bit(extioi, "has-virtualization-extension", true);
     }
-
     sysbus_realize_and_unref(SYS_BUS_DEVICE(extioi), &error_fatal);
 
     virt_cpu_irq_init(lvms);
@@ -630,7 +650,7 @@ static void virt_irq_init(LoongArchVirtMachineState *lvms)
         if (virt_is_veiointc_enabled(lvms)) {
             memory_region_add_subregion(&lvms->system_iocsr, EXTIOI_VIRT_BASE,
                     sysbus_mmio_get_region(SYS_BUS_DEVICE(extioi), 1));
-         }
+        }
 
         /* PCH_PIC memory region */
         memory_region_add_subregion(get_system_memory(), VIRT_PCH_REG_BASE,
@@ -699,9 +719,9 @@ static void virt_firmware_init(LoongArchVirtMachineState *lvms)
     }
 }
 
-
-static MemTxResult virt_iocsr_misc_write(void *opaque, hwaddr addr, uint64_t val,
-                                         unsigned size, MemTxAttrs attrs)
+static MemTxResult virt_iocsr_misc_write(void *opaque, hwaddr addr,
+                                         uint64_t val, unsigned size,
+                                         MemTxAttrs attrs)
 {
     LoongArchVirtMachineState *lvms = LOONGARCH_VIRT_MACHINE(opaque);
     uint64_t features;
@@ -733,8 +753,13 @@ static MemTxResult virt_iocsr_misc_write(void *opaque, hwaddr addr, uint64_t val
         address_space_stl_le(&lvms->as_iocsr,
                              EXTIOI_VIRT_BASE + EXTIOI_VIRT_CONFIG,
                              features, attrs, NULL);
-         break;
-     default:
+        break;
+    case VERSION_REG:
+    case FEATURE_REG:
+    case VENDOR_REG:
+    case CPUNAME_REG:
+        break;
+    default:
         qemu_log_mask(LOG_UNIMP, "%s: Unimplemented IOCSR 0x%" HWADDR_PRIx "\n",
                       __func__, addr);
         break;
@@ -788,7 +813,6 @@ static MemTxResult virt_iocsr_misc_read(void *opaque, hwaddr addr,
         if (features & BIT(EXTIOI_ENABLE)) {
             ret |= BIT_ULL(IOCSRM_EXTIOI_EN);
         }
-
         if (features & BIT(EXTIOI_ENABLE_INT_ENCODE)) {
             ret |= BIT_ULL(IOCSRM_EXTIOI_INT_ENCODE);
         }
@@ -796,11 +820,6 @@ static MemTxResult virt_iocsr_misc_read(void *opaque, hwaddr addr,
             (lvms->misc_status & BIT_ULL(IOCSRM_DMSI_EN))) {
             ret |= BIT_ULL(IOCSRM_DMSI_EN);
         }
-        break;
-    case VERSION_REG:
-    case FEATURE_REG:
-    case VENDOR_REG:
-    case CPUNAME_REG:
         break;
     default:
         qemu_log_mask(LOG_UNIMP, "%s: Unimplemented IOCSR 0x%" HWADDR_PRIx "\n",
@@ -1474,9 +1493,10 @@ static void virt_class_init(ObjectClass *oc, void *data)
     object_class_property_set_description(oc, "acpi",
         "Enable ACPI");
     object_class_property_add(oc, "v-eiointc", "OnOffAuto",
-        virt_get_veiointc, virt_set_veiointc, NULL, NULL);
+        virt_get_veiointc, virt_set_veiointc,
+        NULL, NULL);
     object_class_property_set_description(oc, "v-eiointc",
-                            "Enable Virt Extend I/O Interrupt Controller");
+                            "Enable Virt Extend I/O Interrupt Controller.");
     object_class_property_add(oc, "dmsi", "OnOffAuto",
         virt_get_dmsi, virt_set_dmsi, NULL, NULL);
     object_class_property_set_description(oc, "dmsi",

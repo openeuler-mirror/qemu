@@ -85,5 +85,6 @@ void kvm_ipi_realize(DeviceState *dev, Error **errp)
                 strerror(-ret));
         abort();
     }
+
     lis->dev_fd = ret;
 }

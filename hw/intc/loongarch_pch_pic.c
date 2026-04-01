@@ -26,7 +26,7 @@ static void pch_pic_update_irq(LoongArchPICCommonState *s, uint64_t mask,
             irq = ctz64(val);
             s->intisr |= MAKE_64BIT_MASK(irq, 1);
             qemu_set_irq(s->parent_irq[s->htmsi_vector[irq]], 1);
-	}
+        }
     } else {
         /*
          * intirr means requested pending irq
@@ -37,7 +37,7 @@ static void pch_pic_update_irq(LoongArchPICCommonState *s, uint64_t mask,
             irq = ctz64(val);
             s->intisr &= ~MAKE_64BIT_MASK(irq, 1);
             qemu_set_irq(s->parent_irq[s->htmsi_vector[irq]], 0);
-	}
+        }
     }
 }
 

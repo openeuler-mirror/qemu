@@ -8,6 +8,7 @@
 
 #include <linux/types.h>
 
+#define __KVM_HAVE_GUEST_DEBUG
 #define __KVM_HAVE_IRQ_LINE
 
 /*
