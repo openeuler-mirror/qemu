@@ -220,6 +220,25 @@ void kvm_arm_pvtimer_status_init(CPUState *cs, uint64_t ipa)
     }
 }
 
+bool kvm_arm_timer_early_inject_supported(void)
+{
+    return kvm_vm_check_extension(kvm_state, KVM_CAP_ARM_TIMER_EARLY_INJECT);
+}
+
+void kvm_arm_timer_early_inject_init(uint64_t ipa)
+{
+    struct kvm_device_attr attr = {
+        .group = KVM_VM_TIMER_EARLY_INJECT_CTRL,
+        .attr = KVM_VM_TIMER_EARLY_INJECT_IPA,
+        .addr = (uint64_t)&ipa,
+    };
+
+    if (!kvm_arm_set_vm_attr(&attr, "TIMER EARLY INJECT IPA")) {
+        error_report("failed to init TIMER EARLY INJECT IPA");
+        return;
+    }
+}
+
 int kvm_arm_set_smccc_filter(uint64_t func, uint8_t faction)
 {
     struct kvm_smccc_filter filter = {

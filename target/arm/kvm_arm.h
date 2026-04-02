@@ -436,6 +436,23 @@ void kvm_arm_pvtime_init(CPUState *cs, uint64_t ipa);
  */
 void kvm_arm_pvtimer_status_init(CPUState *cs, uint64_t ipa);
 
+/**
+ * kvm_arm_timer_early_inject_supported:
+ *
+ * Returns: true if KVM can support timer early inject
+ * and false otherwise.
+ */
+bool kvm_arm_timer_early_inject_supported(void);
+
+/**
+ * kvm_arm_timer_early_inject_init:
+ * @ipa: Guest physical base address of the timer early inject structure
+ *
+ * Initializes TIMER EARLY INJECT for the VM, setting the TIMER EARLY INJECT
+ * IPA to @ipa. Called once per VM, not per vCPU.
+ */
+void kvm_arm_timer_early_inject_init(uint64_t ipa);
+
 int kvm_arm_set_irq(int cpu, int irqtype, int irq, int level);
 
 void tmm_add_ram_region(hwaddr base1, hwaddr len1, hwaddr base2, hwaddr len2, bool populate);
@@ -627,6 +644,16 @@ static inline void kvm_arm_steal_time_finalize(ARMCPU *cpu, Error **errp)
 }
 
 static inline void kvm_arm_pvtimer_status_init(CPUState *cs, uint64_t ipa)
+{
+    g_assert_not_reached();
+}
+
+static inline bool kvm_arm_timer_early_inject_supported(void)
+{
+    return false;
+}
+
+static inline void kvm_arm_timer_early_inject_init(uint64_t ipa)
 {
     g_assert_not_reached();
 }

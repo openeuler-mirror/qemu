@@ -183,6 +183,7 @@ static const MemMapEntry base_memmap[] = {
     [VIRT_SECURE_GPIO] =        { 0x090b0000, 0x00001000 },
     [VIRT_CPUHP_ACPI] =         { 0x090c0000, ACPI_CPU_HOTPLUG_REG_LEN},
     [VIRT_VTIMER_STATUS] =      { 0x09fe0000, 0x00010000 },
+    [VIRT_TIMER_EARLY_INJECT] = { 0x09ff0000, 0x00010000 },
     [VIRT_MMIO] =               { 0x0a000000, 0x00000200 },
     /* In the virtCCA scenario, this space is used for MSI interrupt mapping */
     [VIRT_CVM_MSI] =            { 0x0a001000, 0x00fff000 },
@@ -2499,6 +2500,30 @@ static void virt_cpu_post_init(VirtMachineState *vms, MemoryRegion *sysmem)
 
             memory_region_init_ram(vtimer_status, NULL, "vtimer_status", vtimer_status_size, NULL);
             memory_region_add_subregion(sysmem, vtimer_status_reg_base, vtimer_status);
+        }
+
+        hwaddr timer_early_inject_reg_base = vms->memmap[VIRT_TIMER_EARLY_INJECT].base;
+        hwaddr timer_early_inject_reg_size = vms->memmap[VIRT_TIMER_EARLY_INJECT].size;
+
+        if (kvm_arm_timer_early_inject_supported()) {
+            MemoryRegion *timer_early_inject = g_new(MemoryRegion, 1);
+            hwaddr size = TIMER_EARLY_INJECT_SIZE_GLOBAL;
+
+            size = REAL_HOST_PAGE_ALIGN(size);
+
+            if (size > timer_early_inject_reg_size) {
+                error_report("timer_early_inject requires a %" HWADDR_PRId
+                             " byte memory region,"
+                             " but only %" HWADDR_PRId " has been reserved",
+                             size, timer_early_inject_reg_size);
+                exit(1);
+            }
+
+            memory_region_init_ram(timer_early_inject, NULL, "timer_early_inject", size, NULL);
+            memory_region_add_subregion(sysmem, timer_early_inject_reg_base, timer_early_inject);
+
+            /* VM-level initialization (once per VM, not per vCPU) */
+            kvm_arm_timer_early_inject_init(timer_early_inject_reg_base);
         }
 
         for (n = 0; n < possible_cpus->len; n++) {
