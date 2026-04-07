@@ -754,19 +754,6 @@ process_incoming_migration_co(void *opaque)
     migrate_set_state(&mis->state, MIGRATION_STATUS_SETUP,
                       MIGRATION_STATUS_ACTIVE);
 
-#ifdef CONFIG_URMA_MIGRATION
-    if (migrate_urma()) {
-        if (qemu_exchange_urma_info(qemu_file_get_return_path(mis->from_src_file),
-                                    migrate_get_current()->urma_ctx,
-                                    true)) {
-            goto fail;
-        }
-
-        /* enable autostart during urma migration to reduce downtime */
-        autostart = true;
-    }
-#endif
-
     mis->loadvm_co = qemu_coroutine_self();
     ret = qemu_loadvm_state(mis->from_src_file);
     mis->loadvm_co = NULL;
@@ -3526,6 +3513,29 @@ static void *migration_thread(void *opaque)
     qemu_mutex_lock_iothread();
     qemu_savevm_state_header(s->to_dst_file);
     qemu_mutex_unlock_iothread();
+
+#ifdef CONFIG_URMA_MIGRATION
+    if (migrate_urma()) {
+        if (qemu_fflush(s->to_dst_file) < 0) {
+            migrate_set_state(&s->state, s->state, MIGRATION_STATUS_FAILED);
+            goto out;
+        }
+
+        ret = qemu_urma_init_context(s->urma_ctx);
+        if (ret) {
+            migrate_set_state(&s->state, s->state, MIGRATION_STATUS_FAILED);
+            qemu_file_set_error(s->to_dst_file, ret);
+            goto out;
+        }
+
+        ret = qemu_urma_reg_whole_ram_blocks(s->urma_ctx);
+        if (ret) {
+            migrate_set_state(&s->state, s->state, MIGRATION_STATUS_FAILED);
+            qemu_file_set_error(s->to_dst_file, ret);
+            goto out;
+        }
+    }
+#endif
 #ifdef CONFIG_HAM_MIGRATION
     ham_migrate_prepare(s);
 #endif
@@ -3564,14 +3574,8 @@ static void *migration_thread(void *opaque)
 
 #ifdef CONFIG_URMA_MIGRATION
     if (migrate_urma()) {
-        ret = qemu_urma_reg_whole_ram_blocks(s->urma_ctx);
-        if (ret) {
-            migrate_set_state(&s->state, s->state, MIGRATION_STATUS_FAILED);
-            qemu_file_set_error(s->to_dst_file, ret);
-            goto out;
-        }
-
-        ret = qemu_exchange_urma_info(qemu_file_get_return_path(s->to_dst_file), s->urma_ctx, false);
+        ret = qemu_exchange_urma_info(qemu_file_get_return_path(s->to_dst_file),
+                                       s->urma_ctx, false);
         if (ret) {
             migrate_set_state(&s->state, s->state, MIGRATION_STATUS_FAILED);
             qemu_file_set_error(s->to_dst_file, ret);

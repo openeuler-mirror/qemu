@@ -47,8 +47,10 @@
 #include <stdatomic.h>
 #include "socket.h"
 #include "exec/target_page.h"
+#include "sysemu/sysemu.h"
 #include <dlfcn.h>
 #include "crypto/random.h"
+#include <ub/umdk/urma/uvs_api.h>
 
 #define URMA_REG_CHUNK_SHIFT 21  /* 2 MB */
 
@@ -59,8 +61,10 @@
 
 #define URMA_DEV_DEFAULT_NAME   "bonding_dev_0"  /* default use bonding dev */
 #define URMA_DEV_DEFAULT_IDX    0
+#define UVS_SO_PATH             "libtpsa.so"
 
 void *handle_urma = NULL;
+static void *handle_uvs = NULL;
 static const char *urma_dev_name = URMA_DEV_DEFAULT_NAME;
 static int urma_dev_idx = URMA_DEV_DEFAULT_IDX;
 
@@ -68,6 +72,7 @@ urma_status_t (*urma_init_p)(urma_init_attr_t *conf);
 urma_status_t (*urma_uninit_p)(void);
 urma_device_t **(*urma_get_device_list_p)(int *num_devices);
 void (*urma_free_device_list_p)(urma_device_t **device_list);
+urma_device_t *(*urma_get_device_by_eid_p)(urma_eid_t eid, urma_transport_type_t type);
 urma_eid_info_t *(*urma_get_eid_list_p)(urma_device_t *dev, uint32_t *cnt);
 void (*urma_free_eid_list_p)(urma_eid_info_t *eid_list);
 urma_status_t (*urma_query_device_p)(urma_device_t *dev, urma_device_attr_t *dev_attr);
@@ -94,6 +99,7 @@ urma_status_t (*urma_write_p)(urma_jfs_t *jfs, urma_target_jetty_t *target_jfr, 
 int (*urma_poll_jfc_p)(urma_jfc_t *jfc, int cr_cnt, urma_cr_t *cr);
 urma_status_t (*urma_user_ctl_p)(urma_context_t *ctx, urma_user_ctl_in_t *in, urma_user_ctl_out_t *out);
 urma_status_t (*urma_post_jfs_wr_p)(urma_jfs_t *jfs, urma_jfs_wr_t *wr, urma_jfs_wr_t **bad_wr);
+int (*uvs_get_route_list_p)(const uvs_route_t *route, uvs_route_list_t *route_list);
 
 typedef struct dl_functions {
     const char *func_name;
@@ -105,6 +111,7 @@ dl_functions urma_dlfunc_list[] = {
     {.func_name = "urma_uninit", .func = (void **)&urma_uninit_p},
     {.func_name = "urma_get_device_list", .func = (void **)&urma_get_device_list_p},
     {.func_name = "urma_free_device_list", .func = (void **)&urma_free_device_list_p},
+    {.func_name = "urma_get_device_by_eid", .func = (void **)&urma_get_device_by_eid_p},
     {.func_name = "urma_get_eid_list", .func = (void **)&urma_get_eid_list_p},
     {.func_name = "urma_free_eid_list", .func = (void **)&urma_free_eid_list_p},
     {.func_name = "urma_query_device", .func = (void **)&urma_query_device_p},
@@ -131,11 +138,36 @@ dl_functions urma_dlfunc_list[] = {
     {.func_name = "urma_post_jfs_wr", .func = (void **)&urma_post_jfs_wr_p},
 };
 
+static dl_functions uvs_dlfunc_list[] = {
+    {.func_name = "uvs_get_route_list", .func = (void **)&uvs_get_route_list_p},
+};
+
 static void urma_dlfunc_list_set_null(void)
 {
     for (int i = 0; i < ARRAY_SIZE(urma_dlfunc_list); i++) {
         *urma_dlfunc_list[i].func = NULL;
     }
+}
+
+static void uvs_dlfunc_list_set_null(void)
+{
+    for (int i = 0; i < ARRAY_SIZE(uvs_dlfunc_list); i++) {
+        *uvs_dlfunc_list[i].func = NULL;
+    }
+}
+
+static int dlfunc_dlsym_table(void *handle, dl_functions *table, size_t n)
+{
+    char *error = NULL;
+
+    for (size_t i = 0; i < n; i++) {
+        *table[i].func = dlsym(handle, table[i].func_name);
+        if ((error = dlerror()) != NULL) {
+            qemu_log("dlsym error: %s while getting %s", error, table[i].func_name);
+            return -1;
+        }
+    }
+    return 0;
 }
 
 static void urma_dlfunc_close(void)
@@ -144,27 +176,39 @@ static void urma_dlfunc_close(void)
         (void)dlclose(handle_urma);
         handle_urma = NULL;
     }
+    if (handle_uvs) {
+        (void)dlclose(handle_uvs);
+        handle_uvs = NULL;
+    }
     urma_dlfunc_list_set_null();
+    uvs_dlfunc_list_set_null();
 }
 
 static int migrate_get_urma_dlfunc(Error **errp)
 {
-    char *error = NULL;
-
     urma_dlfunc_list_set_null();
+    uvs_dlfunc_list_set_null();
     handle_urma = dlopen(URMA_SO_PATH, RTLD_LAZY | RTLD_GLOBAL);
     if (!handle_urma) {
         qemu_log("dlopen error: %s", dlerror());
         return -1;
     }
 
-    for (int i = 0; i < ARRAY_SIZE(urma_dlfunc_list); i++) {
-        *urma_dlfunc_list[i].func = dlsym(handle_urma, urma_dlfunc_list[i].func_name);
-        if ((error = dlerror()) != NULL) {
-            qemu_log("dlsym error: %s while getting %s", error, urma_dlfunc_list[i].func_name);
-            urma_dlfunc_close();
-            return -1;
-        }
+    handle_uvs = dlopen(UVS_SO_PATH, RTLD_LAZY | RTLD_GLOBAL);
+    if (!handle_uvs) {
+        qemu_log("dlopen error: %s", dlerror());
+        urma_dlfunc_close();
+        return -1;
+    }
+
+    if (dlfunc_dlsym_table(handle_urma, urma_dlfunc_list, ARRAY_SIZE(urma_dlfunc_list)) < 0) {
+        urma_dlfunc_close();
+        return -1;
+    }
+
+    if (dlfunc_dlsym_table(handle_uvs, uvs_dlfunc_list, ARRAY_SIZE(uvs_dlfunc_list)) < 0) {
+        urma_dlfunc_close();
+        return -1;
     }
 
     return 0;
@@ -306,6 +350,7 @@ static int qemu_urma_init_ram_blocks(URMAContext *urma)
 {
     URMALocalBlocks *local = &urma->local_ram_blocks;
     int ret;
+    int i;
 
     if (urma->blockmap != NULL) {
         qemu_log("Ram blocks have been inited before!\n");
@@ -358,34 +403,175 @@ static URMAContext *qemu_urma_data_init(InetSocketAddress *saddr)
     return urma;
 }
 
-static int qemu_get_urma_eid_index(urma_device_t *dev)
+static int qemu_urma_pick_eid_from_device(urma_device_t *dev, urma_eid_info_t *info_out)
 {
     urma_eid_info_t *eid_list;
     uint32_t eid_cnt;
-    int i, eid_index = -1;
+    unsigned int pick;
+
+    if (dev == NULL || info_out == NULL) {
+        return -EINVAL;
+    }
 
     eid_list = urma_get_eid_list_p(dev, &eid_cnt);
-    if (eid_list == NULL) {
+    if (eid_list == NULL || eid_cnt == 0) {
+        return -EINVAL;
+    }
+
+    if (urma_dev_idx >= 0 && (uint32_t)urma_dev_idx < eid_cnt) {
+        pick = urma_dev_idx;
+    } else {
+        qemu_log("Invalid urma_dev_idx, use the first one.\n");
+        pick = 0;
+    }
+
+    *info_out = eid_list[pick];
+    urma_free_eid_list_p(eid_list);
+
+    qemu_log("Use the eid%d: "EID_FMT".\n", info_out->eid_index, EID_ARGS(info_out->eid));
+
+    return 0;
+}
+
+static int qemu_get_urma_eid_index(urma_device_t *dev)
+{
+    urma_eid_info_t info;
+    int ret;
+
+    ret = qemu_urma_pick_eid_from_device(dev, &info);
+    if (ret) {
         return -1;
     }
+    return info.eid_index;
+}
 
-    for (i = 0; eid_list != NULL && i < eid_cnt; i++) {
-        qemu_log("device_name :%s (eid%d: "EID_FMT").\n", dev->name, eid_list[i].eid_index, EID_ARGS(eid_list[i].eid));
+static int qemu_get_route_eid(const urma_eid_t *src_eid, const urma_eid_t *dst_eid,
+                              urma_eid_t *route_src_eid, urma_eid_t *route_dst_eid)
+{
+    uvs_route_t route = {0};
+    uvs_route_list_t route_list = {0};
+    int i;
+    int selected_route = -1;
+    int ret_fwd;
+    uint32_t len_fwd;
+
+    if (src_eid == NULL || dst_eid == NULL ||
+        route_src_eid == NULL || route_dst_eid == NULL) {
+        return -EINVAL;
     }
 
-    if (eid_cnt > 0) {
-        if (urma_dev_idx >= 0 && urma_dev_idx < eid_cnt) {
-            eid_index = eid_list[urma_dev_idx].eid_index;
-        } else {
-            qemu_log("Invalid urma_dev_idx, use the first one.\n");
-            eid_index = eid_list[0].eid_index;
-        }
+    if (uvs_get_route_list_p == NULL) {
+        qemu_log("uvs_get_route_list is not loaded\n");
+        return -EINVAL;
+    }
 
-        qemu_log("Use the eid%d: "EID_FMT".\n", eid_index, EID_ARGS(eid_list[eid_index].eid));
+    memcpy(route.src.raw, src_eid->raw, sizeof(route.src.raw));
+    memcpy(route.dst.raw, dst_eid->raw, sizeof(route.dst.raw));
+    qemu_log("route query input src_eid: " EID_FMT ", dst_eid: " EID_FMT "\n",
+             EID_ARGS(*src_eid), EID_ARGS(*dst_eid));
+
+    ret_fwd = uvs_get_route_list_p(&route, &route_list);
+    len_fwd = route_list.len;
+    if (ret_fwd != 0 || len_fwd == 0) {
+        qemu_log("failed to call uvs_get_route_list: ret=%d len=%u\n",
+                 ret_fwd, len_fwd);
+        return -EINVAL;
+    }
+
+    for (i = 0; i < route_list.len; i++) {
+        if (route_list.buf[i].flag.bs.ctp) {
+            selected_route = i;
+            break;
+        }
+    }
+
+    if (selected_route < 0) {
+        qemu_log("failed to find a valid CTP route.\n");
+        return -EINVAL;
+    }
+
+    memcpy(route_src_eid->raw, route_list.buf[selected_route].src.raw, sizeof(route_src_eid->raw));
+    memcpy(route_dst_eid->raw, route_list.buf[selected_route].dst.raw, sizeof(route_dst_eid->raw));
+    qemu_log("Use route%d src_eid: "EID_FMT", dst_eid: "EID_FMT".\n",
+             selected_route,
+             EID_ARGS(*route_src_eid),
+             EID_ARGS(*route_dst_eid));
+
+    return 0;
+}
+
+static int qemu_get_urma_create_context_args_by_route(const urma_eid_t *src_eid,
+                                                       const urma_eid_t *dst_eid,
+                                                       const urma_eid_t *local_eid,
+                                                       urma_device_t **dev_out,
+                                                       uint32_t *eid_index_out)
+{
+    urma_eid_t route_src_eid, route_dst_eid;
+    urma_eid_t local_route_eid;
+    urma_device_t *route_dev = NULL;
+    urma_eid_info_t *eid_list = NULL;
+    uint32_t cnt = 0;
+    uint32_t eid_index = (uint32_t)-1;
+    int i;
+    int ret;
+
+    if (src_eid == NULL || dst_eid == NULL || local_eid == NULL ||
+        dev_out == NULL || eid_index_out == NULL) {
+        return -EINVAL;
+    }
+
+    ret = qemu_get_route_eid(src_eid, dst_eid, &route_src_eid, &route_dst_eid);
+    if (ret) {
+        return ret;
+    }
+
+    if (memcmp(local_eid, src_eid, sizeof(urma_eid_t)) == 0) {
+        local_route_eid = route_src_eid;
+    } else if (memcmp(local_eid, dst_eid, sizeof(urma_eid_t)) == 0) {
+        local_route_eid = route_dst_eid;
+    } else {
+        qemu_log("URMA: resolve by route local_eid mismatch local=" EID_FMT " src=" EID_FMT
+                 " dst=" EID_FMT "\n",
+                 EID_ARGS(*local_eid), EID_ARGS(*src_eid), EID_ARGS(*dst_eid));
+        return -EINVAL;
+    }
+
+    if (urma_get_device_by_eid_p == NULL) {
+        qemu_log("URMA: urma_get_device_by_eid is not loaded\n");
+        return -EINVAL;
+    }
+
+    route_dev = urma_get_device_by_eid_p(local_route_eid, URMA_TRANSPORT_UB);
+    if (route_dev == NULL) {
+        qemu_log("URMA: get route device by eid failed, route_eid=" EID_FMT "\n",
+                 EID_ARGS(local_route_eid));
+        return -ENODEV;
+    }
+
+    eid_list = urma_get_eid_list_p(route_dev, &cnt);
+    if (eid_list == NULL || cnt == 0) {
+        qemu_log("URMA: route device %s eid list empty\n", route_dev->name);
+        return -EINVAL;
+    }
+
+    for (i = 0; i < (int)cnt; i++) {
+        if (memcmp(&eid_list[i].eid, &local_route_eid, sizeof(urma_eid_t)) == 0) {
+            eid_index = eid_list[i].eid_index;
+            break;
+        }
     }
 
     urma_free_eid_list_p(eid_list);
-    return eid_index;
+
+    if (eid_index == (uint32_t)-1) {
+        qemu_log("URMA: no eid_index on %s for route_eid=" EID_FMT "\n",
+                 route_dev->name, EID_ARGS(local_route_eid));
+        return -EINVAL;
+    }
+
+    *dev_out = route_dev;
+    *eid_index_out = eid_index;
+    return 0;
 }
 
 static urma_device_t *qemu_get_urma_device(URMAContext *ctx)
@@ -414,6 +600,190 @@ static urma_device_t *qemu_get_urma_device(URMAContext *ctx)
 
     urma_free_device_list_p(device_list);
     return urma_dev;
+}
+
+static int qemu_get_default_bonding_eid(URMAContext *ctx, urma_eid_t *bond_eid_out)
+{
+    urma_device_t *bond_dev;
+    urma_eid_info_t info;
+    int ret;
+
+    if (ctx == NULL || bond_eid_out == NULL) {
+        return -EINVAL;
+    }
+
+    bond_dev = qemu_get_urma_device(ctx);
+    if (bond_dev == NULL) {
+        return -EINVAL;
+    }
+
+    ret = qemu_urma_pick_eid_from_device(bond_dev, &info);
+    if (ret) {
+        return ret;
+    }
+
+    *bond_eid_out = info.eid;
+    return 0;
+}
+
+static int qemu_send_bonding_eid_packet(QEMUFile *f_write, const urma_eid_t *eid)
+{
+    if (f_write == NULL || eid == NULL) {
+        return -EINVAL;
+    }
+
+    qemu_put_buffer(f_write, (const uint8_t *)eid, sizeof(*eid));
+    if (qemu_fflush(f_write) < 0) {
+        qemu_log("URMA: flush bonding eid packet failed\n");
+        return -EINVAL;
+    }
+    return 0;
+}
+
+static int qemu_recv_bonding_eid_packet(QEMUFile *f_read, urma_eid_t *eid)
+{
+    if (f_read == NULL || eid == NULL) {
+        return -EINVAL;
+    }
+
+    if (qemu_get_buffer(f_read, (uint8_t *)eid, sizeof(*eid)) != sizeof(*eid)) {
+        qemu_log("URMA: recv bonding eid packet failed\n");
+        return -EINVAL;
+    }
+
+    return 0;
+}
+
+static int qemu_exchange_bonding_eid(QEMUFile *f_read, QEMUFile *f_write,
+                                     const urma_eid_t *local_bond,
+                                     urma_eid_t *peer_bond, bool server)
+{
+    if (f_read == NULL || f_write == NULL || local_bond == NULL || peer_bond == NULL) {
+        return -EINVAL;
+    }
+
+    if (server) {
+        if (qemu_recv_bonding_eid_packet(f_read, peer_bond)) {
+            return -EINVAL;
+        }
+        if (qemu_send_bonding_eid_packet(f_write, local_bond)) {
+            return -EINVAL;
+        }
+    } else {
+        if (qemu_send_bonding_eid_packet(f_write, local_bond)) {
+            return -EINVAL;
+        }
+
+        if (qemu_recv_bonding_eid_packet(f_read, peer_bond)) {
+            return -EINVAL;
+        }
+    }
+    return 0;
+}
+
+static int qemu_urma_resolve_create_context_args(URMAContext *ctx,
+                                                  urma_device_t **dev_out,
+                                                  uint32_t *eid_index_out)
+{
+    int eid_index;
+    int ret;
+    urma_device_t *urma_dev;
+    urma_eid_t local_bond;
+    urma_eid_t peer_bond;
+    uint32_t route_eid_index = 0;
+    bool server = ctx->is_incoming;
+    QEMUFile *f_read;
+    QEMUFile *f_write;
+
+    if (ctx == NULL || dev_out == NULL || eid_index_out == NULL) {
+        return -EINVAL;
+    }
+
+    if (migrate_onecopy_ram()) {
+        urma_dev = qemu_get_urma_device(ctx);
+        if (urma_dev == NULL) {
+            qemu_log("URMA: urma get device failed, errno: %d\n", errno);
+            return -EINVAL;
+        }
+
+        ret = urma_query_device_p(urma_dev, &ctx->dev_attr);
+        if (ret) {
+            qemu_log("URMA: Failed to query device %s, ret: %d, errno: %d\n", urma_dev->name, ret, errno);
+            return ret;
+        }
+
+        eid_index = qemu_get_urma_eid_index(urma_dev);
+        if (eid_index < 0) {
+            qemu_log("URMA: Failed to get eid index, ret: %d, errno: %d.\n", eid_index, errno);
+            return eid_index;
+        }
+
+        *dev_out = urma_dev;
+        *eid_index_out = (uint32_t)eid_index;
+        return 0;
+    }
+
+    ret = qemu_get_default_bonding_eid(ctx, &local_bond);
+    if (ret) {
+        return ret;
+    }
+
+    peer_bond = local_bond;
+
+    if (server) {
+        MigrationIncomingState *mis = migration_incoming_get_current();
+
+        if (mis == NULL || mis->from_src_file == NULL) {
+            qemu_log("URMA: migration incoming file not ready\n");
+            return -EINVAL;
+        }
+
+        f_read = mis->from_src_file;
+        f_write = qemu_file_get_return_path(mis->from_src_file);
+    } else {
+        MigrationState *s = migrate_get_current();
+
+        if (s == NULL || s->to_dst_file == NULL) {
+            qemu_log("URMA: migration destination file not ready\n");
+            return -EINVAL;
+        }
+
+        f_read = qemu_file_get_return_path(s->to_dst_file);
+        f_write = s->to_dst_file;
+    }
+
+    if (f_read == NULL || f_write == NULL) {
+        qemu_log("URMA: bonding eid exchange files not ready\n");
+        return -EINVAL;
+    }
+
+    ret = qemu_exchange_bonding_eid(f_read, f_write, &local_bond, &peer_bond, server);
+    if (ret) {
+        return ret;
+    }
+
+    if (server) {
+        ret = qemu_get_urma_create_context_args_by_route(&peer_bond, &local_bond,
+                                                         &local_bond,
+                                                         &urma_dev, &route_eid_index);
+    } else {
+        ret = qemu_get_urma_create_context_args_by_route(&local_bond, &peer_bond,
+                                                         &local_bond,
+                                                         &urma_dev, &route_eid_index);
+    }
+    if (ret) {
+        return ret;
+    }
+
+    ret = urma_query_device_p(urma_dev, &ctx->dev_attr);
+    if (ret) {
+        qemu_log("URMA: Failed to query device %s, ret: %d, errno: %d\n", urma_dev->name, ret, errno);
+        return ret;
+    }
+
+    *dev_out = urma_dev;
+    *eid_index_out = route_eid_index;
+    return 0;
 }
 
 static int qemu_init_jfs_post_list(URMAContext *urma)
@@ -494,9 +864,9 @@ static void qemu_urma_cleanup_context(URMAContext *ctx)
     qemu_log("clean up urma context success.\n");
 }
 
-static int qemu_urma_init_context(URMAContext *ctx)
+int qemu_urma_init_context(URMAContext *ctx)
 {
-    int eid_index, ret;
+    int ret;
     urma_context_aggr_mode_t aggr_mode = URMA_AGGR_MODE_BALANCE;
 
     ctx->event_mode = false;
@@ -504,33 +874,18 @@ static int qemu_urma_init_context(URMAContext *ctx)
     urma_dev_name = URMA_DEV_DEFAULT_NAME;
     urma_dev_idx = URMA_DEV_DEFAULT_IDX;
 
-    ret = qemu_init_jfs_post_list(ctx);
+    urma_device_t *urma_dev = NULL;
+    uint32_t eid_index = 0;
+    ret = qemu_urma_resolve_create_context_args(ctx, &urma_dev, &eid_index);
     if (ret) {
-        qemu_log("URMA: Failed to init jfr post list, errno: %d\n", errno);
+        qemu_log("URMA: Failed to resolve create context args, ret: %d, errno: %d\n", ret, errno);
         return ret;
     }
 
-    urma_device_t *urma_dev = qemu_get_urma_device(ctx);
-    if (urma_dev == NULL) {
-        qemu_log("URMA: urma get device failed, errno: %d\n", errno);
-        return -EINVAL;
-    }
-
-    ret = urma_query_device_p(urma_dev, &ctx->dev_attr);
-    if (ret) {
-        qemu_log("URMA: Failed to query device %s, ret: %d, errno: %d\n", urma_dev->name, ret, errno);
-        return ret;
-    }
-
-    eid_index = qemu_get_urma_eid_index(urma_dev);
-    if (eid_index < 0) {
-        qemu_log("URMA: Failed to get eid index, ret: %d, errno: %d.\n", eid_index, errno);
-        return eid_index;
-    }
-
-    ctx->urma_ctx = urma_create_context_p(urma_dev, (uint32_t)eid_index);
+    ctx->urma_ctx = urma_create_context_p(urma_dev, eid_index);
     if (ctx->urma_ctx == NULL) {
-        qemu_log("URMA: Failed to create instance with eid: %d, errno: %d.\n", eid_index, errno);
+        qemu_log("URMA: Failed to create instance with eid: %u, errno: %d.\n", eid_index,
+                 errno);
         return -EINVAL;
     }
 
@@ -551,6 +906,12 @@ static int qemu_urma_init_context(URMAContext *ctx)
         if (ret) {
             qemu_log("URMA: Failed to set bonding mode, ret: %d, errno: %d\n", ret, errno);
         }
+    }
+
+    ret = qemu_init_jfs_post_list(ctx);
+    if (ret) {
+        qemu_log("URMA: Failed to init jfr post list, errno: %d\n", errno);
+        return ret;
     }
 
     ctx->jfce = urma_create_jfce_p(ctx->urma_ctx);
@@ -624,6 +985,29 @@ static int qemu_urma_init_context(URMAContext *ctx)
 err:
     qemu_urma_cleanup_context(ctx);
     return -EINVAL;
+}
+
+int qemu_urma_prepare_incoming(QEMUFile *f)
+{
+    MigrationState *s = migrate_get_current();
+    int ret;
+
+    ret = qemu_urma_init_context(s->urma_ctx);
+    if (ret) {
+        return ret;
+    }
+
+    ret = qemu_urma_reg_whole_ram_blocks(s->urma_ctx);
+    if (ret) {
+        return ret;
+    }
+
+    if (qemu_exchange_urma_info(qemu_file_get_return_path(f), s->urma_ctx, true)) {
+        return -EINVAL;
+    }
+
+    autostart = true;
+    return 0;
 }
 
 static int urma_init_lib(void)
@@ -748,21 +1132,9 @@ static int qemu_urma_init_all(URMAContext *urma, bool pin_all)
         goto err;
     }
 
-    ret = qemu_urma_init_context(urma);
-    if (ret) {
-        goto err;
-    }
-
     ret = qemu_urma_init_ram_blocks(urma);
     if (ret) {
         goto err;
-    }
-
-    if (urma->pin_all && urma->is_incoming) {
-        ret = qemu_urma_reg_whole_ram_blocks(urma);
-        if (ret) {
-            goto err;
-        }
     }
 
     qemu_log("prepare all urma info success.\n");
