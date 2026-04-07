@@ -54,6 +54,8 @@ typedef struct CryptoDevBackendBuiltinSession {
 
 #define CRYPTODEV_BUITLIN_MAX_AUTH_KEY_LEN    512
 #define CRYPTODEV_BUITLIN_MAX_CIPHER_KEY_LEN  64
+/* demonstration purposes only, use a limited size to avoid QEMU OOM */
+#define CRYPTODEV_BUITLIN_MAX_REQUEST_SIZE  (1024 * 1024)
 
 struct CryptoDevBackendBuiltin {
     CryptoDevBackend parent_obj;
@@ -87,12 +89,7 @@ static void cryptodev_builtin_init(
                          1u << VIRTIO_CRYPTO_SERVICE_MAC;
     backend->conf.cipher_algo_l = 1u << VIRTIO_CRYPTO_CIPHER_AES_CBC;
     backend->conf.hash_algo = 1u << VIRTIO_CRYPTO_HASH_SHA1;
-    /*
-     * Set the Maximum length of crypto request.
-     * Why this value? Just avoid to overflow when
-     * memory allocation for each crypto request.
-     */
-    backend->conf.max_size = LONG_MAX - sizeof(CryptoDevBackendSymOpInfo);
+    backend->conf.max_size = CRYPTODEV_BUITLIN_MAX_REQUEST_SIZE;
     backend->conf.max_cipher_key_len = CRYPTODEV_BUITLIN_MAX_CIPHER_KEY_LEN;
     backend->conf.max_auth_key_len = CRYPTODEV_BUITLIN_MAX_AUTH_KEY_LEN;
 
