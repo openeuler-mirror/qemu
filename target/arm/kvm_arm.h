@@ -325,6 +325,24 @@ void kvm_arm_steal_time_finalize(ARMCPU *cpu, Error **errp);
 bool kvm_arm_steal_time_supported(void);
 
 /**
+ * kvm_arm_vtimer_status_finalize:
+ * @cpu: ARMCPU for which to finalize kvm-vtimer-status
+ * @errp: Pointer to Error* for error propagation
+ *
+ * Validate the kvm-vtimer-status property selection and set its default
+ * based on KVM support and guest configuration.
+ */
+void kvm_arm_vtimer_status_finalize(ARMCPU *cpu, Error **errp);
+
+/**
+ * kvm_arm_vtimer_status_supported:
+ *
+ * Returns: true if KVM can enable vtiemr status
+ * and false otherwise.
+ */
+bool kvm_arm_vtimer_status_supported(void);
+
+/**
  * kvm_arm_aarch32_supported:
  *
  * Returns: true if KVM can enable AArch32 mode
@@ -408,6 +426,32 @@ void kvm_arm_pmu_init(CPUState *cs);
  * Initializes PVTIME for the VCPU, setting the PVTIME IPA to @ipa.
  */
 void kvm_arm_pvtime_init(CPUState *cs, uint64_t ipa);
+
+/**
+ * kvm_arm_pvtimer_status_init:
+ * @cs: CPUState
+ * @ipa: Per-vcpu guest physical base address of the vtimer status structures
+ *
+ * Initializes VTIMER STATUS for the VCPU, setting the VTIEMR STATUS IPA to @ipa.
+ */
+void kvm_arm_pvtimer_status_init(CPUState *cs, uint64_t ipa);
+
+/**
+ * kvm_arm_timer_early_inject_supported:
+ *
+ * Returns: true if KVM can support timer early inject
+ * and false otherwise.
+ */
+bool kvm_arm_timer_early_inject_supported(void);
+
+/**
+ * kvm_arm_timer_early_inject_init:
+ * @ipa: Guest physical base address of the timer early inject structure
+ *
+ * Initializes TIMER EARLY INJECT for the VM, setting the TIMER EARLY INJECT
+ * IPA to @ipa. Called once per VM, not per vCPU.
+ */
+void kvm_arm_timer_early_inject_init(uint64_t ipa);
 
 int kvm_arm_set_irq(int cpu, int irqtype, int irq, int level);
 
@@ -517,6 +561,11 @@ static inline bool kvm_arm_steal_time_supported(void)
     return false;
 }
 
+static inline bool kvm_arm_vtimer_status_supported(void)
+{
+    return false;
+}
+
 static inline void kvm_arm_rme_init_guest_ram(hwaddr base, size_t size)
 {
 }
@@ -590,6 +639,26 @@ static inline void kvm_arm_pvtime_init(CPUState *cs, uint64_t ipa)
 }
 
 static inline void kvm_arm_steal_time_finalize(ARMCPU *cpu, Error **errp)
+{
+    g_assert_not_reached();
+}
+
+static inline void kvm_arm_pvtimer_status_init(CPUState *cs, uint64_t ipa)
+{
+    g_assert_not_reached();
+}
+
+static inline bool kvm_arm_timer_early_inject_supported(void)
+{
+    return false;
+}
+
+static inline void kvm_arm_timer_early_inject_init(uint64_t ipa)
+{
+    g_assert_not_reached();
+}
+
+static inline void kvm_arm_vtimer_status_finalize(ARMCPU *cpu, Error **errp)
 {
     g_assert_not_reached();
 }

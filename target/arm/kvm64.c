@@ -203,6 +203,42 @@ void kvm_arm_pvtime_init(CPUState *cs, uint64_t ipa)
     }
 }
 
+void kvm_arm_pvtimer_status_init(CPUState *cs, uint64_t ipa)
+{
+    struct kvm_device_attr attr = {
+        .group = KVM_ARM_VCPU_PVTIMER_STATUS_CTRL,
+        .attr = KVM_ARM_VCPU_PVTIMER_STATUS_IPA,
+        .addr = (uint64_t)&ipa,
+    };
+
+    if (ARM_CPU(cs)->kvm_vtimer_status == ON_OFF_AUTO_OFF) {
+        return;
+    }
+    if (!kvm_arm_set_device_attr(cs, &attr, "VTIMER STATUS IPA")) {
+        error_report("failed to init VTIMER STATUS IPA");
+        abort();
+    }
+}
+
+bool kvm_arm_timer_early_inject_supported(void)
+{
+    return kvm_vm_check_extension(kvm_state, KVM_CAP_ARM_TIMER_EARLY_INJECT);
+}
+
+void kvm_arm_timer_early_inject_init(uint64_t ipa)
+{
+    struct kvm_device_attr attr = {
+        .group = KVM_VM_TIMER_EARLY_INJECT_CTRL,
+        .attr = KVM_VM_TIMER_EARLY_INJECT_IPA,
+        .addr = (uint64_t)&ipa,
+    };
+
+    if (!kvm_arm_set_vm_attr(&attr, "TIMER EARLY INJECT IPA")) {
+        error_report("failed to init TIMER EARLY INJECT IPA");
+        return;
+    }
+}
+
 int kvm_arm_set_smccc_filter(uint64_t func, uint8_t faction)
 {
     struct kvm_smccc_filter filter = {
@@ -709,6 +745,23 @@ void kvm_arm_steal_time_finalize(ARMCPU *cpu, Error **errp)
     }
 }
 
+
+void kvm_arm_vtimer_status_finalize(ARMCPU *cpu, Error **errp)
+{
+    bool has_vtimer_status = kvm_arm_vtimer_status_supported();
+
+    if (cpu->kvm_vtimer_status == ON_OFF_AUTO_AUTO) {
+        cpu->kvm_vtimer_status = has_vtimer_status ? ON_OFF_AUTO_ON : ON_OFF_AUTO_OFF;
+    } else if (cpu->kvm_vtimer_status == ON_OFF_AUTO_ON) {
+        if (!has_vtimer_status) {
+            error_setg(errp, "'kvm-vtimer-status' cannot be enabled "
+                             "on this host");
+            return;
+        }
+    }
+}
+
+
 bool kvm_arm_aarch32_supported(void)
 {
     return kvm_check_extension(kvm_state, KVM_CAP_ARM_EL1_32BIT);
@@ -722,6 +775,11 @@ bool kvm_arm_sve_supported(void)
 bool kvm_arm_steal_time_supported(void)
 {
     return kvm_vm_check_extension(kvm_state, KVM_CAP_STEAL_TIME);
+}
+
+bool kvm_arm_vtimer_status_supported(void)
+{
+    return kvm_vm_check_extension(kvm_state, KVM_CAP_ARM_HISI_PVTIMER_STATUS);
 }
 
 QEMU_BUILD_BUG_ON(KVM_ARM64_SVE_VQ_MIN != 1);

@@ -1058,6 +1058,9 @@ struct ArchCPU {
     /* KVM steal time */
     OnOffAuto kvm_steal_time;
 
+    /* KVM vtimer status  */
+    OnOffAuto kvm_vtimer_status;
+
     /* KVM SVE has been finalized for this CPU */
     bool kvm_sve_finalized;
 #endif /* CONFIG_KVM */

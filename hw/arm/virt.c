@@ -182,6 +182,8 @@ static const MemMapEntry base_memmap[] = {
     [VIRT_PVTIME] =             { 0x090a0000, 0x00010000 },
     [VIRT_SECURE_GPIO] =        { 0x090b0000, 0x00001000 },
     [VIRT_CPUHP_ACPI] =         { 0x090c0000, ACPI_CPU_HOTPLUG_REG_LEN},
+    [VIRT_VTIMER_STATUS] =      { 0x09fe0000, 0x00010000 },
+    [VIRT_TIMER_EARLY_INJECT] = { 0x09ff0000, 0x00010000 },
     [VIRT_MMIO] =               { 0x0a000000, 0x00000200 },
     /* In the virtCCA scenario, this space is used for MSI interrupt mapping */
     [VIRT_CVM_MSI] =            { 0x0a001000, 0x00fff000 },
@@ -2444,7 +2446,7 @@ static void virt_cpu_post_init(VirtMachineState *vms, MemoryRegion *sysmem)
     CPUArchIdList *possible_cpus = vms->parent.possible_cpus;
     int max_cpus = MACHINE(vms)->smp.max_cpus;
     MachineState *ms = MACHINE(vms);
-    bool aarch64, steal_time;
+    bool aarch64, steal_time, vtimer_status_enable;
     CPUState *cpu;
     int n;
 
@@ -2452,6 +2454,8 @@ static void virt_cpu_post_init(VirtMachineState *vms, MemoryRegion *sysmem)
     vms->pmu = object_property_get_bool(OBJECT(first_cpu), "pmu", NULL);
     steal_time = object_property_get_bool(OBJECT(first_cpu),
                                           "kvm-steal-time", NULL);
+    vtimer_status_enable = object_property_get_bool(OBJECT(first_cpu),
+                                          "kvm-vtimer-status", NULL);
 
     if (kvm_enabled()) {
         hwaddr pvtime_reg_base = vms->memmap[VIRT_PVTIME].base;
@@ -2476,6 +2480,52 @@ static void virt_cpu_post_init(VirtMachineState *vms, MemoryRegion *sysmem)
             memory_region_add_subregion(sysmem, pvtime_reg_base, pvtime);
         }
 
+        hwaddr vtimer_status_reg_base = vms->memmap[VIRT_VTIMER_STATUS].base;
+        hwaddr vtimer_status_reg_size = vms->memmap[VIRT_VTIMER_STATUS].size;
+
+        if (vtimer_status_enable) {
+            MemoryRegion *vtimer_status = g_new(MemoryRegion, 1);
+            hwaddr vtimer_status_size = max_cpus * VTIMER_STATUS_SIZE_PER_CPU;
+
+            /* The memory region size must be a multiple of host page size. */
+            vtimer_status_size = REAL_HOST_PAGE_ALIGN(vtimer_status_size);
+
+            if (vtimer_status_size > vtimer_status_reg_size) {
+                error_report("vtimer_status requires a %" HWADDR_PRId
+                             " byte memory region for %d CPUs,"
+                             " but only %" HWADDR_PRId " has been reserved",
+                             vtimer_status_size, max_cpus, vtimer_status_reg_size);
+                exit(1);
+            }
+
+            memory_region_init_ram(vtimer_status, NULL, "vtimer_status", vtimer_status_size, NULL);
+            memory_region_add_subregion(sysmem, vtimer_status_reg_base, vtimer_status);
+        }
+
+        hwaddr timer_early_inject_reg_base = vms->memmap[VIRT_TIMER_EARLY_INJECT].base;
+        hwaddr timer_early_inject_reg_size = vms->memmap[VIRT_TIMER_EARLY_INJECT].size;
+
+        if (kvm_arm_timer_early_inject_supported()) {
+            MemoryRegion *timer_early_inject = g_new(MemoryRegion, 1);
+            hwaddr size = TIMER_EARLY_INJECT_SIZE_GLOBAL;
+
+            size = REAL_HOST_PAGE_ALIGN(size);
+
+            if (size > timer_early_inject_reg_size) {
+                error_report("timer_early_inject requires a %" HWADDR_PRId
+                             " byte memory region,"
+                             " but only %" HWADDR_PRId " has been reserved",
+                             size, timer_early_inject_reg_size);
+                exit(1);
+            }
+
+            memory_region_init_ram(timer_early_inject, NULL, "timer_early_inject", size, NULL);
+            memory_region_add_subregion(sysmem, timer_early_inject_reg_base, timer_early_inject);
+
+            /* VM-level initialization (once per VM, not per vCPU) */
+            kvm_arm_timer_early_inject_init(timer_early_inject_reg_base);
+        }
+
         for (n = 0; n < possible_cpus->len; n++) {
             cpu = qemu_get_possible_cpu(n);
             if (!qemu_present_cpu(cpu)) {
@@ -2492,6 +2542,10 @@ static void virt_cpu_post_init(VirtMachineState *vms, MemoryRegion *sysmem)
             if (steal_time) {
                 kvm_arm_pvtime_init(cpu, pvtime_reg_base +
                                          cpu->cpu_index * PVTIME_SIZE_PER_CPU);
+            }
+            if (vtimer_status_enable) {
+                kvm_arm_pvtimer_status_init(cpu, vtimer_status_reg_base +
+                                         cpu->cpu_index * VTIMER_STATUS_SIZE_PER_CPU);
             }
         }
     } else {

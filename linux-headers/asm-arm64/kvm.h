@@ -387,6 +387,11 @@ enum {
 #define KVM_ARM_VM_SMCCC_CTRL		0
 #define   KVM_ARM_VM_SMCCC_FILTER	0
 
+
+/* Solely for avoiding conflicts with mainline */
+#define KVM_VM_TIMER_EARLY_INJECT_CTRL	20
+#define   KVM_VM_TIMER_EARLY_INJECT_IPA	0
+
 /* Device Control API: ARM VGIC */
 #define KVM_DEV_ARM_VGIC_GRP_ADDR	0
 #define KVM_DEV_ARM_VGIC_GRP_DIST_REGS	1
@@ -492,6 +497,10 @@ struct kvm_cap_arm_rme_map_ram_args {
 #define   KVM_ARM_VCPU_TIMER_IRQ_HPTIMER	3
 #define KVM_ARM_VCPU_PVTIME_CTRL	2
 #define   KVM_ARM_VCPU_PVTIME_IPA	0
+
+/* Solely for avoiding conflicts with mainline */
+#define KVM_ARM_VCPU_PVTIMER_STATUS_CTRL	20
+#define   KVM_ARM_VCPU_PVTIMER_STATUS_IPA	0
 
 /* KVM_IRQ_LINE irq field index values */
 #define KVM_ARM_IRQ_VCPU2_SHIFT		28
