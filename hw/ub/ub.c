@@ -444,9 +444,6 @@ static void ub_update_mappings(UBDevice *dev)
 
         new_addr = ub_er_address(dev, i, region->size);
         trace_ub_update_mappings(i, region->size, region->addr, new_addr);
-        if (new_addr == UB_ER_UNMAPPED) {
-            continue;
-        }
 
         /* This ers isn't changed */
         if (new_addr == region->addr) {
