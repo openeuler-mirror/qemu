@@ -1132,7 +1132,10 @@ static void aarch64_host_initfn(Object *obj)
     if (arm_feature(&cpu->env, ARM_FEATURE_AARCH64)) {
         aarch64_add_sve_properties(obj);
         aarch64_add_pauth_properties(obj);
-        aarch64_add_kvm_writable_properties(obj);
+
+        if (kvm_check_extension(kvm_state, KVM_CAP_ARM_RME)) {
+            aarch64_add_kvm_writable_properties(obj);
+        }
     }
     if (expose_id_regs) {
         /* generate SYSREG properties according to writable masks */
