@@ -1003,7 +1003,7 @@ static int poll_jfc_wait(URMAContext *ctx, urma_cr_t *cr)
             ctx->nb_polling -= cnt;
         }
 
-        ulseep(1);
+        usleep(1);
     }
 
 err:
