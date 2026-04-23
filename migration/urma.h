@@ -142,10 +142,6 @@ typedef struct seg_jfr_info_t {
     /* jfr */
     urma_jfr_id_t jfr_id;
     urma_token_t jfr_token;
-
-    /* bond info */
-    urma_bond_seg_info_out_t seg_bond_info;
-    urma_bond_id_info_out_t jfr_bond_info;
 } __attribute__((packed)) seg_jfr_info_t;
 
 

@@ -93,8 +93,6 @@ urma_status_t (*urma_write_p)(urma_jfs_t *jfs, urma_target_jetty_t *target_jfr, 
     urma_target_seg_t *src_tseg, uint64_t dst, uint64_t src, uint32_t len, urma_jfs_wr_flag_t flag, uint64_t user_ctx);
 int (*urma_poll_jfc_p)(urma_jfc_t *jfc, int cr_cnt, urma_cr_t *cr);
 urma_status_t (*urma_user_ctl_p)(urma_context_t *ctx, urma_user_ctl_in_t *in, urma_user_ctl_out_t *out);
-urma_status_t (*urma_set_context_opt_p)(urma_context_t *ctx, urma_opt_name_t opt_name,
-    const void *opt_value, size_t opt_len);
 urma_status_t (*urma_post_jfs_wr_p)(urma_jfs_t *jfs, urma_jfs_wr_t *wr, urma_jfs_wr_t **bad_wr);
 
 typedef struct dl_functions {
@@ -130,7 +128,6 @@ dl_functions urma_dlfunc_list[] = {
     {.func_name = "urma_write", .func = (void **)&urma_write_p},
     {.func_name = "urma_poll_jfc", .func = (void **)&urma_poll_jfc_p},
     {.func_name = "urma_user_ctl", .func = (void **)&urma_user_ctl_p},
-    {.func_name = "urma_set_context_opt", .func = (void **)&urma_set_context_opt_p},
     {.func_name = "urma_post_jfs_wr", .func = (void **)&urma_post_jfs_wr_p},
 };
 
@@ -538,10 +535,21 @@ static int qemu_urma_init_context(URMAContext *ctx)
     }
 
     if (migrate_onecopy_ram()) {
-        qemu_log("Set aggr_mode balance during onecopy\n");
-        ret = urma_set_context_opt_p(ctx->urma_ctx, URMA_OPT_AGGR_MODE, &aggr_mode, sizeof(aggr_mode));
+        bondp_set_bonding_mode_in_t in_arg = {
+            .bonding_mode = aggr_mode,
+            .bonding_level = BONDP_BONDING_LEVEL_IODIE,
+        };
+        urma_user_ctl_in_t user_ctl_in = {
+            .addr = (uint64_t)&in_arg,
+            .len = sizeof(in_arg),
+            .opcode = BONDP_USER_CTL_SET_BONDING_MODE,
+        };
+        urma_user_ctl_out_t user_ctl_out = {0};
+
+        qemu_log("Set bonding mode balance during onecopy\n");
+        ret = urma_user_ctl_p(ctx->urma_ctx, &user_ctl_in, &user_ctl_out);
         if (ret) {
-            qemu_log("URMA: Failed to do urma_set_context_opt, ret: %d, errno: %d\n", ret, errno);
+            qemu_log("URMA: Failed to set bonding mode, ret: %d, errno: %d\n", ret, errno);
         }
     }
 
@@ -765,99 +773,9 @@ err:
     return ret;
 }
 
-static int get_ubbond_seg_info(urma_target_seg_t *tseg, urma_bond_seg_info_out_t *seg_info_out)
-{
-    urma_bond_seg_info_in_t seg_info_in = {
-        .tseg = tseg,
-    };
-    urma_user_ctl_in_t user_ctl_in = {
-        .opcode = URMA_USER_CTL_BOND_GET_SEG_INFO,
-        .addr = (uint64_t)&seg_info_in,
-        .len = sizeof(urma_bond_seg_info_in_t),
-    };
-    urma_user_ctl_out_t user_ctl_out = {
-        .addr = (uint64_t)seg_info_out,
-        .len = sizeof(urma_bond_seg_info_out_t),
-    };
-
-    if (urma_user_ctl_p(tseg->urma_ctx, &user_ctl_in, &user_ctl_out)) {
-        qemu_log("urma_user_ctl: get seg info failed, errno: %d\n", errno);
-        return -1;
-    }
-
-    qemu_log("get ubbond seg info success.\n");
-    return 0;
-}
-
-static int add_ubbond_seg_info(urma_context_t *ctx, urma_bond_add_remote_seg_info_in_t *rseg_info_in)
-{
-    urma_user_ctl_in_t user_ctl_in = {
-        .opcode = URMA_USER_CTL_BOND_ADD_REMOTE_SEG_INFO,
-        .addr = (uint64_t)rseg_info_in,
-        .len = sizeof(urma_bond_add_remote_seg_info_in_t)
-    };
-    urma_user_ctl_out_t user_ctl_out = {0};
-
-    if (urma_user_ctl_p(ctx, &user_ctl_in, &user_ctl_out)) {
-        qemu_log("urma_user_ctl: set seg info failed, errno: %d\n", errno);
-        return -1;
-    }
-
-    qemu_log("add ubbond seg info success.\n");
-    return 0;
-}
-
-static int get_ubbond_jfr_info(urma_jfr_t *jfr, urma_bond_id_info_out_t *info_out)
-{
-    urma_bond_id_info_in_t in = {
-        .jfr = jfr,
-        .type = URMA_JFR,
-    };
-    urma_user_ctl_in_t user_ctl_in = {
-        .opcode = URMA_USER_CTL_BOND_GET_ID_INFO,
-        .addr = (uint64_t)&in,
-        .len = sizeof(urma_bond_id_info_in_t),
-    };
-    urma_user_ctl_out_t user_ctl_out = {
-        .addr = (uint64_t)info_out,
-        .len = sizeof(urma_bond_id_info_out_t),
-    };
-
-    if (urma_user_ctl_p(jfr->urma_ctx, &user_ctl_in, &user_ctl_out)) {
-        qemu_log("urma_user_ctl: get jfr info failed, errno: %d\n", errno);
-        return -1;
-    }
-
-    qemu_log("get ubbond jfr info success.\n");
-    return 0;
-}
-
-static int add_ubbond_jfr_info(urma_context_t *ctx, urma_bond_id_info_out_t *info)
-{
-    urma_user_ctl_in_t user_ctl_in = {
-        .opcode = URMA_USER_CTL_BOND_ADD_RJFR_ID_INFO,
-        .addr = (uint64_t)info,
-        .len = sizeof(urma_bond_id_info_out_t),
-    };
-    urma_user_ctl_out_t user_ctl_out = {
-        .addr = 0,
-        .len = 0,
-    };
-
-    if (urma_user_ctl_p(ctx, &user_ctl_in, &user_ctl_out)) {
-        qemu_log("urma_user_ctl: set jfr info failed, errno: %d\n", errno);
-        return -1;
-    }
-
-    qemu_log("add ubbond jfr info success.\n");
-    return 0;
-}
 
 static void pack_seg_jfr_info(seg_jfr_info_t *info, URMAContext *ctx, URMALocalBlock *block)
 {
-    urma_bond_seg_info_out_t seg_bond_info;
-    urma_bond_id_info_out_t jfr_bond_info;
-
     (void)memset(info, 0, sizeof(seg_jfr_info_t));
     info->eid = ctx->urma_ctx->eid;
     info->uasid = ctx->urma_ctx->uasid;
@@ -869,17 +787,10 @@ static void pack_seg_jfr_info(seg_jfr_info_t *info, URMAContext *ctx, URMALocalB
     info->jfr_id = ctx->jfr->jfr_id;
     info->jfr_token.token = ctx->jfr_token.token;
 
-    get_ubbond_seg_info(block->local_tseg, &seg_bond_info);
-    get_ubbond_jfr_info(ctx->jfr, &jfr_bond_info);
-    memcpy(&info->seg_bond_info, &seg_bond_info, sizeof(urma_bond_seg_info_out_t));
-    memcpy(&info->jfr_bond_info, &jfr_bond_info, sizeof(urma_bond_id_info_out_t));
 }
 
 static void unpack_seg_jfr_info(seg_jfr_info_t *info, URMAContext *ctx, URMALocalBlock *block)
 {
-    urma_bond_seg_info_out_t seg_bond_info;
-    urma_bond_id_info_out_t jfr_bond_info;
-
     block->remote_seg.ubva.eid = info->eid;
     block->remote_seg.ubva.uasid = info->uasid;
     block->remote_seg.ubva.va = info->seg_va;
@@ -890,10 +801,6 @@ static void unpack_seg_jfr_info(seg_jfr_info_t *info, URMAContext *ctx, URMALoca
     ctx->remote_jfr_id = info->jfr_id;
     ctx->rjfr_token.token = info->jfr_token.token;
 
-    memcpy(&seg_bond_info, &info->seg_bond_info, sizeof(urma_bond_seg_info_out_t));
-    memcpy(&jfr_bond_info, &info->jfr_bond_info, sizeof(urma_bond_id_info_out_t));
-    add_ubbond_seg_info(ctx->urma_ctx, &seg_bond_info);
-    add_ubbond_jfr_info(ctx->urma_ctx, &jfr_bond_info);
 }
 
 static urma_target_jetty_t *qemu_import_jfr(URMAContext *ctx)
