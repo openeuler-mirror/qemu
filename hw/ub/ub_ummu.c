@@ -648,19 +648,17 @@ static void mcmdq_cmd_cfgi_tect_range_handler(UMMUState *u, UMMUMcmdqCmd *cmd, u
     ummu_invalidate_cache(u, cmd);
 
     if (tecte_range.invalid_all && u->tecte_tag_num > 0) {
-        for (i = u->tecte_tag_num - 1; i >= 0; i--) {
-            if (i >= UMMU_TECTE_TAG_MAX_NUM) {
-                continue;
-            }
-            ummu_config_tecte(u, u->tecte_tag_cache[i]);
-        }
         u->tecte_tag_num = 0;
+        g_hash_table_foreach(u->ummu_devs, ummu_uninstall_nested_tecte, NULL);
         return;
     }
 
-    for (i = tecte_range.start; i <= tecte_range.end; i++) {
-        ummu_config_tecte(u, i);
+    if (!tecte_range.invalid_all) {
+        for (i = tecte_range.start; i <= tecte_range.end; i++) {
+            ummu_config_tecte(u, i);
+        }
     }
+
 }
 
 static void mcmdq_cmd_cfgi_tct_handler(UMMUState *u, UMMUMcmdqCmd *cmd, uint8_t mcmdq_idx)
@@ -2401,6 +2399,7 @@ void ummu_dev_uninstall_nested_tecte(UMMUDevice *ummu_dev)
     HostIOMMUDeviceIOMMUFD *idev = ummu_dev->idev;
     UMMUS1Hwpt *s1_hwpt = ummu_dev->s1_hwpt;
     uint32_t hwpt_id;
+    UMMUVdev *vdev = NULL;
 
     if (!s1_hwpt || !ummu_dev->viommu) {
         return;
@@ -2416,6 +2415,14 @@ void ummu_dev_uninstall_nested_tecte(UMMUDevice *ummu_dev)
     iommufd_backend_free_id(idev->iommufd, s1_hwpt->hwpt_id);
     ummu_dev->s1_hwpt = NULL;
     g_free(s1_hwpt);
+
+    vdev = ummu_dev->vdev;
+    if (vdev) {
+        iommufd_backend_free_id(ummu_dev->viommu->iommufd, vdev->core->vdev_id);
+        g_free(vdev->core);
+        g_free(vdev);
+    }
+    ummu_dev->vdev = NULL;
 }
 
 int ummu_dev_install_nested_tecte(UMMUDevice *ummu_dev, uint32_t data_type,
