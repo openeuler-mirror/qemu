@@ -322,6 +322,7 @@ static uint64_t ummu_reg_readl(UMMUState *u, hwaddr offset)
         case A_UMMU_MEM_USI_ATTR:
         case A_UMMU_INT_MASK:
         case A_UMMU_DSTEID_CAM_TABLE_BASE_CFG:
+        case A_MAPT_CMDQ_CTXT_ATTR:
             /* do nothing, reg return val 0 */
             val = 0;
             break;
@@ -1265,6 +1266,7 @@ static void ummu_reg_writel(UMMUState *u, hwaddr offset, uint64_t data)
         case A_UMMU_MEM_USI_ATTR:
         case A_UMMU_INT_MASK:
         case A_UMMU_DSTEID_CAM_TABLE_BASE_CFG:
+        case A_MAPT_CMDQ_CTXT_ATTR:
             /* do nothing */
             break;
         default:
