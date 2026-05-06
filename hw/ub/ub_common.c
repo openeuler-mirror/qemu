@@ -403,6 +403,30 @@ uint32_t sysfs_get_bus_instance_type_by_eid(uint32_t eid)
     return bus_instance_type;
 }
 
+uint32_t sysfs_get_ub_feature(void)
+{
+    FILE *file = NULL;
+    char buf[MAX_BUF_LENGTH] = {0};
+    uint64_t feature = 0;
+
+    file = fopen("/sys/bus/ub/ub_feature", "r");
+    if (!file) {
+        qemu_log("ub_feature sysfs not available, all features disabled\n");
+        return 0;
+    }
+
+    if ((fgets(buf, MAX_BUF_LENGTH, file) == NULL) || (sscanf(buf, "%lx", &feature) != 1)) {
+        qemu_log("/sys/bus/ub/ub_feature read failed, check the file\n");
+        fclose(file);
+        return 0;
+    }
+    qemu_log("sysfs ub_feature: 0x%" PRIx64 ", low32: 0x%x\n",
+             feature, (uint32_t)(feature & 0xFFFFFFFF));
+
+    fclose(file);
+    return (uint32_t)(feature & 0xFFFFFFFF);
+}
+
 bool ub_guid_is_none(UbGuid *guid)
 {
     if (guid->seq_num == 0 &&

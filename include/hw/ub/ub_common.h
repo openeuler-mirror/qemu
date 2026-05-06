@@ -421,6 +421,7 @@ uint32_t sysfs_get_dev_number_by_guid(UbGuid *guid);
 uint32_t sysfs_get_ub_device_bus_instance_eid(char *sysfsdev);
 uint32_t sysfs_get_bus_instance_type_by_eid(uint32_t eid);
 uint32_t sysfs_get_bus_instance_eid_by_guid(UbGuid *guid);
+uint32_t sysfs_get_ub_feature(void);
 void ub_mem_dump(void *start, int size, const char *tag_fmt, ...) __attribute__((format(printf, 3, 4)));
 int ub_hexdump(void *data, int offset, int len, char *buff, int buff_size);
 bool ub_guid_is_none(UbGuid *guid);
