@@ -1003,19 +1003,19 @@ static void vfio_reinit_irq_handler(void *opaque)
              scna, port_idx, sub_msg_code == UB_LINK_UP ? "UP" : "DOWN");
 }
 
-static int vfio_enable_reinit_irq(VFIOUBDevice *vdev)
+static void vfio_enable_reinit_irq(VFIOUBDevice *vdev)
 {
     int ret;
     int32_t fd;
 
     if (vdev->reinit_irq_enabled) {
-        return 0;
+        return;
     }
 
     ret = event_notifier_init(&vdev->reinit_irq, 0);
     if (ret) {
-        error_report("vfio: reinit irq event_notifier_init failed");
-        return ret;
+        warn_report("vfio: reinit irq event_notifier_init failed");
+        return;
     }
 
     qemu_set_fd_handler(event_notifier_get_fd(&vdev->reinit_irq),
@@ -1025,17 +1025,17 @@ static int vfio_enable_reinit_irq(VFIOUBDevice *vdev)
     ret = vfio_set_irq_signaling(&vdev->vbasedev, VFIO_UB_REINIT_IRQ_INDEX, 0,
                                  VFIO_IRQ_SET_ACTION_TRIGGER, fd, NULL);
     if (ret) {
-        error_report("vfio: failed to enable reinit irq, ret=%d", ret);
+        warn_report("vfio: failed to enable reinit irq, ret=%d", ret);
         qemu_set_fd_handler(event_notifier_get_fd(&vdev->reinit_irq),
                             NULL, NULL, NULL);
         event_notifier_cleanup(&vdev->reinit_irq);
-        return ret;
+        return;
     }
 
     vdev->reinit_irq_enabled = true;
     qemu_log("vfio ub device(%s %s) reinit irq enabled\n",
              vdev->udev.name, vdev->udev.qdev.id);
-    return 0;
+    return;
 }
 
 static void vfio_realize(UBDevice *udev, Error **errp)
@@ -1149,11 +1149,7 @@ static void vfio_realize(UBDevice *udev, Error **errp)
         vfio_ers_quirk_setup(vdev, i);
     }
 
-    ret = vfio_enable_reinit_irq(vdev);
-    if (ret) {
-        error_prepend(errp, "failed to enable reinit irq: ");
-        goto out_unset_idev;
-    }
+    vfio_enable_reinit_irq(vdev);
 
     return;
 out_unset_idev:
