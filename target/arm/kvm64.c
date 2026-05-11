@@ -1259,7 +1259,7 @@ static int kvm_arm_put_core_regs(CPUState *cs, int level)
     return 0;
 }
 
-int kvm_arch_put_registers(CPUState *cs, int level)
+int kvm_arch_put_registers(CPUState *cs, int level, Error **errp)
 {
     int ret;
     ARMCPU *cpu = ARM_CPU(cs);
@@ -1479,7 +1479,7 @@ static int kvm_arm_get_core_regs(CPUState *cs)
     return 0;
 }
 
-int kvm_arch_get_registers(CPUState *cs)
+int kvm_arch_get_registers(CPUState *cs, Error **errp)
 {
     int ret;
     ARMCPU *cpu = ARM_CPU(cs);
