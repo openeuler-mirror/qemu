@@ -6037,6 +6037,7 @@ static const X86CPUDefinition builtin_x86_defs[] = {
                   { "hygon-sm4", "on" },
                   { "movu", "on" },
                   { "fp256", "on" },
+                  { "xsaves", "on" },
                   { "model-id",
                      "Hygon Dharma-v2 processor" },
                   { /* end of list */ }
@@ -6115,6 +6116,7 @@ static const X86CPUDefinition builtin_x86_defs[] = {
                   { "hygon-sm4", "on" },
                   { "movu", "on" },
                   { "fp256", "on" },
+                  { "xsaves", "on" },
                   { "model-id",
                      "Hygon Chengdu-v2 processor" },
                   { /* end of list */ }
