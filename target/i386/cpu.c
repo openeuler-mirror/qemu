@@ -6087,6 +6087,20 @@ static const X86CPUDefinition builtin_x86_defs[] = {
         .xlevel = 0x80000020,
         .model_id = "Hygon Chengdu Processor",
         .cache_info = &dharma_cache_info,
+        .versions = (X86CPUVersionDefinition[]) {
+            { .version = 1 },
+            {
+              .version = 2,
+              .props = (PropValue[]) {
+                  { "hygon-sm3", "on" },
+                  { "hygon-sm4", "on" },
+                  { "model-id",
+                     "Hygon Chengdu-v2 processor" },
+                  { /* end of list */ }
+              },
+            },
+            { /* end of list */ }
+        },
     },
 };
 
