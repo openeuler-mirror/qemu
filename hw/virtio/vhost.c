@@ -428,7 +428,6 @@ static inline int vhost_dev_log_resize(struct vhost_dev *dev, uint64_t size)
 {
     struct vhost_log *log = vhost_log_get(size, vhost_dev_log_is_shared(dev));
     uint64_t log_base;
-    int log_fd;
     int r;
 
     if (!log) {
@@ -437,7 +436,6 @@ static inline int vhost_dev_log_resize(struct vhost_dev *dev, uint64_t size)
     }
 
     log_base = (uint64_t)log->log;
-    log_fd = log_fd;
 
     /* inform backend of log switching, this must be done before
        releasing the current log, to ensure no logging is lost */
