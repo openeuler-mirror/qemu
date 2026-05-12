@@ -1384,6 +1384,22 @@ FeatureWordInfo feature_word_info[FEATURE_WORDS] = {
         .tcg_features = 0,
         .unmigratable_flags = 0,
     },
+    [FEAT_8C86_0000_EDX] = {
+        .type = CPUID_FEATURE_WORD,
+        .feat_names = {
+            NULL, "hygon-sm3", "hygon-sm4", NULL,
+            NULL, NULL, NULL, NULL,
+            NULL, NULL, NULL, NULL,
+            NULL, NULL, NULL, NULL,
+            NULL, NULL, NULL, NULL,
+            NULL, NULL, NULL, NULL,
+            NULL, NULL, NULL, NULL,
+            NULL, NULL, NULL, NULL,
+        },
+        .cpuid = { .eax = 0x8C860000, .reg = R_EDX, },
+        .tcg_features = 0,
+        .unmigratable_flags = 0,
+    },
     [FEAT_XSAVE] = {
         .type = CPUID_FEATURE_WORD,
         .feat_names = {
@@ -7205,6 +7221,14 @@ void cpu_x86_cpuid(CPUX86State *env, uint32_t index, uint32_t count,
     uint32_t signature[3];
     X86CPUTopoInfo *topo_info = &env->topo_info;
     uint32_t threads_per_pkg;
+
+    if (index == 0x8C860000) {
+        *edx = env->features[FEAT_8C86_0000_EDX];
+        *eax = 0x8C860000;
+        *ebx = 0;
+        *ecx = 0;
+        return;
+    }
 
     threads_per_pkg = x86_threads_per_pkg(topo_info);
 

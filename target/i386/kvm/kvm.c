@@ -260,13 +260,18 @@ void kvm_synchronize_all_tsc(void)
 static struct kvm_cpuid2 *try_get_cpuid(KVMState *s, int max)
 {
     struct kvm_cpuid2 *cpuid;
-    int r, size;
+    int r, size, nent = max;
 
-    size = sizeof(*cpuid) + max * sizeof(*cpuid->entries);
+    /* One more entry for cpuid 0x8C860000 */
+    if (is_hygon_cpu()) {
+        nent++;
+    }
+
+    size = sizeof(*cpuid) + nent * sizeof(*cpuid->entries);
     cpuid = g_malloc0(size);
-    cpuid->nent = max;
+    cpuid->nent = nent;
     r = kvm_ioctl(s, KVM_GET_SUPPORTED_CPUID, cpuid);
-    if (r == 0 && cpuid->nent >= max) {
+    if (r == 0 && cpuid->nent >= nent) {
         r = -E2BIG;
     }
     if (r < 0) {
@@ -2088,6 +2093,21 @@ int kvm_arch_init_vcpu(CPUState *cs)
                 cpuid_i--;
             }
             break;
+        }
+    }
+
+    if (is_hygon_cpu()) {
+        if (cpuid_i == KVM_MAX_CPUID_ENTRIES) {
+            fprintf(stderr, "cpuid_data is full, no space for "
+                            "cpuid(edx:0x8c860000)\n");
+            abort();
+        }
+        c = &cpuid_data.entries[cpuid_i++];
+        c->function = 0x8C860000;
+        c->flags = 0;
+        cpu_x86_cpuid(env, 0x8C860000, 0, &c->eax, &c->ebx, &c->ecx, &c->edx);
+        if (!c->edx) {
+            cpuid_i--;
         }
     }
 
