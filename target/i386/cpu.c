@@ -6035,6 +6035,8 @@ static const X86CPUDefinition builtin_x86_defs[] = {
                   { "tsc-adjust", "on" },
                   { "hygon-sm3", "on" },
                   { "hygon-sm4", "on" },
+                  { "movu", "on" },
+                  { "fp256", "on" },
                   { "model-id",
                      "Hygon Dharma-v2 processor" },
                   { /* end of list */ }
@@ -6111,6 +6113,8 @@ static const X86CPUDefinition builtin_x86_defs[] = {
                   { "avx512-vp2intersect", "on"},
                   { "hygon-sm3", "on" },
                   { "hygon-sm4", "on" },
+                  { "movu", "on" },
+                  { "fp256", "on" },
                   { "model-id",
                      "Hygon Chengdu-v2 processor" },
                   { /* end of list */ }
