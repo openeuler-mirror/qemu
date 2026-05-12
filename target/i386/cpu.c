@@ -6108,6 +6108,7 @@ static const X86CPUDefinition builtin_x86_defs[] = {
             {
               .version = 2,
               .props = (PropValue[]) {
+                  { "avx512-vp2intersect", "on"},
                   { "hygon-sm3", "on" },
                   { "hygon-sm4", "on" },
                   { "model-id",
