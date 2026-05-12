@@ -22,8 +22,8 @@
 #include "sysemu/kvm.h"
 #include "savevm.h"
 #include "ram.h"
-#include "cgs.h"
 #include "options.h"
+#include "cgs.h"
 
 static CgsMig cgs_mig;
 
@@ -278,5 +278,10 @@ void cgs_mig_loadvm_state_cleanup(void)
 
 void cgs_mig_init(void)
 {
+    if (virtcca_cvm_allowed)
+    {
+        info_report("INFO: cgs_mig_init is setup as the virtcca mode\n");
+        vircca_mig_init(&cgs_mig);
+    }
     return;
 }

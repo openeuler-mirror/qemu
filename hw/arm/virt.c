@@ -3148,7 +3148,7 @@ static void machvirt_init(MachineState *machine)
     vms->bootinfo.psci_conduit = vms->psci_conduit;
     vms->bootinfo.confidential = virt_machine_is_confidential(vms) ||
                                  virtcca_cvm_enabled();
-    vms->bootinfo.skip_bootloader = virtcca_cvm_enabled() ? false : vms->bootinfo.confidential;
+    vms->bootinfo.skip_bootloader = vms->bootinfo.confidential;
     arm_load_kernel(ARM_CPU(first_cpu), machine, &vms->bootinfo);
 
     vms->machine_done.notify = virt_machine_done;

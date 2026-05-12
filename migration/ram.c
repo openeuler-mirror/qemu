@@ -2359,13 +2359,85 @@ static bool encrypted_test_list(RAMState *rs, RAMBlock *block,
 }
 
 #ifdef CONFIG_VIRTCCA_MIGRATION
+static int ram_save_cgs_private_page(RAMState *rs,
+                                     PageSearchStatus *pss, bool cancel)
+{
+    RAMBlock *block = pss->block;
+    ram_addr_t offset = ((ram_addr_t)pss->page) << TARGET_PAGE_BITS;
+    long res;
+
+    if (cancel) {
+        res = cgs_mig_savevm_state_ram_cancel(pss->pss_channel, block, offset,
+                                              pss->cgs_private_gpa);
+    } else {
+        res = cgs_mig_savevm_state_ram(pss->pss_channel,
+                                       block, offset, pss->cgs_private_gpa);
+    }
+    if (res > 0) {
+        stat64_add(&mig_stats.qemu_file_transferred, res);
+        stat64_add(&mig_stats.cgs_private_pages, 1);
+    } else {
+        /* Return the negative error code */
+        return res;
+    }
+
+    /* Return the number of pages (i.e. 1) succeeded to be saved/cancelled */
+    return 1;
+}
+
+static int virtcca_save_zero_page(RAMState *rs, PageSearchStatus *pss,
+                          ram_addr_t offset)
+{
+    QEMUFile *file = pss->pss_channel;
+    int len = 0;
+
+    if (!virtcca_is_zero_page(0, pss->cgs_private_gpa, TARGET_PAGE_SIZE)) {
+        return 0;
+    }
+
+    len += save_page_header(pss, file, pss->block, offset | RAM_SAVE_FLAG_ZERO);
+    qemu_put_byte(file, 0);
+    len += 1;
+    ram_release_page(pss->block->idstr, offset);
+
+    stat64_add(&mig_stats.zero_pages, 1);
+    ram_transferred_add(len);
+
+    return len;
+}
+
+
 static int virtcca_save_target_page(ram_addr_t offset, RAMState *rs, PageSearchStatus *pss)
 {
+    if ((pss->cgs_private_gpa < virtCCA_mig.swiotlb_start || pss->cgs_private_gpa >= virtCCA_mig.swiotlb_end) && pss->cgs_private_gpa != CGS_PRIVATE_GPA_INVALID) {
+        if (virtcca_save_zero_page(rs, pss, offset)) {
+            return 1;
+        }
+        return ram_save_cgs_private_page(rs, pss, false);
+    }
+
+    if (pss->cgs_private_gpa >= virtCCA_mig.swiotlb_start && pss->cgs_private_gpa < virtCCA_mig.swiotlb_end) {
+        if (save_zero_page(rs, pss, offset)) {
+            return 1;
+        }
+        return ram_save_page(rs, pss);
+    }
+
     return 1;
 }
 
 bool virtcca_is_swiotlb(void *host)
 {
+    hwaddr cgs_private_gpa;
+
+    if (!kvm_physical_memory_addr_from_host(kvm_state, host,
+                                             &cgs_private_gpa))
+        return false;
+
+    if (cgs_private_gpa >= virtCCA_mig.swiotlb_start && cgs_private_gpa < virtCCA_mig.swiotlb_end) {
+        return true;
+     }
+
     return false;
 }
 

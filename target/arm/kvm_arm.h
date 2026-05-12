@@ -467,7 +467,6 @@ void tmm_set_sec_addr(hwaddr base, int num);
 void tmm_set_hpre_addr(hwaddr base, int num);
 
 int kvm_arm_tmm_init(ConfidentialGuestSupport *cgs, Error **errp);
-bool kvm_arm_tmm_enabled(void);
 void virtcca_migvm_save_cid(void);
 /**
  * kvm_arm_set_smccc_filter

@@ -70,6 +70,10 @@ void cgs_mig_init(void);
 int virtcca_import_zero_page(uint32_t channel_id, void *host);
 void vircca_mig_init(CgsMig *cgs_mig);
 bool virtcca_is_swiotlb(void *host);
+int virtcca_check_mig_mem(bool is_src);
+int get_migration_result_from_sysfs(bool is_src);
+int write_numa_info_to_sysfs(struct kvm_numa_info *numa_info, bool is_src);
+int append_number_to_string(char *result, size_t *current_len, uint64_t number, uint64_t node_mask);
 
 bool virtcca_is_zero_page(uint32_t channel_id, hwaddr cgs_private_gpa, size_t len);
 

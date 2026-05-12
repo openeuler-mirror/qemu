@@ -71,10 +71,6 @@ typedef struct {
 
 static TmmGuest *tmm_guest;
 bool virtcca_mig_migcvm_allowed = false;
-bool kvm_arm_tmm_enabled(void)
-{
-    return !!tmm_guest;
-}
 
 static int tmm_configure_one(TmmGuest *guest, uint32_t cfg, Error **errp)
 {
