@@ -624,6 +624,7 @@ typedef enum FeatureWord {
     FEAT_8000_0007_EBX, /* CPUID[8000_0007].EBX */
     FEAT_8000_0007_EDX, /* CPUID[8000_0007].EDX */
     FEAT_8000_0008_EBX, /* CPUID[8000_0008].EBX */
+    FEAT_8000_001A_EAX, /* CPUID[8000_001A].EAX */
     FEAT_8000_0021_EAX, /* CPUID[8000_0021].EAX */
     FEAT_C000_0001_EDX, /* CPUID[C000_0001].EDX */
     FEAT_KVM,           /* CPUID[4000_0001].EAX (KVM_CPUID_FEATURES) */
@@ -1034,6 +1035,13 @@ uint64_t x86_cpu_get_supported_feature_word(X86CPU *cpu, FeatureWord w);
 #define CPUID_8000_0008_EBX_AMD_SSBD    (1U << 24)
 /* Predictive Store Forwarding Disable */
 #define CPUID_8000_0008_EBX_AMD_PSFD    (1U << 28)
+
+/* The internal FP/SIMD execution data path is 128 bits wide */
+#define CPUID_8000_001A_EAX_FP128       (1U << 0)
+/* MOVU SSE instructions are more efficient than SSE */
+#define CPUID_8000_001A_EAX_MOVU        (1U << 1)
+/* The internal FP/SIMD execution data path is 256 bits wide */
+#define CPUID_8000_001A_EAX_FP256       (1U << 2)
 
 /* Processor ignores nested data breakpoints */
 #define CPUID_8000_0021_EAX_NO_NESTED_DATA_BP    (1U << 0)

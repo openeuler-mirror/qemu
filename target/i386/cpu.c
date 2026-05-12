@@ -1035,6 +1035,8 @@ void x86_cpu_vendor_words2str(char *dst, uint32_t vendor1,
 
 #define TCG_8000_0008_EBX  (CPUID_8000_0008_EBX_XSAVEERPTR | \
           CPUID_8000_0008_EBX_WBNOINVD | CPUID_8000_0008_EBX_KERNEL_FEATURES)
+#define TCG_8000_001A_EAX (CPUID_8000_001A_EAX_FP128 | \
+                           CPUID_8000_001A_EAX_MOVU | CPUID_8000_001A_EAX_FP256)
 
 FeatureWordInfo feature_word_info[FEATURE_WORDS] = {
     [FEAT_1_EDX] = {
@@ -1348,6 +1350,22 @@ FeatureWordInfo feature_word_info[FEATURE_WORDS] = {
         },
         .cpuid = { .eax = 0x80000008, .reg = R_EBX, },
         .tcg_features = TCG_8000_0008_EBX,
+        .unmigratable_flags = 0,
+    },
+    [FEAT_8000_001A_EAX] = {
+        .type = CPUID_FEATURE_WORD,
+        .feat_names = {
+            "fp128", "movu", "fp256", NULL,
+            NULL, NULL, NULL, NULL,
+            NULL, NULL, NULL, NULL,
+            NULL, NULL, NULL, NULL,
+            NULL, NULL, NULL, NULL,
+            NULL, NULL, NULL, NULL,
+            NULL, NULL, NULL, NULL,
+            NULL, NULL, NULL, NULL,
+        },
+        .cpuid = { .eax = 0x8000001A, .reg = R_EAX, },
+        .tcg_features = TCG_8000_001A_EAX,
         .unmigratable_flags = 0,
     },
     [FEAT_8000_0021_EAX] = {
@@ -7819,6 +7837,9 @@ void cpu_x86_cpuid(CPUX86State *env, uint32_t index, uint32_t count,
             *ecx = 0;
             *edx = 0;
         }
+        break;
+    case 0x8000001A:
+        *eax = env->features[FEAT_8000_001A_EAX];
         break;
     case 0x8000001D:
 	/* Populate AMD Processor Cache Information */
