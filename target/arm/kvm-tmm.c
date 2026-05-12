@@ -16,19 +16,27 @@
 #include "migration/blocker.h"
 #include "qapi/error.h"
 #include "qapi/qapi-commands-misc-target.h"
+#include "qemu/osdep.h"
+#include "qom/object.h"
 #include "qom/object_interfaces.h"
 #include "sysemu/kvm.h"
 #include "sysemu/runstate.h"
 #include "hw/loader.h"
 #include "linux-headers/asm-arm64/kvm.h"
 #include <unistd.h>
-
+#ifdef CONFIG_VIRTCCA_MIGRATION
+#include "migration/cgs.h"
+#endif
 #define TYPE_TMM_GUEST "tmm-guest"
 OBJECT_DECLARE_SIMPLE_TYPE(TmmGuest, TMM_GUEST)
 
 #define TMM_PAGE_SIZE qemu_real_host_page_size()
 #define TMM_MAX_PMU_CTRS    0x20
+#ifdef CONFIG_VIRTCCA_MIGRATION
+#define TMM_MAX_CFG      8
+#else
 #define TMM_MAX_CFG      6
+#endif
 #define TMM_MEMORY_INFO_SYSFS "/sys/kernel/tmm/memory_info"
 
 typedef struct {
@@ -37,6 +45,11 @@ typedef struct {
     hwaddr hpre_addr[KVM_ARM_TMM_MAX_KAE_VF_NUM];
 } KaeDeviceInfo;
 
+/* add the migration cap */
+typedef struct {
+    uint32_t mig_enable;
+} MigrationCap;
+
 struct TmmGuest {
     ConfidentialGuestSupport parent_obj;
     GSList *ram_regions;
@@ -44,6 +57,8 @@ struct TmmGuest {
     uint32_t sve_vl;
     uint32_t num_pmu_cntrs;
     KaeDeviceInfo kae_device_info;
+    MigrationCap migration_cap;
+    TmmMigVmCap migvm_cap;
 };
 
 typedef struct {
@@ -55,12 +70,12 @@ typedef struct {
 } TmmRamRegion;
 
 static TmmGuest *tmm_guest;
- 
+bool virtcca_mig_migcvm_allowed = false;
 bool kvm_arm_tmm_enabled(void)
 {
     return !!tmm_guest;
 }
- 
+
 static int tmm_configure_one(TmmGuest *guest, uint32_t cfg, Error **errp)
 {
     int ret = 1;
@@ -96,6 +111,40 @@ static int tmm_configure_one(TmmGuest *guest, uint32_t cfg, Error **errp)
             break;
         case KVM_CAP_ARM_TMM_CFG_DBG:
             return 0;
+        case KVM_CAP_ARM_TMM_CFG_MIG:
+            if (!guest->migration_cap.mig_enable) {
+                info_report("\n Qemu-KVM:\n\tMigration disabled\n\n");
+                return 0;
+            }
+            args.mig_src = !runstate_check(RUN_STATE_INMIGRATE);
+            if (args.mig_src) {
+                info_report("\n  Migration Version: Dev(Live).\n \
+                    WARNING: you are using Live Migration Version of virtCCA, this is src.\n\n");
+            } else {
+                info_report("\n  Migration Version: Dev(Live).\n \
+                    WARNING: you are using Live Migration Version of virtCCA, this is dest.\n\n");
+            }
+            args.mig_enable = guest->migration_cap.mig_enable ? 1 : 0;
+            cfg_str = "Migration";
+            break;
+        case KVM_CAP_ARM_TMM_CFG_MIG_CVM:
+            if (!guest->migvm_cap) {
+                return 0;
+            }
+            switch (guest->migvm_cap) {
+            case KVM_CAP_ARM_TMM_MIGVM_DEFAULT:
+                args.migration_migvm_cap = KVM_CAP_ARM_TMM_MIGVM_DEFAULT;
+                break;
+            case KVM_CAP_ARM_TMM_MIGVM_ENABLE:
+                args.migration_migvm_cap = KVM_CAP_ARM_TMM_MIGVM_ENABLE;
+                info_report("Migration Version: the migvm is enabled \n\n");
+                virtcca_mig_migcvm_allowed = true;
+                break;
+            default:
+                g_assert_not_reached();
+            }
+            cfg_str = "migvm enabled";
+            break;
         case KVM_CAP_ARM_TMM_CFG_PMU:
             if (!guest->num_pmu_cntrs) {
                 return 0;
@@ -123,7 +172,7 @@ static int tmm_configure_one(TmmGuest *guest, uint32_t cfg, Error **errp)
     if (ret) {
         error_setg_errno(errp, -ret, "TMM: failed to configure %s", cfg_str);
     }
- 
+
     return ret;
 }
 
@@ -187,10 +236,156 @@ static int tmm_create_rd(Error **errp)
     return ret;
 }
 
+int tmm_create_tec(void)
+{
+    CPUState *cs;
+    int ret = 0;
+
+    CPU_FOREACH(cs) {
+        ret = kvm_arm_vcpu_finalize(cs, KVM_ARM_VCPU_REC);
+        if (ret) {
+            error_report("TMM: failed to finalize vCPU: %s", strerror(-ret));
+            return ret;
+        }
+    }
+    return ret;
+}
+
+#ifdef CONFIG_VIRTCCA_MIGRATION
+static int virtcca_save_migvm_cid(uint64_t cid)
+{
+    info_report("calling virtcca_binding_with_migcvm_pid");
+    struct kvm_virtcca_mig_cmd cmd;
+    struct mig_cvm guest_mig_cvm_info;
+    int ret;
+
+    cmd.id = KVM_CVM_MIGCVM_SET_CID;
+    cmd.flags = 0;
+    guest_mig_cvm_info.version = KVM_CVM_MIGVM_VERSION;
+    guest_mig_cvm_info.migvm_cid = cid; /* vsock cid of migvm */
+    cmd.data = (__u64)(unsigned long)&guest_mig_cvm_info;
+
+    ret = kvm_vm_ioctl(kvm_state, KVM_CVM_MIG_IOCTL, &cmd);
+    if (ret) {
+        error_report("failed to bind migcvm: %d", ret);
+    }
+
+    return ret;
+}
+
+typedef struct search_cid_ctx {
+    const char *target_type;
+    Object *result;
+} search_cid_ctx_t;
+
+static int recursive_search_cb(Object *obj, void *opaque)
+{
+    search_cid_ctx_t *ctx = (search_cid_ctx_t *)opaque;
+    const char *obj_type = object_get_typename(obj);
+
+    if (!ctx->result && strcmp(obj_type, ctx->target_type) == 0) {
+        ctx->result = obj;
+        return 1;
+    }
+    object_child_foreach(obj, recursive_search_cb, ctx);
+    return 0;
+}
+
+static Object *find_vsock_backend(Object *vsock_obj)
+{
+    Error *err = NULL;
+    Object *backend = object_property_get_link(vsock_obj, "vhost-vsock-device", &err);
+
+    if (!err && backend) {
+        return backend;
+    }
+    error_free(err);
+
+    search_cid_ctx_t ctx = {
+        .target_type = "vhost-vsock-device",
+        .result = NULL,
+    };
+    object_child_foreach(vsock_obj, recursive_search_cb, &ctx);
+    return ctx.result;
+}
+
+static Object *find_vsock_device(Object *root)
+{
+    const char *vsock_types[] = {
+        "vhost-vsock-pci",
+        "virtio-vsock-pci",
+        NULL
+    };
+
+    for (int i = 0; vsock_types[i]; i++) {
+        search_cid_ctx_t ctx = {
+            .target_type = vsock_types[i],
+            .result = NULL,
+        };
+
+        object_child_foreach(root, recursive_search_cb, &ctx);
+
+        if (ctx.result) {
+            info_report("Found VSOCK device of type '%s'", vsock_types[i]);
+            return ctx.result;
+        }
+    }
+
+    return NULL;
+}
+
+static uint64_t parse_migcvm_cid(void)
+{
+    Error *err = NULL;
+    uint64_t cid = 0;
+    info_report("calling parse_migcvm_cid");
+
+    Object *machine = object_resolve_path("/machine", NULL);
+    if (!machine) {
+        error_report("Failed to find /machine object");
+        return 0;
+    }
+
+    Object *vsock_obj = find_vsock_device(machine);
+    if (!vsock_obj) {
+        error_report("No VSOCK PCI device found");
+        return 0;
+    }
+
+    Object *backend = find_vsock_backend(vsock_obj);
+    if (!backend) {
+        error_report("No vhost-vsock-device backend found");
+        return 0;
+    }
+
+    cid = object_property_get_uint(backend, "guest-cid", &err);
+    if (err) {
+        error_report_err(err);
+        return 0;
+    }
+    info_report("Detected guest-cid: %" PRIu64, cid);
+    return cid;
+}
+
+void virtcca_migvm_save_cid(void)
+{
+    uint64_t cid = 0;
+
+    cid = parse_migcvm_cid();
+    if (!cid) {
+        error_report("Failed to parse migcvm cid");
+        exit(1);
+    }
+
+    if (virtcca_save_migvm_cid(cid)) {
+        error_report("Failed to save migcvm cid");
+        exit(1);
+    }
+}
+#endif
 static void tmm_vm_state_change(void *opaque, bool running, RunState state)
 {
     int ret;
-    CPUState *cs;
 
     if (!running) {
         return;
@@ -199,12 +394,8 @@ static void tmm_vm_state_change(void *opaque, bool running, RunState state)
     g_slist_foreach(tmm_guest->ram_regions, tmm_populate_region, NULL);
     g_slist_free_full(g_steal_pointer(&tmm_guest->ram_regions), g_free);
 
-    CPU_FOREACH(cs) {
-        ret = kvm_arm_vcpu_finalize(cs, KVM_ARM_VCPU_REC);
-        if (ret) {
-            error_report("TMM: failed to finalize vCPU: %s", strerror(-ret));
-            exit(1);
-        }
+    if (tmm_create_tec()) {
+        exit(1);
     }
 
     ret = kvm_vm_enable_cap(kvm_state, KVM_CAP_ARM_RME, 0,
@@ -240,7 +431,16 @@ int kvm_arm_tmm_init(ConfidentialGuestSupport *cgs, Error **errp)
     if (ret) {
         return ret;
     }
- 
+#ifdef CONFIG_VIRTCCA_MIGRATION
+    if (runstate_check(RUN_STATE_INMIGRATE)) {
+        ret = !cgs_mig_is_ready(false, NULL, 0);
+    }
+
+    if (ret) {
+        error_setg(errp, "cgs mig required, but not ready");
+        return ret;
+    }
+#endif
     qemu_add_vm_change_state_handler(tmm_vm_state_change, NULL);
     return 0;
 }
@@ -352,6 +552,45 @@ void tmm_set_hpre_addr(hwaddr base, int num)
     tmm_guest->kae_device_info.hpre_addr[num] = base;
 }
 
+#ifdef CONFIG_VIRTCCA_MIGRATION
+/* get the mig ability config */
+static void tmm_get_mig_cap(Object *obj, Visitor *v, const char *name,
+                            void *opaque, Error **errp)
+{
+    TmmGuest *guest = TMM_GUEST(obj);
+
+    visit_type_uint32(v, name, &guest->migration_cap.mig_enable, errp);
+}
+
+/* enable mig cap into qemu */
+static void tmm_set_mig_cap(Object *obj, Visitor *v, const char *name,
+                            void *opaque, Error **errp)
+{
+    TmmGuest *guest = TMM_GUEST(obj);
+    uint32_t value;
+
+    if (!visit_type_uint32(v, name, &value, errp)) {
+        return;
+    }
+
+    guest->migration_cap.mig_enable = value;
+}
+
+static int tmm_get_migvm_algo(Object *obj, Error **errp G_GNUC_UNUSED)
+{
+    TmmGuest *guest = TMM_GUEST(obj);
+
+    return guest->migvm_cap;
+}
+
+static void tmm_set_migvm_algo(Object *obj, int algo, Error **errp G_GNUC_UNUSED)
+{
+    TmmGuest *guest = TMM_GUEST(obj);
+
+    guest->migvm_cap = algo;
+}
+#endif
+
 static void tmm_guest_class_init(ObjectClass *oc, void *data)
 {
     object_class_property_add_enum(oc, "measurement-algo",
@@ -372,6 +611,17 @@ static void tmm_guest_class_init(ObjectClass *oc, void *data)
                               tmm_set_sve_vl, NULL, NULL);
     object_class_property_set_description(oc, "sve-vector-length",
             "SVE vector length. 0 disables SVE (the default)");
+#ifdef CONFIG_VIRTCCA_MIGRATION
+    /* Add the migration enable func */
+    object_class_property_add(oc, "virtcca-migration-cap", "uint32", tmm_get_mig_cap,
+                              tmm_set_mig_cap, NULL, NULL);
+    object_class_property_set_description(oc, "virtcca-migration-cap",
+            "Config of virtcca migration. 0 disables mig (the default)");
+    object_class_property_add_enum(oc, "migvm-cap", "TmmMigVmCap", &TmmMigVmCap_lookup,
+                                   tmm_get_migvm_algo, tmm_set_migvm_algo);
+    object_class_property_set_description(oc, "migvm-cap",
+            "Config of migCVM of virtcca migration. Options are ('default', 'migvm')");
+#endif
     object_class_property_add(oc, "num-pmu-counters", "uint32",
                               tmm_get_num_pmu_cntrs, tmm_set_num_pmu_cntrs,
                               NULL, NULL);

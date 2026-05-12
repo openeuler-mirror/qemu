@@ -533,6 +533,8 @@ _meson_option_parse() {
     --disable-ham-migration) printf "%s" -Dham_migration=disabled ;;
     --enable-urma-migration) printf "%s" -Durma_migration=enabled ;;
     --disable-urma-migration) printf "%s" -Durma_migration=disabled ;;
+    --enable-virtcca-migration) printf "%s" -Dvirtcca_migration=enabled ;;
+    --disable-virtcca-migration) printf "%s" -Dvirtcca_migration=disabled ;;
     --enable-usb-redir) printf "%s" -Dusb_redir=enabled ;;
     --disable-usb-redir) printf "%s" -Dusb_redir=disabled ;;
     --enable-vde) printf "%s" -Dvde=enabled ;;

@@ -65,3 +65,6 @@ config URMA_MIGRATION
 
 config HAM_MIGRATION
     bool
+
+config VIRTCCA_MIGRATION
+    bool

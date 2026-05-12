@@ -967,7 +967,7 @@ int kvm_arch_init_vcpu(CPUState *cs)
         return ret;
     }
 
-    if (cpu->kvm_rme) {
+    if (cpu->kvm_rme || virtcca_cvm_enabled()) {
         return 0;
     }
     /* overwrite writable ID regs with their updated property values */

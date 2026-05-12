@@ -2778,7 +2778,16 @@ static void fdt_add_all_hisi_nodes(const VirtMachineState *vms, int dev_id)
         fdt_add_hisi_hpre_nodes(vms, i);
     }
 }
-
+#ifdef CONFIG_VIRTCCA_MIGRATION
+static void virt_migvm_cid_notify(Notifier *n, void *opaque)
+{
+    if (!virtcca_migcvm_enabled()) {
+        return;
+    }
+    virtcca_migvm_save_cid();
+    info_report("Detected guest CID in machine_init_done");
+}
+#endif
 static void machvirt_init(MachineState *machine)
 {
     VirtMachineState *vms = VIRT_MACHINE(machine);
@@ -3139,11 +3148,17 @@ static void machvirt_init(MachineState *machine)
     vms->bootinfo.psci_conduit = vms->psci_conduit;
     vms->bootinfo.confidential = virt_machine_is_confidential(vms) ||
                                  virtcca_cvm_enabled();
-    vms->bootinfo.skip_bootloader = vms->bootinfo.confidential;
+    vms->bootinfo.skip_bootloader = virtcca_cvm_enabled() ? false : vms->bootinfo.confidential;
     arm_load_kernel(ARM_CPU(first_cpu), machine, &vms->bootinfo);
 
     vms->machine_done.notify = virt_machine_done;
     qemu_add_machine_init_done_notifier(&vms->machine_done);
+#ifdef CONFIG_VIRTCCA_MIGRATION
+    static Notifier migvm_cid_notifier = {
+        .notify = virt_migvm_cid_notify,
+    };
+    qemu_add_machine_init_done_notifier(&migvm_cid_notifier);
+#endif
 }
 
 static bool virt_get_secure(Object *obj, Error **errp)
