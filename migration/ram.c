@@ -68,6 +68,9 @@
 #ifdef CONFIG_HAM_MIGRATION
 #include "ham.h"
 #endif
+#ifdef CONFIG_VIRTCCA_MIGRATION
+#include "cgs.h"
+#endif
 /* Defines RAM_SAVE_ENCRYPTED_PAGE and RAM_SAVE_SHARED_REGION_LIST */
 #include "target/i386/sev.h"
 #include "target/i386/csv.h"
@@ -107,6 +110,16 @@
 #define RAM_SAVE_FLAG_MULTIFD_FLUSH    0x200
 #define RAM_SAVE_FLAG_ENCRYPTED_DATA   0x400
 
+/* Current virtcca migration flag conflicts with the nvm.
+ * To switch between nvm and cvm migrations and avoid conflicts,
+ * now we use the flag below in Kunpeng virtcca.
+ */
+#ifdef CONFIG_VIRTCCA_MIGRATION
+#define RAM_SAVE_FLAG_CGS_EPOCH        0x100
+#define RAM_SAVE_FLAG_CGS_STATE        0x400
+#define RAM_SAVE_FLAG_CGS_STATE_CANCEL 0x800
+#endif
+
 bool memcrypt_enabled(void)
 {
     MachineState *ms = MACHINE(qdev_get_machine());
@@ -130,6 +143,10 @@ struct PageSearchStatus {
     RAMBlock    *block;
     /* Current page to search from */
     unsigned long page;
+#ifdef CONFIG_VIRTCCA_MIGRATION
+    /* Guest-physical address of the current page if it is private */
+    hwaddr cgs_private_gpa;
+#endif
     /* Set once we wrap around */
     bool         complete_round;
     /* Whether we're sending a host page */
@@ -395,6 +412,10 @@ struct RAMState {
     bool xbzrle_started;
     /* Are we on the last stage of migration */
     bool last_stage;
+#ifdef CONFIG_VIRTCCA_MIGRATION
+    /* Used by cgs migration and set to request for the start of a new epoch */
+    bool cgs_start_epoch;
+#endif
 
     /* total handled target pages at the beginning of period */
     uint64_t target_page_count_prev;
@@ -491,6 +512,11 @@ static void pss_init(PageSearchStatus *pss, RAMBlock *rb, ram_addr_t page)
     pss->block = rb;
     pss->page = page;
     pss->complete_round = false;
+#ifdef CONFIG_VIRTCCA_MIGRATION
+    if (virtcca_cvm_enabled()) {
+        pss->cgs_private_gpa = CGS_PRIVATE_GPA_INVALID;
+    }
+#endif
 }
 
 /*
@@ -708,6 +734,42 @@ static int save_xbzrle_page(RAMState *rs, PageSearchStatus *pss,
     return 1;
 }
 
+#ifdef CONFIG_VIRTCCA_MIGRATION
+static hwaddr virtcca_ram_get_private_gpa(RAMBlock *rb, unsigned long page)
+{
+    int ret;
+    ram_addr_t offset = ((ram_addr_t)page) << TARGET_PAGE_BITS;
+    hwaddr gpa;
+
+    /* ROM devices contain unencrypted data */
+    if (migrate_ram_is_ignored(rb) ||
+        memory_region_is_romd(rb->mr) ||
+        memory_region_is_rom(rb->mr) ||
+        !memory_region_is_ram(rb->mr)) {
+        return CGS_PRIVATE_GPA_INVALID;
+    }
+
+    if (offset >= rb->used_length) {
+        return CGS_PRIVATE_GPA_INVALID;
+    }
+
+    ret = kvm_physical_memory_addr_from_host(kvm_state, rb->host + offset,
+                                             &gpa);
+    if (!ret) {
+        error_report("failed to finf gpa, page=%lx", page);
+        return CGS_PRIVATE_GPA_INVALID;
+    }
+
+    /* Check if the GPA is within the range of the CVM RAM */
+    if ((gpa >= UEFI_MAX_SIZE && gpa < virtcca_cvm_gpa_start) ||
+        gpa >= virtcca_cvm_gpa_start + virtcca_cvm_ram_size) {
+        return CGS_PRIVATE_GPA_INVALID;
+    }
+
+    return gpa;
+}
+#endif
+
 /**
  * pss_find_next_dirty: find the next dirty page of current ramblock
  *
@@ -741,6 +803,12 @@ static void pss_find_next_dirty(PageSearchStatus *pss)
     }
 
     pss->page = find_next_bit(bitmap, size, pss->page);
+
+#ifdef CONFIG_VIRTCCA_MIGRATION
+    if (virtcca_cvm_enabled()) {
+        pss->cgs_private_gpa = virtcca_ram_get_private_gpa(pss->block, pss->page);
+    }
+#endif
 }
 
 static void migration_clear_memory_region_dirty_bitmap(RAMBlock *rb,
@@ -1523,6 +1591,11 @@ static int find_dirty_block(RAMState *rs, PageSearchStatus *pss)
                             ((ram_addr_t)pss->page) << TARGET_PAGE_BITS)) {
         /* Didn't find anything in this RAM Block */
         pss->page = 0;
+#ifdef CONFIG_VIRTCCA_MIGRATION
+        if (virtcca_cvm_enabled()) {
+            pss->cgs_private_gpa = virtcca_ram_get_private_gpa(pss->block, pss->page);
+        }
+#endif
         pss->block = QLIST_NEXT_RCU(pss->block, next);
         if (!pss->block) {
             if (migrate_multifd() &&
@@ -1550,6 +1623,11 @@ static int find_dirty_block(RAMState *rs, PageSearchStatus *pss)
             pss->block = QLIST_FIRST_RCU(&ram_list.blocks);
             /* Flag that we've looped */
             pss->complete_round = true;
+#ifdef CONFIG_VIRTCCA_MIGRATION
+            if (virtcca_cvm_enabled()) {
+                rs->cgs_start_epoch = true;
+            }
+#endif
             /* After the first round, enable XBZRLE. */
             if (migrate_xbzrle()) {
                 rs->xbzrle_started = true;
@@ -2045,7 +2123,11 @@ static bool get_queued_page(RAMState *rs, PageSearchStatus *pss)
          */
         pss->block = block;
         pss->page = offset >> TARGET_PAGE_BITS;
-
+#ifdef CONFIG_VIRTCCA_MIGRATION
+        if (virtcca_cvm_enabled()) {
+            pss->cgs_private_gpa = virtcca_ram_get_private_gpa(pss->block, pss->page);
+        }
+#endif
         /*
          * This unqueued page would break the "one round" check, even is
          * really rare.
@@ -2276,6 +2358,124 @@ static bool encrypted_test_list(RAMState *rs, RAMBlock *block,
     return ops->is_gfn_in_unshared_region(gfn);
 }
 
+#ifdef CONFIG_VIRTCCA_MIGRATION
+static int ram_save_cgs_private_page(RAMState *rs,
+                                     PageSearchStatus *pss, bool cancel)
+{
+    RAMBlock *block = pss->block;
+    ram_addr_t offset = ((ram_addr_t)pss->page) << TARGET_PAGE_BITS;
+    long res;
+
+    if (cancel) {
+        res = cgs_mig_savevm_state_ram_cancel(pss->pss_channel, block, offset,
+                                              pss->cgs_private_gpa);
+    } else {
+        res = cgs_mig_savevm_state_ram(pss->pss_channel,
+                                       block, offset, pss->cgs_private_gpa);
+    }
+    if (res > 0) {
+        stat64_add(&mig_stats.qemu_file_transferred, res);
+        stat64_add(&mig_stats.cgs_private_pages, 1);
+    } else {
+        /* Return the negative error code */
+        return res;
+    }
+
+    /* Return the number of pages (i.e. 1) succeeded to be saved/cancelled */
+    return 1;
+}
+
+static int virtcca_save_zero_page(RAMState *rs, PageSearchStatus *pss,
+                          ram_addr_t offset)
+{
+    QEMUFile *file = pss->pss_channel;
+    int len = 0;
+
+    if (!virtcca_is_zero_page(0, pss->cgs_private_gpa, TARGET_PAGE_SIZE)) {
+        return 0;
+    }
+
+    len += save_page_header(pss, file, pss->block, offset | RAM_SAVE_FLAG_ZERO);
+    qemu_put_byte(file, 0);
+    len += 1;
+    ram_release_page(pss->block->idstr, offset);
+
+    stat64_add(&mig_stats.zero_pages, 1);
+    ram_transferred_add(len);
+
+    return len;
+}
+
+
+static int virtcca_save_target_page(ram_addr_t offset, RAMState *rs, PageSearchStatus *pss)
+{
+    if ((pss->cgs_private_gpa < virtCCA_mig.swiotlb_start || pss->cgs_private_gpa >= virtCCA_mig.swiotlb_end) && pss->cgs_private_gpa != CGS_PRIVATE_GPA_INVALID) {
+        if (virtcca_save_zero_page(rs, pss, offset)) {
+            return 1;
+        }
+        return ram_save_cgs_private_page(rs, pss, false);
+    }
+
+    if (pss->cgs_private_gpa >= virtCCA_mig.swiotlb_start && pss->cgs_private_gpa < virtCCA_mig.swiotlb_end) {
+        if (save_zero_page(rs, pss, offset)) {
+            return 1;
+        }
+        return ram_save_page(rs, pss);
+    }
+
+    return 1;
+}
+
+bool virtcca_is_swiotlb(void *host)
+{
+    hwaddr cgs_private_gpa;
+
+    if (!kvm_physical_memory_addr_from_host(kvm_state, host,
+                                             &cgs_private_gpa))
+        return false;
+
+    if (cgs_private_gpa >= virtCCA_mig.swiotlb_start && cgs_private_gpa < virtCCA_mig.swiotlb_end) {
+        return true;
+     }
+
+    return false;
+}
+
+
+/* enable the CGS state in the ram header and the CGS epoch in the ram header */
+size_t ram_save_cgs_ram_header(QEMUFile *f, RAMBlock *block,
+                               ram_addr_t offset, bool cancel)
+{
+    uint64_t flags = cancel ? RAM_SAVE_FLAG_CGS_STATE_CANCEL :
+                              RAM_SAVE_FLAG_CGS_STATE;
+
+    return save_page_header(ram_state->pss, f, block, offset | flags);
+}
+
+/* start the CGS epoch */
+void ram_save_cgs_epoch_header(QEMUFile *f)
+{
+    qemu_put_be64(f, RAM_SAVE_FLAG_CGS_EPOCH);
+}
+
+static int ram_save_cgs_start_epoch(RAMState *rs, PageSearchStatus *pss)
+{
+    long res;
+    QEMUFile *f = pss->pss_channel;
+
+    res = cgs_ram_save_start_epoch(f);
+    if (res < 0) {
+        return (int)res;
+    } else if (res > 0) {
+        stat64_add(&mig_stats.qemu_file_transferred, res);
+        stat64_add(&mig_stats.cgs_epochs, 1);
+        rs->cgs_start_epoch = false;
+    }
+
+    return 0;
+}
+#endif
+
 /**
  * ram_save_target_page_legacy: save one target page
  *
@@ -2288,6 +2488,12 @@ static int ram_save_target_page_legacy(RAMState *rs, PageSearchStatus *pss)
 {
     ram_addr_t offset = ((ram_addr_t)pss->page) << TARGET_PAGE_BITS;
     int res;
+
+#ifdef CONFIG_VIRTCCA_MIGRATION
+    if (virtcca_cvm_enabled()) {
+        return virtcca_save_target_page(offset, rs, pss);
+    }
+#endif
 
     if (control_save_page(pss, offset, &res)) {
         return res;
@@ -2713,6 +2919,19 @@ static int ram_save_host_page(RAMState *rs, PageSearchStatus *pss)
         goto completed;
     }
 #endif
+
+#ifdef CONFIG_VIRTCCA_MIGRATION
+    /*
+    * If the migration is not in postcopy mode, prepare the epoch of cgs pages
+    * to be sent.
+    */
+    if (virtcca_cvm_enabled()) {
+        if (!migration_in_postcopy() && rs->cgs_start_epoch) {
+            ram_save_cgs_start_epoch(rs, pss);
+        }
+    }
+#endif
+
     do {
         page_dirty = migration_bitmap_clear_dirty(rs, pss->block, pss->page);
 
@@ -2799,6 +3018,7 @@ static int ram_find_and_save_block(RAMState *rs)
         rs->last_page = 0;
     }
 
+    /* when use virtCCA CVM, init the cgs_private_gpa of pss */
     pss_init(pss, rs->last_seen_block, rs->last_page);
 
     while (true){
@@ -2943,6 +3163,11 @@ static void ram_state_reset(RAMState *rs)
     rs->last_page = 0;
     rs->last_version = ram_list.version;
     rs->xbzrle_started = false;
+#ifdef CONFIG_VIRTCCA_MIGRATION
+    if (virtcca_cvm_enabled()) {
+        rs->cgs_start_epoch = true;
+    }
+#endif
 }
 
 #define MAX_WAIT 50 /* ms, half buffered_file limit */
@@ -4188,7 +4413,12 @@ int ram_load_postcopy(QEMUFile *f, int channel)
     bool matches_target_page_size = false;
     MigrationIncomingState *mis = migration_incoming_get_current();
     PostcopyTmpPage *tmp_page = &mis->postcopy_tmp_pages[channel];
-
+#ifdef CONFIG_VIRTCCA_MIGRATION
+    if (virtcca_cvm_enabled()) {
+        error_report("Now virtCCA migration temporarily not support postcopy!");
+        return -EINVAL;
+    }
+#endif
     while (!ret && !(flags & RAM_SAVE_FLAG_EOS)) {
         ram_addr_t addr;
         void *page_buffer = NULL;
@@ -4662,6 +4892,135 @@ static int ram_load_precopy(QEMUFile *f)
     return ret;
 }
 
+#ifdef CONFIG_VIRTCCA_MIGRATION
+/**
+ * virtcca_ram_load_precopy: load pages in precopy case
+ *
+ * Returns 0 for success or -errno in case of error
+ *
+ * Called in precopy mode by ram_load().
+ * rcu_read_lock is taken prior to this being called.
+ *
+ * @f: QEMUFile where to send the data
+ */
+static int virtcca_ram_load_precopy(QEMUFile *f)
+{
+    MigrationIncomingState *mis = migration_incoming_get_current();
+    int flags = 0, ret = 0, i = 0;
+
+    while (!ret && !(flags & RAM_SAVE_FLAG_EOS)) {
+        ram_addr_t addr;
+        void *host = NULL, *host_bak = NULL;
+        bool need_sync = false;
+        uint8_t ch;
+
+        /*
+         * Yield periodically to let main loop run, but an iteration of
+         * the main loop is expensive, so do it each some iterations
+         */
+        if ((i & 32767) == 0 && qemu_in_coroutine()) {
+            aio_co_schedule(qemu_get_current_aio_context(),
+                            qemu_coroutine_self());
+            qemu_coroutine_yield();
+        }
+        i++;
+
+        addr = qemu_get_be64(f);
+        flags = addr & ~TARGET_PAGE_MASK;
+        addr &= TARGET_PAGE_MASK;
+
+        if (flags & (RAM_SAVE_FLAG_ZERO | RAM_SAVE_FLAG_PAGE
+                    | RAM_SAVE_FLAG_CGS_STATE)) {
+            RAMBlock *block = ram_block_from_stream(mis, f, flags,
+                                                    RAM_CHANNEL_PRECOPY);
+
+            host = host_from_ram_block_offset(block, addr);
+
+            if (!host) {
+                error_report("Illegal RAM offset " RAM_ADDR_FMT, addr);
+                ret = -EINVAL;
+                break;
+            }
+            ramblock_recv_bitmap_set(block, host);
+
+            trace_ram_load_loop(block->idstr, (uint64_t)addr, flags, host);
+        }
+
+        switch (flags & ~RAM_SAVE_FLAG_CONTINUE) {
+        case RAM_SAVE_FLAG_MEM_SIZE:
+            ret = parse_ramblocks(f, addr);
+            break;
+
+        case RAM_SAVE_FLAG_ZERO:
+            ch = qemu_get_byte(f);
+            if (ch != 0) {
+                error_report("Found a zero page with value %d", ch);
+                ret = -EINVAL;
+                break;
+            }
+            if (!virtcca_is_swiotlb(host)) {
+                virtcca_import_zero_page(0, host);
+                break;
+            }
+
+            ram_handle_zero(host, TARGET_PAGE_SIZE);
+            break;
+
+        case RAM_SAVE_FLAG_PAGE:
+            qemu_get_buffer(f, host, TARGET_PAGE_SIZE);
+            break;
+
+        case RAM_SAVE_FLAG_CGS_EPOCH:
+            need_sync = true;
+            QEMU_FALLTHROUGH;
+        case RAM_SAVE_FLAG_CGS_STATE:
+        case RAM_SAVE_FLAG_CGS_STATE_CANCEL:
+            if (need_sync) {
+                multifd_recv_barrier();
+            }
+
+            if (cgs_mig_loadvm_state(f, 0) < 0) {
+                error_report(" Failed to load cgs state");
+                ret = -EINVAL;
+            }
+
+            if (need_sync) {
+                multifd_recv_unbarrier();
+            }
+            break;
+        case RAM_SAVE_FLAG_MULTIFD_FLUSH:
+            multifd_recv_sync_main();
+            break;
+        case RAM_SAVE_FLAG_EOS:
+            /* normal exit */
+            if (migrate_multifd() &&
+                migrate_multifd_flush_after_each_section()) {
+                multifd_recv_sync_main();
+            }
+            break;
+        case RAM_SAVE_FLAG_HOOK:
+            ret = rdma_registration_handle(f);
+            if (ret < 0) {
+                qemu_file_set_error(f, ret);
+            }
+            break;
+        default:
+            error_report("Unknown combination of migration flags: 0x%x", flags);
+            ret = -EINVAL;
+        }
+        if (!ret) {
+            ret = qemu_file_get_error(f);
+        }
+        if (!ret && host_bak) {
+            memcpy(host_bak, host, TARGET_PAGE_SIZE);
+        }
+    }
+
+    ret |= wait_for_decompress_done();
+    return ret;
+}
+#endif
+
 static int ram_load(QEMUFile *f, void *opaque, int version_id)
 {
     int ret = 0;
@@ -4693,7 +5052,27 @@ static int ram_load(QEMUFile *f, void *opaque, int version_id)
              */
             ret = ram_load_postcopy(f, RAM_CHANNEL_PRECOPY);
         } else {
+            /*
+            * The RAM_SAVE_FLAG_CGS* flag are only supported in Kunpeng TEE
+            * virtcca, which are conflict with RAM_SAVE_FLAG_COMPRESS_PAGE
+            * and RAM_SAVE_FLAG_ENCRYPTED_DATA.
+            * So, we need to handle them separately. If Kunpeng TEE virtcca
+            * is not enabled, the packaged flag_switch function should be
+            * used for normal migration. Otherwise, use flag_switch_cgs for it.
+            */
+#ifdef CONFIG_VIRTCCA_MIGRATION
+            if (!virtcca_cvm_enabled()) {
+                ret = ram_load_precopy(f);
+            } else {
+                ret = virtcca_ram_load_precopy(f);
+            }
+#else
+            if(virtcca_cvm_enabled()) {
+                error_report("The load_vm command is temporarily unsupported in virtcca cvm.");
+                return -EINVAL;
+            }
             ret = ram_load_precopy(f);
+#endif
         }
     }
     trace_ram_load_complete(ret, seq_iter);

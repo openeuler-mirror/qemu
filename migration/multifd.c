@@ -1268,7 +1268,7 @@ void multifd_recv_cleanup(void)
     multifd_recv_cleanup_state();
 }
 
-void multifd_recv_sync_main(void)
+void multifd_recv_barrier(void)
 {
     int thread_count = migrate_multifd_channels();
     int i;
@@ -1286,6 +1286,16 @@ void multifd_recv_sync_main(void)
         trace_multifd_recv_sync_main_wait(i);
         qemu_sem_wait(&multifd_recv_state->sem_sync);
     }
+}
+ 
+void multifd_recv_unbarrier(void)
+{
+    int thread_count = migrate_multifd_channels();
+    int i;
+
+    if (!migrate_multifd() || !multifd_use_packets()) {
+        return;
+    }
 
     /*
      * Sync done. Release the channels for the next iteration.
@@ -1302,6 +1312,12 @@ void multifd_recv_sync_main(void)
         qemu_sem_post(&p->sem_sync);
     }
     trace_multifd_recv_sync_main(multifd_recv_state->packet_num);
+}
+
+void multifd_recv_sync_main(void)
+{
+    multifd_recv_barrier();
+    multifd_recv_unbarrier();
 }
 
 static void *multifd_recv_thread(void *opaque)

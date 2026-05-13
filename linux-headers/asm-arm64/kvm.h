@@ -614,6 +614,9 @@ struct reg_mask_range {
 #define KVM_CAP_ARM_TMM_MEASUREMENT_ALGO_SHA256		0
 #define KVM_CAP_ARM_TMM_MEASUREMENT_ALGO_SHA512		1
 
+#define KVM_CAP_ARM_TMM_MIGVM_DEFAULT		0
+#define KVM_CAP_ARM_TMM_MIGVM_ENABLE		1
+
 #define KVM_CAP_ARM_TMM_RPV_SIZE 64
 
 /* List of configuration items accepted for KVM_CAP_ARM_RME_CONFIG_REALM */
@@ -623,6 +626,8 @@ struct reg_mask_range {
 #define KVM_CAP_ARM_TMM_CFG_DBG			3
 #define KVM_CAP_ARM_TMM_CFG_PMU			4
 #define KVM_CAP_ARM_TMM_CFG_KAE			5
+#define KVM_CAP_ARM_TMM_CFG_MIG			6  /* add mig config */
+#define KVM_CAP_ARM_TMM_CFG_MIG_CVM			7
 
 #define KVM_ARM_TMM_MAX_KAE_VF_NUM		11
 
@@ -661,6 +666,18 @@ struct kvm_cap_arm_tmm_config_item {
 			__u64 sec_addr[KVM_ARM_TMM_MAX_KAE_VF_NUM];
 			__u64 hpre_addr[KVM_ARM_TMM_MAX_KAE_VF_NUM];
 		};
+
+		/* cfg == KVM_CAP_ARM_TMM_CFG_MIG */
+		struct {
+			__u32 mig_enable;
+			__u32 mig_src;
+		};
+
+		/* cfg == KVM_CAP_ARM_TMM_CFG_MIG_CVM */
+		struct {
+			__u32 migration_migvm_cap;
+		};
+
 		/* Fix the size of the union */
 		__u8 reserved[256];
 	};
@@ -676,6 +693,71 @@ struct kvm_cap_arm_tmm_populate_region_args {
 	__u32 reserved[3];
 };
 
+/* mig virtcca head */
+#define KVM_DEV_VIRTCCA_MIG_ATTR	0x1
+
+struct kvm_dev_virtcca_mig_attr {
+#define KVM_DEV_VIRTCCA_MIG_ATTR_VERSION	0
+	__u32 version;
+/* 4KB buffer can hold 512 entries at most */
+#define VIRTCCA_MIG_BUF_LIST_PAGES_MAX		512
+	__u32 buf_list_pages;
+	__u32 max_migs;
+};
+
+#define VIRTCCA_MIG_STREAM_MBMD_MAP_OFFSET		0
+#define VIRTCCA_MIG_STREAM_GPA_LIST_MAP_OFFSET	1
+#define VIRTCCA_MIG_STREAM_MAC_LIST_MAP_OFFSET	2
+#define VIRTCCA_MIG_STREAM_BUF_LIST_MAP_OFFSET	4
+
+#define VIRTCCA_MIG_EXPORT_TRACK_F_IN_ORDER_DONE (1UL << 63)
+#define KVM_CVM_MIGVM_VERSION 0
+
+/* virtcca MIG sub-ioctl() commands. */
+enum kvm_cvm_cmd_id {
+	/* virtcca MIG migcvm commands. */
+	KVM_CVM_MIGCVM_SET_CID = 0,
+	KVM_CVM_MIGCVM_ATTEST,
+	KVM_CVM_MIGCVM_ATTEST_DST,
+	KVM_CVM_GET_BIND_STATUS,
+    KVM_CVM_MIG_EXPORT_ABORT,
+	/* virtcca MIG stream commands. */
+	KVM_CVM_MIG_STREAM_START,
+	KVM_CVM_MIG_EXPORT_STATE_IMMUTABLE,
+	KVM_CVM_MIG_IMPORT_STATE_IMMUTABLE,
+	KVM_CVM_MIG_EXPORT_MEM,
+	KVM_CVM_MIG_IMPORT_MEM,
+	KVM_CVM_MIG_EXPORT_TRACK,
+	KVM_CVM_MIG_IMPORT_TRACK,
+	KVM_CVM_MIG_EXPORT_PAUSE,
+	KVM_CVM_MIG_EXPORT_STATE_TEC,
+	KVM_CVM_MIG_IMPORT_STATE_TEC,
+	KVM_CVM_MIG_IMPORT_END,
+	KVM_CVM_MIG_CRC,
+	KVM_CVM_MIG_GET_MIG_INFO,
+	KVM_CVM_MIG_IS_ZERO_PAGE,
+	KVM_CVM_MIG_IMPORT_ZERO_PAGE,
+	KVM_CVM_MIG_CMD_NR_MAX,
+};
+
+struct kvm_virtcca_mig_cmd {
+	/* enum kvm_tdx_cmd_id */
+	__u32 id;
+	/* flags for sub-commend. If sub-command doesn't use this, set zero. */
+	__u32 flags;
+	/*
+	 * data for each sub-command. An immediate or a pointer to the actual
+	 * data in process virtual address.  If sub-command doesn't use it,
+	 * set zero.
+	 */
+	__u64 data;
+	/*
+	 * Auxiliary error code.  The sub-command may return TDX SEAMCALL
+	 * status code in addition to -Exxx.
+	 * Defined for consistency with struct kvm_sev_cmd.
+	 */
+	__u64 error;
+};
 #endif
 
 #endif /* __ARM_KVM_H__ */

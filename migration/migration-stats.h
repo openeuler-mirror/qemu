@@ -105,6 +105,13 @@ typedef struct {
      * Number of pages transferred that were full of zeros.
      */
     Stat64 zero_pages;
+#ifdef CONFIG_VIRTCCA_MIGRATION
+    /* count the cgs pages */
+    Stat64 cgs_private_pages;
+
+    /* count the cgs epochs */
+    Stat64 cgs_epochs;
+#endif
 } MigrationAtomicStats;
 
 extern MigrationAtomicStats mig_stats;

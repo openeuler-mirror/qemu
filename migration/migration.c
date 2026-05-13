@@ -22,6 +22,7 @@
 #include "fd.h"
 #include "file.h"
 #include "socket.h"
+#include "sysemu/kvm.h"
 #include "sysemu/runstate.h"
 #include "sysemu/sysemu.h"
 #include "sysemu/cpu-throttle.h"
@@ -73,6 +74,9 @@
 #endif
 #ifdef CONFIG_HAM_MIGRATION
 #include "ham.h"
+#endif
+#ifdef CONFIG_VIRTCCA_MIGRATION
+#include "cgs.h"
 #endif
 #define DEFAULT_FD_MAX 4096
 
@@ -213,6 +217,12 @@ void migration_object_init(void)
     blk_mig_init();
     ram_mig_init();
     dirty_bitmap_mig_init();
+#ifdef CONFIG_VIRTCCA_MIGRATION
+    if (virtcca_cvm_enabled()) {
+        /* init the virtcca cgs live migration */
+        cgs_mig_init();
+    }
+#endif
 }
 
 void migration_cancel(const Error *error)
@@ -601,6 +611,25 @@ static void qemu_start_incoming_migration(const char *uri, bool has_channels,
 
     migrate_set_state(&mis->state, MIGRATION_STATUS_NONE,
                       MIGRATION_STATUS_SETUP);
+
+    if (virtcca_cvm_enabled()) {
+        if (migrate_compress()) {
+            error_setg(errp, "virtcca live migration can't support compress yet");
+            return;
+        }
+        if (migrate_xbzrle()) {
+            error_setg(errp, "virtcca live migration can't support xbzrle yet");
+            return;
+        }
+        if (migrate_multifd()) {
+            error_setg(errp, "virtcca live migration can't support multifd yet");
+            return;
+        }
+        if (migrate_background_snapshot()) {
+            error_setg(errp, "virtcca live migration can't support backgound snapshot yet");
+            return;
+        }
+    }
 
     if (addr->transport == MIGRATION_ADDRESS_TYPE_SOCKET) {
         SocketAddress *saddr = &addr->u.socket;
@@ -1157,6 +1186,13 @@ static void populate_ram_info(MigrationInfo *info, MigrationState *s)
         stat64_get(&mig_stats.dirty_sync_count);
     info->ram->dirty_sync_missed_zero_copy =
         stat64_get(&mig_stats.dirty_sync_missed_zero_copy);
+#ifdef CONFIG_VIRTCCA_MIGRATION
+    /* init the cgs epoch and private pages value */
+    if (virtcca_cvm_enabled()) {
+        info->ram->cgs_epochs = stat64_get(&mig_stats.cgs_epochs);
+        info->ram->cgs_private_pages = stat64_get(&mig_stats.cgs_private_pages);
+    }
+#endif
     info->ram->postcopy_requests =
         stat64_get(&mig_stats.postcopy_requests);
     info->ram->page_size = page_size;
@@ -1952,6 +1988,15 @@ static bool migrate_prepare(MigrationState *s, bool blk, bool blk_inc,
 {
     Error *local_err = NULL;
 
+#ifdef CONFIG_VIRTCCA_MIGRATION
+    const char *dst_ip = "";
+    uint16_t dst_port = 0;
+    /* transfer the dst ip to mig-CVM */
+    if (!cgs_mig_is_ready(true, dst_ip, dst_port) && virtcca_cvm_enabled()) {
+        error_setg(errp, "cgs mig required, but not ready");
+        return false;
+    }
+#endif
     if (blk_inc) {
         warn_report("parameter 'inc' is deprecated;"
                     " use blockdev-mirror with NBD instead");
@@ -2751,7 +2796,14 @@ static int migration_completion_precopy(MigrationState *s,
     if (ret < 0) {
         goto out_unlock;
     }
-
+#ifdef CONFIG_VIRTCCA_MIGRATION
+    if (virtcca_cvm_enabled()) {
+        ret = cgs_mig_savevm_state_pause();
+        if (ret) {
+            goto out_unlock;
+        }
+    }
+#endif
     /*
      * Inactivate disks except in COLO, and track that we have done so in order
      * to remember to reactivate them if migration fails or is cancelled.
@@ -3284,6 +3336,13 @@ static void migration_iteration_finish(MigrationState *s)
     case MIGRATION_STATUS_FAILED:
     case MIGRATION_STATUS_CANCELLED:
     case MIGRATION_STATUS_CANCELLING:
+#ifdef CONFIG_VIRTCCA_MIGRATION
+       /* Cancel the current virtcca cgs migration */
+        if (virtcca_cvm_enabled()) {
+            info_report("live migrate failed, goto abort data");
+            cgs_mig_savevm_state_abort();
+        }
+#endif
         if (s->vm_old_state == RUN_STATE_RUNNING) {
             if (!runstate_check(RUN_STATE_SHUTDOWN)) {
                 vm_start();

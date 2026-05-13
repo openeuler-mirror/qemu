@@ -2662,8 +2662,13 @@ static int kvm_init(MachineState *ms)
     if (!s->kvm_dirty_ring_size) {
         dirty_log_manual_caps =
             kvm_check_extension(s, KVM_CAP_MANUAL_DIRTY_LOG_PROTECT2);
-        dirty_log_manual_caps &= (KVM_DIRTY_LOG_MANUAL_PROTECT_ENABLE |
-                                  KVM_DIRTY_LOG_INITIALLY_SET);
+#ifdef CONFIG_VIRTCCA_MIGRATION
+        if (virtcca_cvm_enabled())
+            dirty_log_manual_caps &= (KVM_DIRTY_LOG_INITIALLY_SET);
+        else
+#endif
+            dirty_log_manual_caps &= (KVM_DIRTY_LOG_MANUAL_PROTECT_ENABLE |
+                                    KVM_DIRTY_LOG_INITIALLY_SET);
         s->manual_dirty_log_protect = dirty_log_manual_caps;
         if (dirty_log_manual_caps) {
             ret = kvm_vm_enable_cap(s, KVM_CAP_MANUAL_DIRTY_LOG_PROTECT2, 0,
@@ -2677,6 +2682,10 @@ static int kvm_init(MachineState *ms)
             }
         }
     }
+#ifdef CONFIG_VIRTCCA_MIGRATION
+    if (virtcca_cvm_enabled())
+        s->manual_dirty_log_protect = 0;
+#endif
 
 #ifdef KVM_CAP_VCPU_EVENTS
     s->vcpu_events = kvm_check_extension(s, KVM_CAP_VCPU_EVENTS);

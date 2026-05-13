@@ -77,6 +77,12 @@ bool ramblock_page_is_discarded(RAMBlock *rb, ram_addr_t start);
 void postcopy_preempt_shutdown_file(MigrationState *s);
 void *postcopy_preempt_thread(void *opaque);
 
+#ifdef CONFIG_VIRTCCA_MIGRATION
+/* cgs handlers */
+void ram_save_cgs_epoch_header(QEMUFile *f);
+size_t ram_save_cgs_ram_header(QEMUFile *f, RAMBlock *block,
+                               ram_addr_t offset, bool cancel);
+#endif
 /* ram cache */
 int colo_init_ram_cache(void);
 void colo_flush_ram_cache(void);

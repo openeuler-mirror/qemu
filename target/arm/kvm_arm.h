@@ -170,7 +170,12 @@ void kvm_arm_reset_vcpu(ARMCPU *cpu);
  * shall be parked for use when ARM vCPUs are actually realized.
  */
 void kvm_arm_create_host_vcpu(ARMCPU *cpu);
-
+/**
+ * tmm_create_tec:
+ *
+ * When performing live migration, create the tec structure.
+ */
+int tmm_create_tec(void);
 /**
  * kvm_arm_init_serror_injection:
  * @cs: CPUState
@@ -462,8 +467,7 @@ void tmm_set_sec_addr(hwaddr base, int num);
 void tmm_set_hpre_addr(hwaddr base, int num);
 
 int kvm_arm_tmm_init(ConfidentialGuestSupport *cgs, Error **errp);
-bool kvm_arm_tmm_enabled(void);
-
+void virtcca_migvm_save_cid(void);
 /**
  * kvm_arm_set_smccc_filter
  * @func: funcion

@@ -65,6 +65,7 @@ bool qemu_file_buffer_empty(QEMUFile *file);
  * previously peeked +n-1.
  */
 int coroutine_mixed_fn qemu_peek_byte(QEMUFile *f, int offset);
+int qemu_peek_le16(QEMUFile *f, int offset);
 void qemu_file_skip(QEMUFile *f, int size);
 int qemu_file_get_error_obj_any(QEMUFile *f1, QEMUFile *f2, Error **errp);
 void qemu_file_set_error_obj(QEMUFile *f, int ret, Error *err);

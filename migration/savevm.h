@@ -27,6 +27,10 @@
 #define QEMU_VM_VMDESCRIPTION        0x06
 #define QEMU_VM_CONFIGURATION        0x07
 #define QEMU_VM_COMMAND              0x08
+#ifdef CONFIG_VIRTCCA_MIGRATION
+#define QEMU_VM_SECTION_CGS_START    0x09
+#define QEMU_VM_SECTION_CGS_END      0x0a
+#endif
 #define QEMU_VM_SECTION_FOOTER       0x7e
 
 bool qemu_savevm_state_blocked(Error **errp);
@@ -51,6 +55,9 @@ int qemu_savevm_send_packaged(QEMUFile *f, const uint8_t *buf, size_t len);
 void qemu_savevm_send_postcopy_advise(QEMUFile *f);
 void qemu_savevm_send_postcopy_listen(QEMUFile *f);
 void qemu_savevm_send_postcopy_run(QEMUFile *f);
+#ifdef CONFIG_VIRTCCA_MIGRATION
+void qemu_savevm_send_create_tec(QEMUFile *f);
+#endif
 void qemu_savevm_send_postcopy_resume(QEMUFile *f);
 void qemu_savevm_send_recv_bitmap(QEMUFile *f, char *block_name);
 

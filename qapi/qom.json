@@ -941,6 +941,16 @@
 'data': ['default', 'sha256', 'sha512'] }
 
 ##
+# @TmmMigVmCap:
+#
+# Algorithm to use for cvm measurements
+#
+# Since: FIXME
+##
+{ 'enum': 'TmmMigVmCap',
+'data': ['default', 'migvm'] }
+
+##
 # @TmmGuestProperties:
 #
 # Properties for tmm-guest objects.
@@ -953,6 +963,8 @@
   'data': { '*sve-vector-length': 'uint32',
             '*num-pmu-counters': 'uint32',
             '*kae': 'uint32',
+            '*virtcca-migration-cap': 'uint32',
+            '*migvm-cap' : 'TmmMigVmCap',
             '*measurement-algo': 'TmmGuestMeasurementAlgo' } }
 
 ##

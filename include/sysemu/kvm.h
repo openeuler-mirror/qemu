@@ -35,6 +35,7 @@
 
 extern bool kvm_allowed;
 extern bool virtcca_cvm_allowed;
+extern bool virtcca_mig_migcvm_allowed;
 extern bool kvm_kernel_irqchip;
 extern bool kvm_split_irqchip;
 extern bool kvm_async_interrupts_allowed;
@@ -50,6 +51,7 @@ extern bool kvm_csv3_allowed;
 
 #define kvm_enabled()           (kvm_allowed)
 #define virtcca_cvm_enabled()           (virtcca_cvm_allowed)
+#define virtcca_migcvm_enabled()           (virtcca_mig_migcvm_allowed)
 #define VIRTCCA_CVM_TYPE (1UL << 8)
 
 bool kvm_arm_rme_enabled(void);

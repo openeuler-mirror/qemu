@@ -81,7 +81,8 @@
            'multifd-bytes': 'uint64', 'pages-per-second': 'uint64',
            'precopy-bytes': 'uint64', 'downtime-bytes': 'uint64',
            'postcopy-bytes': 'uint64',
-           'dirty-sync-missed-zero-copy': 'uint64' } }
+           'dirty-sync-missed-zero-copy': 'uint64',
+           'cgs-epochs' : 'uint64', 'cgs-private-pages' : 'uint64'} }
 
 ##
 # @XBZRLECacheStats:

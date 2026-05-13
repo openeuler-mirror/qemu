@@ -50,6 +50,7 @@
 #include "sysemu/cpus.h"
 #include "exec/memory.h"
 #include "exec/target_page.h"
+#include "exec/confidential-guest-support.h"
 #include "trace.h"
 #include "qemu/iov.h"
 #include "qemu/job.h"
@@ -73,6 +74,9 @@
 #ifdef CONFIG_HAM_MIGRATION
 #include "ham.h"
 #endif
+#ifdef CONFIG_VIRTCCA_MIGRATION
+#include "cgs.h"
+#endif
 
 const unsigned int postcopy_ram_discard_version;
 
@@ -95,6 +99,10 @@ enum qemu_vm_cmd {
     MIG_CMD_ENABLE_COLO,       /* Enable COLO */
     MIG_CMD_POSTCOPY_RESUME,   /* resume postcopy on dest */
     MIG_CMD_RECV_BITMAP,       /* Request for recved bitmap on dst */
+#ifdef CONFIG_VIRTCCA_MIGRATION
+    MIG_CMD_CGS_MIG_CREATE_TEC, /* For virtCCA, dst node should Create 
+                                   TEC before state change */
+#endif
     MIG_CMD_MAX
 };
 
@@ -1205,6 +1213,18 @@ void qemu_savevm_send_postcopy_run(QEMUFile *f)
     qemu_savevm_command_send(f, MIG_CMD_POSTCOPY_RUN, 0, NULL);
 }
 
+#ifdef CONFIG_VIRTCCA_MIGRATION
+/* Kick the destination to create tec */
+void qemu_savevm_send_create_tec(QEMUFile *f)
+{
+    if (virtcca_cvm_enabled()) {
+        info_report("qemu_savevm_send_create_tec send cmd");
+        trace_savevm_send_postcopy_run();
+        qemu_savevm_command_send(f, MIG_CMD_CGS_MIG_CREATE_TEC, 0, NULL);
+    }
+}
+#endif
+
 void qemu_savevm_send_postcopy_resume(QEMUFile *f)
 {
     trace_savevm_send_postcopy_resume();
@@ -1315,6 +1335,7 @@ int qemu_savevm_state_prepare(Error **errp)
     return 0;
 }
 
+/* for cgs mig, this savevm state func should be cut some func */
 void qemu_savevm_state_setup(QEMUFile *f)
 {
     MigrationState *ms = migrate_get_current();
@@ -1324,7 +1345,17 @@ void qemu_savevm_state_setup(QEMUFile *f)
 
     json_writer_int64(ms->vmdesc, "page_size", qemu_target_page_size());
     json_writer_start_array(ms->vmdesc, "devices");
+#ifdef CONFIG_VIRTCCA_MIGRATION
+    if (virtcca_cvm_enabled()) {
+        if (cgs_mig_savevm_state_setup(f)) {
+            return;
+        }
 
+        if (cgs_mig_savevm_state_start(f)) {
+            return;
+        }
+    }
+#endif
     trace_savevm_state_setup();
     QTAILQ_FOREACH(se, &savevm_state.handlers, entry) {
         if (se->vmsd && se->vmsd->early_setup) {
@@ -1636,6 +1667,17 @@ int qemu_savevm_state_complete_precopy(QEMUFile *f, bool iterable_only,
         }
     }
 
+#ifdef CONFIG_VIRTCCA_MIGRATION
+    /* save the vcpu states */
+    if (virtcca_cvm_enabled()) {
+        qemu_savevm_send_create_tec(f);
+        ret = cgs_mig_savevm_state_end(f);
+        if (ret) {
+            return ret;
+        }
+    }
+#endif
+
     if (iterable_only) {
         goto flush;
     }
@@ -1706,6 +1748,9 @@ void qemu_savevm_state_cleanup(void)
     }
 
     trace_savevm_state_cleanup();
+#ifdef CONFIG_VIRTCCA_MIGRATION
+    cgs_mig_savevm_state_cleanup();
+#endif
     QTAILQ_FOREACH(se, &savevm_state.handlers, entry) {
         if (se->ops && se->ops->save_cleanup) {
             se->ops->save_cleanup(se->opaque);
@@ -2508,7 +2553,10 @@ static int loadvm_process_command(QEMUFile *f)
 
     case MIG_CMD_POSTCOPY_RUN:
         return loadvm_postcopy_handle_run(mis);
-
+#ifdef CONFIG_VIRTCCA_MIGRATION
+    case MIG_CMD_CGS_MIG_CREATE_TEC:
+        return cgs_mig_loadvm_create_tec(f);
+#endif
     case MIG_CMD_POSTCOPY_RAM_DISCARD:
         return loadvm_postcopy_ram_handle_discard(mis, len);
 
@@ -2761,6 +2809,14 @@ static int qemu_loadvm_state_setup(QEMUFile *f)
     int ret;
 
     trace_loadvm_state_setup();
+#ifdef CONFIG_VIRTCCA_MIGRATION
+    if (virtcca_cvm_enabled()) {
+        ret = cgs_mig_loadvm_state_setup(f);
+        if (ret) {
+            return ret;
+        }
+    }
+#endif
     QTAILQ_FOREACH(se, &savevm_state.handlers, entry) {
         if (!se->ops || !se->ops->load_setup) {
             continue;
@@ -2791,6 +2847,9 @@ void qemu_loadvm_state_cleanup(void)
     SaveStateEntry *se;
 
     trace_loadvm_state_cleanup();
+#ifdef CONFIG_VIRTCCA_MIGRATION
+    cgs_mig_loadvm_state_cleanup();
+#endif
     QTAILQ_FOREACH(se, &savevm_state.handlers, entry) {
         if (se->ops && se->ops->load_cleanup) {
             se->ops->load_cleanup(se->opaque);
@@ -2874,7 +2933,7 @@ int qemu_loadvm_state_main(QEMUFile *f, MigrationIncomingState *mis)
     uint8_t section_type;
     int ret = 0;
 
-    if (qemu_mutex_iothread_locked()) {
+    if (!virtcca_cvm_enabled() && qemu_mutex_iothread_locked()) {
         memory_region_transaction_begin();
     }
 
@@ -2903,6 +2962,14 @@ retry:
                 goto out;
             }
             break;
+#ifdef CONFIG_VIRTCCA_MIGRATION
+        case QEMU_VM_SECTION_CGS_START:
+        case QEMU_VM_SECTION_CGS_END:
+            if (virtcca_cvm_enabled()) {
+                ret = cgs_mig_loadvm_state(f, 0);
+            }
+            break;
+#endif
         case QEMU_VM_COMMAND:
             ret = loadvm_process_command(f);
             trace_qemu_loadvm_state_section_command(ret);
@@ -2921,7 +2988,7 @@ retry:
     }
 
 out:
-    if (qemu_mutex_iothread_locked()) {
+    if (!virtcca_cvm_enabled() && qemu_mutex_iothread_locked()) {
         memory_region_transaction_commit();
     }
     if (ret < 0) {
@@ -3072,7 +3139,7 @@ bool save_snapshot(const char *name, bool overwrite, const char *vmstate,
                   bool has_devices, strList *devices, Error **errp)
 {
     if (virtcca_cvm_enabled()) {
-        error_setg(errp, "The savevm command is temporarily unsupported in cvm.");
+        error_setg(errp, "The save_snapshot command is temporarily unsupported in cvm.");
         return false;
     }
 

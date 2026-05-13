@@ -313,6 +313,8 @@ void kvm_arm_add_vcpu_properties(Object *obj)
 
     if (arm_feature(env, ARM_FEATURE_GENERIC_TIMER)) {
         cpu->kvm_adjvtime = true;
+        if (virtcca_cvm_enabled())
+            cpu->kvm_adjvtime = false;
         object_property_add_bool(obj, "kvm-no-adjvtime", kvm_no_adjvtime_get,
                                  kvm_no_adjvtime_set);
         object_property_set_description(obj, "kvm-no-adjvtime",

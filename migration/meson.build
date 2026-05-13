@@ -43,6 +43,11 @@ if get_option('replication').allowed()
   system_ss.add(files('colo-failover.c', 'colo.c'))
 endif
 
+if have_virtcca_migration
+  specific_ss.add(files('cgs.c',
+                      'cgs-virtcca.c'))
+endif
+
 system_ss.add(when: rdma, if_true: files('rdma.c'))
 if get_option('live_block_migration').allowed()
   system_ss.add(files('block.c'))

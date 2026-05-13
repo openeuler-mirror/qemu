@@ -148,6 +148,19 @@ void hmp_info_migrate(Monitor *mon, const QDict *qdict)
                            "Zero-copy-send fallbacks happened: %" PRIu64 " times\n",
                            info->ram->dirty_sync_missed_zero_copy);
         }
+#ifdef CONFIG_VIRTCCA_MIGRATION
+        if (virtcca_cvm_enabled()) {
+            /* Add cgs info */
+            if (info->ram->cgs_epochs) {
+                monitor_printf(mon, "cgs epochs: %" PRIu64 "\n",
+                            info->ram->cgs_epochs);
+            }
+            if (info->ram->cgs_private_pages) {
+                monitor_printf(mon, "cgs private-pages: %" PRIu64 "\n",
+                            info->ram->cgs_private_pages);
+            }
+        }
+#endif
     }
 
     if (info->disk) {
@@ -449,6 +462,10 @@ void hmp_savevm(Monitor *mon, const QDict *qdict)
 {
     Error *err = NULL;
 
+    if (virtcca_cvm_enabled()) {
+        error_setg(&err, "The savevm command is temporarily unsupported in cvm.");
+        return;
+    }
     save_snapshot(qdict_get_try_str(qdict, "name"),
                   true, NULL, false, NULL, &err);
     hmp_handle_error(mon, err);
