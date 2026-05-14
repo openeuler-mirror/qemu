@@ -27,6 +27,8 @@
 #include <ub/umdk/urma/urma_api.h>
 #include <ub/umdk/urma/urma_ubagg.h>
 
+typedef struct QEMUFile QEMUFile;
+
 #define URMA_SO_PATH "liburma.so.0"
 #define URMA_TOKEN_LEN 32
 #define URMA_JFS_WR_LIST_LEN 256
@@ -158,5 +160,7 @@ void record_migration_log(MigrationState *s);
 int qemu_urma_write_all(URMAContext *urma);
 int qemu_urma_reg_whole_ram_blocks(URMAContext *urma);
 int qemu_urma_write_flush(URMAContext *urma, bool force);
+int qemu_urma_init_context(URMAContext *ctx);
+int qemu_urma_prepare_incoming(QEMUFile *f);
 
 #endif

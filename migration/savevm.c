@@ -77,6 +77,9 @@
 #ifdef CONFIG_VIRTCCA_MIGRATION
 #include "cgs.h"
 #endif
+#ifdef CONFIG_URMA_MIGRATION
+#include "migration/urma.h"
+#endif
 
 const unsigned int postcopy_ram_discard_version;
 
@@ -3033,6 +3036,16 @@ int qemu_loadvm_state(QEMUFile *f)
     if (ret) {
         return ret;
     }
+
+#ifdef CONFIG_URMA_MIGRATION
+    if (migrate_urma()) {
+        ret = qemu_urma_prepare_incoming(f);
+        if (ret < 0) {
+            error_report("URMA incoming preparation failed");
+            return ret;
+        }
+    }
+#endif
 
     if (qemu_loadvm_state_setup(f) != 0) {
         return -EINVAL;
