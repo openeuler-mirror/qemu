@@ -296,6 +296,7 @@ typedef struct {
 
 #define PASID_OFFSET                 40
 #define HCT_INSTANCE_MAX             1024
+#define HCT_PASID_MEM_GID_OFFSET     1024
 
 /* for migration */
 #define HCT_MIG_PROTOCOL_VER         1
@@ -323,6 +324,7 @@ static volatile struct hct_data {
     uint8_t ccp_index[MAX_CCP_CNT];
     uint8_t ccp_cnt;
     uint8_t driver;
+    uint8_t support_dma_all;
 } hct_data;
 
 typedef struct SharedDevice {
@@ -343,6 +345,7 @@ typedef struct HctDevState {
     VFIODevice vdev;
     MemoryRegion mmio;
     MemoryRegion shared;
+    MemoryRegion pasid;
     AddressSpace dma_as;
     MemoryListener listener;
     NotifierWithReturn precopy_notifier;
@@ -360,6 +363,7 @@ typedef struct HctDevState {
     int lock_fd;        /* vccp flock fd for this device only */
     int numa_id;
     bool migrate_abort_err;
+    bool support_dma_all;
 } HCTDevState;
 
 struct hct_dev_ctrl {
@@ -567,7 +571,9 @@ static void vfio_hct_exit(PCIDevice *dev)
         }
     }
 
-    memory_listener_unregister(&state->listener);
+    if (!hct_data.support_dma_all) {
+        memory_listener_unregister(&state->listener);
+    }
     hct_data.ccp_cnt--;
 
     if (hct_data.ccp_cnt == 0) {
@@ -580,6 +586,7 @@ static Property vfio_hct_properties[] = {
     DEFINE_PROP_STRING("dev", HCTDevState, ccp_dev_path),
     DEFINE_PROP_STRING("vsock-device", HCTDevState, vsock_device),
     DEFINE_PROP_BOOL("migrate-abort-on-error", HCTDevState, migrate_abort_err, false),
+    DEFINE_PROP_BOOL("support-dma-all", HCTDevState, support_dma_all, false),
     DEFINE_PROP_END_OF_LIST(),
 };
 
@@ -618,25 +625,50 @@ static int vfio_hct_region_mmap(HCTDevState *state)
         g_free(info);
     }
 
+    /* create BAR2 space */
     memory_region_init_io(&state->mmio, OBJECT(state), &hct_mmio_ops,
                           state, "hct mmio", state->map_size[HCT_REG_BAR_IDX]);
     memory_region_init_ram_device_ptr(&state->mmio, OBJECT(state),
                                       "hct mmio", state->map_size[HCT_REG_BAR_IDX],
                                       state->maps[HCT_REG_BAR_IDX]);
 
-    memory_region_init_io(&state->shared, OBJECT(state), &hct_mmio_ops,
-                          state, "hct shared memory", HCT_DMA_MEM_SIZE_8M);
-    memory_region_init_ram_device_ptr(&state->shared, OBJECT(state),
-                                      "hct shared memory", HCT_DMA_MEM_SIZE_8M,
-                                      (void *)state->sdev.share_memory);
+    if (hct_data.support_dma_all) {
+        /* create BAR3 space */
+        memory_region_init_io(&state->shared, OBJECT(state), &hct_mmio_ops,
+                              state, "hct shared memory", PAGE_SIZE);
+        memory_region_init_ram_device_ptr(&state->shared, OBJECT(state),
+                                          "hct shared memory", PAGE_SIZE,
+                                          (void *)state->sdev.share_memory);
+
+        /* create BAR4 space */
+        memory_region_init_io(&state->pasid, OBJECT(state), &hct_mmio_ops,
+                              state, "hct pasid memory", PAGE_SIZE);
+        memory_region_init_ram_device_ptr(&state->pasid, OBJECT(state),
+                                          "hct pasid memory", PAGE_SIZE,
+                                          (void *)state->sdev.dma_memory);
+    } else {
+        /* create BAR3 space */
+        memory_region_init_io(&state->shared, OBJECT(state), &hct_mmio_ops,
+                              state, "hct shared memory", HCT_DMA_MEM_SIZE_8M);
+        memory_region_init_ram_device_ptr(&state->shared, OBJECT(state),
+                                          "hct shared memory", HCT_DMA_MEM_SIZE_8M,
+                                          (void *)state->sdev.share_memory);
+    }
 
     pci_register_bar(&state->sdev.dev, HCT_REG_BAR_IDX,
                      PCI_BASE_ADDRESS_SPACE_MEMORY, &state->mmio);
-    pci_register_bar(&state->sdev.dev, HCT_SHARED_BAR_IDX,
-                     PCI_BASE_ADDRESS_SPACE_MEMORY, &state->shared);
+    if (hct_data.support_dma_all) {
+        pci_register_bar(&state->sdev.dev, HCT_SHARED_BAR_IDX,
+                         PCI_BASE_ADDRESS_SPACE_MEMORY, &state->shared);
+        pci_register_bar(&state->sdev.dev, HCT_PASID_BAR_IDX,
+                         PCI_BASE_ADDRESS_SPACE_MEMORY, &state->pasid);
+    } else {
+        pci_register_bar(&state->sdev.dev, HCT_SHARED_BAR_IDX,
+                         PCI_BASE_ADDRESS_SPACE_MEMORY, &state->shared);
 
-    address_space_init(&state->dma_as, &state->shared, "hct-dma-as");
-    memory_listener_register(&state->listener, &state->dma_as);
+        address_space_init(&state->dma_as, &state->shared, "hct-dma-as");
+        memory_listener_register(&state->listener, &state->dma_as);
+    }
 out:
     return ret;
 }
@@ -946,6 +978,11 @@ static void hct_listener_region_del(MemoryListener *listener,
     }
 }
 
+static MemoryListener hct_memory_listener = {
+    .region_add = hct_listener_region_add,
+    .region_del = hct_listener_region_del,
+};
+
 static void hct_memory_do_mbind(void *mem, size_t size, int node)
 {
     struct bitmask *bmp = NULL;
@@ -1130,11 +1167,16 @@ static int hct_vfio_shared_dma_memory_init(HCTDevState *state)
         }
     }
 
-    maddr -= PAGE_SIZE;
-    shr_mem = (void *)(maddr + HCT_DMA_MEM_SIZE_256K);
-    shr_mem->qemu_ver = HCT_QEMU_VERSION;
-    shr_mem->pasid = hct_data.pasid;
-    shr_mem->gid = g_id;
+    if (!hct_data.support_dma_all) {
+        maddr -= PAGE_SIZE;
+        shr_mem = (void *)(maddr + HCT_DMA_MEM_SIZE_256K);
+        shr_mem->qemu_ver = HCT_QEMU_VERSION;
+        shr_mem->pasid = hct_data.pasid;
+        shr_mem->gid = g_id;
+    } else {
+        *(unsigned long *)vaddr = hct_data.pasid;
+        *(unsigned long *)(vaddr + HCT_PASID_MEM_GID_OFFSET) = g_id;
+    }
 
     state->sdev.dma_memory = vaddr;
     state->sdev.dma_memory_size = size;
@@ -1514,6 +1556,10 @@ static void hct_data_uninit(HCTDevState *state)
         hct_data.hct_shared_memory = NULL;
     }
 
+    if (hct_data.support_dma_all) {
+        memory_listener_unregister(&hct_memory_listener);
+    }
+
     precopy_remove_notifier(&state->precopy_notifier);
 
     hct_data.init = 0;
@@ -1617,6 +1663,17 @@ static int hct_data_init(HCTDevState *state)
         precopy_add_notifier(&state->precopy_notifier);
         state->migrate_load_timer = NULL;
         state->migrate_support = 1;
+        hct_data.support_dma_all = state->support_dma_all;
+
+        if (hct_data.support_dma_all) {
+            if (hct_data.driver == HCT_CCP_DRV_MOD_VFIO_PCI) {
+                error_report("The support-dma-all mode does not support vfio-pci driver."
+                             " Please switch to the ccp or hct driver.");
+                ret = -1;
+                goto out;
+            }
+            memory_listener_register(&hct_memory_listener, &address_space_memory);
+        }
 
         hct_data.init = 1;
     }
@@ -1764,7 +1821,7 @@ static void hct_dev_class_init(ObjectClass *klass, void *data)
     DeviceClass *dc = DEVICE_CLASS(klass);
     PCIDeviceClass *pdc = PCI_DEVICE_CLASS(klass);
 
-    dc->desc = "HCT Device";
+    dc->desc = g_strdup_printf("HCT Device, Version Number: %d", HCT_QEMU_VERSION);
     dc->vmsd = &vfio_hct_vmstate;
     device_class_set_props(dc, vfio_hct_properties);
 
