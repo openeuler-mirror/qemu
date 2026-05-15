@@ -350,7 +350,6 @@ static int qemu_urma_init_ram_blocks(URMAContext *urma)
 {
     URMALocalBlocks *local = &urma->local_ram_blocks;
     int ret;
-    int i;
 
     if (urma->blockmap != NULL) {
         qemu_log("Ram blocks have been inited before!\n");
