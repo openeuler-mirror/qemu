@@ -1240,6 +1240,13 @@ static void vfio_ub_write_config(UBDevice *dev, uint64_t offset,
     }
 }
 
+#ifdef CONFIG_IOMMUFD
+static void vfio_ub_set_fd(Object *obj, const char *str, Error **errp)
+{
+    vfio_device_set_fd(&VFIO_UB(obj)->vbasedev, str, errp);
+}
+#endif
+
 static void vfio_ub_dev_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
@@ -1247,6 +1254,9 @@ static void vfio_ub_dev_class_init(ObjectClass *klass, void *data)
 
     dc->reset = vfio_ub_reset;
     device_class_set_props(dc, vfio_ub_dev_properties);
+#ifdef CONFIG_IOMMUFD
+    object_class_property_add_str(klass, "fd", NULL, vfio_ub_set_fd);
+#endif
     dc->vmsd = &vfio_ub_vmstate;
     dc->desc = "VFIO-based UB device assignment";
     set_bit(DEVICE_CATEGORY_MISC, dc->categories);
