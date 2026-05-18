@@ -845,7 +845,7 @@ static int virtcca_mig_create_tec(QEMUFile *f)
     return tmm_create_tec();
 }
 
-void vircca_mig_init(CgsMig *cgs_mig)
+void virtcca_mig_init(CgsMig *cgs_mig)
 {
     cgs_mig->is_ready = virtcca_mig_is_ready;
     cgs_mig->savevm_state_setup = virtcca_mig_stream_setup;

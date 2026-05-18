@@ -281,7 +281,7 @@ void cgs_mig_init(void)
     if (virtcca_cvm_allowed)
     {
         info_report("INFO: cgs_mig_init is setup as the virtcca mode\n");
-        vircca_mig_init(&cgs_mig);
+        virtcca_mig_init(&cgs_mig);
     }
     return;
 }
