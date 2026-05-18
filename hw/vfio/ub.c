@@ -940,8 +940,7 @@ static void vfio_reinit_irq_handler(void *opaque)
         return;
     }
 
-    qemu_log("vfio ub device(%s %s) reinit irq handler: ubc %p\n",
-             udev->name, udev->qdev.id, (void *)ubc);
+    qemu_log("vfio ub device(%s %s) reinit irq\n", udev->name, udev->qdev.id);
 
     /* Only support LINK_UP */
     sub_msg_code = UB_LINK_UP;
@@ -1287,9 +1286,9 @@ static int vfio_ub_read_config(UBDevice *dev, uint64_t offset,
 
     if (pread(vdev->vbasedev.fd, &phys_val, DWORD_SIZE, vdev->config_offset + offset)
         != DWORD_SIZE) {
-        qemu_log("read value from phys dev: %s, addr: 0x%lx failed\n", vdev->vbasedev.name, offset);
+        qemu_log("read value from phys dev: %s, addr: 0x%lx failed, errno: 0x%x\n", vdev->vbasedev.name, offset, errno);
         *val = 0;
-        return -ENOEXEC;
+        return errno;
     }
     phys_val &= dw_mask;
     *val = (emu_val & emu_bits) | (phys_val & ~emu_bits);
@@ -1315,9 +1314,9 @@ static int vfio_ub_write_config(UBDevice *dev, uint64_t offset,
     if (pread(vdev->vbasedev.fd, &phys_val, DWORD_SIZE,
               vdev->config_offset + offset)
         != DWORD_SIZE) {
-        qemu_log("read value from phys dev: %s, addr: 0x%lx failed\n",
-                 vdev->vbasedev.name, offset);
-        return -ENOEXEC;
+        qemu_log("read value from phys dev: %s, addr: 0x%lx failed, errno: 0x%x\n",
+                 vdev->vbasedev.name, offset, errno);
+        return errno;
     }
     trace_vfio_ub_write_config(offset, *val, dw_mask, phys_val);
 
@@ -1325,9 +1324,9 @@ static int vfio_ub_write_config(UBDevice *dev, uint64_t offset,
     /* update value to phy config space */
     if (pwrite(vdev->vbasedev.fd, &phys_val, DWORD_SIZE, vdev->config_offset + offset)
         != DWORD_SIZE) {
-        qemu_log("write value to phys dev: %s, addr: 0x%lx failed\n",
-                 vdev->vbasedev.name, offset);
-        return -ENOEXEC;
+        qemu_log("write value to phys dev: %s, addr: 0x%lx failed, errno: 0x%x\n",
+                 vdev->vbasedev.name, offset, errno);
+        return errno;
     }
 
     /* check whether the UBBA is updated by GuestOS */

@@ -194,23 +194,23 @@ static uint32_t get_dw_mask(uint8_t byte_enable)
 
 static int err_to_msg_rsp(int err)
 {
-    if (err >= 0)
+    if (err <= 0)
         return err;
 
     switch (err) {
-    case -ENOMEM:
+    case ENOMEM:
         return UB_MSG_RSP_EXEC_ENOMEM;
-    case -EACCES:
+    case EACCES:
         return UB_MSG_RSP_EXEC_EACCES;
-    case -EFAULT:
+    case EFAULT:
         return UB_MSG_RSP_EXEC_EFAULT;
-    case -EBUSY:
+    case EBUSY:
         return UB_MSG_RSP_EXEC_EBUSY;
-    case -ENODEV:
+    case ENODEV:
         return UB_MSG_RSP_EXEC_ENODEV;
-    case -EINVAL:
+    case EINVAL:
         return UB_MSG_RSP_EXEC_EINVAL;
-    case -ENOEXEC:
+    case ENOEXEC:
         return UB_MSG_RSP_EXEC_ENOEXEC;
     default:
         return UB_MSG_RSP_UNKNOWN;

@@ -394,7 +394,7 @@ int ub_default_read_config(UBDevice *dev, uint64_t offset,
         *val = 0;
         qemu_log("ub default read config out of emulated range, offset "
                  "is 0x%lx\n", offset);
-        return -EFAULT;
+        return EFAULT;
     }
 
     memcpy(&read_data, dev->config + emulated_offset, DWORD_SIZE);
@@ -476,7 +476,7 @@ int ub_default_write_config(UBDevice *dev, uint64_t offset,
     if (emulated_offset == UINT64_MAX) {
         qemu_log("ub default write config out of emulated range, offset "
                  "is 0x%lx\n", offset);
-        return -EFAULT;
+        return EFAULT;
     }
 
     dst_data = (uint32_t *)(dev->config + emulated_offset);
