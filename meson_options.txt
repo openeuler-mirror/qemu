@@ -304,7 +304,7 @@ option('urma_migration', type: 'feature', value: 'disabled',
 option('ham_migration', type: 'feature', value: 'auto',
        description: 'live migration via memory semantics')
 
-option('virtcca_migration', type: 'feature', value: 'auto',
+option('virtcca_migration', type: 'feature', value: 'disabled',
        description: 'live migration of arm virtcca CVM')
 
 option('vhost_kernel', type: 'feature', value: 'auto',

@@ -597,14 +597,15 @@ if cpu in ['aarch64']
   have_ham_migration = get_option('ham_migration') \
     .require(targetos == 'linux', error_message: 'ham_migration is supported only on Linux') \
     .allowed()
-  # virtcca migration
-  have_virtcca_migration = get_option('virtcca_migration') \
-    .require(targetos == 'linux', error_message: 'virtcca_migration is supported only on Linux') \
-    .allowed()
 else
   have_ham_migration = false
-  have_virtcca_migration = false
 endif
+
+#virtcca migration
+have_virtcca_migration = get_option('virtcca_migration') \
+  .require(targetos == 'linux', error_message: 'virtcca_migration is supported only on Linux') \
+  .require(cpu == 'aarch64', error_message: 'virtcca_migration is supported only on aarch64') \
+  .allowed()
 
 # urma migration
 have_urma_migration = get_option('urma_migration') \
