@@ -204,7 +204,7 @@ out:
     if (sysfs_file)
         fclose(sysfs_file);
     if (numa_str)
-        free(numa_str);
+        g_free(numa_str);
 
     return ret;
 }
