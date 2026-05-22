@@ -92,6 +92,28 @@ uint32_t fill_cq(BusControllerState *s, HiMsgCqe *cqe)
     return pi;
 }
 
+/*
+ * Fill RQ and CQ atomically with single lock acquisition.
+ * This ensures RQ write and CQ write are atomic together.
+ */
+void fill_rq_cq(BusControllerState *s, void *rsp, uint32_t rsp_size, HiMsgCqe *cqe)
+{
+    uint32_t rq_pi;
+
+    pthread_spin_lock(&s->rq_cq_lock);
+
+    rq_pi = fill_rq(s, rsp, rsp_size);
+    if (rq_pi == UINT32_MAX) {
+        qemu_log("fill rq failed!\n");
+        pthread_spin_unlock(&s->rq_cq_lock);
+        return;
+    }
+    cqe->rq_pi = rq_pi;
+    (void)fill_cq(s, cqe);
+
+    pthread_spin_unlock(&s->rq_cq_lock);
+}
+
 #define UB_MEM_DUMP_MAX_STR_LEN 4096
 #define UB_MEM_DUMP_COLUMN 4
 #define UB_MEM_DUMP_WIDTH 36

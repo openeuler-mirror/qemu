@@ -18,6 +18,7 @@
 #ifndef UB_UBC_H
 #define UB_UBC_H
 
+#include <pthread.h>
 #include "hw/sysbus.h"
 #include "qom/object.h"
 #include "hw/ub/hisi/ubc.h"
@@ -55,6 +56,7 @@ struct BusControllerState {
     HiMsgqInfo msgq;
     BusControllerDev *ubc_dev;
     UBBus *bus;
+    pthread_spinlock_t rq_cq_lock; /* protect RQ/CQ from concurrent access */
     QLIST_ENTRY(BusControllerState) node;
 };
 

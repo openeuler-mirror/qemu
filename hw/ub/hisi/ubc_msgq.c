@@ -63,7 +63,6 @@ static void ub_obtain_entity_info_ms_fill_cq_rq(BusControllerState *s, HiMsgSqe 
                                                 MsgPktHeader *header, EntityInfoMsgPkt *rsp_pkt)
 {
     HiMsgCqe cqe;
-    uint32_t pi;
 
     memset(&cqe, 0, sizeof(cqe));
     cqe.type = MSG_RSP;
@@ -78,15 +77,8 @@ static void ub_obtain_entity_info_ms_fill_cq_rq(BusControllerState *s, HiMsgSqe 
 
     cqe.msn = sqe->msn;
     cqe.p_len = sizeof(EntityInfoMsgPkt) + sizeof(struct UeMap);
-    pi = fill_rq(s, rsp_pkt, sizeof(*rsp_pkt));
-    if (pi == UINT32_MAX) {
-        qemu_log("fill rq failed!\n");
-        return;
-    }
-
     cqe.status = CQE_SUCCESS;
-    cqe.rq_pi = pi;
-    (void)fill_cq(s, &cqe);
+    fill_rq_cq(s, rsp_pkt, sizeof(*rsp_pkt), &cqe);
 }
 
 static void ub_obtain_entity_info(BusControllerState *s, HiMsgSqe *sqe, MsgPktHeader *header)
@@ -244,8 +236,7 @@ static void handle_eu_table_cfg_cmd(BusControllerState *s, HiMsgSqe *sqe, void *
     cqe.msn = sqe->msn;
     cqe.p_len = sizeof(rsp);
     cqe.status = CQE_SUCCESS;
-    cqe.rq_pi = fill_rq(s, &rsp, sizeof(rsp));
-    (void)fill_cq(s, &cqe);
+    fill_rq_cq(s, &rsp, sizeof(rsp), &cqe);
 }
 
 static void (*hisi_private_handlers[])(BusControllerState *s, HiMsgSqe *sqe, void *payload) = {

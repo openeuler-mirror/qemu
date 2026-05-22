@@ -32,6 +32,7 @@
 #include "hw/ub/ub_config.h"
 #include "hw/ub/ub_acpi.h"
 #include "hw/ub/ub_usi.h"
+#include "hw/ub/ub_msg.h"
 #include "hw/ub/ubus_instance.h"
 #include "hw/qdev-properties.h"
 #include "hw/qdev-properties-system.h"
@@ -55,7 +56,7 @@ static Property vfio_ub_dev_properties[] = {
 };
 static void vfio_disable_interrupts(VFIOUBDevice *vdev);
 static void vfio_usi_disable(VFIOUBDevice *vdev);
-static void vfio_ub_write_config(UBDevice *dev, uint64_t offset,
+static int vfio_ub_write_config(UBDevice *dev, uint64_t offset,
                                  uint32_t *val, uint32_t dw_mask);
 
 static bool vfio_ub_needed(void *opaque)
@@ -88,12 +89,18 @@ static void vfio_ub_reset(DeviceState *dev)
     }
 
     /* need after ELR */
-    vfio_ub_write_config(&vdev->udev, UB_CFG1_DEV_TOKEN_ID_OFFSET,
-                         &val, UB_TOKEN_ID_MASK);
-    vfio_ub_write_config(&vdev->udev, UB_CFG1_DEV_RS_ACCESS_EN_OFFSET,
-                         &val, UB_DEV_RS_ACCESS_EN_MASK);
-    vfio_ub_write_config(&vdev->udev, UB_CFG1_BUS_ACCESS_EN_OFFSET,
-                         &val, UB_BUS_ACCESS_EN_MASK);
+    if (vfio_ub_write_config(&vdev->udev, UB_CFG1_DEV_TOKEN_ID_OFFSET,
+                             &val, UB_TOKEN_ID_MASK)) {
+        qemu_log("UB_CFG1_DEV_TOKEN_ID write failed\n");
+    }
+    if (vfio_ub_write_config(&vdev->udev, UB_CFG1_DEV_RS_ACCESS_EN_OFFSET,
+                         &val, UB_DEV_RS_ACCESS_EN_MASK)) {
+        qemu_log("UB_CFG1_DEV_RS_ACCESS_EN write failed\n");
+    }
+    if (vfio_ub_write_config(&vdev->udev, UB_CFG1_BUS_ACCESS_EN_OFFSET,
+                         &val, UB_BUS_ACCESS_EN_MASK)) {
+        qemu_log("UB_CFG1_BUS_ACCESS_EN write failed\n");
+    }
     qemu_log("ub device(%s %s) clear 'dev_token_id',"
              "'bus_access_en' and 'dev_rs_access_en'\n",
              vdev->udev.name, vdev->udev.qdev.id);
@@ -492,7 +499,7 @@ static int vfio_enable_vectors(VFIOUBDevice *vdev)
     irq_set = g_malloc0(argsz);
     irq_set->argsz = argsz;
     irq_set->flags = VFIO_IRQ_SET_DATA_EVENTFD | VFIO_IRQ_SET_ACTION_TRIGGER;
-    irq_set->index = VFIO_UB_MSIX_IRQ_INDEX;
+    irq_set->index = VFIO_UB_INTR_IRQ_INDEX;
     irq_set->start = 0;
     irq_set->count = vdev->nr_vectors;
     fds = (int32_t *)&irq_set->data;
@@ -552,14 +559,14 @@ static int vfio_usi_vector_do_use(UBDevice *udev, uint16_t nr, USIMessage *msg,
 
     if (vdev->nr_vectors < nr + 1) {
         vdev->nr_vectors = nr + 1;
-        vfio_disable_irqindex(&vdev->vbasedev, VFIO_UB_MSIX_IRQ_INDEX);
+        vfio_disable_irqindex(&vdev->vbasedev, VFIO_UB_INTR_IRQ_INDEX);
         ret = vfio_enable_vectors(vdev);
         if (ret < 0) {
             error_report("vfio: failed to enable vectors, %d", ret);
         }
     } else {
         fd = event_notifier_get_fd(&vector->kvm_interrupt);
-        ret = vfio_set_irq_signaling(&vdev->vbasedev, VFIO_UB_MSIX_IRQ_INDEX, nr,
+        ret = vfio_set_irq_signaling(&vdev->vbasedev, VFIO_UB_INTR_IRQ_INDEX, nr,
                                      VFIO_IRQ_SET_ACTION_TRIGGER, fd, &err);
         if (ret) {
             error_reportf_err(err, VFIO_MSG_PREFIX, vdev->vbasedev.name);
@@ -580,7 +587,7 @@ static void vfio_usi_vector_release(UBDevice *udev, uint16_t nr)
 
         qemu_log("udev(%s %s) start update fd to qemu.\n",
                  udev->name, udev->qdev.id);
-        if (vfio_set_irq_signaling(&vdev->vbasedev, VFIO_UB_MSIX_IRQ_INDEX, nr,
+        if (vfio_set_irq_signaling(&vdev->vbasedev, VFIO_UB_INTR_IRQ_INDEX, nr,
                                    VFIO_IRQ_SET_ACTION_TRIGGER, fd, &err)) {
             error_reportf_err(err, VFIO_MSG_PREFIX, vdev->vbasedev.name);
             return;
@@ -906,6 +913,130 @@ static bool vfio_check_guid(VFIOUBDevice *vdev, Error **errp)
     return true;
 }
 
+static void vfio_reinit_irq_handler(void *opaque)
+{
+    VFIOUBDevice *vdev = opaque;
+    UBDevice *udev = &vdev->udev;
+    UBBus *bus;
+    BusControllerState *ubc;
+    LinkChangeMsgPkt rsp_pkt;
+    HiMsgCqe cqe;
+    uint32_t scna;
+    uint16_t port_idx;
+    uint64_t offset;
+    uint64_t emulated_offset;
+    uint8_t sub_msg_code;
+    ConfigNetAddrInfo *net_addr_info;
+
+    if (!event_notifier_test_and_clear(&vdev->reinit_irq)) {
+        return;
+    }
+
+    bus = ub_get_bus(udev);
+    ubc = container_of_ubbus(bus);
+    if (!ubc) {
+        qemu_log("vfio ub device(%s %s) reinit irq handler: cannot find ubc\n",
+                 udev->name, udev->qdev.id);
+        return;
+    }
+
+    qemu_log("vfio ub device(%s %s) reinit irq\n", udev->name, udev->qdev.id);
+
+    /* Only support LINK_UP */
+    sub_msg_code = UB_LINK_UP;
+
+    /* Get SCNA and port_idx from UBC's ConfigPortBasic (port 0) */
+    offset = UB_PORT_SLICE_START;  /* port_idx = 0 */
+    emulated_offset = ub_cfg_offset_to_emulated_offset(offset, true);
+    if (emulated_offset == UINT64_MAX) {
+        qemu_log("vfio ub: invalid port offset 0x%lx\n", offset);
+        return;
+    }
+
+    net_addr_info = (ConfigNetAddrInfo *)(ubc->ubc_dev->parent.config + emulated_offset);
+    scna = net_addr_info->primary_cna;
+    port_idx = udev->port.neighbors->neighbor_port_idx;
+    emulated_offset = ub_cfg_offset_to_emulated_offset(UB_CFG0_BASIC_NA_INFO_START, true);
+
+    qemu_log("vfio ub device(%s %s): link change info - SCNA=%u, sport_idx=%u, event=%s\n",
+             udev->name, udev->qdev.id, scna, port_idx,
+             sub_msg_code == UB_LINK_UP ? "UP" : "DOWN");
+
+    /* Build link change message request */
+    memset(&rsp_pkt, 0, sizeof(LinkChangeMsgPkt));
+    memset(&cqe, 0, sizeof(HiMsgCqe));
+
+    /* Set header - use MSG_REQ since this is a notification to driver */
+    rsp_pkt.header.msgetah.type = MSG_REQ;
+    rsp_pkt.header.msgetah.msg_code = UB_MSG_CODE_LINK;
+    rsp_pkt.header.msgetah.sub_msg_code = sub_msg_code;
+    rsp_pkt.header.msgetah.plen = LINK_CHANGE_MSG_PLD_SIZE;
+
+    /* Use UBC's CNA as both source and destination */
+    rsp_pkt.header.nth.scna = ubc->ubc_dev->parent.cna;
+    rsp_pkt.header.nth.dcna = ubc->ubc_dev->parent.cna;
+
+    /* Use UBC's EID for both source and destination */
+    rsp_pkt.header.seid_h = EID_HIGH(ubc->ubc_dev->parent.eid);
+    rsp_pkt.header.seid_l = EID_LOW(ubc->ubc_dev->parent.eid);
+    rsp_pkt.header.deid = ubc->ubc_dev->parent.eid;
+
+    /* Build payload: 8 bytes (resvd + SCNA + resvd + port_idx) */
+    rsp_pkt.pld.reserved1 = 0;
+    rsp_pkt.pld.scna = scna & 0xFFFFFF;
+    rsp_pkt.pld.reserved2 = 0;
+    rsp_pkt.pld.port_idx = port_idx;
+
+    /* Set CQE */
+    cqe.type = MSG_REQ;
+    cqe.msg_code = UB_MSG_CODE_LINK;
+    cqe.sub_msg_code = sub_msg_code;
+    cqe.msn = 0;
+    cqe.p_len = MSG_LINK_CHANGE_PKT_SIZE;
+    cqe.status = CQE_SUCCESS;
+
+    /* Write to RQ and CQ atomically */
+    fill_rq_cq(ubc, &rsp_pkt, sizeof(LinkChangeMsgPkt), &cqe);
+
+    qemu_log("vfio ub: link change notification sent: SCNA=%u, port_idx=%u, event=%s\n",
+             scna, port_idx, sub_msg_code == UB_LINK_UP ? "UP" : "DOWN");
+}
+
+static void vfio_enable_reinit_irq(VFIOUBDevice *vdev)
+{
+    int ret;
+    int32_t fd;
+
+    if (vdev->reinit_irq_enabled) {
+        return;
+    }
+
+    ret = event_notifier_init(&vdev->reinit_irq, 0);
+    if (ret) {
+        warn_report("vfio: reinit irq event_notifier_init failed");
+        return;
+    }
+
+    qemu_set_fd_handler(event_notifier_get_fd(&vdev->reinit_irq),
+                        vfio_reinit_irq_handler, NULL, vdev);
+
+    fd = event_notifier_get_fd(&vdev->reinit_irq);
+    ret = vfio_set_irq_signaling(&vdev->vbasedev, VFIO_UB_REINIT_IRQ_INDEX, 0,
+                                 VFIO_IRQ_SET_ACTION_TRIGGER, fd, NULL);
+    if (ret) {
+        warn_report("vfio: failed to enable reinit irq, ret=%d", ret);
+        qemu_set_fd_handler(event_notifier_get_fd(&vdev->reinit_irq),
+                            NULL, NULL, NULL);
+        event_notifier_cleanup(&vdev->reinit_irq);
+        return;
+    }
+
+    vdev->reinit_irq_enabled = true;
+    qemu_log("vfio ub device(%s %s) reinit irq enabled\n",
+             vdev->udev.name, vdev->udev.qdev.id);
+    return;
+}
+
 static void vfio_realize(UBDevice *udev, Error **errp)
 {
     VFIOUBDevice *vdev = VFIO_UB(udev);
@@ -1017,6 +1148,8 @@ static void vfio_realize(UBDevice *udev, Error **errp)
         vfio_ers_quirk_setup(vdev, i);
     }
 
+    vfio_enable_reinit_irq(vdev);
+
     return;
 out_unset_idev:
     ub_device_unset_iommu_device(udev);
@@ -1055,6 +1188,14 @@ static void vfio_exitfn(UBDevice *udev)
         vfio_cfg1_idev_ubba_deinit(udev);
     }
     vfio_disable_interrupts(vdev);
+
+    if (vdev->reinit_irq_enabled) {
+        vfio_disable_irqindex(&vdev->vbasedev, VFIO_UB_REINIT_IRQ_INDEX);
+        qemu_set_fd_handler(event_notifier_get_fd(&vdev->reinit_irq),
+                            NULL, NULL, NULL);
+        event_notifier_cleanup(&vdev->reinit_irq);
+        vdev->reinit_irq_enabled = false;
+    }
 
     vfio_teardown_usi(vdev);
     vfio_ers_exit(vdev);
@@ -1117,14 +1258,14 @@ static void vfio_usi_disable(VFIOUBDevice *vdev)
     usi_unset_vector_notifiers(&vdev->udev);
 
     if (vdev->nr_vectors) {
-        vfio_disable_irqindex(&vdev->vbasedev, VFIO_UB_MSIX_IRQ_INDEX);
+        vfio_disable_irqindex(&vdev->vbasedev, VFIO_UB_INTR_IRQ_INDEX);
     }
     qemu_log("vfio ub device(%s %s) usi disable, vectors %d.\n",
              vdev->udev.name, vdev->udev.qdev.id, vdev->nr_vectors);
     vfio_usi_disable_common(vdev);
 }
 
-static void vfio_ub_read_config(UBDevice *dev, uint64_t offset,
+static int vfio_ub_read_config(UBDevice *dev, uint64_t offset,
                                 uint32_t *val, uint32_t dw_mask)
 {
     VFIOUBDevice *vdev = VFIO_UB(dev);
@@ -1132,25 +1273,27 @@ static void vfio_ub_read_config(UBDevice *dev, uint64_t offset,
     uint32_t emu_val = 0;
     uint32_t phys_val = 0;
     uint64_t emulated_offset;
+    int ret = 0;
 
     /* emu_bits bit_n: 0 means need read value from phy dev; 1 means read value from emulated config space */
     emulated_offset = ub_cfg_offset_to_emulated_offset(offset, false);
     if (emulated_offset != UINT64_MAX) {
         emu_bits = *(uint32_t *)(vdev->emulated_config_bits + emulated_offset);
         if (emu_bits) {
-            ub_default_read_config(dev, offset, &emu_val, dw_mask);
+            ret = ub_default_read_config(dev, offset, &emu_val, dw_mask);
         }
     }
 
     if (pread(vdev->vbasedev.fd, &phys_val, DWORD_SIZE, vdev->config_offset + offset)
         != DWORD_SIZE) {
-        qemu_log("read value from phys dev: %s, addr: 0x%lx failed\n", vdev->vbasedev.name, offset);
+        qemu_log("read value from phys dev: %s, addr: 0x%lx failed, errno: 0x%x\n", vdev->vbasedev.name, offset, errno);
         *val = 0;
-        return;
+        return errno;
     }
     phys_val &= dw_mask;
     *val = (emu_val & emu_bits) | (phys_val & ~emu_bits);
     trace_vfio_ub_read_config(offset, emu_val, phys_val, *val);
+    return ret;
 }
 
 static void vfio_sub_page_ers_update_mapping(UBDevice *udev, int ers_id)
@@ -1158,21 +1301,22 @@ static void vfio_sub_page_ers_update_mapping(UBDevice *udev, int ers_id)
     /* do nothing now */
 }
 
-static void vfio_ub_write_config(UBDevice *dev, uint64_t offset,
+static int vfio_ub_write_config(UBDevice *dev, uint64_t offset,
                                  uint32_t *val, uint32_t dw_mask)
 {
     VFIOUBDevice *vdev = VFIO_UB(dev);
     uint32_t write_val = *val;
     uint32_t phys_val;
     int is_enabled, was_enabled, is_masked, was_masked;
+    int ret = 0;
 
     /* get old phys_val */
     if (pread(vdev->vbasedev.fd, &phys_val, DWORD_SIZE,
               vdev->config_offset + offset)
         != DWORD_SIZE) {
-        qemu_log("read value from phys dev: %s, addr: 0x%lx failed\n",
-                 vdev->vbasedev.name, offset);
-        return;
+        qemu_log("read value from phys dev: %s, addr: 0x%lx failed, errno: 0x%x\n",
+                 vdev->vbasedev.name, offset, errno);
+        return errno;
     }
     trace_vfio_ub_write_config(offset, *val, dw_mask, phys_val);
 
@@ -1180,9 +1324,9 @@ static void vfio_ub_write_config(UBDevice *dev, uint64_t offset,
     /* update value to phy config space */
     if (pwrite(vdev->vbasedev.fd, &phys_val, DWORD_SIZE, vdev->config_offset + offset)
         != DWORD_SIZE) {
-        qemu_log("write value to phys dev: %s, addr: 0x%lx failed\n",
-                 vdev->vbasedev.name, offset);
-        return;
+        qemu_log("write value to phys dev: %s, addr: 0x%lx failed, errno: 0x%x\n",
+                 vdev->vbasedev.name, offset, errno);
+        return errno;
     }
 
     /* check whether the UBBA is updated by GuestOS */
@@ -1197,7 +1341,7 @@ static void vfio_ub_write_config(UBDevice *dev, uint64_t offset,
         }
 
         /* update cfg */
-        ub_default_write_config(dev, offset, val, dw_mask);
+        ret = ub_default_write_config(dev, offset, val, dw_mask);
         for (ers_id = 0; ers_id < UB_NUM_REGIONS; ers_id++) {
             trace_vfio_ub_write_config_ioregion(ers_id, old_addr[ers_id],
                                                 dev->io_regions[ers_id].addr,
@@ -1217,7 +1361,7 @@ static void vfio_ub_write_config(UBDevice *dev, uint64_t offset,
     } else if (ranges_overlap(offset, DWORD_SIZE,
                               UB_CFG1_CAP4_INT_TYPE2_ENABLE_OFFSET, DWORD_SIZE)) {
         was_enabled = usi_enabled(dev);
-        ub_default_write_config(dev, offset, val, dw_mask);
+        ret = ub_default_write_config(dev, offset, val, dw_mask);
         is_enabled = usi_enabled(dev);
         trace_vfio_ub_write_config_int_cap_en(*val, was_enabled, is_enabled);
         if (is_enabled && !was_enabled) {
@@ -1230,14 +1374,15 @@ static void vfio_ub_write_config(UBDevice *dev, uint64_t offset,
     } else if (ranges_overlap(offset, DWORD_SIZE,
                               UB_CFG1_CAP4_INT_TYPE2_MASK_OFFSET, DWORD_SIZE)) {
         was_masked = usi_ue_is_masked(dev);
-        ub_default_write_config(dev, offset, val, dw_mask);
+        ret = ub_default_write_config(dev, offset, val, dw_mask);
         is_masked = usi_ue_is_masked(dev);
         trace_vfio_ub_write_config_int_cap_mask(*val, was_masked, is_masked);
         usi_handle_ue_mask_update(dev, was_masked);
     } else {
         /* sync phy config space and write emulated value to emulated config space */
-        ub_default_write_config(dev, offset, val, dw_mask);
+        ret = ub_default_write_config(dev, offset, val, dw_mask);
     }
+    return ret;
 }
 
 #ifdef CONFIG_IOMMUFD

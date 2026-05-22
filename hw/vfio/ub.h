@@ -67,6 +67,10 @@ struct VFIOUBDevice {
     VFIOUSIVector *usi_vectors;
     int nr_vectors; /* Number of usi vectors currently in use */
 
+    /* reinit irq */
+    EventNotifier reinit_irq;
+    bool reinit_irq_enabled;
+
     UBHostDeviceAddress host;
 };
 #endif /* HW_VFIO_VFIO_UB_H */

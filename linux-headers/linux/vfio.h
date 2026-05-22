@@ -1861,7 +1861,9 @@ struct vfio_iommu_spapr_tce_remove {
 
 /* ub irq types */
 enum {
-    VFIO_UB_MSIX_IRQ_INDEX,
+    VFIO_UB_INTR_IRQ_INDEX,
+    VFIO_UB_REQ_IRQ_INDEX,
+    VFIO_UB_REINIT_IRQ_INDEX,
     VFIO_UB_NUM_IRQS
 };
 
