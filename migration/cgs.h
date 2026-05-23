@@ -68,7 +68,7 @@ int cgs_mig_multifd_recv_pages(MultiFDRecvParams *p, Error **errp);
 uint32_t cgs_mig_iov_num(uint32_t page_batch_num);
 void cgs_mig_init(void);
 int virtcca_import_zero_page(uint32_t channel_id, void *host);
-void vircca_mig_init(CgsMig *cgs_mig);
+void virtcca_mig_init(CgsMig *cgs_mig);
 bool virtcca_is_swiotlb(void *host);
 int virtcca_check_mig_mem(bool is_src);
 int get_migration_result_from_sysfs(bool is_src);
