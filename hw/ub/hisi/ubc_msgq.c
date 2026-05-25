@@ -78,7 +78,9 @@ static void ub_obtain_entity_info_ms_fill_cq_rq(BusControllerState *s, HiMsgSqe 
     cqe.msn = sqe->msn;
     cqe.p_len = sizeof(EntityInfoMsgPkt) + sizeof(struct UeMap);
     cqe.status = CQE_SUCCESS;
-    fill_rq_cq(s, rsp_pkt, sizeof(*rsp_pkt), &cqe);
+    if (fill_rq_cq(s, rsp_pkt, sizeof(*rsp_pkt), &cqe) != 0) {
+        qemu_log("ub_obtain_entity_info_ms_fill_cq_rq: fill_rq_cq failed\n");
+    }
 }
 
 static void ub_obtain_entity_info(BusControllerState *s, HiMsgSqe *sqe, MsgPktHeader *header)
@@ -236,7 +238,9 @@ static void handle_eu_table_cfg_cmd(BusControllerState *s, HiMsgSqe *sqe, void *
     cqe.msn = sqe->msn;
     cqe.p_len = sizeof(rsp);
     cqe.status = CQE_SUCCESS;
-    fill_rq_cq(s, &rsp, sizeof(rsp), &cqe);
+    if (fill_rq_cq(s, &rsp, sizeof(rsp), &cqe) != 0) {
+        qemu_log("handle_eu_table_cfg_cmd: fill_rq_cq failed\n");
+    }
 }
 
 static void (*hisi_private_handlers[])(BusControllerState *s, HiMsgSqe *sqe, void *payload) = {

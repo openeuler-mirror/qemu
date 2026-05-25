@@ -173,7 +173,9 @@ static void ub_cfg_msg_fill_cq_rq(BusControllerState *s, HiMsgSqe *sqe, MsgPktHe
     cqe.msn = sqe->msn;
     cqe.p_len = MSG_CFG_PKT_SIZE;
     cqe.status = CQE_SUCCESS;
-    fill_rq_cq(s, rsp_pkt, sizeof(CfgMsgPkt), &cqe);
+    if (fill_rq_cq(s, rsp_pkt, sizeof(CfgMsgPkt), &cqe) != 0) {
+        qemu_log("ub_cfg_msg_fill_cq_rq: fill_rq_cq failed\n");
+    }
 }
 
 static uint32_t get_dw_mask(uint8_t byte_enable)
