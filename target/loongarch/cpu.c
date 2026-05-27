@@ -722,7 +722,7 @@ static void loongarch_max_initfn(Object *obj)
     if (tcg_enabled()) {
         cpu->ptw = ON_OFF_AUTO_OFF;
         cpu->env.cpucfg[1] = FIELD_DP32(cpu->env.cpucfg[1], CPUCFG1, MSG_INT, 1);
-        cpu->msgint = ON_OFF_AUTO_AUTO;
+        cpu->msgint = ON_OFF_AUTO_OFF;
 
         uint32_t data = cpu->env.cpucfg[2];
         data = FIELD_DP32(data, CPUCFG2, HPTW, 0);

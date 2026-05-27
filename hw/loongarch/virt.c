@@ -1090,7 +1090,7 @@ static void virt_initfn(Object *obj)
         lvms->veiointc = ON_OFF_AUTO_OFF;
     }
 
-    lvms->dmsi = ON_OFF_AUTO_AUTO;
+    lvms->dmsi = ON_OFF_AUTO_OFF;
     lvms->acpi = ON_OFF_AUTO_AUTO;
     lvms->oem_id = g_strndup(ACPI_BUILD_APPNAME6, 6);
     lvms->oem_table_id = g_strndup(ACPI_BUILD_APPNAME8, 8);
