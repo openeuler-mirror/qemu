@@ -8,17 +8,18 @@
 
 #include <linux/types.h>
 
-#define __KVM_HAVE_GUEST_DEBUG
-#define __KVM_HAVE_IRQ_LINE
-
 /*
  * KVM LoongArch specific structures and definitions.
  *
  * Some parts derived from the x86 version of this file.
  */
 
+#define __KVM_HAVE_READONLY_MEM
+#define __KVM_HAVE_GUEST_DEBUG
+
 #define KVM_COALESCED_MMIO_PAGE_OFFSET	1
 #define KVM_DIRTY_LOG_PAGE_OFFSET	64
+#define __KVM_HAVE_IRQ_LINE
 
 #define KVM_GUESTDBG_USE_SW_BP		0x00010000
 /*
@@ -104,6 +105,8 @@ struct kvm_fpu {
 #define  KVM_LOONGARCH_VM_FEAT_PV_IPI		6
 #define  KVM_LOONGARCH_VM_FEAT_PV_STEALTIME	7
 #define  KVM_LOONGARCH_VM_FEAT_PTW		8
+#define  KVM_LOONGARCH_VM_FEAT_MSGINT		9
+#define  KVM_LOONGARCH_VM_FEAT_PV_PREEMPT	10
 
 /* Device Control API on vcpu fd */
 #define KVM_LOONGARCH_VCPU_CPUCFG	0
@@ -135,6 +138,7 @@ struct kvm_iocsr_entry {
 #define KVM_IRQCHIP_NUM_PINS	64
 #define KVM_MAX_CORES		256
 
+
 #define KVM_DEV_LOONGARCH_IPI_GRP_REGS			0x40000001
 
 #define KVM_DEV_LOONGARCH_EXTIOI_GRP_REGS		0x40000002
@@ -152,5 +156,9 @@ struct kvm_iocsr_entry {
 #define KVM_DEV_LOONGARCH_PCH_PIC_GRP_REGS	        0x40000005
 #define KVM_DEV_LOONGARCH_PCH_PIC_GRP_CTRL	        0x40000006
 #define KVM_DEV_LOONGARCH_PCH_PIC_CTRL_INIT	        0
+
+#define KVM_DEV_LOONGARCH_DMSINTC_GRP_CTRL		0x40000007
+#define KVM_DEV_LOONGARCH_DMSINTC_MSG_ADDR_BASE		0x0
+#define KVM_DEV_LOONGARCH_DMSINTC_MSG_ADDR_SIZE		0x1
 
 #endif /* __UAPI_ASM_LOONGARCH_KVM_H */
