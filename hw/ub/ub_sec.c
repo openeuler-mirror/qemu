@@ -38,7 +38,9 @@ static void ub_sec_msg_fill_cq_rq(BusControllerState *s, HiMsgSqe *sqe, MsgPktHe
     cqe.msn = sqe->msn;
     cqe.p_len = MSG_SEC_QUERY_TOKEN_MSG_PKT_SIZE;
     cqe.status = CQE_SUCCESS;
-    fill_rq_cq(s, rsp_pkt, sizeof(*rsp_pkt), &cqe);
+    if (fill_rq_cq(s, rsp_pkt, sizeof(*rsp_pkt), &cqe) != 0) {
+        qemu_log("ub_sec_msg_fill_cq_rq: fill_rq_cq failed\n");
+    }
 }
 
 static void ub_sec_token_get_req(BusControllerState *s, HiMsgSqe *sqe, MsgPktHeader *header)

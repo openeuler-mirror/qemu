@@ -996,7 +996,10 @@ static void vfio_reinit_irq_handler(void *opaque)
     cqe.status = CQE_SUCCESS;
 
     /* Write to RQ and CQ atomically */
-    fill_rq_cq(ubc, &rsp_pkt, sizeof(LinkChangeMsgPkt), &cqe);
+    if (fill_rq_cq(ubc, &rsp_pkt, sizeof(LinkChangeMsgPkt), &cqe) != 0) {
+        qemu_log("vfio_reinit_irq_handler: fill_rq_cq failed for link change notification\n");
+        return;
+    }
 
     qemu_log("vfio ub: link change notification sent: SCNA=%u, port_idx=%u, event=%s\n",
              scna, port_idx, sub_msg_code == UB_LINK_UP ? "UP" : "DOWN");

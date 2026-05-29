@@ -291,7 +291,9 @@ static void handle_enum_query_request(BusControllerState *s, HiMsgSqe *sqe,
     cqe.msn = sqe->msn;
     cqe.p_len = rsp_size;
     cqe.status = CQE_SUCCESS;
-    fill_rq_cq(s, rsp_buf, rsp_size, &cqe);
+    if (fill_rq_cq(s, rsp_buf, rsp_size, &cqe) != 0) {
+        qemu_log("handle_enum_query_request: fill_rq_cq failed\n");
+    }
     g_free(payload);
     g_free(rsp_buf);
 }
