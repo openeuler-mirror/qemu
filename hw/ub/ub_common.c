@@ -64,7 +64,7 @@ uint32_t fill_cq(BusControllerState *s, HiMsgCqe *cqe)
 {
     uint32_t ci = ub_get_long(s->msgq_reg + CQ_CI);
     uint32_t pi = ub_get_long(s->msgq_reg + CQ_PI);
-    uint32_t depth = s->msgq.rq_depth;
+    uint32_t depth = s->msgq.cq_depth;
     uint32_t remain;
     hwaddr dst_cqe;
 
