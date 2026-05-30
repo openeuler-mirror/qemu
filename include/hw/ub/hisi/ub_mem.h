@@ -110,8 +110,11 @@ typedef struct UbcVendorInfo {
     UbMemDecoderInfo mem_info[MAR_NUM_ONE_UDIE];
     uint64_t cmd_queue_base;  /* IO Decoder CMD   queue  */
     uint64_t event_queue_base;  /* IO Decoder Event queue  */
-    uint8_t vendor_feature_sets;  /* bit0: management plane deployment 0(enable) 1(disable) */
-    uint8_t reserved2[111];
+    uint64_t vendor_feature_sets;  /* bit0: management plane deployment 0(enable) 1(disable)
+                                    * bit1~31: reserved
+                                    * bit32~55: UB feature capability from sysfs
+                                    * bit56~63: reserved */
+    uint8_t reserved2[104];
 } UbcVendorInfo;
 
 /* hisi memory */

@@ -109,7 +109,7 @@ static void ub_init_vendor_info(UbcVendorInfo *vendor_info, VirtMachineState *vm
     /* now only support one UBC */
     vendor_info->cmd_queue_base = vms->memmap[VIRT_UBC_BASE_REG].base + CMDQ_BASE_ADDR;
     vendor_info->event_queue_base = vms->memmap[VIRT_UBC_BASE_REG].base + EVTQ_BASE_ADDR;
-    vendor_info->vendor_feature_sets = 0;
+    vendor_info->vendor_feature_sets = (uint64_t)sysfs_get_ub_feature() << 32; // bit32~55: UB feature capability from sysfs
 
     for (mar_id = 0; mar_id < MAR_NUM_ONE_UDIE; mar_id++) {
         mem_info = &vendor_info->mem_info[mar_id];
