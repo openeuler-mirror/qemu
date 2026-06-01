@@ -24,6 +24,7 @@
 #include <sys/ioctl.h>
 #include "hw/nvram/fw_cfg.h"
 #include "hw/qdev-properties.h"
+#include "sysemu/numa.h"
 #include "pci.h"
 #include "trace.h"
 
@@ -1231,25 +1232,82 @@ int vfio_pci_igd_opregion_init(VFIOPCIDevice *vdev,
 #define ASCEND310_XLOADER_OFFSET  0x400
 #define ASCEND710_LARGE_TEST_SIZE    0x1000
 #define ASCEND710_LARGE_TEST_OFFSET  0x100000
+/*
+ * The virt_msg area is reserved for virtualization and Ascend drivers.
+ * virt_msg region offset in 910B bar2: [0x182449a0 ~ 0x182449a0 + 1024]
+ * The total size is 1024 bytes. The driver uses the first 512 bytes,
+ * and the virtualization-related uses the last 512 bytes.
+ */
+#define ASCEND910B_DRIVER_MSG_SIZE       512
+#define ASCEND910B_DRIVER_MSG_OFFSET     0x182449a0
+#define ASCEND910B_VIRT_MSG_VERSION      0x1
+#define ASCEND910B_VIRT_MSG_SIZE         512
+#define ASCEND910B_VIRT_MSG_OFFSET       0x18244ba0
+#define ASCEND910B_VIRT_MSG_VERSION_OFF  0x0
+#define ASCEND910B_VIRT_MSG_VERSION_LEN  0x4
+#define ASCEND910B_VIRT_MSG_NUMA_OFF     0x4
+#define ASCEND910B_VIRT_MSG_NUMA_LEN     0x4
+
+enum {
+    VFIO_ASCEND_TYPE_ERR            = 0,
+    VFIO_ASCEND_TYPE_LARGE_TEST     = 1,
+    VFIO_ASCEND_TYPE_XLOADER        = 2,
+    VFIO_ASCEND_TYPE_VIRT_MSG	    = 3,
+};
 
 typedef struct VFIOAscendBarQuirk {
     struct VFIOPCIDevice *vdev;
     pcibus_t offset;
+    int type;       		    /* XLOADER or VIRT_MSG or etc. */
     uint8_t bar;
     MemoryRegion *mem;
+    uint8_t virt_msg[ASCEND910B_VIRT_MSG_SIZE];
+    uint32_t virt_msg_used_size;
 } VFIOAscendBarQuirk;
+
+static uint64_t read_virt_msg(VFIOAscendBarQuirk *quirk, hwaddr addr,
+							  unsigned size)
+{
+    VFIOPCIDevice *vdev = quirk->vdev;
+	uint8_t *virt_msg = quirk->virt_msg + addr;
+	uint64_t value;
+
+	if (addr >= quirk->virt_msg_used_size) {
+		return vfio_region_read(&vdev->bars[quirk->bar].region,
+								addr + quirk->offset, size);
+	}
+
+	size = size < sizeof(value) ? size : sizeof(value);
+	memcpy(&value, virt_msg, size);
+	return le64_to_cpu(value);
+}
 
 static uint64_t vfio_ascend_quirk_read(void *opaque,
                                        hwaddr addr, unsigned size)
 {
+	uint64_t value;
     VFIOAscendBarQuirk *quirk = opaque;
     VFIOPCIDevice *vdev = quirk->vdev;
 
     qemu_log("read RO region! addr=0x%" HWADDR_PRIx ", size=%d\n",
             addr + quirk->offset, size);
 
-    return vfio_region_read(&vdev->bars[quirk->bar].region,
-                            addr + quirk->offset, size);
+    switch (quirk->type) {
+        case VFIO_ASCEND_TYPE_XLOADER:
+            value = vfio_region_read(&vdev->bars[quirk->bar].region,
+                                     addr + quirk->offset, size);
+            break;
+		case VFIO_ASCEND_TYPE_VIRT_MSG:
+			// A long bar quirk space to inform the guest driver virt information
+			value = read_virt_msg(quirk, addr, size);
+			break;
+        default:
+            qemu_log("read RO region error type! addr=0x%" HWADDR_PRIx ", size=%d\n",
+                     addr + quirk->offset, size);
+            return 0;
+    }
+
+    return value;
 }
 
 static void vfio_ascend_quirk_write(void *opaque, hwaddr addr,
@@ -1262,6 +1320,49 @@ static void vfio_ascend_quirk_write(void *opaque, hwaddr addr,
             addr + quirk->offset, data, size);
 }
 
+/*
+ * Virtualization-related quirk region.(LITTLE_ENDIAN)
+ * The information for each field is as follows:
+ * |    field    | offset | length |                  usage                  |
+ * |   version   | 0x0    | 0x4    | Provides version control for drivers    |
+ * |  numa_node  | 0x4    | 0x4    | Notifying Guest OS of NPU NUMA Affinity |
+ */
+static void vfio_ascend_prepare_virt_msg(VFIOAscendBarQuirk *bar_quirk)
+{
+    VFIOPCIDevice *vdev = bar_quirk->vdev;
+    uint8_t *virt_msg_ptr;
+    uint32_t val;
+
+    memset(bar_quirk->virt_msg, 0, ASCEND910B_VIRT_MSG_SIZE);
+
+    /* Declares the virt_msg fields */
+    uint32_t version = ASCEND910B_VIRT_MSG_VERSION;
+    uint32_t numa_node = (uint32_t)vfio_get_dev_node(vdev->vbasedev.sysfsdev);
+    numa_node = (numa_node == NUMA_NODE_UNASSIGNED) ? -1 : numa_node;
+
+    virt_msg_ptr = &bar_quirk->virt_msg[ASCEND910B_VIRT_MSG_VERSION_OFF];
+    val = cpu_to_le32(version);
+    memcpy(virt_msg_ptr, &val, ASCEND910B_VIRT_MSG_VERSION_LEN);
+
+    virt_msg_ptr = &bar_quirk->virt_msg[ASCEND910B_VIRT_MSG_NUMA_OFF];
+    val = cpu_to_le32((uint32_t)numa_node);
+    memcpy(virt_msg_ptr, &val, ASCEND910B_VIRT_MSG_NUMA_LEN);
+
+    virt_msg_ptr += ASCEND910B_VIRT_MSG_NUMA_LEN;
+    bar_quirk->virt_msg_used_size = ((uint64_t)virt_msg_ptr - (uint64_t)bar_quirk->virt_msg);
+}
+
+static void vfio_ascend_set_bar_quirk_array(VFIOAscendBarQuirk *bar_quirk,
+                                            VFIOPCIDevice *vdev, int index,
+                                            pcibus_t offset, int type,
+                                            uint8_t bar)
+{
+    bar_quirk[index].vdev = vdev;
+    bar_quirk[index].offset = offset;
+    bar_quirk[index].type = type;
+    bar_quirk[index].bar = bar;
+}
+
 static const MemoryRegionOps vfio_ascend_intercept_regs_quirk = {
     .read = vfio_ascend_quirk_read,
     .write = vfio_ascend_quirk_write,
@@ -1272,7 +1373,8 @@ static void vfio_probe_ascend910b_bar2_quirk(VFIOPCIDevice *vdev, int nr)
 {
     VFIOQuirk *quirk;
     VFIOAscendBarQuirk *bar2_quirk;
-    const int quirk_region_num = 1; /* XLOADER */
+    const int quirk_region_num = 2; /* XLOADER and VIRT_MSG */
+	int nr_quirk = 0;
 
     if (vdev->vendor_id != PCI_VENDOR_ID_HUAWEI || nr != 2 ||
         vdev->device_id != PCI_DEVICE_ID_ASCEND910B) {
@@ -1280,23 +1382,38 @@ static void vfio_probe_ascend910b_bar2_quirk(VFIOPCIDevice *vdev, int nr)
     }
 
     quirk = vfio_quirk_alloc(quirk_region_num);
-
     bar2_quirk = quirk->data = g_new0(typeof(*bar2_quirk), quirk->nr_mem);
-    bar2_quirk[0].vdev = vdev;
-    bar2_quirk[0].offset = ASCEND910B_XLOADER_OFFSET;
-    bar2_quirk[0].bar = nr;
 
     /* intercept w/r to the xloader-updating register,
      * so the vm can't enable xloader-updating
      */
-    memory_region_init_io(&quirk->mem[0], OBJECT(vdev),
+    vfio_ascend_set_bar_quirk_array(bar2_quirk, vdev, nr_quirk, ASCEND910B_XLOADER_OFFSET,
+                                    VFIO_ASCEND_TYPE_XLOADER, nr);
+
+    memory_region_init_io(&quirk->mem[nr_quirk], OBJECT(vdev),
                           &vfio_ascend_intercept_regs_quirk,
-                          &bar2_quirk[0],
+                          &bar2_quirk[nr_quirk],
                           "vfio-ascend910b-bar2-intercept-regs-quirk",
                           ASCEND910B_XLOADER_SIZE);
     memory_region_add_subregion_overlap(vdev->bars[nr].region.mem,
-                                        bar2_quirk[0].offset,
-                                        &quirk->mem[0], 1);
+                                        bar2_quirk[nr_quirk].offset,
+                                        &quirk->mem[nr_quirk], 1);
+
+    /* 910B VIRT_MSG */
+	nr_quirk++;
+    vfio_ascend_set_bar_quirk_array(bar2_quirk, vdev, nr_quirk, ASCEND910B_VIRT_MSG_OFFSET,
+                                    VFIO_ASCEND_TYPE_VIRT_MSG, nr);
+	vfio_ascend_prepare_virt_msg(&bar2_quirk[nr_quirk]);
+
+    memory_region_init_io(&quirk->mem[nr_quirk], OBJECT(vdev),
+                          &vfio_ascend_intercept_regs_quirk,
+                          &bar2_quirk[nr_quirk],
+                          "vfio-ascend910b-bar2-virt-msg-regs-quirk",
+                          ASCEND910B_VIRT_MSG_SIZE);
+    memory_region_add_subregion_overlap(vdev->bars[nr].region.mem,
+                                        bar2_quirk[nr_quirk].offset,
+                                        &quirk->mem[nr_quirk], 1);
+
     QLIST_INSERT_HEAD(&vdev->bars[nr].quirks, quirk, next);
 }
 
@@ -1314,9 +1431,8 @@ static void vfio_probe_ascend910_bar0_quirk(VFIOPCIDevice *vdev, int nr)
     quirk->nr_mem = 1;
     quirk->mem = g_new0(MemoryRegion, quirk->nr_mem);
     bar0_quirk = quirk->data = g_new0(typeof(*bar0_quirk), quirk->nr_mem);
-    bar0_quirk[0].vdev = vdev;
-    bar0_quirk[0].offset = ASCEND910_XLOADER_OFFSET;
-    bar0_quirk[0].bar = nr;
+    vfio_ascend_set_bar_quirk_array(bar0_quirk, vdev, 0, ASCEND910_XLOADER_OFFSET,
+                                    VFIO_ASCEND_TYPE_XLOADER, nr);
 
     /*
      * intercept w/r to the xloader-updating register,
@@ -1378,6 +1494,7 @@ static void virtcca_vfio_probe_ascend710_bar2_quirk(VFIOPCIDevice *vdev, VFIOQui
                                                     VFIOAscendBarQuirk *bar2_quirk, int devnum, int nr)
 {
     bar2_quirk[0].offset = ASCEND710_LARGE_TEST_OFFSET;
+    bar2_quirk[0].type = VFIO_ASCEND_TYPE_LARGE_TEST;
 
     memory_region_init_io(&quirk->mem[0], OBJECT(vdev),
                           &virtcca_vfio_710_ascend_intercept_bar2_regs_quirk,
@@ -1389,9 +1506,9 @@ static void virtcca_vfio_probe_ascend710_bar2_quirk(VFIOPCIDevice *vdev, VFIOQui
                                         &quirk->mem[0], 1);
 
     if (devnum == ASCEND710_2P_DEVNUM) {
-        bar2_quirk[1].vdev = vdev;
-        bar2_quirk[1].offset = (ASCEND710_2P_BASE + ASCEND710_LARGE_TEST_OFFSET);
-        bar2_quirk[1].bar = nr;
+        vfio_ascend_set_bar_quirk_array(bar2_quirk, vdev, 1,
+                                        ASCEND710_2P_BASE + ASCEND710_LARGE_TEST_OFFSET,
+                                        VFIO_ASCEND_TYPE_LARGE_TEST, nr);
 
         memory_region_init_io(&quirk->mem[1], OBJECT(vdev),
                               &virtcca_vfio_710_ascend_intercept_bar2_regs_quirk,
@@ -1435,9 +1552,8 @@ static void vfio_probe_ascend710_bar2_quirk(VFIOPCIDevice *vdev, int nr)
     quirk->nr_mem = devnum;
     quirk->mem = g_new0(MemoryRegion, quirk->nr_mem);
     bar2_quirk = quirk->data = g_new0(typeof(*bar2_quirk), quirk->nr_mem);
-    bar2_quirk[0].vdev = vdev;
-    bar2_quirk[0].offset = ASCEND710_XLOADER_OFFSET;
-    bar2_quirk[0].bar = nr;
+    vfio_ascend_set_bar_quirk_array(bar2_quirk, vdev, 0, ASCEND710_XLOADER_OFFSET,
+                                    VFIO_ASCEND_TYPE_XLOADER, nr);
 
     if (virtcca_cvm_enabled()) {
         return virtcca_vfio_probe_ascend710_bar2_quirk(vdev, quirk, bar2_quirk, devnum, nr);
@@ -1457,9 +1573,9 @@ static void vfio_probe_ascend710_bar2_quirk(VFIOPCIDevice *vdev, int nr)
                                         &quirk->mem[0], 1);
 
     if (devnum == ASCEND710_2P_DEVNUM) {
-        bar2_quirk[1].vdev = vdev;
-        bar2_quirk[1].offset = (ASCEND710_2P_BASE + ASCEND710_XLOADER_OFFSET);
-        bar2_quirk[1].bar = nr;
+        vfio_ascend_set_bar_quirk_array(bar2_quirk, vdev, 1,
+                                        ASCEND710_2P_BASE + ASCEND710_XLOADER_OFFSET,
+                                        VFIO_ASCEND_TYPE_XLOADER, nr);
 
         memory_region_init_io(&quirk->mem[1], OBJECT(vdev),
                               &vfio_ascend_intercept_regs_quirk,
@@ -1488,9 +1604,8 @@ static void vfio_probe_ascend310_bar4_quirk(VFIOPCIDevice *vdev, int nr)
     quirk->nr_mem = 1;
     quirk->mem = g_new0(MemoryRegion, quirk->nr_mem);
     bar4_quirk = quirk->data = g_new0(typeof(*bar4_quirk), quirk->nr_mem);
-    bar4_quirk[0].vdev = vdev;
-    bar4_quirk[0].offset = ASCEND310_XLOADER_OFFSET;
-    bar4_quirk[0].bar = nr;
+    vfio_ascend_set_bar_quirk_array(bar4_quirk, vdev, 0, ASCEND310_XLOADER_OFFSET,
+                                   VFIO_ASCEND_TYPE_XLOADER, nr);
 
     /*
      * intercept w/r to the xloader-updating register,

@@ -234,6 +234,8 @@ void vfio_display_reset(VFIOPCIDevice *vdev);
 int vfio_display_probe(VFIOPCIDevice *vdev, Error **errp);
 void vfio_display_finalize(VFIOPCIDevice *vdev);
 
+uint8_t vfio_get_dev_node(char *sysfsdev);
+
 extern const VMStateDescription vfio_display_vmstate;
 
 bool get_vfio_dev_bdf(uint16_t guest_dev_bdf, uint16_t *host_dev_bdf);
