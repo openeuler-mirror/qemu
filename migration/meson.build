@@ -44,8 +44,7 @@ if get_option('replication').allowed()
 endif
 
 if have_virtcca_migration
-  specific_ss.add(files('cgs.c',
-                      'cgs-virtcca.c'))
+  specific_ss.add(when: 'TARGET_AARCH64', if_true: files('cgs.c', 'cgs-virtcca.c'))
 endif
 
 system_ss.add(when: rdma, if_true: files('rdma.c'))

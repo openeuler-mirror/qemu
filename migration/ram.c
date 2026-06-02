@@ -735,6 +735,7 @@ static int save_xbzrle_page(RAMState *rs, PageSearchStatus *pss,
 }
 
 #ifdef CONFIG_VIRTCCA_MIGRATION
+#ifdef CONFIG_KVM
 static hwaddr virtcca_ram_get_private_gpa(RAMBlock *rb, unsigned long page)
 {
     int ret;
@@ -768,6 +769,7 @@ static hwaddr virtcca_ram_get_private_gpa(RAMBlock *rb, unsigned long page)
 
     return gpa;
 }
+#endif
 #endif
 
 /**
@@ -2426,6 +2428,7 @@ static int virtcca_save_target_page(ram_addr_t offset, RAMState *rs, PageSearchS
     return 1;
 }
 
+#ifdef CONFIG_KVM
 bool virtcca_is_swiotlb(void *host)
 {
     hwaddr cgs_private_gpa;
@@ -2440,6 +2443,12 @@ bool virtcca_is_swiotlb(void *host)
 
     return false;
 }
+#else
+bool virtcca_is_swiotlb(void *host)
+{
+    return false;
+}
+#endif
 
 
 /* enable the CGS state in the ram header and the CGS epoch in the ram header */
