@@ -1563,6 +1563,21 @@ static void qemu_ram_setup_dump(void *addr, ram_addr_t size)
                             "but dump_guest_core=off specified\n");
         }
     }
+
+    if (machine_dump_guest_core(current_machine) && kvm_arm_rme_enabled()) {
+        static bool warned_realm_dump;
+
+        ret = qemu_madvise(addr, size, QEMU_MADV_DONTDUMP);
+        if (ret) {
+            perror("qemu_madvise");
+            fprintf(stderr, "madvise doesn't support MADV_DONTDUMP, "
+                            "but realm confidential vm is started with "
+                            "dump_guest_core=on\n");
+        } else if (!warned_realm_dump) {
+            info_report("RME: disable guest RAM core dump for CCA Realm VM\n");
+            warned_realm_dump = true;
+        }
+    }
 }
 
 const char *qemu_ram_get_idstr(RAMBlock *rb)
