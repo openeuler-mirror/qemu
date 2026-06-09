@@ -96,6 +96,7 @@ static bool vfio_multiple_devices_migration_is_supported(void)
     VFIODevice *vbasedev;
     unsigned int device_num = 0;
     bool all_support_p2p = true;
+    bool all_do_not_support_p2p = true;
 
     QLIST_FOREACH(vbasedev, &vfio_device_list, global_next) {
         if (vbasedev->migration) {
@@ -104,10 +105,14 @@ static bool vfio_multiple_devices_migration_is_supported(void)
             if (!(vbasedev->migration->mig_flags & VFIO_MIGRATION_P2P)) {
                 all_support_p2p = false;
             }
+
+            if (vbasedev->migration->mig_flags & VFIO_MIGRATION_P2P) {
+                all_do_not_support_p2p = false;
+            }
         }
     }
 
-    return all_support_p2p || device_num <= 1;
+    return all_support_p2p || device_num <= 1 || all_do_not_support_p2p;
 }
 
 int vfio_block_multiple_devices_migration(VFIODevice *vbasedev, Error **errp)
