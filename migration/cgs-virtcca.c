@@ -690,6 +690,7 @@ static int virtcca_mig_stream_setup(uint32_t nr_channels, uint32_t nr_pages)
         if (!ret) {
             virtCCA_mig.nr_streams++;
         } else {
+	    	virtcca_mig_cleanup();
             return ret;
         }
     }
