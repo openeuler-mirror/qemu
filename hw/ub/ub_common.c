@@ -449,10 +449,6 @@ char *line_generator(uint8_t len)
     }
 
     line = g_malloc0(len * DASH_SZ + 1);
-    if (!line) {
-        qemu_log("failed to alloc mem %d", len * DASH_SZ + 1);
-        return NULL;
-    }
     for (i = 0, j = 0; i < len; i++) {
         line[j++] = '\xE2';
         line[j++] = '\x80';
