@@ -1012,6 +1012,8 @@ void x86_cpu_vendor_words2str(char *dst, uint32_t vendor1,
 
 #define TCG_8000_0008_EBX  (CPUID_8000_0008_EBX_XSAVEERPTR | \
           CPUID_8000_0008_EBX_WBNOINVD | CPUID_8000_0008_EBX_KERNEL_FEATURES)
+#define TCG_8000_001A_EAX (CPUID_8000_001A_EAX_FP128 | \
+                           CPUID_8000_001A_EAX_MOVU | CPUID_8000_001A_EAX_FP256)
 
 FeatureWordInfo feature_word_info[FEATURE_WORDS] = {
     [FEAT_1_EDX] = {
@@ -1327,6 +1329,22 @@ FeatureWordInfo feature_word_info[FEATURE_WORDS] = {
         .tcg_features = TCG_8000_0008_EBX,
         .unmigratable_flags = 0,
     },
+    [FEAT_8000_001A_EAX] = {
+        .type = CPUID_FEATURE_WORD,
+        .feat_names = {
+            "fp128", "movu", "fp256", NULL,
+            NULL, NULL, NULL, NULL,
+            NULL, NULL, NULL, NULL,
+            NULL, NULL, NULL, NULL,
+            NULL, NULL, NULL, NULL,
+            NULL, NULL, NULL, NULL,
+            NULL, NULL, NULL, NULL,
+            NULL, NULL, NULL, NULL,
+        },
+        .cpuid = { .eax = 0x8000001A, .reg = R_EAX, },
+        .tcg_features = TCG_8000_001A_EAX,
+        .unmigratable_flags = 0,
+    },
     [FEAT_8000_0021_EAX] = {
         .type = CPUID_FEATURE_WORD,
         .feat_names = {
@@ -1340,6 +1358,22 @@ FeatureWordInfo feature_word_info[FEATURE_WORDS] = {
             NULL, NULL, NULL, NULL,
         },
         .cpuid = { .eax = 0x80000021, .reg = R_EAX, },
+        .tcg_features = 0,
+        .unmigratable_flags = 0,
+    },
+    [FEAT_8C86_0000_EDX] = {
+        .type = CPUID_FEATURE_WORD,
+        .feat_names = {
+            NULL, "hygon-sm3", "hygon-sm4", NULL,
+            NULL, NULL, NULL, NULL,
+            NULL, NULL, NULL, NULL,
+            NULL, NULL, NULL, NULL,
+            NULL, NULL, NULL, NULL,
+            NULL, NULL, NULL, NULL,
+            NULL, NULL, NULL, NULL,
+            NULL, NULL, NULL, NULL,
+        },
+        .cpuid = { .eax = 0x8C860000, .reg = R_EDX, },
         .tcg_features = 0,
         .unmigratable_flags = 0,
     },
@@ -5970,6 +6004,25 @@ static const X86CPUDefinition builtin_x86_defs[] = {
         .xlevel = 0x8000001E,
         .model_id = "Hygon Dharma Processor",
         .cache_info = &dharma_cache_info,
+        .versions = (X86CPUVersionDefinition[]) {
+            { .version = 1 },
+            {
+              .version = 2,
+              .props = (PropValue[]) {
+                  { "tsc-adjust", "on" },
+                  { "hygon-sm3", "on" },
+                  { "hygon-sm4", "on" },
+                  { "movu", "on" },
+                  { "fp256", "on" },
+                  { "xsaves", "on" },
+                  { "model-id",
+                     "Hygon Dharma-v2 processor" },
+                  { /* end of list */ }
+              },
+            },
+            { /* end of list */ }
+        },
+
     },
     {
         .name = "Chengdu",
@@ -6030,6 +6083,24 @@ static const X86CPUDefinition builtin_x86_defs[] = {
         .xlevel = 0x80000020,
         .model_id = "Hygon Chengdu Processor",
         .cache_info = &dharma_cache_info,
+        .versions = (X86CPUVersionDefinition[]) {
+            { .version = 1 },
+            {
+              .version = 2,
+              .props = (PropValue[]) {
+                  { "avx512-vp2intersect", "on"},
+                  { "hygon-sm3", "on" },
+                  { "hygon-sm4", "on" },
+                  { "movu", "on" },
+                  { "fp256", "on" },
+                  { "xsaves", "on" },
+                  { "model-id",
+                     "Hygon Chengdu-v2 processor" },
+                  { /* end of list */ }
+              },
+            },
+            { /* end of list */ }
+        },
     },
 };
 
@@ -7165,6 +7236,14 @@ void cpu_x86_cpuid(CPUX86State *env, uint32_t index, uint32_t count,
     X86CPUTopoInfo *topo_info = &env->topo_info;
     uint32_t threads_per_pkg;
 
+    if (index == 0x8C860000) {
+        *edx = env->features[FEAT_8C86_0000_EDX];
+        *eax = 0x8C860000;
+        *ebx = 0;
+        *ecx = 0;
+        return;
+    }
+
     threads_per_pkg = x86_threads_per_pkg(topo_info);
 
     /* Calculate & apply limits for different index ranges */
@@ -7796,6 +7875,9 @@ void cpu_x86_cpuid(CPUX86State *env, uint32_t index, uint32_t count,
             *ecx = 0;
             *edx = 0;
         }
+        break;
+    case 0x8000001A:
+        *eax = env->features[FEAT_8000_001A_EAX];
         break;
     case 0x8000001D:
 	/* Populate AMD Processor Cache Information */
