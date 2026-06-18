@@ -1119,3 +1119,12 @@ int kvm_loongarch_set_interrupt(LoongArchCPU *cpu, int irq, int level)
 void kvm_arch_accel_class_init(ObjectClass *oc)
 {
 }
+
+#ifdef CONFIG_UB
+int kvm_arch_fixup_usi_route(struct kvm_irq_routing_entry *route,
+                             uint64_t address, uint32_t data, UBDevice *dev)
+{
+    return -ENOSYS;
+}
+#endif // CONFIG_UB
+
