@@ -383,6 +383,7 @@ static GArray *load_expected_aml(test_data *data)
     GError *error = NULL;
     gboolean ret;
     gsize aml_len;
+    char *next_dot;
 
     GArray *exp_tables = g_array_new(false, true, sizeof(AcpiSdtTable));
     if (verbosity_level >= 2) {
@@ -406,9 +407,19 @@ try_again:
         if (g_file_test(aml_file, G_FILE_TEST_EXISTS)) {
             exp_sdt.aml_file = aml_file;
         } else if (*ext != '\0') {
-            /* try fallback to generic (extension less) expected file */
-            ext = "";
+            /*
+             * Progressive fallback by stripping dot-separated segments from
+             * the left, one at a time.  For example:
+             *   ".ub.acpihmatvirt" -> ".acpihmatvirt" -> ""
+             *   ".ub.memhp"        -> ".memhp"         -> ""
+             */
             g_free(aml_file);
+            next_dot = strchr(ext + 1, '.');
+            if (next_dot) {
+                ext = next_dot;
+            } else {
+                ext = "";
+            }
             goto try_again;
         }
         g_assert(exp_sdt.aml_file);
@@ -1570,6 +1581,9 @@ static void test_acpi_virt_tcg_memhp(void)
     };
 
     data.variant = ".memhp";
+#ifdef CONFIG_UB
+    data.variant = ".ub.memhp";
+#endif
     test_acpi_one(" -machine nvdimm=on"
                   " -cpu cortex-a57"
                   " -m 256M,slots=3,maxmem=1G"
@@ -1663,6 +1677,9 @@ static void test_acpi_virt_tcg_numamem(void)
     };
 
     data.variant = ".numamem";
+#ifdef CONFIG_UB
+    data.variant = ".ub.numamem";
+#endif
     test_acpi_one(" -cpu cortex-a57"
                   " -object memory-backend-ram,id=ram0,size=128M"
                   " -numa node,memdev=ram0",
@@ -1690,6 +1707,9 @@ static void test_acpi_virt_tcg_pxb(void)
      * to solve the conflicts.
      */
     data.variant = ".pxb";
+#ifdef CONFIG_UB
+    data.variant = ".ub.pxb";
+#endif
     test_acpi_one(" -device pcie-root-port,chassis=1,id=pci.1"
                   " -device virtio-scsi-pci,id=scsi0,bus=pci.1"
                   " -drive file="
@@ -1758,6 +1778,9 @@ static void test_acpi_virt_tcg_acpi_hmat(void)
     };
 
     data.variant = ".acpihmatvirt";
+#ifdef CONFIG_UB
+    data.variant = ".ub.acpihmatvirt";
+#endif
 
     test_acpi_one(" -machine hmat=on"
                   " -cpu cortex-a57"
@@ -1913,6 +1936,10 @@ static void test_acpi_virt_tcg(void)
         .scan_len = 128ULL * 1024 * 1024,
     };
 
+#ifdef CONFIG_UB
+    data.variant = ".ub";
+#endif
+
     data.smbios_cpu_max_speed = 2900;
     data.smbios_cpu_curr_speed = 2700;
     test_acpi_one("-cpu cortex-a57 "
@@ -1932,6 +1959,10 @@ static void test_acpi_virt_tcg_topology(void)
         .ram_start = 0x40000000ULL,
         .scan_len = 128ULL * 1024 * 1024,
     };
+
+#ifdef CONFIG_UB
+    data.variant = ".ub.topology";
+#endif
 
     test_acpi_one("-cpu cortex-a57 "
                   "-smp sockets=1,clusters=2,cores=2,threads=2", &data);
@@ -2015,6 +2046,9 @@ static void test_acpi_virt_viot(void)
         .scan_len = 128ULL * 1024 * 1024,
     };
 
+#ifdef CONFIG_UB
+    data.variant = ".ub";
+#endif
     test_acpi_one("-cpu cortex-a57 "
                   "-device virtio-iommu-pci", &data);
     free_test_data(&data);
@@ -2147,6 +2181,10 @@ static void test_acpi_virt_oem_fields(void)
         .scan_len = 128ULL * 1024 * 1024,
     };
     char *args;
+
+#ifdef CONFIG_UB
+    data.variant = ".ub";
+#endif
 
     args = test_acpi_create_args(&data, "-cpu cortex-a57 "OEM_TEST_ARGS);
     data.qts = qtest_init(args);
