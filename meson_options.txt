@@ -293,7 +293,7 @@ option('pipewire', type: 'feature', value: 'auto',
 option('sndio', type: 'feature', value: 'auto',
        description: 'sndio sound support')
 
-option('ub', type: 'feature', value: 'auto',
+option('ub', type: 'feature', value: 'disabled',
        description: 'unify bus support')
 option('ubmem_vmmu', type: 'feature', value: 'auto',
        description: 'UBMEM VMMU device support')
