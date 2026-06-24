@@ -74,7 +74,7 @@ uint32_t fill_cq(BusControllerState *s, HiMsgCqe *cqe)
     }
 
     if (!s->msgq.cq_base_addr_gpa) {
-        qemu_log("sq_base_addr_gpa is NULL\n");
+        qemu_log("cq_base_addr_gpa is NULL\n");
         return UINT32_MAX;
     }
 

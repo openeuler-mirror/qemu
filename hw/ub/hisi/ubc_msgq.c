@@ -140,7 +140,7 @@ static void (*msgq_handlers[])(void *opaque, HiMsgSqe *sqe, void *payload) = {
 
 static bool paddr_is_validate(BusControllerState *s, uint32_t paddr)
 {
-    uint32_t payload_start_offset = s->msgq.sq_depth * HI_MSG_SQE_SIZE;;
+    uint32_t payload_start_offset = s->msgq.sq_depth * HI_MSG_SQE_SIZE;
     uint32_t payload_end_offset = s->msgq.sq_sz;
 
     if (paddr < payload_start_offset || paddr > payload_end_offset - HI_MSG_SQE_PLD_SIZE) {
@@ -430,7 +430,7 @@ void msgq_rq_init(void *opaque)
     }
 
     if (rq_base_addr_gpa == 0) {
-        qemu_log("invalid cq_base_addr_gpa is 0\n");
+        qemu_log("invalid rq_base_addr_gpa is 0\n");
         return;
     }
 
