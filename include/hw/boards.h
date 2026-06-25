@@ -425,6 +425,7 @@ struct MachineState {
     SmpCache smp_cache;
     struct NVDIMMState *nvdimms_state;
     struct NumaState *numa_state;
+    bool acpi_spcr_enabled;
 
     uint32_t target_ipml_cpu_num;
     void *target_ipml_cpu;

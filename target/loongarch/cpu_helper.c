@@ -238,3 +238,10 @@ hwaddr loongarch_cpu_get_phys_page_debug(CPUState *cs, vaddr addr)
     }
     return phys_addr;
 }
+
+uint64_t loongarch_palen_mask(CPULoongArchState *env)
+{
+    /* PALEN stores physical address bits - 1 */
+    uint64_t phys_bits = FIELD_EX32(env->cpucfg[1], CPUCFG1, PALEN) + 1;
+    return MAKE_64BIT_MASK(0, phys_bits);
+}

@@ -20,27 +20,6 @@
 #include "cpu-qom.h"
 #include "qapi/qapi-types-common.h"
 
-#define IOCSRF_TEMP             0
-#define IOCSRF_NODECNT          1
-#define IOCSRF_MSI              2
-#define IOCSRF_EXTIOI           3
-#define IOCSRF_CSRIPI           4
-#define IOCSRF_FREQCSR          5
-#define IOCSRF_FREQSCALE        6
-#define IOCSRF_DVFSV1           7
-#define IOCSRF_GMOD             9
-#define IOCSRF_VM               11
-
-#define VERSION_REG             0x0
-#define FEATURE_REG             0x8
-#define VENDOR_REG              0x10
-#define CPUNAME_REG             0x20
-#define MISC_FUNC_REG           0x420
-#define IOCSRM_EXTIOI_EN        48
-#define IOCSRM_EXTIOI_INT_ENCODE  49
-
-#define IOCSR_MEM_SIZE          0x428
-
 #define TCG_GUEST_DEFAULT_MO (0)
 
 #define FCSR0_M1    0x1f         /* FCSR1 mask, Enables */
@@ -119,7 +98,15 @@ FIELD(FCSR0, CAUSE, 24, 5)
 #define  EXCCODE_DBP                 EXCODE(26, 0) /* Reserved subcode used for debug */
 
 /* cpucfg[0] bits */
-FIELD(CPUCFG0, PRID, 0, 32)
+FIELD(CPUCFG0, PRID, 0, 12)
+FIELD(CPUCFG0, SERID, 12, 4)
+FIELD(CPUCFG0, VENID, 16, 8)
+#define PRID_SERIES_LA132            0x8  /* Loongson 32bit */
+#define PRID_SERIES_LA264            0xa  /* Loongson 64bit, 2-issue */
+#define PRID_SERIES_LA364            0xb  /* Loongson 64bit, 3-issue */
+#define PRID_SERIES_LA464            0xc  /* Loongson 64bit, 4-issue */
+#define PRID_SERIES_LA664            0xd  /* Loongson 64bit, 6-issue */
+#define PRID_VENDOR_LOONGSON         0x14
 
 /* cpucfg[1] bits */
 FIELD(CPUCFG1, ARCH, 0, 2)
@@ -132,7 +119,7 @@ FIELD(CPUCFG1, RI, 21, 1)
 FIELD(CPUCFG1, EP, 22, 1)
 FIELD(CPUCFG1, RPLV, 23, 1)
 FIELD(CPUCFG1, HP, 24, 1)
-FIELD(CPUCFG1, IOCSR_BRD, 25, 1)
+FIELD(CPUCFG1, CRC, 25, 1)
 FIELD(CPUCFG1, MSG_INT, 26, 1)
 
 /* cpucfg[1].arch */
@@ -159,6 +146,13 @@ FIELD(CPUCFG2, LBT_MIPS, 20, 1)
 FIELD(CPUCFG2, LBT_ALL, 18, 3)
 FIELD(CPUCFG2, LSPW, 21, 1)
 FIELD(CPUCFG2, LAM, 22, 1)
+FIELD(CPUCFG2, HPTW, 24, 1)
+FIELD(CPUCFG2, FRECIPE, 25, 1)
+FIELD(CPUCFG2, DIV32, 26, 1)
+FIELD(CPUCFG2, LAM_BH, 27, 1)
+FIELD(CPUCFG2, LAMCAS, 28, 1)
+FIELD(CPUCFG2, LLACQ_SCREL, 29, 1)
+FIELD(CPUCFG2, SCQ, 30, 1)
 
 /* cpucfg[3] bits */
 FIELD(CPUCFG3, CCDMA, 0, 1)
@@ -173,6 +167,13 @@ FIELD(CPUCFG3, SPW_LVL, 8, 3)
 FIELD(CPUCFG3, SPW_HP_HF, 11, 1)
 FIELD(CPUCFG3, RVA, 12, 1)
 FIELD(CPUCFG3, RVAMAX, 13, 4)
+FIELD(CPUCFG3, DBAR_HINTS, 17, 1)
+FIELD(CPUCFG3, ALDORDER_CAP, 18, 1)
+FIELD(CPUCFG3, ASTORDER_CAP, 19, 1)
+FIELD(CPUCFG3, ALDORDER_STA, 20, 1)
+FIELD(CPUCFG3, ASTORDER_STA, 21, 1)
+FIELD(CPUCFG3, SLDORDER_CAP, 22, 1)
+FIELD(CPUCFG3, SLDORDER_STA, 23, 1)
 
 /* cpucfg[4] bits */
 FIELD(CPUCFG4, CC_FREQ, 0, 32)
@@ -241,10 +242,12 @@ FIELD(CSR_CRMD, WE, 9, 1)
 extern const char * const regnames[32];
 extern const char * const fregnames[32];
 
-#define N_IRQS      13
+#define N_IRQS      15
 #define IRQ_TIMER   11
 #define IRQ_IPI     12
+#define INT_DMSI    14
 
+#define MAX_PERF_EVENTS        16
 #define LOONGARCH_STLB         2048 /* 2048 STLB */
 #define LOONGARCH_MTLB         64   /* 64 MTLB */
 #define LOONGARCH_TLB_MAX      (LOONGARCH_STLB + LOONGARCH_MTLB)
@@ -256,6 +259,13 @@ FIELD(TLB_MISC, E, 0, 1)
 FIELD(TLB_MISC, ASID, 1, 10)
 FIELD(TLB_MISC, VPPN, 13, 35)
 FIELD(TLB_MISC, PS, 48, 6)
+
+/*Msg interrupt registers */
+#define N_MSGIS                4
+FIELD(CSR_MSGIS, IS, 0, 63)
+FIELD(CSR_MSGIR, INTNUM, 0, 8)
+FIELD(CSR_MSGIR, ACTIVE, 31, 1)
+FIELD(CSR_MSGIE, PT, 0, 8)
 
 #define LSX_LEN    (128)
 #define LASX_LEN   (256)
@@ -288,8 +298,13 @@ typedef struct LoongArchTLB LoongArchTLB;
 #endif
 
 enum loongarch_features {
+    LOONGARCH_FEATURE_LSX,
+    LOONGARCH_FEATURE_LASX,
     LOONGARCH_FEATURE_LBT, /* loongson binary translation extension */
     LOONGARCH_FEATURE_PMU,
+    LOONGARCH_FEATURE_PV_IPI,
+    LOONGARCH_FEATURE_STEALTIME,
+    LOONGARCH_FEATURE_PTW,
 };
 
 typedef struct  LoongArchBT {
@@ -303,6 +318,10 @@ typedef struct  LoongArchBT {
     uint32_t ftop;
 } lbt_t;
 
+#define CPU_VENDOR_LOONGSON   "Loongson"
+#define CPU_MODEL_3A5000      "3A5000"
+#define CPU_MODEL_1C101       "1C101"
+
 typedef struct CPUArchState {
     uint64_t gpr[32];
     uint64_t pc;
@@ -313,6 +332,9 @@ typedef struct CPUArchState {
     lbt_t  lbt;
 
     uint32_t cpucfg[21];
+    uint32_t pv_features;
+    uint64_t vendor_id;
+    uint64_t cpu_id;
 
     /* LoongArch CSRs */
     uint64_t CSR_CRMD;
@@ -366,18 +388,28 @@ typedef struct CPUArchState {
     uint64_t CSR_MERRSAVE;
     uint64_t CSR_CTAG;
     uint64_t CSR_DMW[4];
+    uint64_t CSR_PERFCTRL[MAX_PERF_EVENTS];
+    uint64_t CSR_PERFCNTR[MAX_PERF_EVENTS];
     uint64_t CSR_DBG;
     uint64_t CSR_DERA;
     uint64_t CSR_DSAVE;
+    /* Msg interrupt registers */
+    uint64_t CSR_MSGIS[N_MSGIS];
+    uint64_t CSR_MSGIR;
+    uint64_t CSR_MSGIE;
     struct {
         uint64_t guest_addr;
     } stealtime;
+    uint32_t perf_event_num;
 
 #ifdef CONFIG_TCG
     float_status fp_status;
     uint32_t fcsr0_mask;
     uint64_t lladdr; /* LL virtual address compared against SC */
     uint64_t llval;
+    uint64_t llval_high; /* For 128-bit atomic SC.Q */
+    uint64_t llbit_scq; /* Potential LL.D+LD.D+SC.Q sequence in effect */
+    uint64_t hw_pte_mask; /* Mask of architecturally-defined (hardware) PTE bits. */
 #endif
 #ifndef CONFIG_USER_ONLY
 #ifdef CONFIG_TCG
@@ -385,13 +417,7 @@ typedef struct CPUArchState {
 #endif
 
     AddressSpace *address_space_iocsr;
-    bool load_elf;
-    uint64_t elf_address;
     uint32_t mp_state;
-    /* Store ipistate to access from this struct */
-    DeviceState *ipistate;
-
-    struct loongarch_boot_info *boot_info;
 #endif
     struct {
         uint64_t guest_addr;
@@ -418,10 +444,16 @@ struct ArchCPU {
     uint32_t  phy_id;
     OnOffAuto lbt;
     OnOffAuto pmu;
-    int32_t socket_id;  /* socket-id of this VCPU */
-    int32_t core_id;    /* core-id of this VCPU */
-    int32_t thread_id;  /* thread-id of this VCPU */
-    int32_t node_id;    /* NUMA node this CPU belongs to */
+    OnOffAuto ptw;
+    OnOffAuto lsx;
+    OnOffAuto lasx;
+    OnOffAuto msgint;
+    OnOffAuto kvm_pv_ipi;
+    OnOffAuto kvm_steal_time;
+    int32_t socket_id;  /* socket-id of this CPU */
+    int32_t core_id;    /* core-id of this CPU */
+    int32_t thread_id;  /* thread-id of this CPU */
+    int32_t node_id;    /* NUMA node of this CPU */
 
     /* 'compatible' string for this CPU for Linux device trees */
     const char *dtb_compatible;
@@ -522,7 +554,5 @@ void loongarch_cpu_list(void);
 #include "exec/cpu-all.h"
 
 #define CPU_RESOLVING_TYPE TYPE_LOONGARCH_CPU
-
-void loongarch_cpu_post_init(Object *obj);
 
 #endif /* LOONGARCH_CPU_H */

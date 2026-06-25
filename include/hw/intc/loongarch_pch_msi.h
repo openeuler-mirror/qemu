@@ -6,8 +6,9 @@
  */
 
 #include "hw/sysbus.h"
+#include "exec/memory.h"
 
-#define TYPE_LOONGARCH_PCH_MSI     "loongarch_pch_msi"
+#define TYPE_LOONGARCH_PCH_MSI "loongarch_pch_msi"
 OBJECT_DECLARE_SIMPLE_TYPE(LoongArchPCHMSI, LOONGARCH_PCH_MSI)
 
 /* MSI irq start from 32 to 255 */

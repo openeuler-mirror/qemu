@@ -16,13 +16,14 @@
 #include "exec/log.h"
 #include "qemu/qemu-print.h"
 #include "fpu/softfloat.h"
+#include "tcg_loongarch.h"
 #include "translate.h"
 #include "internals.h"
 #include "vec.h"
 
 /* Global register indices */
 TCGv cpu_gpr[32], cpu_pc;
-static TCGv cpu_lladdr, cpu_llval;
+static TCGv cpu_lladdr, cpu_llval, cpu_llval_high, cpu_llbit_scq;
 
 #define HELPER_H "helper.h"
 #include "exec/helper-info.c.inc"
@@ -367,4 +368,12 @@ void loongarch_translate_init(void)
                     offsetof(CPULoongArchState, lladdr), "lladdr");
     cpu_llval = tcg_global_mem_new(tcg_env,
                     offsetof(CPULoongArchState, llval), "llval");
+    cpu_llval_high = tcg_global_mem_new(tcg_env,
+                    offsetof(CPULoongArchState, llval_high), "llval_high");
+    cpu_llbit_scq = tcg_global_mem_new(tcg_env,
+                    offsetof(CPULoongArchState, llbit_scq), "llbit_scq");
+
+#ifndef CONFIG_USER_ONLY
+    loongarch_csr_translate_init();
+#endif
 }

@@ -21,7 +21,6 @@
 #include "sysemu/reset.h"
 
 /* Supported chipsets: */
-#include "hw/pci-host/ls7a.h"
 #include "hw/loongarch/virt.h"
 
 #include "hw/acpi/utils.h"
@@ -128,7 +127,7 @@ build_madt(GArray *table_data, BIOSLinker *linker,
     MachineState *ms = MACHINE(lvms);
     MachineClass *mc = MACHINE_GET_CLASS(ms);
     const CPUArchIdList *arch_ids = mc->possible_cpu_arch_ids(ms);
-    int i, arch_id;
+    int i, arch_id, flags;
     AcpiTable table = { .sig = "APIC", .rev = 1, .oem_id = lvms->oem_id,
                         .oem_table_id = lvms->oem_table_id };
 
@@ -139,8 +138,6 @@ build_madt(GArray *table_data, BIOSLinker *linker,
     build_append_int_noprefix(table_data, 1 /* PCAT_COMPAT */, 4); /* Flags */
 
     for (i = 0; i < arch_ids->len; i++) {
-        uint32_t flags;
-
         /* Processor Core Interrupt Controller Structure */
         arch_id = arch_ids->cpus[i].arch_id;
         flags   = arch_ids->cpus[i].cpu ? 1 : 0;
@@ -294,8 +291,12 @@ spcr_setup(GArray *table_data, BIOSLinker *linker, MachineState *machine)
     };
 
     lvms = LOONGARCH_VIRT_MACHINE(machine);
+    /*
+     * Passing NULL as the SPCR Table for Revision 2 doesn't support
+     * NameSpaceString.
+     */
     build_spcr(table_data, linker, &serial, 2, lvms->oem_id,
-               lvms->oem_table_id);
+               lvms->oem_table_id, NULL);
 }
 
 typedef
@@ -382,18 +383,7 @@ build_la_ged_aml(Aml *dsdt, MachineState *machine)
 
 static void build_pci_device_aml(Aml *scope, LoongArchVirtMachineState *lvms)
 {
-    struct GPEXConfig cfg = {
-        .mmio64.base = VIRT_PCI_MEM_BASE,
-        .mmio64.size = VIRT_PCI_MEM_SIZE,
-        .pio.base    = VIRT_PCI_IO_BASE,
-        .pio.size    = VIRT_PCI_IO_SIZE,
-        .ecam.base   = VIRT_PCI_CFG_BASE,
-        .ecam.size   = VIRT_PCI_CFG_SIZE,
-        .irq         = VIRT_GSI_BASE + VIRT_DEVICE_IRQS,
-        .bus         = lvms->pci_bus,
-    };
-
-    acpi_dsdt_add_gpex(scope, &cfg);
+    acpi_dsdt_add_gpex(scope, &lvms->gpex);
 }
 
 static void build_flash_aml(Aml *scope, LoongArchVirtMachineState *lvms)
@@ -471,6 +461,30 @@ static void acpi_dsdt_add_tpm(Aml *scope, LoongArchVirtMachineState *vms)
 }
 #endif
 
+static void acpi_dsdt_add_rtc(Aml *scope)
+{
+    Aml *dev = aml_device("RTC");
+
+    aml_append(dev, aml_name_decl("_HID", aml_string("LOON0001")));
+    aml_append(dev, aml_name_decl("_UID", aml_int(0)));
+
+    Aml *crs = aml_resource_template();
+    aml_append(crs,
+        aml_qword_memory(AML_POS_DECODE, AML_MIN_FIXED, AML_MAX_FIXED,
+                         AML_NON_CACHEABLE, AML_READ_WRITE,
+                         0, VIRT_RTC_REG_BASE,
+                         VIRT_RTC_REG_BASE + VIRT_RTC_LEN - 1,
+                         0, VIRT_RTC_LEN));
+    /*
+     * The virtual machine model does not support suspend and wake-up,
+     * and rtc is no longer the wake-up source. Therefore, the current
+     * rtc table no longer provides the rtc alarm interrupt number to
+     * avoid the software initializing alarm.
+     */
+    aml_append(dev, aml_name_decl("_CRS", crs));
+    aml_append(scope, dev);
+}
+
 /* build DSDT */
 static void
 build_dsdt(GArray *table_data, BIOSLinker *linker, MachineState *machine)
@@ -483,8 +497,10 @@ build_dsdt(GArray *table_data, BIOSLinker *linker, MachineState *machine)
 
     acpi_table_begin(&table, table_data);
     dsdt = init_aml_allocator();
-    for (i = 0; i < VIRT_UART_COUNT; i++)
+    for (i = 0; i < VIRT_UART_COUNT; i++) {
         build_uart_device_aml(dsdt, i);
+    }
+    acpi_dsdt_add_rtc(dsdt);
     build_pci_device_aml(dsdt, lvms);
     build_la_ged_aml(dsdt, machine);
     build_flash_aml(dsdt, lvms);
@@ -511,7 +527,7 @@ static void acpi_build(AcpiBuildTables *tables, MachineState *machine)
     LoongArchVirtMachineState *lvms = LOONGARCH_VIRT_MACHINE(machine);
     GArray *table_offsets;
     AcpiFadtData fadt_data;
-    unsigned facs, rsdt, dsdt;
+    unsigned facs, xsdt, dsdt;
     uint8_t *u;
     GArray *tables_blob = tables->table_data;
 
@@ -554,7 +570,9 @@ static void acpi_build(AcpiBuildTables *tables, MachineState *machine)
     acpi_add_table(table_offsets, tables_blob);
     build_srat(tables_blob, tables->linker, machine);
     acpi_add_table(table_offsets, tables_blob);
-    spcr_setup(tables_blob, tables->linker, machine);
+
+    if (machine->acpi_spcr_enabled)
+        spcr_setup(tables_blob, tables->linker, machine);
 
     if (machine->numa_state->num_nodes) {
         if (machine->numa_state->have_numa_distance) {
@@ -572,8 +590,8 @@ static void acpi_build(AcpiBuildTables *tables, MachineState *machine)
     acpi_add_table(table_offsets, tables_blob);
     {
         AcpiMcfgInfo mcfg = {
-           .base = cpu_to_le64(VIRT_PCI_CFG_BASE),
-           .size = cpu_to_le64(VIRT_PCI_CFG_SIZE),
+           .base = lvms->gpex.ecam.base,
+           .size = lvms->gpex.ecam.size,
         };
         build_mcfg(tables_blob, tables->linker, &mcfg, lvms->oem_id,
                    lvms->oem_table_id);
@@ -597,17 +615,17 @@ static void acpi_build(AcpiBuildTables *tables, MachineState *machine)
     }
 
     /* RSDT is pointed to by RSDP */
-    rsdt = tables_blob->len;
-    build_rsdt(tables_blob, tables->linker, table_offsets,
+    xsdt = tables_blob->len;
+    build_xsdt(tables_blob, tables->linker, table_offsets,
                lvms->oem_id, lvms->oem_table_id);
 
     /* RSDP is in FSEG memory, so allocate it separately */
     {
         AcpiRsdpData rsdp_data = {
-            .revision = 0,
+            .revision = 2,
             .oem_id = lvms->oem_id,
-            .xsdt_tbl_offset = NULL,
-            .rsdt_tbl_offset = &rsdt,
+            .xsdt_tbl_offset = &xsdt,
+            .rsdt_tbl_offset = NULL,
         };
         build_rsdp(tables->rsdp, tables->linker, &rsdp_data);
     }
@@ -621,7 +639,7 @@ static void acpi_build(AcpiBuildTables *tables, MachineState *machine)
                     " migration may not work",
                     tables_blob->len, ACPI_BUILD_TABLE_SIZE / 2);
         error_printf("Try removing CPUs, NUMA nodes, memory slots"
-                     " or PCI bridges.");
+                     " or PCI bridges.\n");
     }
 
     acpi_align_size(tables->linker->cmd_blob, ACPI_BUILD_ALIGN_SIZE);
@@ -676,13 +694,13 @@ static const VMStateDescription vmstate_acpi_build = {
     .name = "acpi_build",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT8(patched, AcpiBuildState),
         VMSTATE_END_OF_LIST()
     },
 };
 
-static bool loongarch_is_acpi_enabled(LoongArchVirtMachineState *lvms)
+static bool virt_is_acpi_enabled(LoongArchVirtMachineState *lvms)
 {
     if (lvms->acpi == ON_OFF_AUTO_OFF) {
         return false;
@@ -690,7 +708,7 @@ static bool loongarch_is_acpi_enabled(LoongArchVirtMachineState *lvms)
     return true;
 }
 
-void loongarch_acpi_setup(LoongArchVirtMachineState *lvms)
+void virt_acpi_setup(LoongArchVirtMachineState *lvms)
 {
     AcpiBuildTables tables;
     AcpiBuildState *build_state;
@@ -700,7 +718,7 @@ void loongarch_acpi_setup(LoongArchVirtMachineState *lvms)
         return;
     }
 
-    if (!loongarch_is_acpi_enabled(lvms)) {
+    if (!virt_is_acpi_enabled(lvms)) {
         ACPI_BUILD_DPRINTF("ACPI disabled. Bailing out.\n");
         return;
     }

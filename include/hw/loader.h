@@ -103,7 +103,7 @@ ssize_t load_image_gzipped(const char *filename, hwaddr addr, uint64_t max_sz);
  * Returns the size of the decompressed payload if decompression was performed
  * successfully.
  */
-ssize_t unpack_efi_zboot_image(uint8_t **buffer, int *size);
+ssize_t unpack_efi_zboot_image(uint8_t **buffer, ssize_t *size);
 
 #define ELF_LOAD_FAILED       -1
 #define ELF_LOAD_NOT_ELF      -2

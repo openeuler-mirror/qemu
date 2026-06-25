@@ -308,6 +308,7 @@ static bool tcg_out_mov(TCGContext *s, TCGType type, TCGReg ret, TCGReg arg)
          */
         tcg_out_opc_or(s, ret, arg, TCG_REG_ZERO);
         break;
+    case TCG_TYPE_V64:
     case TCG_TYPE_V128:
         tcg_out_opc_vori_b(s, ret, arg, 0);
         break;
@@ -793,11 +794,13 @@ static void tcg_out_ldst(TCGContext *s, LoongArchInsn opc, TCGReg data,
     case OPC_LD_HU:
     case OPC_LD_W:
     case OPC_LD_WU:
-    case OPC_LD_D:
     case OPC_ST_B:
     case OPC_ST_H:
     case OPC_ST_W:
     case OPC_ST_D:
+        tcg_out32(s, encode_djsk12_insn(opc, data, addr, imm12));
+        break;
+    case OPC_LD_D:
         tcg_out32(s, encode_djsk12_insn(opc, data, addr, imm12));
         break;
     default:
@@ -805,18 +808,84 @@ static void tcg_out_ldst(TCGContext *s, LoongArchInsn opc, TCGReg data,
     }
 }
 
-static void tcg_out_ld(TCGContext *s, TCGType type, TCGReg arg,
-                       TCGReg arg1, intptr_t arg2)
+static void tcg_out_ld(TCGContext *s, TCGType type, TCGReg dest,
+                       TCGReg base, intptr_t offset)
 {
-    bool is_32bit = type == TCG_TYPE_I32;
-    tcg_out_ldst(s, is_32bit ? OPC_LD_W : OPC_LD_D, arg, arg1, arg2);
+    switch (type) {
+    case TCG_TYPE_I32:
+        if (dest < TCG_REG_V0) {
+            tcg_out_ldst(s, OPC_LD_W, dest, base, offset);
+        } else {
+            tcg_out_ldst(s, OPC_FLD_S, dest, base, offset);
+        }
+        break;
+    case TCG_TYPE_I64:
+    case TCG_TYPE_V64:
+        if (dest < TCG_REG_V0) {
+            tcg_out_ldst(s, OPC_LD_D, dest, base, offset);
+        } else {
+            tcg_out_ldst(s, OPC_FLD_D, dest, base, offset);
+        }
+        break;
+    case TCG_TYPE_V128:
+        if (-0x800 <= offset && offset <= 0x7ff) {
+            tcg_out_opc_vld(s, dest, base, offset);
+        } else {
+            tcg_out_movi(s, TCG_TYPE_PTR, TCG_REG_TMP0, offset);
+            tcg_out_opc_vldx(s, dest, base, TCG_REG_TMP0);
+        }
+        break;
+    case TCG_TYPE_V256:
+        if (-0x800 <= offset && offset <= 0x7ff) {
+            tcg_out_opc_xvld(s, dest, base, offset);
+        } else {
+            tcg_out_movi(s, TCG_TYPE_PTR, TCG_REG_TMP0, offset);
+            tcg_out_opc_xvldx(s, dest, base, TCG_REG_TMP0);
+        }
+        break;
+    default:
+        g_assert_not_reached();
+    }
 }
 
-static void tcg_out_st(TCGContext *s, TCGType type, TCGReg arg,
-                       TCGReg arg1, intptr_t arg2)
+static void tcg_out_st(TCGContext *s, TCGType type, TCGReg src,
+                       TCGReg base, intptr_t offset)
 {
-    bool is_32bit = type == TCG_TYPE_I32;
-    tcg_out_ldst(s, is_32bit ? OPC_ST_W : OPC_ST_D, arg, arg1, arg2);
+    switch (type) {
+    case TCG_TYPE_I32:
+        if (src < TCG_REG_V0) {
+            tcg_out_ldst(s, OPC_ST_W, src, base, offset);
+        } else {
+            tcg_out_ldst(s, OPC_FST_S, src, base, offset);
+        }
+        break;
+    case TCG_TYPE_I64:
+    case TCG_TYPE_V64:
+        if (src < TCG_REG_V0) {
+            tcg_out_ldst(s, OPC_ST_D, src, base, offset);
+        } else {
+            tcg_out_ldst(s, OPC_FST_D, src, base, offset);
+        }
+        break;
+    case TCG_TYPE_V128:
+        if (-0x800 <= offset && offset <= 0x7ff) {
+            tcg_out_opc_vst(s, src, base, offset);
+        } else {
+            tcg_out_movi(s, TCG_TYPE_PTR, TCG_REG_TMP0, offset);
+            tcg_out_opc_vstx(s, src, base, TCG_REG_TMP0);
+        }
+        break;
+    case TCG_TYPE_V256:
+        if (-0x800 <= offset && offset <= 0x7ff) {
+            tcg_out_opc_xvst(s, src, base, offset);
+        } else {
+            tcg_out_movi(s, TCG_TYPE_PTR, TCG_REG_TMP0, offset);
+            tcg_out_opc_xvstx(s, src, base, TCG_REG_TMP0);
+        }
+        break;
+    default:
+        g_assert_not_reached();
+    }
 }
 
 static bool tcg_out_sti(TCGContext *s, TCGType type, TCGArg val,

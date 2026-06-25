@@ -90,18 +90,20 @@ config M68K_IRQC
 config NIOS2_VIC
     bool
 
-config LOONGARCH_IPI
+config LOONGSON_IPI_COMMON
     bool
 
-config LOONGARCH_IPI_KVM
+config LOONGSON_IPI
     bool
+    select LOONGSON_IPI_COMMON
+
+config LOONGARCH_IPI
+    bool
+    select LOONGSON_IPI_COMMON
 
 config LOONGARCH_PCH_PIC
     bool
     select UNIMP
-
-config LOONGARCH_PCH_PIC_KVM
-    bool
 
 config LOONGARCH_PCH_MSI
     select MSI_NONBROKEN
@@ -111,5 +113,5 @@ config LOONGARCH_PCH_MSI
 config LOONGARCH_EXTIOI
     bool
 
-config LOONGARCH_EXTIOI_KVM
+config LOONGARCH_DINTC
     bool

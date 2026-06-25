@@ -10,11 +10,33 @@
 #include "cpu.h"
 #include "internals.h"
 #include "qemu/host-utils.h"
+#include "qemu/log.h"
 #include "exec/helper-proto.h"
 #include "exec/exec-all.h"
 #include "exec/cpu_ldst.h"
 #include "hw/irq.h"
 #include "cpu-csr.h"
+
+target_ulong helper_csrwr_stlbps(CPULoongArchState *env, target_ulong val)
+{
+    int64_t old_v = env->CSR_STLBPS;
+
+    /*
+     * The real hardware only supports the min tlb_ps is 12
+     * tlb_ps=0 may cause undefined-behavior.
+     */
+    uint8_t tlb_ps = FIELD_EX64(val, CSR_STLBPS, PS);
+    if (!check_ps(env, tlb_ps)) {
+        qemu_log_mask(LOG_GUEST_ERROR,
+                      "Attempted set ps %d\n", tlb_ps);
+    } else {
+        /* Only update PS field, reserved bit keeps zero */
+        val = FIELD_DP64(val, CSR_STLBPS, RESERVE, 0);
+        env->CSR_STLBPS = val;
+    }
+
+    return old_v;
+}
 
 target_ulong helper_csrrd_pgd(CPULoongArchState *env)
 {

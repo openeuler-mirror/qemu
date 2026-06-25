@@ -34,11 +34,13 @@ FIELD(CSR_MISC, ALCL, 12, 4)
 FIELD(CSR_MISC, DWPL, 16, 3)
 
 #define LOONGARCH_CSR_ECFG           0x4 /* Exception config */
-FIELD(CSR_ECFG, LIE, 0, 13)
+FIELD(CSR_ECFG, LIE, 0, 15)        /* bit 15 is msg interrupt enabled */
+FIELD(CSR_ECFG, MSGINT, 14, 1)
 FIELD(CSR_ECFG, VS, 16, 3)
 
 #define LOONGARCH_CSR_ESTAT          0x5 /* Exception status */
-FIELD(CSR_ESTAT, IS, 0, 13)
+FIELD(CSR_ESTAT, IS, 0, 15)        /* bit 15 is msg interrupt enabled */
+FIELD(CSR_ESTAT, MSGINT, 14, 1)
 FIELD(CSR_ESTAT, ECODE, 16, 6)
 FIELD(CSR_ESTAT, ESUBCODE, 22, 9)
 
@@ -106,6 +108,7 @@ FIELD(CSR_PWCH, DIR4_WIDTH, 18, 6)
 
 #define LOONGARCH_CSR_STLBPS         0x1e /* Stlb page size */
 FIELD(CSR_STLBPS, PS, 0, 5)
+FIELD(CSR_STLBPS, RESERVE, 5, 27)
 
 #define LOONGARCH_CSR_RVACFG         0x1f /* Reduced virtual address config */
 FIELD(CSR_RVACFG, RBITS, 0, 4)
@@ -186,6 +189,9 @@ FIELD(CSR_MERRCTL, ISMERR, 0, 1)
 
 #define LOONGARCH_CSR_CTAG           0x98 /* TagLo + TagHi */
 
+#define LOONGARCH_CSR_MSGIS(N)       (0xa0 + N)
+#define LOONGARCH_CSR_MSGIR               0xa4
+
 /* Direct map windows CSRs*/
 #define LOONGARCH_CSR_DMW(N)         (0x180 + N)
 FIELD(CSR_DMW, PLV0, 0, 1)
@@ -196,6 +202,10 @@ FIELD(CSR_DMW, MAT, 4, 2)
 FIELD(CSR_DMW_32, PSEG, 25, 3)
 FIELD(CSR_DMW_32, VSEG, 29, 3)
 FIELD(CSR_DMW_64, VSEG, 60, 4)
+
+/* Performance Counter registers */
+#define LOONGARCH_CSR_PERFCTRL(N)    (0x200 + 2 * N)
+#define LOONGARCH_CSR_PERFCNTR(N)    (0x201 + 2 * N)
 
 /* Debug CSRs */
 #define LOONGARCH_CSR_DBG            0x500 /* debug config */

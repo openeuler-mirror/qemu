@@ -8,20 +8,19 @@
 #include "qemu/osdep.h"
 #include "qemu/log.h"
 #include "qemu/qemu-print.h"
-#include "qemu/error-report.h"
 #include "qapi/error.h"
 #include "qemu/module.h"
 #include "sysemu/qtest.h"
 #include "sysemu/tcg.h"
 #include "sysemu/kvm.h"
 #include "kvm/kvm_loongarch.h"
+#include "hw/qdev-properties.h"
 #include "exec/exec-all.h"
 #include "cpu.h"
 #include "hw/qdev-properties.h"
 #include "internals.h"
 #include "fpu/softfloat-helpers.h"
-#include "cpu-csr.h"
-#include "qapi/visitor.h"
+#include "csr.h"
 #include "sysemu/reset.h"
 #include "vec.h"
 #ifdef CONFIG_KVM
@@ -104,18 +103,12 @@ void G_NORETURN do_raise_exception(CPULoongArchState *env,
 
 static void loongarch_cpu_set_pc(CPUState *cs, vaddr value)
 {
-    LoongArchCPU *cpu = LOONGARCH_CPU(cs);
-    CPULoongArchState *env = &cpu->env;
-
-    set_pc(env, value);
+    set_pc(cpu_env(cs), value);
 }
 
 static vaddr loongarch_cpu_get_pc(CPUState *cs)
 {
-    LoongArchCPU *cpu = LOONGARCH_CPU(cs);
-    CPULoongArchState *env = &cpu->env;
-
-    return env->pc;
+    return cpu_env(cs)->pc;
 }
 
 #ifndef CONFIG_USER_ONLY
@@ -382,10 +375,176 @@ static bool loongarch_cpu_has_work(CPUState *cs)
 #endif
 }
 
+static void loongarch_la464_init_csr(DeviceState *dev)
+{
+#ifndef CONFIG_USER_ONLY
+    static bool initialized;
+    LoongArchCPU *cpu = LOONGARCH_CPU(dev);
+    CPULoongArchState *env = &cpu->env;
+    int i, num;
+
+    if (!initialized) {
+        initialized = true;
+        num = FIELD_EX64(env->CSR_PRCFG1, CSR_PRCFG1, SAVE_NUM);
+        for (i = num; i < 16; i++) {
+            set_csr_flag(LOONGARCH_CSR_SAVE(i), CSRFL_UNUSED);
+        }
+        set_csr_flag(LOONGARCH_CSR_IMPCTL1, CSRFL_UNUSED);
+        set_csr_flag(LOONGARCH_CSR_IMPCTL2, CSRFL_UNUSED);
+        set_csr_flag(LOONGARCH_CSR_MERRCTL, CSRFL_UNUSED);
+        set_csr_flag(LOONGARCH_CSR_MERRINFO1, CSRFL_UNUSED);
+        set_csr_flag(LOONGARCH_CSR_MERRINFO2, CSRFL_UNUSED);
+        set_csr_flag(LOONGARCH_CSR_MERRENTRY, CSRFL_UNUSED);
+        set_csr_flag(LOONGARCH_CSR_MERRERA, CSRFL_UNUSED);
+        set_csr_flag(LOONGARCH_CSR_MERRSAVE, CSRFL_UNUSED);
+        set_csr_flag(LOONGARCH_CSR_CTAG, CSRFL_UNUSED);
+
+        for (i = env->perf_event_num; i < MAX_PERF_EVENTS; i++) {
+            set_csr_flag(LOONGARCH_CSR_PERFCTRL(i), CSRFL_UNUSED);
+            set_csr_flag(LOONGARCH_CSR_PERFCNTR(i), CSRFL_UNUSED);
+        }
+    }
+#endif
+}
+
+static bool loongarch_get_lsx(Object *obj, Error **errp)
+{
+    return LOONGARCH_CPU(obj)->lsx != ON_OFF_AUTO_OFF;
+}
+
+static void loongarch_set_lsx(Object *obj, bool value, Error **errp)
+{
+    LoongArchCPU *cpu = LOONGARCH_CPU(obj);
+    uint32_t val;
+
+    cpu->lsx = value ? ON_OFF_AUTO_ON : ON_OFF_AUTO_OFF;
+    if (cpu->lsx == ON_OFF_AUTO_OFF) {
+        cpu->lasx = ON_OFF_AUTO_OFF;
+        if (cpu->lasx == ON_OFF_AUTO_ON) {
+            error_setg(errp, "Failed to disable LSX since LASX is enabled");
+            return;
+        }
+    }
+
+    if (kvm_enabled()) {
+        /* kvm feature detection in function kvm_arch_init_vcpu */
+        return;
+    }
+
+    /* LSX feature detection in TCG mode */
+    val = cpu->env.cpucfg[2];
+    if (cpu->lsx == ON_OFF_AUTO_ON) {
+        if (FIELD_EX32(val, CPUCFG2, LSX) == 0) {
+            error_setg(errp, "Failed to enable LSX in TCG mode");
+            return;
+        }
+    } else {
+        cpu->env.cpucfg[2] = FIELD_DP32(val, CPUCFG2, LASX, 0);
+        val = cpu->env.cpucfg[2];
+    }
+
+    cpu->env.cpucfg[2] = FIELD_DP32(val, CPUCFG2, LSX, value);
+}
+
+static bool loongarch_get_lasx(Object *obj, Error **errp)
+{
+    return LOONGARCH_CPU(obj)->lasx != ON_OFF_AUTO_OFF;
+}
+
+static void loongarch_set_lasx(Object *obj, bool value, Error **errp)
+{
+    LoongArchCPU *cpu = LOONGARCH_CPU(obj);
+    uint32_t val;
+
+    cpu->lasx = value ? ON_OFF_AUTO_ON : ON_OFF_AUTO_OFF;
+    if ((cpu->lsx == ON_OFF_AUTO_OFF) && (cpu->lasx == ON_OFF_AUTO_ON)) {
+        error_setg(errp, "Failed to enable LASX since lSX is disabled");
+        return;
+    }
+
+    if (kvm_enabled()) {
+        /* kvm feature detection in function kvm_arch_init_vcpu */
+        return;
+    }
+
+    /* LASX feature detection in TCG mode */
+    val = cpu->env.cpucfg[2];
+    if (cpu->lasx == ON_OFF_AUTO_ON) {
+        if (FIELD_EX32(val, CPUCFG2, LASX) == 0) {
+            error_setg(errp, "Failed to enable LASX in TCG mode");
+            return;
+        }
+    }
+
+    cpu->env.cpucfg[2] = FIELD_DP32(val, CPUCFG2, LASX, value);
+}
+
+static bool loongarch_get_msgint(Object *obj, Error **errp)
+{
+    return LOONGARCH_CPU(obj)->msgint != ON_OFF_AUTO_OFF;
+}
+
+static void loongarch_set_msgint(Object *obj, bool value, Error **errp)
+{
+    LoongArchCPU *cpu = LOONGARCH_CPU(obj);
+
+    cpu->msgint = value ? ON_OFF_AUTO_ON : ON_OFF_AUTO_OFF;
+
+    if (kvm_enabled()) {
+        /* kvm feature detection in function kvm_arch_init_vcpu */
+        return;
+    }
+
+     cpu->env.cpucfg[1] = FIELD_DP32(cpu->env.cpucfg[1], CPUCFG1, MSG_INT, value);
+}
+
+static bool loongarch_get_ptw(Object *obj, Error **errp)
+{
+    return LOONGARCH_CPU(obj)->ptw != ON_OFF_AUTO_OFF;
+}
+
+static void loongarch_set_ptw(Object *obj, bool value, Error **errp)
+{
+    LoongArchCPU *cpu = LOONGARCH_CPU(obj);
+
+    cpu->ptw = value ? ON_OFF_AUTO_ON : ON_OFF_AUTO_OFF;
+
+    if (kvm_enabled()) {
+        /* kvm feature detection in function kvm_arch_init_vcpu */
+        return;
+    }
+
+    cpu->env.cpucfg[2] = FIELD_DP32(cpu->env.cpucfg[2], CPUCFG2, HPTW, value);
+}
+
+static void loongarch_cpu_post_init(Object *obj)
+{
+    LoongArchCPU *cpu = LOONGARCH_CPU(obj);
+
+    cpu->lbt = ON_OFF_AUTO_OFF;
+    cpu->pmu = ON_OFF_AUTO_OFF;
+    cpu->lsx = ON_OFF_AUTO_AUTO;
+    cpu->lasx = ON_OFF_AUTO_AUTO;
+    object_property_add_bool(obj, "lsx", loongarch_get_lsx,
+                             loongarch_set_lsx);
+    object_property_add_bool(obj, "lasx", loongarch_get_lasx,
+                             loongarch_set_lasx);
+    object_property_add_bool(obj, "msgint", loongarch_get_msgint,
+                             loongarch_set_msgint);
+    object_property_add_bool(obj, "ptw", loongarch_get_ptw,
+                             loongarch_set_ptw);
+    /* lbt is enabled only in kvm mode, not supported in tcg mode */
+
+    if (kvm_enabled()) {
+        kvm_loongarch_cpu_post_init(cpu);
+    }
+}
+
 static void loongarch_la464_initfn(Object *obj)
 {
     LoongArchCPU *cpu = LOONGARCH_CPU(obj);
     CPULoongArchState *env = &cpu->env;
+    uint32_t data = 0, field;
     int i;
 
     for (i = 0; i < 21; i++) {
@@ -393,20 +552,31 @@ static void loongarch_la464_initfn(Object *obj)
     }
 
     cpu->dtb_compatible = "loongarch,Loongson-3A5000";
-    env->cpucfg[0] = 0x14c010;  /* PRID */
+    data = FIELD_DP32(data, CPUCFG0, PRID, 0x10);
+    data = FIELD_DP32(data, CPUCFG0, SERID, PRID_SERIES_LA464);
+    data = FIELD_DP32(data, CPUCFG0, VENID, PRID_VENDOR_LOONGSON);
+    env->cpucfg[0] = data;
+    memccpy((void *)&env->vendor_id, CPU_VENDOR_LOONGSON, 0, 8);
+    memccpy((void *)&env->cpu_id, CPU_MODEL_3A5000, 0, 8);
 
-    uint32_t data = 0;
+    data = 0;
     data = FIELD_DP32(data, CPUCFG1, ARCH, 2);
     data = FIELD_DP32(data, CPUCFG1, PGMMU, 1);
     data = FIELD_DP32(data, CPUCFG1, IOCSR, 1);
-    data = FIELD_DP32(data, CPUCFG1, PALEN, 0x2f);
+    if (kvm_enabled()) {
+        /* GPA address width of VM is 47, field value is 47 - 1 */
+        field = 0x2e;
+    } else {
+        field = 0x2f; /* 48 bit - 1 */
+    }
+    data = FIELD_DP32(data, CPUCFG1, PALEN, field);
     data = FIELD_DP32(data, CPUCFG1, VALEN, 0x2f);
     data = FIELD_DP32(data, CPUCFG1, UAL, 1);
     data = FIELD_DP32(data, CPUCFG1, RI, 1);
     data = FIELD_DP32(data, CPUCFG1, EP, 1);
     data = FIELD_DP32(data, CPUCFG1, RPLV, 1);
     data = FIELD_DP32(data, CPUCFG1, HP, 1);
-    data = FIELD_DP32(data, CPUCFG1, IOCSR_BRD, 1);
+    data = FIELD_DP32(data, CPUCFG1, CRC, 1);
     env->cpucfg[1] = data;
 
     data = 0;
@@ -421,6 +591,22 @@ static void loongarch_la464_initfn(Object *obj)
     data = FIELD_DP32(data, CPUCFG2, LSPW, 1);
     data = FIELD_DP32(data, CPUCFG2, LAM, 1);
     env->cpucfg[2] = data;
+
+    data = 0;
+    data = FIELD_DP32(data, CPUCFG3, CCDMA, 1);
+    data = FIELD_DP32(data, CPUCFG3, UCACC, 1);
+    data = FIELD_DP32(data, CPUCFG3, LLEXC, 1);
+    data = FIELD_DP32(data, CPUCFG3, SCDLY, 1);
+    data = FIELD_DP32(data, CPUCFG3, LLDBAR, 1);
+    data = FIELD_DP32(data, CPUCFG3, ITLBHMC, 1);
+    data = FIELD_DP32(data, CPUCFG3, ICHMC, 1);
+    data = FIELD_DP32(data, CPUCFG3, SPW_LVL, 4);
+    data = FIELD_DP32(data, CPUCFG3, SPW_HP_HF, 1);
+    if (kvm_enabled()) {
+        data = FIELD_DP32(data, CPUCFG3, RVA, 1);
+        data = FIELD_DP32(data, CPUCFG3, RVAMAX, 7);
+    }
+    env->cpucfg[3] = data;
 
     env->cpucfg[4] = 100 * 1000 * 1000; /* Crystal frequency */
 
@@ -485,6 +671,8 @@ static void loongarch_la464_initfn(Object *obj)
     env->CSR_PRCFG3 = FIELD_DP64(env->CSR_PRCFG3, CSR_PRCFG3, STLB_WAYS, 7);
     env->CSR_PRCFG3 = FIELD_DP64(env->CSR_PRCFG3, CSR_PRCFG3, STLB_SETS, 8);
 
+    cpu->msgint = ON_OFF_AUTO_OFF;
+    cpu->ptw = ON_OFF_AUTO_OFF;
     loongarch_cpu_post_init(obj);
 }
 
@@ -492,7 +680,7 @@ static void loongarch_la132_initfn(Object *obj)
 {
     LoongArchCPU *cpu = LOONGARCH_CPU(obj);
     CPULoongArchState *env = &cpu->env;
-
+    uint32_t data = 0;
     int i;
 
     for (i = 0; i < 21; i++) {
@@ -500,9 +688,14 @@ static void loongarch_la132_initfn(Object *obj)
     }
 
     cpu->dtb_compatible = "loongarch,Loongson-1C103";
-    env->cpucfg[0] = 0x148042;  /* PRID */
+    data = FIELD_DP32(data, CPUCFG0, PRID, 0x42);
+    data = FIELD_DP32(data, CPUCFG0, SERID, PRID_SERIES_LA132);
+    data = FIELD_DP32(data, CPUCFG0, VENID, PRID_VENDOR_LOONGSON);
+    env->cpucfg[0] = data;
+    memccpy((void *)&env->vendor_id, CPU_VENDOR_LOONGSON, 0, 8);
+    memccpy((void *)&env->cpu_id, CPU_MODEL_1C101, 0, 8);
 
-    uint32_t data = 0;
+    data = 0;
     data = FIELD_DP32(data, CPUCFG1, ARCH, 1); /* LA32 */
     data = FIELD_DP32(data, CPUCFG1, PGMMU, 1);
     data = FIELD_DP32(data, CPUCFG1, IOCSR, 1);
@@ -513,15 +706,160 @@ static void loongarch_la132_initfn(Object *obj)
     data = FIELD_DP32(data, CPUCFG1, EP, 0);
     data = FIELD_DP32(data, CPUCFG1, RPLV, 0);
     data = FIELD_DP32(data, CPUCFG1, HP, 1);
-    data = FIELD_DP32(data, CPUCFG1, IOCSR_BRD, 1);
+    data = FIELD_DP32(data, CPUCFG1, CRC, 1);
     env->cpucfg[1] = data;
+    cpu->msgint = ON_OFF_AUTO_OFF;
+    cpu->ptw = ON_OFF_AUTO_OFF;
 }
 
 static void loongarch_max_initfn(Object *obj)
 {
-    /* '-cpu max' for TCG: we use cpu la464. */
+    LoongArchCPU *cpu = LOONGARCH_CPU(obj);
+    /* '-cpu max': use it for max supported CPU features */
     loongarch_la464_initfn(obj);
+
+    cpu->ptw = ON_OFF_AUTO_AUTO;
+    if (tcg_enabled()) {
+        cpu->ptw = ON_OFF_AUTO_OFF;
+        cpu->env.cpucfg[1] = FIELD_DP32(cpu->env.cpucfg[1], CPUCFG1, MSG_INT, 1);
+        cpu->msgint = ON_OFF_AUTO_OFF;
+
+        uint32_t data = cpu->env.cpucfg[2];
+        data = FIELD_DP32(data, CPUCFG2, HPTW, 0);
+        /* Enable LA v1.1 instructions */
+        data = FIELD_DP32(data, CPUCFG2, FRECIPE, 1);
+        data = FIELD_DP32(data, CPUCFG2, LAM_BH, 1);
+        data = FIELD_DP32(data, CPUCFG2, LAMCAS, 1);
+        data = FIELD_DP32(data, CPUCFG2, LLACQ_SCREL, 1);
+        data = FIELD_DP32(data, CPUCFG2, SCQ, 1);
+        cpu->env.cpucfg[2] = data;
+    }
 }
+
+#if defined(CONFIG_KVM)
+static int read_cpuinfo(const char *field, char *value, int len)
+{
+    FILE *f;
+    int ret = -1;
+    int field_len = strlen(field);
+    char line[512];
+
+    f = fopen("/proc/cpuinfo", "r");
+    if (!f) {
+        return -1;
+    }
+
+    do {
+        if (!fgets(line, sizeof(line), f)) {
+            break;
+        }
+        if (!strncmp(line, field, field_len)) {
+            strncpy(value, line, len);
+            ret = 0;
+            break;
+        }
+    } while (*line);
+
+    fclose(f);
+
+    return ret;
+}
+
+static uint64_t get_host_cpu_model(void)
+{
+    char line[512];
+    char *ns;
+    static uint64_t cpuid;
+
+    if (cpuid) {
+        return cpuid;
+    }
+
+    if (read_cpuinfo("Model Name", line, sizeof(line))) {
+        return 0;
+    }
+
+    ns = strchr(line, ':');
+    if (!ns) {
+        return 0;
+    }
+
+    ns = strstr(ns, "Loongson-");
+    if (!ns) {
+        return 0;
+    }
+
+    ns += strlen("Loongson-");
+    memccpy((void *)&cpuid, ns, 0, 8);
+    return cpuid;
+}
+
+static uint32_t get_host_cpucfg(int number)
+{
+    unsigned int data = 0;
+
+#ifdef __loongarch__
+    asm volatile("cpucfg %[val], %[reg]"
+                 : [val] "=r" (data)
+                 : [reg] "r" (number)
+                 : "memory");
+#endif
+
+    return data;
+}
+
+static void loongarch_host_initfn(Object *obj)
+{
+    uint32_t data, cpucfg, field;
+    uint64_t cpuid;
+    LoongArchCPU *cpu = LOONGARCH_CPU(obj);
+
+    loongarch_max_initfn(obj);
+    data = get_host_cpucfg(0);
+    if (data) {
+        cpu->env.cpucfg[0] = data;
+    }
+
+   /*
+    * There is no exception in KVM hypervisor when these intructions are
+    * executed if HW support, KVM hypervisor cannot control this.
+    *
+    * Set cpucfg bits which cannot be controlled by KVM hypervisor.
+    */
+    data = get_host_cpucfg(2);
+    cpucfg = cpu->env.cpucfg[2];
+    field = FIELD_EX32(data, CPUCFG2, FRECIPE);
+    cpucfg = FIELD_DP32(cpucfg, CPUCFG2, FRECIPE, field);
+    field = FIELD_EX32(data, CPUCFG2, DIV32);
+    cpucfg = FIELD_DP32(cpucfg, CPUCFG2, DIV32, field);
+    field = FIELD_EX32(data, CPUCFG2, LAM_BH);
+    cpucfg = FIELD_DP32(cpucfg, CPUCFG2, LAM_BH, field);
+    field = FIELD_EX32(data, CPUCFG2, LAMCAS);
+    cpucfg = FIELD_DP32(cpucfg, CPUCFG2, LAMCAS, field);
+    field = FIELD_EX32(data, CPUCFG2, LLACQ_SCREL);
+    cpucfg = FIELD_DP32(cpucfg, CPUCFG2, LLACQ_SCREL, field);
+    field = FIELD_EX32(data, CPUCFG2, SCQ);
+    cpucfg = FIELD_DP32(cpucfg, CPUCFG2, SCQ, field);
+    cpu->env.cpucfg[2] = cpucfg;
+
+    data = get_host_cpucfg(3);
+    cpucfg = cpu->env.cpucfg[3];
+    field = FIELD_EX32(data, CPUCFG3, DBAR_HINTS);
+    cpucfg = FIELD_DP32(cpucfg, CPUCFG3, DBAR_HINTS, field);
+    field = FIELD_EX32(data, CPUCFG3, ALDORDER_STA);
+    cpucfg = FIELD_DP32(cpucfg, CPUCFG3, ALDORDER_STA, field);
+    field = FIELD_EX32(data, CPUCFG3, ASTORDER_STA);
+    cpucfg = FIELD_DP32(cpucfg, CPUCFG3, ASTORDER_STA, field);
+    field = FIELD_EX32(data, CPUCFG3, SLDORDER_STA);
+    cpucfg = FIELD_DP32(cpucfg, CPUCFG3, SLDORDER_STA, field);
+    cpu->env.cpucfg[3] = cpucfg;
+
+    cpuid = get_host_cpu_model();
+    if (cpuid) {
+        cpu->env.cpu_id = cpuid;
+    }
+}
+#endif
 
 static void loongarch_cpu_list_entry(gpointer data, gpointer user_data)
 {
@@ -540,6 +878,7 @@ void loongarch_cpu_list(void)
 
 static void loongarch_cpu_reset_hold(Object *obj)
 {
+    uint8_t tlb_ps;
     CPUState *cs = CPU(obj);
     LoongArchCPU *cpu = LOONGARCH_CPU(cs);
     LoongArchCPUClass *lacc = LOONGARCH_CPU_GET_CLASS(cpu);
@@ -573,7 +912,7 @@ static void loongarch_cpu_reset_hold(Object *obj)
     env->CSR_ECFG = FIELD_DP64(env->CSR_ECFG, CSR_ECFG, VS, 0);
     env->CSR_ECFG = FIELD_DP64(env->CSR_ECFG, CSR_ECFG, LIE, 0);
 
-    env->CSR_ESTAT = 0;
+    env->CSR_ESTAT = env->CSR_ESTAT & (~MAKE_64BIT_MASK(0, 2));
     env->CSR_RVACFG = FIELD_DP64(env->CSR_RVACFG, CSR_RVACFG, RBITS, 0);
     env->CSR_CPUID = cs->cpu_index;
     env->CSR_TCFG = FIELD_DP64(env->CSR_TCFG, CSR_TCFG, EN, 0);
@@ -589,13 +928,17 @@ static void loongarch_cpu_reset_hold(Object *obj)
      */
     env->CSR_PGDH = 0;
     env->CSR_PGDL = 0;
-    env->CSR_PWCL = 0;
     env->CSR_PWCH = 0;
-    env->CSR_STLBPS = 0;
     env->CSR_EENTRY = 0;
     env->CSR_TLBRENTRY = 0;
     env->CSR_MERRENTRY = 0;
-
+    /* set CSR_PWCL.PTBASE and CSR_STLBPS.PS bits from CSR_PRCFG2 */
+    if (env->CSR_PRCFG2 == 0) {
+        env->CSR_PRCFG2 = 0x3fffff000;
+    }
+    tlb_ps = ctz32(env->CSR_PRCFG2);
+    env->CSR_STLBPS = FIELD_DP64(env->CSR_STLBPS, CSR_STLBPS, PS, tlb_ps);
+    env->CSR_PWCL = FIELD_DP64(env->CSR_PWCL, CSR_PWCL, PTBASE, tlb_ps);
     for (n = 0; n < 4; n++) {
         env->CSR_DMW[n] = FIELD_DP64(env->CSR_DMW[n], CSR_DMW, PLV0, 0);
         env->CSR_DMW[n] = FIELD_DP64(env->CSR_DMW[n], CSR_DMW, PLV1, 0);
@@ -621,6 +964,7 @@ static void loongarch_cpu_reset_hold(Object *obj)
 
 static void loongarch_cpu_disas_set_info(CPUState *s, disassemble_info *info)
 {
+    info->endian = BFD_ENDIAN_LITTLE;
     info->print_insn = print_insn_loongarch;
 }
 
@@ -640,122 +984,20 @@ static void loongarch_cpu_realizefn(DeviceState *dev, Error **errp)
 
     qemu_init_vcpu(cs);
     cpu_reset(cs);
+    loongarch_la464_init_csr(dev);
 
     lacc->parent_realize(dev, errp);
 }
 
 static void loongarch_cpu_unrealizefn(DeviceState *dev)
 {
-    LoongArchCPUClass *mcc = LOONGARCH_CPU_GET_CLASS(dev);
+    LoongArchCPUClass *lacc = LOONGARCH_CPU_GET_CLASS(dev);
 
 #ifndef CONFIG_USER_ONLY
     cpu_remove_sync(CPU(dev));
 #endif
 
-    mcc->parent_unrealize(dev);
-}
-
-static bool loongarch_get_lsx(Object *obj, Error **errp)
-{
-    LoongArchCPU *cpu = LOONGARCH_CPU(obj);
-    bool ret;
-
-    if (FIELD_EX32(cpu->env.cpucfg[2], CPUCFG2, LSX)) {
-        ret = true;
-    } else {
-        ret = false;
-    }
-    return ret;
-}
-
-static void loongarch_set_lsx(Object *obj, bool value, Error **errp)
-{
-    LoongArchCPU *cpu = LOONGARCH_CPU(obj);
-
-    if (value) {
-        cpu->env.cpucfg[2] = FIELD_DP32(cpu->env.cpucfg[2], CPUCFG2, LSX, 1);
-    } else {
-        cpu->env.cpucfg[2] = FIELD_DP32(cpu->env.cpucfg[2], CPUCFG2, LSX, 0);
-        cpu->env.cpucfg[2] = FIELD_DP32(cpu->env.cpucfg[2], CPUCFG2, LASX, 0);
-    }
-}
-
-static bool loongarch_get_lasx(Object *obj, Error **errp)
-{
-    LoongArchCPU *cpu = LOONGARCH_CPU(obj);
-    bool ret;
-
-    if (FIELD_EX32(cpu->env.cpucfg[2], CPUCFG2, LASX)) {
-        ret = true;
-    } else {
-        ret = false;
-    }
-    return ret;
-}
-
-static void loongarch_set_lasx(Object *obj, bool value, Error **errp)
-{
-    LoongArchCPU *cpu = LOONGARCH_CPU(obj);
-
-    if (value) {
-	if (!FIELD_EX32(cpu->env.cpucfg[2], CPUCFG2, LSX)) {
-            cpu->env.cpucfg[2] = FIELD_DP32(cpu->env.cpucfg[2], CPUCFG2, LSX, 1);
-	}
-        cpu->env.cpucfg[2] = FIELD_DP32(cpu->env.cpucfg[2], CPUCFG2, LASX, 1);
-    } else {
-        cpu->env.cpucfg[2] = FIELD_DP32(cpu->env.cpucfg[2], CPUCFG2, LASX, 0);
-    }
-}
-
-static bool loongarch_get_lbt(Object *obj, Error **errp)
-{
-    return LOONGARCH_CPU(obj)->lbt != ON_OFF_AUTO_OFF;
-}
-
-static void loongarch_set_lbt(Object *obj, bool value, Error **errp)
-{
-    LoongArchCPU *cpu = LOONGARCH_CPU(obj);
-
-    cpu->lbt = value ? ON_OFF_AUTO_ON : ON_OFF_AUTO_OFF;
-}
-
-static bool loongarch_get_pmu(Object *obj, Error **errp)
-{
-    return LOONGARCH_CPU(obj)->pmu != ON_OFF_AUTO_OFF;
-}
-
-static void loongarch_set_pmu(Object *obj, bool value, Error **errp)
-{
-    LoongArchCPU *cpu = LOONGARCH_CPU(obj);
-
-    cpu->pmu = value ? ON_OFF_AUTO_ON : ON_OFF_AUTO_OFF;
-}
-
-void loongarch_cpu_post_init(Object *obj)
-{
-    LoongArchCPU *cpu = LOONGARCH_CPU(obj);
-
-    object_property_add_bool(obj, "lsx", loongarch_get_lsx,
-                             loongarch_set_lsx);
-    object_property_add_bool(obj, "lasx", loongarch_get_lasx,
-                             loongarch_set_lasx);
-
-    if (kvm_enabled()) {
-	cpu->lbt = ON_OFF_AUTO_AUTO;
-        object_property_add_bool(obj, "lbt", loongarch_get_lbt,
-                                 loongarch_set_lbt);
-        object_property_set_description(obj, "lbt",
-                                   "Set off to disable Binary Tranlation.");
-
-        cpu->pmu = ON_OFF_AUTO_AUTO;
-        object_property_add_bool(obj, "pmu", loongarch_get_pmu,
-                                 loongarch_set_pmu);
-        object_property_set_description(obj, "pmu",
-                                   "Set off to performance monitor unit.");
-
-    } else {
-        cpu->lbt = ON_OFF_AUTO_OFF;
-    }
+    lacc->parent_unrealize(dev);
 }
 
 static void loongarch_cpu_init(Object *obj)
@@ -780,21 +1022,62 @@ static ObjectClass *loongarch_cpu_class_by_name(const char *cpu_model)
         g_autofree char *typename
             = g_strdup_printf(LOONGARCH_CPU_TYPE_NAME("%s"), cpu_model);
         oc = object_class_by_name(typename);
-        if (!oc) {
-            return NULL;
-        }
     }
 
-    if (object_class_dynamic_cast(oc, TYPE_LOONGARCH_CPU)) {
-        return oc;
+    return oc;
+}
+
+static void loongarch_cpu_dump_csr(CPUState *cs, FILE *f)
+{
+#ifndef CONFIG_USER_ONLY
+    CPULoongArchState *env = cpu_env(cs);
+    CSRInfo *csr_info;
+    int64_t *addr;
+    int i, j, len, col = 0;
+
+    qemu_fprintf(f, "\n");
+
+    /* Dump all generic CSR register */
+    for (i = 0; i < LOONGARCH_CSR_DBG; i++) {
+        csr_info = get_csr(i);
+        if (!csr_info || (csr_info->flags & CSRFL_UNUSED)) {
+            if (i == (col + 3)) {
+                qemu_fprintf(f, "\n");
+            }
+
+            continue;
+        }
+
+        if ((i >  (col + 3)) || (i == col)) {
+            col = i & ~3;
+            qemu_fprintf(f, " CSR%03d:", col);
+        }
+
+        addr = (void *)env + csr_info->offset;
+        qemu_fprintf(f, " %s ", csr_info->name);
+        len = strlen(csr_info->name);
+        for (; len < 6; len++) {
+            qemu_fprintf(f, " ");
+        }
+
+        qemu_fprintf(f, "%" PRIx64, *addr);
+        j = find_last_bit((void *)addr, BITS_PER_LONG) & (BITS_PER_LONG - 1);
+        len += j / 4 + 1;
+        for (; len < 22; len++) {
+                qemu_fprintf(f, " ");
+        }
+
+        if (i == (col + 3)) {
+            qemu_fprintf(f, "\n");
+        }
     }
-    return NULL;
+    qemu_fprintf(f, "\n");
+#endif
 }
 
 void loongarch_cpu_dump_state(CPUState *cs, FILE *f, int flags)
 {
-    LoongArchCPU *cpu = LOONGARCH_CPU(cs);
-    CPULoongArchState *env = &cpu->env;
+    CPULoongArchState *env = cpu_env(cs);
     int i;
 
     qemu_fprintf(f, " PC=%016" PRIx64 " ", env->pc);
@@ -811,22 +1094,8 @@ void loongarch_cpu_dump_state(CPUState *cs, FILE *f, int flags)
         }
     }
 
-    qemu_fprintf(f, "CRMD=%016" PRIx64 "\n", env->CSR_CRMD);
-    qemu_fprintf(f, "PRMD=%016" PRIx64 "\n", env->CSR_PRMD);
-    qemu_fprintf(f, "EUEN=%016" PRIx64 "\n", env->CSR_EUEN);
-    qemu_fprintf(f, "ESTAT=%016" PRIx64 "\n", env->CSR_ESTAT);
-    qemu_fprintf(f, "ERA=%016" PRIx64 "\n", env->CSR_ERA);
-    qemu_fprintf(f, "BADV=%016" PRIx64 "\n", env->CSR_BADV);
-    qemu_fprintf(f, "BADI=%016" PRIx64 "\n", env->CSR_BADI);
-    qemu_fprintf(f, "EENTRY=%016" PRIx64 "\n", env->CSR_EENTRY);
-    qemu_fprintf(f, "PRCFG1=%016" PRIx64 ", PRCFG2=%016" PRIx64 ","
-                 " PRCFG3=%016" PRIx64 "\n",
-                 env->CSR_PRCFG1, env->CSR_PRCFG2, env->CSR_PRCFG3);
-    qemu_fprintf(f, "TLBRENTRY=%016" PRIx64 "\n", env->CSR_TLBRENTRY);
-    qemu_fprintf(f, "TLBRBADV=%016" PRIx64 "\n", env->CSR_TLBRBADV);
-    qemu_fprintf(f, "TLBRERA=%016" PRIx64 "\n", env->CSR_TLBRERA);
-    qemu_fprintf(f, "TCFG=%016" PRIx64 "\n", env->CSR_TCFG);
-    qemu_fprintf(f, "TVAL=%016" PRIx64 "\n", env->CSR_TVAL);
+    /* csr */
+    loongarch_cpu_dump_csr(cs, f);
 
     /* fpr */
     if (flags & CPU_DUMP_FPU) {
@@ -877,7 +1146,6 @@ static Property loongarch_cpu_properties[] = {
     DEFINE_PROP_INT32("core-id", LoongArchCPU, core_id, 0),
     DEFINE_PROP_INT32("thread-id", LoongArchCPU, thread_id, 0),
     DEFINE_PROP_INT32("node-id", LoongArchCPU, node_id, CPU_UNSET_NUMA_NODE_ID),
-
     DEFINE_PROP_END_OF_LIST()
 };
 
@@ -981,6 +1249,9 @@ static const TypeInfo loongarch_cpu_type_infos[] = {
     DEFINE_LOONGARCH_CPU_TYPE(64, "la464", loongarch_la464_initfn),
     DEFINE_LOONGARCH_CPU_TYPE(32, "la132", loongarch_la132_initfn),
     DEFINE_LOONGARCH_CPU_TYPE(64, "max", loongarch_max_initfn),
+#if defined(CONFIG_KVM)
+    DEFINE_LOONGARCH_CPU_TYPE(64, "host", loongarch_host_initfn),
+#endif
 };
 
 DEFINE_TYPES(loongarch_cpu_type_infos)
