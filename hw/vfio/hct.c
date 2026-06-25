@@ -337,7 +337,6 @@ typedef struct SharedDevice {
     uint8_t *dma_memory;
     uint32_t dma_memory_size;
     int dma_mem_fd;
-    int dma_mapped;
 } SharedDevice;
 
 typedef struct HctDevState {
@@ -900,7 +899,7 @@ static void hct_listener_region_add(MemoryListener *listener,
         HCTDevState *state = container_of(listener, HCTDevState, listener);
         if (vaddr >= (void *)state->sdev.dma_memory - PAGE_SIZE &&
             vaddr < (void *)(state->sdev.dma_memory - PAGE_SIZE + state->sdev.dma_memory_size)) {
-            if (state->sdev.dma_mem_fd >= 0 && !state->sdev.dma_mapped) {
+            if (state->sdev.dma_mem_fd >= 0) {
                 hct_mem_req_t req = {0};
                 req.mem_type = HCT_MEM_TYPE_QEMU;
                 req.gid = (uint32_t)g_id;
@@ -910,11 +909,8 @@ static void hct_listener_region_add(MemoryListener *listener,
 
                 ret = hct_client_send_mem_cmd(state, HCT_CMD_MEM_ALLOC, &req, NULL);
                 if (ret == HCT_SUCCESS) {
-                    state->sdev.dma_mapped = true;
                     return;
                 }
-            } else if (state->sdev.dma_mapped) {
-                return;
             }
         }
 
@@ -1130,7 +1126,6 @@ static int hct_vfio_shared_dma_memory_init(HCTDevState *state)
     size = HCT_DMA_MEM_SIZE_8M - PAGE_SIZE;
 
     state->sdev.dma_mem_fd = -1;
-    state->sdev.dma_mapped = 0;
 
     /* Try to get pre-mapped memfd from daemon in vfio-pci mode */
     if (hct_data.driver == HCT_CCP_DRV_MOD_VFIO_PCI) {
