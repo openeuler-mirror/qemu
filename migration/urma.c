@@ -99,7 +99,8 @@ urma_status_t (*urma_write_p)(urma_jfs_t *jfs, urma_target_jetty_t *target_jfr, 
 int (*urma_poll_jfc_p)(urma_jfc_t *jfc, int cr_cnt, urma_cr_t *cr);
 urma_status_t (*urma_user_ctl_p)(urma_context_t *ctx, urma_user_ctl_in_t *in, urma_user_ctl_out_t *out);
 urma_status_t (*urma_post_jfs_wr_p)(urma_jfs_t *jfs, urma_jfs_wr_t *wr, urma_jfs_wr_t **bad_wr);
-int (*uvs_get_route_list_p)(const uvs_route_t *route, uvs_route_list_t *route_list);
+int (*uvs_get_path_set_p)(const uvs_eid_t *src_bonding_eid, const uvs_eid_t *dst_bonding_eid,
+                          enum uvs_tp_type tp_type, bool iodie_level, uvs_path_set_t *uvs_path_set);
 
 typedef struct dl_functions {
     const char *func_name;
@@ -139,7 +140,7 @@ dl_functions urma_dlfunc_list[] = {
 };
 
 static dl_functions uvs_dlfunc_list[] = {
-    {.func_name = "uvs_get_route_list", .func = (void **)&uvs_get_route_list_p},
+    {.func_name = "uvs_get_path_set", .func = (void **)&uvs_get_path_set_p},
 };
 
 static void urma_dlfunc_list_set_null(void)
@@ -447,10 +448,7 @@ static int qemu_get_urma_eid_index(urma_device_t *dev)
 static int qemu_get_route_eid(const urma_eid_t *src_eid, const urma_eid_t *dst_eid,
                               urma_eid_t *route_src_eid, urma_eid_t *route_dst_eid)
 {
-    uvs_route_t route = {0};
-    uvs_route_list_t route_list = {0};
-    int i;
-    int selected_route = -1;
+    uvs_path_set_t path_set = {0};
     int ret_fwd;
     uint32_t len_fwd;
 
@@ -459,40 +457,25 @@ static int qemu_get_route_eid(const urma_eid_t *src_eid, const urma_eid_t *dst_e
         return -EINVAL;
     }
 
-    if (uvs_get_route_list_p == NULL) {
-        qemu_log("uvs_get_route_list is not loaded\n");
+    if (uvs_get_path_set_p == NULL) {
+        qemu_log("uvs_get_path_set is not loaded\n");
         return -EINVAL;
     }
 
-    memcpy(route.src.raw, src_eid->raw, sizeof(route.src.raw));
-    memcpy(route.dst.raw, dst_eid->raw, sizeof(route.dst.raw));
     qemu_log("route query input src_eid: " EID_FMT ", dst_eid: " EID_FMT "\n",
              EID_ARGS(*src_eid), EID_ARGS(*dst_eid));
 
-    ret_fwd = uvs_get_route_list_p(&route, &route_list);
-    len_fwd = route_list.len;
+    ret_fwd = uvs_get_path_set_p((uvs_eid_t *)src_eid, (uvs_eid_t *)dst_eid, UVS_CTP, true, &path_set);
+    len_fwd = path_set.path_count;
     if (ret_fwd != 0 || len_fwd == 0) {
-        qemu_log("failed to call uvs_get_route_list: ret=%d len=%u\n",
+        qemu_log("failed to call uvs_get_path_set: ret=%d len=%u\n",
                  ret_fwd, len_fwd);
         return -EINVAL;
     }
 
-    for (i = 0; i < route_list.len; i++) {
-        if (route_list.buf[i].flag.bs.ctp) {
-            selected_route = i;
-            break;
-        }
-    }
-
-    if (selected_route < 0) {
-        qemu_log("failed to find a valid CTP route.\n");
-        return -EINVAL;
-    }
-
-    memcpy(route_src_eid->raw, route_list.buf[selected_route].src.raw, sizeof(route_src_eid->raw));
-    memcpy(route_dst_eid->raw, route_list.buf[selected_route].dst.raw, sizeof(route_dst_eid->raw));
-    qemu_log("Use route%d src_eid: "EID_FMT", dst_eid: "EID_FMT".\n",
-             selected_route,
+    memcpy(route_src_eid->raw, path_set.paths[0].src_eid.raw, sizeof(route_src_eid->raw));
+    memcpy(route_dst_eid->raw, path_set.paths[0].dst_eid.raw, sizeof(route_dst_eid->raw));
+    qemu_log("Use route 0 src_eid: "EID_FMT", dst_eid: "EID_FMT".\n",
              EID_ARGS(*route_src_eid),
              EID_ARGS(*route_dst_eid));
 
