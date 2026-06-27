@@ -81,6 +81,7 @@ typedef union GpaListEntry {
     };
 } GpaListEntry;
 
+static void virtcca_mig_cleanup(void);
 
 virtCCAMigState virtCCA_mig;
 
