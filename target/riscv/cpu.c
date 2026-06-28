@@ -905,14 +905,10 @@ static void riscv_cpu_reset_hold(Object *obj)
 
     /*
      * Clear mseccfg and unlock all the PMP entries upon reset.
-     * This is required as per the priv, smepmp, and other security
-     * extension specifications that share this CSR, and is needed
-     * to clear stale entries across reboots.
+     * This is allowed as per the priv and smepmp specifications
+     * and is needed to clear stale entries across reboots.
      */
-    if (riscv_cpu_cfg(env)->ext_smepmp ||
-        riscv_cpu_cfg(env)->ext_zkr ||
-        riscv_cpu_cfg(env)->ext_smmpm ||
-        riscv_cpu_cfg(env)->ext_zicfilp) {
+    if (riscv_cpu_cfg(env)->ext_smepmp) {
         env->mseccfg = 0;
     }
 
