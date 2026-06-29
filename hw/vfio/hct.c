@@ -1355,6 +1355,48 @@ exit:
     return ret;
 }
 
+static int hct_client_send_migrate_ops_msg(HCTDevState *state,
+                                           char *buf, size_t len,
+                                           int op, int loops)
+{
+    int *msg = (int *)buf;
+
+    /* [0]:magic [1]:version [2]:operation [3]:sync_state */
+    msg[0] = HCT_MIG_MSG_MAGIC;
+    msg[1] = HCT_MIG_PROTOCOL_VER;
+    msg[2] = op;
+    msg[3] = 0;
+    return hct_client_send_msg(state, (char *)msg, len, loops);
+}
+
+static int hct_client_send_migrate_done_msg(HCTDevState *state)
+{
+    int msg[16] = {0};
+    int MAX_CONNECT_LOOPS = 10;
+    int ret = -1;
+
+    ret = hct_client_send_migrate_ops_msg(state, (char *)msg, sizeof(msg),
+                            HCT_MIGRATION_DONE, MAX_CONNECT_LOOPS);
+
+    if (ret != 0 || msg[0] != HCT_MIG_MSG_MAGIC || msg[3] != HCT_MIG_MSG_ACK) {
+        error_report("ret:%d msg[0]:0x%x msg[3]:0x%x, invalid.", ret, msg[0], msg[3]);
+        ret = -1;
+    }
+
+    return ret;
+}
+
+static bool hct_migration_has_failed(MigrationState *ms)
+{
+    if (ms->state == MIGRATION_STATUS_CANCELLING) {
+        return true;
+    }
+    if (migration_has_failed(ms)) {
+        return true;
+    }
+    return false;
+}
+
 static int hct_migrate_precopy_notifier(NotifierWithReturn *notifier, void *data)
 {
     HCTDevState *state = container_of(notifier, HCTDevState, precopy_notifier);
@@ -1366,17 +1408,25 @@ static int hct_migrate_precopy_notifier(NotifierWithReturn *notifier, void *data
     int loops = 0;
     int ret = -1;
 
+    /*
+     * If live migration fails or is cancelled, the VM stays on the source host.
+     * A DONE message is sent to restore the VM migration state to ONLINE.
+     */
+    if (pnd->reason == PRECOPY_NOTIFY_CLEANUP && hct_migration_has_failed(ms)) {
+        if (hct_client_send_migrate_done_msg(state)) {
+            error_report("%s: hct_client_send_migrate_done_msg fail.", __func__);
+        } else {
+            info_report("%s: hct_client_send_migrate_done_msg success.", __func__);
+        }
+    }
+
     if (pnd->reason != PRECOPY_NOTIFY_SETUP)
         return 0;
 
     bql_unlock();
 
-    /* [0]:magic [1]:version [2]:op [3]:sync_state */
-    msg[0] = HCT_MIG_MSG_MAGIC;
-    msg[1] = HCT_MIG_PROTOCOL_VER;
-    msg[2] = HCT_MIGRATION_START;
-    msg[3] = 0;
-    ret = hct_client_send_msg(state, (char *)msg, sizeof(msg), MAX_CONNECT_LOOPS);
+    ret = hct_client_send_migrate_ops_msg(state, (char *)msg, sizeof(msg),
+                            HCT_MIGRATION_START, MAX_CONNECT_LOOPS);
     if (ret != 0 || msg[0] != HCT_MIG_MSG_MAGIC) {
         /* Perform live migration addording to a regular virtual machine. */
         error_report("ret:%d msg[0]:0x%x, please install a newer hct.ko"
@@ -1403,11 +1453,8 @@ static int hct_migrate_precopy_notifier(NotifierWithReturn *notifier, void *data
     }
 
     while (++loops <= MAX_CHECK_LOOPS) {
-        msg[0] = HCT_MIG_MSG_MAGIC;
-        msg[1] = HCT_MIG_PROTOCOL_VER;
-        msg[2] = HCT_CHECK_VM_READINESS;
-        msg[3] = 0;
-        ret = hct_client_send_msg(state, (char *)msg, sizeof(msg), MAX_CONNECT_LOOPS);
+        ret = hct_client_send_migrate_ops_msg(state, (char *)msg, sizeof(msg),
+                                HCT_CHECK_VM_READINESS, MAX_CONNECT_LOOPS);
         if (ret != 0 || msg[0] != HCT_MIG_MSG_MAGIC) {
             if (state->migrate_abort_err) {
                 error_setg(pnd->errp, "%s[%u] ret:%d msg[0]:0x%x invalid, notifier fail.\n",
@@ -1460,12 +1507,8 @@ static void *hct_client_connect_timer_thread(void *opaque)
     int ret;
 
     while (1) {
-        /* [0]:magic [1]:version [2]:op [3]:sync_state */
-        msg[0] = HCT_MIG_MSG_MAGIC;
-        msg[1] = HCT_MIG_PROTOCOL_VER;
-        msg[2] = HCT_MIGRATION_DONE;
-        msg[3] = 0;
-        ret = hct_client_send_msg(state, (char *)msg, sizeof(msg), 0);
+        ret = hct_client_send_migrate_ops_msg(state, (char *)msg, sizeof(msg),
+                                    HCT_MIGRATION_DONE, 0);
         if (ret == -EAGAIN) {
             if (++loops > MAX_LOOP_TIMES) {
                 error_report("%s: loops = %d, connect failed.", __func__, loops);
