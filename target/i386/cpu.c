@@ -7945,6 +7945,7 @@ void cpu_x86_cpuid(CPUX86State *env, uint32_t index, uint32_t count,
             *eax = 0x2;
             *eax |= sev_es_enabled() ? 0x8 : 0;
             *eax |= csv3_enabled() ? 0x40000000 : 0; /* bit 30 for CSV3 */
+            *eax |= sev_snp_enabled() ? 0x10 : 0;
             *ebx = sev_get_cbit_position() & 0x3f; /* EBX[5:0] */
             *ebx |= (sev_get_reduced_phys_bits() & 0x3f) << 6; /* EBX[11:6] */
         }

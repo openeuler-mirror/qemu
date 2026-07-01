@@ -3063,7 +3063,7 @@ void helper_msgsnd(target_ulong rb)
         return;
     }
 
-    qemu_mutex_lock_iothread();
+    bql_lock();
     CPU_FOREACH(cs) {
         PowerPCCPU *cpu = POWERPC_CPU(cs);
         CPUPPCState *cenv = &cpu->env;
@@ -3072,7 +3072,7 @@ void helper_msgsnd(target_ulong rb)
             ppc_set_irq(cpu, irq, 1);
         }
     }
-    qemu_mutex_unlock_iothread();
+    bql_unlock();
 }
 
 /* Server Processor Control */
@@ -3100,7 +3100,7 @@ static void book3s_msgsnd_common(int pir, int irq)
 {
     CPUState *cs;
 
-    qemu_mutex_lock_iothread();
+    bql_lock();
     CPU_FOREACH(cs) {
         PowerPCCPU *cpu = POWERPC_CPU(cs);
         CPUPPCState *cenv = &cpu->env;
@@ -3110,7 +3110,7 @@ static void book3s_msgsnd_common(int pir, int irq)
             ppc_set_irq(cpu, irq, 1);
         }
     }
-    qemu_mutex_unlock_iothread();
+    bql_unlock();
 }
 
 void helper_book3s_msgsnd(target_ulong rb)
@@ -3164,14 +3164,14 @@ void helper_book3s_msgsndp(CPUPPCState *env, target_ulong rb)
     }
 
     /* Does iothread need to be locked for walking CPU list? */
-    qemu_mutex_lock_iothread();
+    bql_lock();
     THREAD_SIBLING_FOREACH(cs, ccs) {
         PowerPCCPU *ccpu = POWERPC_CPU(ccs);
         uint32_t thread_id = ppc_cpu_tir(ccpu);
 
         if (ttir == thread_id) {
             ppc_set_irq(ccpu, PPC_INTERRUPT_DOORBELL, 1);
-            qemu_mutex_unlock_iothread();
+            bql_unlock();
             return;
         }
     }

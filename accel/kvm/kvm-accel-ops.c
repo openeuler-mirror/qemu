@@ -33,7 +33,7 @@ static void *kvm_vcpu_thread_fn(void *arg)
 
     rcu_register_thread();
 
-    qemu_mutex_lock_iothread();
+    bql_lock();
     qemu_thread_get_self(cpu->thread);
     cpu->thread_id = qemu_get_thread_id();
     cpu->neg.can_do_io = true;
@@ -58,7 +58,7 @@ static void *kvm_vcpu_thread_fn(void *arg)
 
     kvm_destroy_vcpu(cpu);
     cpu_thread_signal_destroyed(cpu);
-    qemu_mutex_unlock_iothread();
+    bql_unlock();
     rcu_unregister_thread();
     return NULL;
 }
@@ -83,7 +83,11 @@ static bool kvm_vcpu_thread_is_idle(CPUState *cpu)
 
 static bool kvm_cpus_are_resettable(void)
 {
-    return !kvm_enabled() || kvm_cpu_check_are_resettable();
+#if defined(TARGET_ARM) || defined(TARGET_AARCH64)
+    return !kvm_enabled() || kvm_arch_cpu_check_are_resettable();
+#else
+    return !kvm_enabled() || !kvm_state->guest_state_protected;
+#endif
 }
 
 #ifdef KVM_CAP_SET_GUEST_DEBUG

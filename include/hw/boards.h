@@ -30,6 +30,7 @@ bool machine_usb(MachineState *machine);
 int machine_phandle_start(MachineState *machine);
 bool machine_dump_guest_core(MachineState *machine);
 bool machine_mem_merge(MachineState *machine);
+bool machine_require_guest_memfd(MachineState *machine);
 HotpluggableCPUList *machine_query_hotpluggable_cpus(MachineState *machine);
 void machine_set_cpu_numa_node(MachineState *machine,
                                const CpuInstanceProperties *props,
@@ -122,7 +123,7 @@ typedef struct CPUArchId {
     uint64_t arch_id;
     int64_t vcpus_count;
     CpuInstanceProperties props;
-    Object *cpu;
+    CPUState *cpu;
     const char *type;
 } CPUArchId;
 
@@ -447,6 +448,12 @@ struct MachineState {
         type_register_static(&machine_initfn##_typeinfo); \
     } \
     type_init(machine_initfn##_register_types)
+
+extern GlobalProperty hw_compat_9_0[];
+extern const size_t hw_compat_9_0_len;
+
+extern GlobalProperty hw_compat_8_2[];
+extern const size_t hw_compat_8_2_len;
 
 extern GlobalProperty hw_compat_8_1[];
 extern const size_t hw_compat_8_1_len;

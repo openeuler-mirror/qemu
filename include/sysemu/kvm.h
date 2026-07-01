@@ -612,20 +612,18 @@ int kvm_get_one_reg(CPUState *cs, uint64_t id, void *target);
 /* Notify resamplefd for EOI of specific interrupts. */
 void kvm_resample_fd_notify(int gsi);
 
-/**
- * kvm_cpu_check_are_resettable - return whether CPUs can be reset
- *
- * Returns: true: CPUs are resettable
- *          false: CPUs are not resettable
- */
-bool kvm_cpu_check_are_resettable(void);
-
 bool kvm_arch_cpu_check_are_resettable(void);
 
 bool kvm_dirty_ring_enabled(void);
 
 uint32_t kvm_dirty_ring_size(void);
 
+
+/**
+ * kvm_hwpoisoned_mem - indicate if there is any hwpoisoned page
+ * reported for the VM.
+ */
+bool kvm_hwpoisoned_mem(void);
 int kvm_load_user_data(hwaddr loader_start, hwaddr image_end, hwaddr initrd_start, hwaddr dtb_end, hwaddr ram_size,
                        struct kvm_numa_info *numa_info);
 
@@ -640,5 +638,13 @@ int kvm_clear_slot_dirty_bitmap(void *ram);
 #endif
 
 void kvm_mark_guest_state_protected(void);
+
+
+int kvm_create_guest_memfd(uint64_t size, uint64_t flags, Error **errp);
+
+int kvm_set_memory_attributes_private(hwaddr start, uint64_t size);
+int kvm_set_memory_attributes_shared(hwaddr start, uint64_t size);
+
+int kvm_convert_memory(hwaddr start, hwaddr size, bool to_private);
 
 #endif

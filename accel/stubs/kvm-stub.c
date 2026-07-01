@@ -146,6 +146,16 @@ uint32_t kvm_dirty_ring_size(void)
     return 0;
 }
 
+
+bool kvm_hwpoisoned_mem(void)
+{
+    return false;
+}
+
+int kvm_create_guest_memfd(uint64_t size, uint64_t flags, Error **errp)
+{
+    return -ENOSYS;
+}
 int kvm_load_user_data(hwaddr loader_start, hwaddr image_end, hwaddr initrd_start, hwaddr dtb_end, hwaddr ram_size,
                        struct kvm_numa_info *numa_info)
 {

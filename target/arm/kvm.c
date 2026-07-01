@@ -1156,7 +1156,7 @@ MemTxAttrs kvm_arch_post_run(CPUState *cs, struct kvm_run *run)
     if (run->s.regs.device_irq_level != cpu->device_irq_level) {
         switched_level = cpu->device_irq_level ^ run->s.regs.device_irq_level;
 
-        qemu_mutex_lock_iothread();
+        bql_lock();
 
         if (switched_level & KVM_ARM_DEV_EL1_VTIMER) {
             qemu_set_irq(cpu->gt_timer_outputs[GTIMER_VIRT],
@@ -1185,7 +1185,7 @@ MemTxAttrs kvm_arch_post_run(CPUState *cs, struct kvm_run *run)
 
         /* We also mark unknown levels as processed to not waste cycles */
         cpu->device_irq_level = run->s.regs.device_irq_level;
-        qemu_mutex_unlock_iothread();
+        bql_unlock();
     }
 
     return MEMTXATTRS_UNSPECIFIED;
@@ -1320,9 +1320,9 @@ static int kvm_arm_handle_hypercall(CPUState *cs, struct kvm_run *run)
     env->exception.target_el = 1;
 
     if (!arm_handle_smcc_kvm_vendor_hypercall(cpu)) {
-        qemu_mutex_lock_iothread();
+        bql_lock();
         arm_cpu_do_interrupt(cs);
-        qemu_mutex_unlock_iothread();
+        bql_unlock();
     }
 
     /*

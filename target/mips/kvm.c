@@ -138,7 +138,7 @@ void kvm_arch_pre_run(CPUState *cs, struct kvm_run *run)
     int r;
     struct kvm_mips_interrupt intr;
 
-    qemu_mutex_lock_iothread();
+    bql_lock();
 
     if ((cs->interrupt_request & CPU_INTERRUPT_HARD) &&
             cpu_mips_io_interrupts_pending(cpu)) {
@@ -151,7 +151,7 @@ void kvm_arch_pre_run(CPUState *cs, struct kvm_run *run)
         }
     }
 
-    qemu_mutex_unlock_iothread();
+    bql_unlock();
 }
 
 MemTxAttrs kvm_arch_post_run(CPUState *cs, struct kvm_run *run)
@@ -1280,11 +1280,6 @@ int kvm_arch_get_default_type(MachineState *machine)
 
     error_report("KVM_VM_MIPS_VZ type is not available");
     return -1;
-}
-
-bool kvm_arch_cpu_check_are_resettable(void)
-{
-    return true;
 }
 
 void kvm_arch_accel_class_init(ObjectClass *oc)

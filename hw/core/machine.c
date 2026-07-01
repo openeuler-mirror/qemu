@@ -32,6 +32,12 @@
 #include "hw/virtio/virtio-net.h"
 #include "audio/audio.h"
 
+GlobalProperty hw_compat_8_2[] = {};
+GlobalProperty hw_compat_9_0[] = {};
+const size_t hw_compat_9_0_len = G_N_ELEMENTS(hw_compat_9_0);
+
+const size_t hw_compat_8_2_len = G_N_ELEMENTS(hw_compat_8_2);
+
 GlobalProperty hw_compat_8_1[] = {
     { TYPE_PCI_BRIDGE, "x-pci-express-writeable-slt-bug", "true" },
     { "ramfb", "x-migrate", "off" },
@@ -729,7 +735,7 @@ HotpluggableCPUList *machine_query_hotpluggable_cpus(MachineState *machine)
     mc->possible_cpu_arch_ids(machine);
 
     for (i = 0; i < machine->possible_cpus->len; i++) {
-        Object *cpu;
+        CPUState *cpu;
         HotpluggableCPU *cpu_item = g_new0(typeof(*cpu_item), 1);
 
         cpu_item->type = g_strdup(machine->possible_cpus->cpus[i].type);
@@ -739,7 +745,7 @@ HotpluggableCPUList *machine_query_hotpluggable_cpus(MachineState *machine)
 
         cpu = machine->possible_cpus->cpus[i].cpu;
         if (cpu) {
-            cpu_item->qom_path = object_get_canonical_path(cpu);
+            cpu_item->qom_path = object_get_canonical_path(OBJECT(cpu));
         }
         QAPI_LIST_PREPEND(head, cpu_item);
     }
@@ -1267,6 +1273,11 @@ bool machine_dump_guest_core(MachineState *machine)
 bool machine_mem_merge(MachineState *machine)
 {
     return machine->mem_merge;
+}
+
+bool machine_require_guest_memfd(MachineState *machine)
+{
+    return machine->cgs && machine->cgs->require_guest_memfd;
 }
 
 static char *cpu_slot_to_string(const CPUArchId *cpu)

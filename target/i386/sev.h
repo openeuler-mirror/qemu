@@ -20,12 +20,19 @@
 
 #include "exec/confidential-guest-support.h"
 
+#define TYPE_SEV_COMMON "sev-common"
+#define TYPE_SEV_GUEST "sev-guest"
+#define TYPE_SEV_SNP_GUEST "sev-snp-guest"
+
 #define SEV_POLICY_NODBG        0x1
 #define SEV_POLICY_NOKS         0x2
 #define SEV_POLICY_ES           0x4
 #define SEV_POLICY_NOSEND       0x8
 #define SEV_POLICY_DOMAIN       0x10
 #define SEV_POLICY_SEV          0x20
+
+#define SEV_SNP_POLICY_SMT      0x10000
+#define SEV_SNP_POLICY_DBG      0x80000
 
 typedef struct SevKernelLoaderContext {
     char *setup_data;
@@ -48,16 +55,18 @@ typedef struct SevKernelLoaderContext {
 #ifdef CONFIG_SEV
 bool sev_enabled(void);
 bool sev_es_enabled(void);
+bool sev_snp_enabled(void);
 #else
 #define sev_enabled() 0
 #define sev_es_enabled() 0
+#define sev_snp_enabled() 0
 #endif
 
 uint32_t sev_get_cbit_position(void);
 uint32_t sev_get_reduced_phys_bits(void);
 bool sev_add_kernel_loader_hashes(SevKernelLoaderContext *ctx, Error **errp);
 
-int sev_encrypt_flash(uint8_t *ptr, uint64_t len, Error **errp);
+int sev_encrypt_flash(hwaddr gpa, uint8_t *ptr, uint64_t len, Error **errp);
 int sev_save_setup(const char *pdh, const char *plat_cert,
                    const char *amd_cert);
 int sev_save_outgoing_page(QEMUFile *f, uint8_t *ptr,
@@ -76,8 +85,6 @@ int sev_load_incoming_shared_regions_list(QEMUFile *f);
 bool sev_is_gfn_in_unshared_region(unsigned long gfn);
 void sev_del_migrate_blocker(void);
 
-int sev_kvm_init(ConfidentialGuestSupport *cgs, Error **errp);
-
 extern bool sev_kvm_has_msr_ghcb;
 
 struct sev_ops {
@@ -88,5 +95,7 @@ struct sev_ops {
 };
 
 extern struct sev_ops sev_ops;
+
+void pc_system_parse_sev_metadata(uint8_t *flash_ptr, size_t flash_size);
 
 #endif

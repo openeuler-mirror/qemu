@@ -155,10 +155,10 @@ static void x86_nmi(NMIState *n, int cpu_index, Error **errp)
     CPU_FOREACH(cs) {
         X86CPU *cpu = X86_CPU(cs);
 
-        if (!cpu->apic_state) {
-            cpu_interrupt(cs, CPU_INTERRUPT_NMI);
-        } else {
+        if (cpu_is_apic_enabled(cpu->apic_state)) {
             apic_deliver_nmi(cpu->apic_state);
+        } else {
+            cpu_interrupt(cs, CPU_INTERRUPT_NMI);
         }
     }
 }
@@ -347,6 +347,16 @@ static void machine_set_sgx_epc(Object *obj, Visitor *v, const char *name,
     qapi_free_SgxEPCList(list);
 }
 
+static int x86_kvm_type(MachineState *ms, const char *vm_type)
+{
+    /*
+     * No x86 machine has a kvm-type property.  If one is added that has
+     * it, it should call kvm_get_vm_type() directly or not use it at all.
+     */
+    assert(vm_type == NULL);
+    return kvm_enabled() ? kvm_get_vm_type(ms) : 0;
+}
+
 static void x86_machine_initfn(Object *obj)
 {
     X86MachineState *x86ms = X86_MACHINE(obj);
@@ -371,6 +381,7 @@ static void x86_machine_class_init(ObjectClass *oc, void *data)
     mc->cpu_index_to_instance_props = x86_cpu_index_to_props;
     mc->get_default_cpu_node_id = x86_get_default_cpu_node_id;
     mc->possible_cpu_arch_ids = x86_possible_cpu_arch_ids;
+    mc->kvm_type = x86_kvm_type;
     x86mc->save_tsc_khz = true;
     x86mc->fwcfg_dma_enabled = true;
     nc->nmi_monitor_handler = x86_nmi;

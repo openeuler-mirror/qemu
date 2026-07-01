@@ -116,6 +116,8 @@ bool kvm_usi_via_irqfd_allowed;
 static bool kvm_has_guest_debug;
 static int kvm_sstep_flags;
 static bool kvm_immediate_exit;
+static uint64_t kvm_supported_memory_attributes;
+static bool kvm_guest_memfd_supported;
 static hwaddr kvm_max_slot_size = ~0;
 
 static const KVMCapabilityInfo kvm_required_capabilites[] = {
@@ -307,34 +309,58 @@ int kvm_physical_memory_addr_from_host(KVMState *s, void *ram,
 static int kvm_set_user_memory_region(KVMMemoryListener *kml, KVMSlot *slot, bool new)
 {
     KVMState *s = kvm_state;
-    struct kvm_userspace_memory_region mem;
+    struct kvm_userspace_memory_region2 mem = {};
     int ret;
 
     mem.slot = slot->slot | (kml->as_id << 16);
     mem.guest_phys_addr = slot->start_addr;
     mem.userspace_addr = (unsigned long)slot->ram;
     mem.flags = slot->flags;
+    mem.guest_memfd = slot->guest_memfd;
+    mem.guest_memfd_offset = slot->guest_memfd_offset;
 
     if (slot->memory_size && !new && (mem.flags ^ slot->old_flags) & KVM_MEM_READONLY) {
         /* Set the slot size to 0 before setting the slot to the desired
          * value. This is needed based on KVM commit 75d61fbc. */
         mem.memory_size = 0;
-        ret = kvm_vm_ioctl(s, KVM_SET_USER_MEMORY_REGION, &mem);
+
+        if (kvm_guest_memfd_supported) {
+            ret = kvm_vm_ioctl(s, KVM_SET_USER_MEMORY_REGION2, &mem);
+        } else {
+            ret = kvm_vm_ioctl(s, KVM_SET_USER_MEMORY_REGION, &mem);
+        }
         if (ret < 0) {
             goto err;
         }
     }
     mem.memory_size = slot->memory_size;
-    ret = kvm_vm_ioctl(s, KVM_SET_USER_MEMORY_REGION, &mem);
+    if (kvm_guest_memfd_supported) {
+        ret = kvm_vm_ioctl(s, KVM_SET_USER_MEMORY_REGION2, &mem);
+    } else {
+        ret = kvm_vm_ioctl(s, KVM_SET_USER_MEMORY_REGION, &mem);
+    }
     slot->old_flags = mem.flags;
 err:
-    trace_kvm_set_user_memory(mem.slot, mem.flags, mem.guest_phys_addr,
-                              mem.memory_size, mem.userspace_addr, ret);
+    trace_kvm_set_user_memory(mem.slot >> 16, (uint16_t)mem.slot, mem.flags,
+                              mem.guest_phys_addr, mem.memory_size,
+                              mem.userspace_addr, mem.guest_memfd,
+                              mem.guest_memfd_offset, ret);
     if (ret < 0) {
-        error_report("%s: KVM_SET_USER_MEMORY_REGION failed, slot=%d,"
-                     " start=0x%" PRIx64 ", size=0x%" PRIx64 ": %s",
-                     __func__, mem.slot, slot->start_addr,
-                     (uint64_t)mem.memory_size, strerror(errno));
+        if (kvm_guest_memfd_supported) {
+                error_report("%s: KVM_SET_USER_MEMORY_REGION2 failed, slot=%d,"
+                        " start=0x%" PRIx64 ", size=0x%" PRIx64 ","
+                        " flags=0x%" PRIx32 ", guest_memfd=%" PRId32 ","
+                        " guest_memfd_offset=0x%" PRIx64 ": %s",
+                        __func__, mem.slot, slot->start_addr,
+                        (uint64_t)mem.memory_size, mem.flags,
+                        mem.guest_memfd, (uint64_t)mem.guest_memfd_offset,
+                        strerror(errno));
+        } else {
+                error_report("%s: KVM_SET_USER_MEMORY_REGION failed, slot=%d,"
+                            " start=0x%" PRIx64 ", size=0x%" PRIx64 ": %s",
+                            __func__, mem.slot, slot->start_addr,
+                            (uint64_t)mem.memory_size, strerror(errno));
+        }
     }
     return ret;
 }
@@ -527,6 +553,10 @@ static int kvm_mem_flags(MemoryRegion *mr)
         flags |= KVM_MEM_HUGE_POD;
     }
 #endif
+    if (memory_region_has_guest_memfd(mr)) {
+        assert(kvm_guest_memfd_supported);
+        flags |= KVM_MEM_GUEST_MEMFD;
+    }
     return flags;
 }
 
@@ -869,7 +899,7 @@ static void kvm_dirty_ring_flush(void)
      * should always be with BQL held, serialization is guaranteed.
      * However, let's be sure of it.
      */
-    assert(qemu_mutex_iothread_locked());
+    assert(bql_locked());
     /*
      * First make sure to flush the hardware buffers by kicking all
      * vcpus out in a synchronous way.
@@ -1187,6 +1217,11 @@ int kvm_vm_check_extension(KVMState *s, unsigned int extension)
     return ret;
 }
 
+/*
+ * We track the poisoned pages to be able to:
+ * - replace them on VM reset
+ * - block a migration for a VM with a poisoned page
+ */
 typedef struct HWPoisonPage {
     ram_addr_t ram_addr;
     QLIST_ENTRY(HWPoisonPage) list;
@@ -1218,6 +1253,11 @@ void kvm_hwpoison_page_add(ram_addr_t ram_addr)
     page = g_new(HWPoisonPage, 1);
     page->ram_addr = ram_addr;
     QLIST_INSERT_HEAD(&hwpoison_page_list, page, list);
+}
+
+bool kvm_hwpoisoned_mem(void)
+{
+    return !QLIST_EMPTY(&hwpoison_page_list);
 }
 
 static uint32_t adjust_ioeventfd_endianness(uint32_t val, uint32_t size)
@@ -1323,6 +1363,36 @@ void kvm_set_max_memslot_size(hwaddr max_slot_size)
     kvm_max_slot_size = max_slot_size;
 }
 
+static int kvm_set_memory_attributes(hwaddr start, uint64_t size, uint64_t attr)
+{
+    struct kvm_memory_attributes attrs;
+    int r;
+
+    assert((attr & kvm_supported_memory_attributes) == attr);
+    attrs.attributes = attr;
+    attrs.address = start;
+    attrs.size = size;
+    attrs.flags = 0;
+
+    r = kvm_vm_ioctl(kvm_state, KVM_SET_MEMORY_ATTRIBUTES, &attrs);
+    if (r) {
+        error_report("failed to set memory (0x%" HWADDR_PRIx "+0x%" PRIx64 ") "
+                     "with attr 0x%" PRIx64 " error '%s'",
+                     start, size, attr, strerror(errno));
+    }
+    return r;
+}
+
+int kvm_set_memory_attributes_private(hwaddr start, uint64_t size)
+{
+    return kvm_set_memory_attributes(start, size, KVM_MEMORY_ATTRIBUTE_PRIVATE);
+}
+
+int kvm_set_memory_attributes_shared(hwaddr start, uint64_t size)
+{
+    return kvm_set_memory_attributes(start, size, 0);
+}
+
 /* Called with KVMMemoryListener.slots_lock held */
 static void kvm_set_phys_mem(KVMMemoryListener *kml,
                              MemoryRegionSection *section, bool add)
@@ -1419,6 +1489,9 @@ static void kvm_set_phys_mem(KVMMemoryListener *kml,
         mem->ram_start_offset = ram_start_offset;
         mem->ram = ram;
         mem->flags = kvm_mem_flags(mr);
+        mem->guest_memfd = mr->ram_block->guest_memfd;
+        mem->guest_memfd_offset = (uint8_t*)ram - mr->ram_block->host;
+
         kvm_slot_init_dirty_bitmap(mem);
         err = kvm_set_user_memory_region(kml, mem, true);
         if (err) {
@@ -1426,6 +1499,16 @@ static void kvm_set_phys_mem(KVMMemoryListener *kml,
                     strerror(-err));
             abort();
         }
+
+        if (memory_region_has_guest_memfd(mr)) {
+            err = kvm_set_memory_attributes_private(start_addr, slot_size);
+            if (err) {
+                error_report("%s: failed to set memory attribute private: %s",
+                             __func__, strerror(-err));
+                exit(1);
+            }
+        }
+
         start_addr += slot_size;
         ram_start_offset += slot_size;
         ram += slot_size;
@@ -1459,9 +1542,9 @@ static void *kvm_dirty_ring_reaper_thread(void *data)
         trace_kvm_dirty_ring_reaper("wakeup");
         r->reaper_state = KVM_DIRTY_RING_REAPER_REAPING;
 
-        qemu_mutex_lock_iothread();
+        bql_lock();
         kvm_dirty_ring_reap(s, NULL);
-        qemu_mutex_unlock_iothread();
+        bql_unlock();
 
         r->reaper_iteration++;
     }
@@ -2539,6 +2622,12 @@ static int kvm_init(MachineState *ms)
         goto err;
     }
 
+    kvm_supported_memory_attributes = kvm_check_extension(s, KVM_CAP_MEMORY_ATTRIBUTES);
+    kvm_guest_memfd_supported =
+        kvm_check_extension(s, KVM_CAP_GUEST_MEMFD) &&
+        kvm_check_extension(s, KVM_CAP_USER_MEMORY2) &&
+        (kvm_supported_memory_attributes & KVM_MEMORY_ATTRIBUTE_PRIVATE);
+
     kvm_immediate_exit = kvm_check_extension(s, KVM_CAP_IMMEDIATE_EXIT);
     s->nr_slots = kvm_check_extension(s, KVM_CAP_NR_MEMSLOTS);
 
@@ -2865,11 +2954,6 @@ void kvm_flush_coalesced_mmio_buffer(void)
     s->coalesced_flush_in_progress = false;
 }
 
-bool kvm_cpu_check_are_resettable(void)
-{
-    return kvm_arch_cpu_check_are_resettable();
-}
-
 static void do_kvm_cpu_synchronize_state(CPUState *cpu, run_on_cpu_data arg)
 {
     if (!cpu->vcpu_dirty && !kvm_state->guest_state_protected) {
@@ -3023,6 +3107,69 @@ static void kvm_eat_signals(CPUState *cpu)
     } while (sigismember(&chkset, SIG_IPI));
 }
 
+int kvm_convert_memory(hwaddr start, hwaddr size, bool to_private)
+{
+    MemoryRegionSection section;
+    ram_addr_t offset;
+    MemoryRegion *mr;
+    RAMBlock *rb;
+    void *addr;
+    int ret = -1;
+
+    trace_kvm_convert_memory(start, size, to_private ? "shared_to_private" : "private_to_shared");
+
+    if (!QEMU_PTR_IS_ALIGNED(start, qemu_real_host_page_size()) ||
+        !QEMU_PTR_IS_ALIGNED(size, qemu_real_host_page_size())) {
+        return -1;
+    }
+
+    if (!size) {
+        return -1;
+    }
+
+    section = memory_region_find(get_system_memory(), start, size);
+    mr = section.mr;
+    if (!mr) {
+        return -1;
+    }
+
+    if (!memory_region_has_guest_memfd(mr)) {
+        error_report("Converting non guest_memfd backed memory region "
+                     "(0x%"HWADDR_PRIx" ,+ 0x%"HWADDR_PRIx") to %s",
+                     start, size, to_private ? "private" : "shared");
+        goto out_unref;
+    }
+
+    if (to_private) {
+        ret = kvm_set_memory_attributes_private(start, size);
+    } else {
+        ret = kvm_set_memory_attributes_shared(start, size);
+    }
+    if (ret) {
+        goto out_unref;
+    }
+
+    addr = memory_region_get_ram_ptr(mr) + section.offset_within_region;
+    rb = qemu_ram_block_from_host(addr, false, &offset);
+
+    if (to_private) {
+        if (rb->page_size != qemu_real_host_page_size()) {
+            /*
+             * shared memory is backed by hugetlb, which is supposed to be
+             * pre-allocated and doesn't need to be discarded
+             */
+            goto out_unref;
+        }
+        ret = ram_block_discard_range(rb, offset, size);
+    } else {
+        ret = ram_block_discard_guest_memfd_range(rb, offset, size);
+    }
+
+out_unref:
+    memory_region_unref(mr);
+    return ret;
+}
+
 int kvm_cpu_exec(CPUState *cpu)
 {
     struct kvm_run *run = cpu->kvm_run;
@@ -3035,7 +3182,7 @@ int kvm_cpu_exec(CPUState *cpu)
         return EXCP_HLT;
     }
 
-    qemu_mutex_unlock_iothread();
+    bql_unlock();
     cpu_exec_start(cpu);
 
     do {
@@ -3080,11 +3227,11 @@ int kvm_cpu_exec(CPUState *cpu)
 
 #ifdef KVM_HAVE_MCE_INJECTION
         if (unlikely(have_sigbus_pending)) {
-            qemu_mutex_lock_iothread();
+            bql_lock();
             kvm_arch_on_sigbus_vcpu(cpu, pending_sigbus_code,
                                     pending_sigbus_addr);
             have_sigbus_pending = false;
-            qemu_mutex_unlock_iothread();
+            bql_unlock();
         }
 #endif
 
@@ -3095,18 +3242,20 @@ int kvm_cpu_exec(CPUState *cpu)
                 ret = EXCP_INTERRUPT;
                 break;
             }
-            fprintf(stderr, "error: kvm run failed %s\n",
-                    strerror(-run_ret));
+            if (!(run_ret == -EFAULT && run->exit_reason == KVM_EXIT_MEMORY_FAULT)) {
+                fprintf(stderr, "error: kvm run failed %s\n",
+                        strerror(-run_ret));
 #ifdef TARGET_PPC
-            if (run_ret == -EBUSY) {
-                fprintf(stderr,
-                        "This is probably because your SMT is enabled.\n"
-                        "VCPU can only run on primary threads with all "
-                        "secondary threads offline.\n");
-            }
+                if (run_ret == -EBUSY) {
+                    fprintf(stderr,
+                            "This is probably because your SMT is enabled.\n"
+                            "VCPU can only run on primary threads with all "
+                            "secondary threads offline.\n");
+                }
 #endif
-            ret = -1;
-            break;
+                ret = -1;
+                break;
+            }
         }
 
         trace_kvm_run_exit(cpu->cpu_index, run->exit_reason);
@@ -3154,7 +3303,7 @@ int kvm_cpu_exec(CPUState *cpu)
              * still full.  Got kicked by KVM_RESET_DIRTY_RINGS.
              */
             trace_kvm_dirty_ring_full(cpu->cpu_index);
-            qemu_mutex_lock_iothread();
+            bql_lock();
             /*
              * We throttle vCPU by making it sleep once it exit from kernel
              * due to dirty ring full. In the dirtylimit scenario, reaping
@@ -3166,7 +3315,7 @@ int kvm_cpu_exec(CPUState *cpu)
             } else {
                 kvm_dirty_ring_reap(kvm_state, NULL);
             }
-            qemu_mutex_unlock_iothread();
+            bql_unlock();
             dirtylimit_vcpu_execute(cpu);
             ret = 0;
             break;
@@ -3182,9 +3331,9 @@ int kvm_cpu_exec(CPUState *cpu)
                 break;
             case KVM_SYSTEM_EVENT_CRASH:
                 kvm_cpu_synchronize_state(cpu);
-                qemu_mutex_lock_iothread();
+                bql_lock();
                 qemu_system_guest_panicked(cpu_get_crash_info(cpu));
-                qemu_mutex_unlock_iothread();
+                bql_unlock();
                 ret = 0;
                 break;
             default:
@@ -3192,6 +3341,19 @@ int kvm_cpu_exec(CPUState *cpu)
                 ret = kvm_arch_handle_exit(cpu, run);
                 break;
             }
+            break;
+        case KVM_EXIT_MEMORY_FAULT:
+            trace_kvm_memory_fault(run->memory_fault.gpa,
+                                   run->memory_fault.size,
+                                   run->memory_fault.flags);
+            if (run->memory_fault.flags & ~KVM_MEMORY_EXIT_FLAG_PRIVATE) {
+                error_report("KVM_EXIT_MEMORY_FAULT: Unknown flag 0x%" PRIx64,
+                             (uint64_t)run->memory_fault.flags);
+                ret = -1;
+                break;
+            }
+            ret = kvm_convert_memory(run->memory_fault.gpa, run->memory_fault.size,
+                                     run->memory_fault.flags & KVM_MEMORY_EXIT_FLAG_PRIVATE);
             break;
         default:
             DPRINTF("kvm_arch_handle_exit\n");
@@ -3201,7 +3363,7 @@ int kvm_cpu_exec(CPUState *cpu)
     } while (ret == 0);
 
     cpu_exec_end(cpu);
-    qemu_mutex_lock_iothread();
+    bql_lock();
 
     if (ret < 0) {
         cpu_dump_state(cpu, stderr, CPU_DUMP_CODE);
@@ -4391,4 +4553,26 @@ int kvm_clear_slot_dirty_bitmap(void *ram)
 void kvm_mark_guest_state_protected(void)
 {
     kvm_state->guest_state_protected = true;
+}
+
+int kvm_create_guest_memfd(uint64_t size, uint64_t flags, Error **errp)
+{
+    int fd;
+    struct kvm_create_guest_memfd guest_memfd = {
+        .size = size,
+        .flags = flags,
+    };
+
+    if (!kvm_guest_memfd_supported) {
+        error_setg(errp, "KVM does not support guest_memfd");
+        return -1;
+    }
+
+    fd = kvm_vm_ioctl(kvm_state, KVM_CREATE_GUEST_MEMFD, &guest_memfd);
+    if (fd < 0) {
+        error_setg_errno(errp, errno, "Error creating KVM guest_memfd");
+        return -1;
+    }
+
+    return fd;
 }

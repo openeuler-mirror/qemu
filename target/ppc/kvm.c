@@ -1656,7 +1656,7 @@ int kvm_arch_handle_exit(CPUState *cs, struct kvm_run *run)
     CPUPPCState *env = &cpu->env;
     int ret;
 
-    qemu_mutex_lock_iothread();
+    bql_lock();
 
     switch (run->exit_reason) {
     case KVM_EXIT_DCR:
@@ -1715,7 +1715,7 @@ int kvm_arch_handle_exit(CPUState *cs, struct kvm_run *run)
         break;
     }
 
-    qemu_mutex_unlock_iothread();
+    bql_unlock();
     return ret;
 }
 
@@ -2969,11 +2969,6 @@ void kvmppc_set_reg_tb_offset(PowerPCCPU *cpu, int64_t tb_offset)
     if (kvm_enabled()) {
         kvm_set_one_reg(cs, KVM_REG_PPC_TB_OFFSET, &tb_offset);
     }
-}
-
-bool kvm_arch_cpu_check_are_resettable(void)
-{
-    return true;
 }
 
 void kvm_arch_accel_class_init(ObjectClass *oc)

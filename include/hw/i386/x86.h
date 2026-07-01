@@ -18,6 +18,7 @@
 #define HW_I386_X86_H
 
 #include "exec/hwaddr.h"
+#include "exec/memory.h"
 
 #include "hw/boards.h"
 #include "hw/i386/topology.h"
@@ -50,6 +51,18 @@ struct X86MachineState {
     DeviceState *ioapic2;
     GMappedFile *initrd_mapped_file;
     HotplugHandler *acpi_dev;
+
+    /*
+     * Map the whole BIOS just underneath the 4 GiB address boundary. Only used
+     * in the ROM (-bios) case.
+     */
+    MemoryRegion bios;
+
+    /*
+     * Map the upper 128 KiB of the BIOS just underneath the 1 MiB address
+     * boundary.
+     */
+    MemoryRegion isa_bios;
 
     /* RAM information (sizes, addresses, configuration): */
     ram_addr_t below_4g_mem_size, above_4g_mem_size;
@@ -115,7 +128,9 @@ void x86_cpu_unplug_request_cb(HotplugHandler *hotplug_dev,
 void x86_cpu_unplug_cb(HotplugHandler *hotplug_dev,
                        DeviceState *dev, Error **errp);
 
-void x86_bios_rom_init(MachineState *ms, const char *default_firmware,
+void x86_isa_bios_init(MemoryRegion *isa_bios, MemoryRegion *isa_memory,
+                       MemoryRegion *bios, bool read_only);
+void x86_bios_rom_init(X86MachineState *x86ms, const char *default_firmware,
                        MemoryRegion *rom_memory, bool isapc_ram_fw);
 
 void x86_load_linux(X86MachineState *x86ms,
@@ -138,10 +153,10 @@ typedef struct GSIState {
 
 qemu_irq x86_allocate_cpu_irq(void);
 void gsi_handler(void *opaque, int n, int level);
-void ioapic_init_gsi(GSIState *gsi_state, const char *parent_name);
+void ioapic_init_gsi(GSIState *gsi_state, Object *parent);
 DeviceState *ioapic_init_secondary(GSIState *gsi_state);
 
 /* pc_sysfw.c */
-void x86_firmware_configure(void *ptr, int size);
+void x86_firmware_configure(hwaddr gpa, void *ptr, int size);
 
 #endif
