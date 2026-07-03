@@ -303,6 +303,16 @@ bool machine_parse_smp_cache(MachineState *ms,
         machine_set_cache_topo_level(ms, node->value->cache,
                                      node->value->topology);
         set_bit(node->value->cache, caches_bitmap);
+
+        if (test_bit(CACHE_LEVEL_AND_TYPE_L1, caches_bitmap) &&
+            (test_bit(CACHE_LEVEL_AND_TYPE_L1D, caches_bitmap) ||
+             test_bit(CACHE_LEVEL_AND_TYPE_L1I, caches_bitmap))) {
+            error_setg(errp,
+                       "Invalid smp cache topology. "
+                       "L1 unified cache and L1D/L1I split caches "
+                       "are mutually exclusive");
+            return false;
+        }
     }
 
     for (int i = 0; i < CACHE_LEVEL_AND_TYPE__MAX; i++) {
@@ -388,6 +398,8 @@ bool machine_check_smp_cache(const MachineState *ms, Error **errp)
     if (smp_cache_topo_cmp(&ms->smp_cache, CACHE_LEVEL_AND_TYPE_L1D,
                            CACHE_LEVEL_AND_TYPE_L2) ||
         smp_cache_topo_cmp(&ms->smp_cache, CACHE_LEVEL_AND_TYPE_L1I,
+                           CACHE_LEVEL_AND_TYPE_L2) ||
+        smp_cache_topo_cmp(&ms->smp_cache, CACHE_LEVEL_AND_TYPE_L1,
                            CACHE_LEVEL_AND_TYPE_L2)) {
         error_setg(errp,
                    "Invalid smp cache topology. "
@@ -404,4 +416,62 @@ bool machine_check_smp_cache(const MachineState *ms, Error **errp)
     }
 
     return true;
+}
+
+/*
+ * This function assumes L3 and L2 have unified cache and L1 can be
+ * split L1d and L1i, or unified.
+ */
+bool machine_find_lowest_level_cache_at_topo_level(const MachineState *ms,
+                                                   int *lowest_cache_level,
+                                                   CpuTopologyLevel topo_level)
+{
+    CacheLevelAndType cache_level;
+    CpuTopologyLevel t;
+
+    for (cache_level = CACHE_LEVEL_AND_TYPE_L1D;
+         cache_level < CACHE_LEVEL_AND_TYPE__MAX; cache_level++) {
+        t = machine_get_cache_topo_level(ms, cache_level);
+        if (t == topo_level) {
+            switch (cache_level) {
+            case CACHE_LEVEL_AND_TYPE_L1D:
+            case CACHE_LEVEL_AND_TYPE_L1I:
+            case CACHE_LEVEL_AND_TYPE_L1:
+                *lowest_cache_level = CACHE_LEVEL_L1;
+                break;
+            case CACHE_LEVEL_AND_TYPE_L2:
+                *lowest_cache_level = CACHE_LEVEL_L2;
+                break;
+            case CACHE_LEVEL_AND_TYPE_L3:
+                *lowest_cache_level = CACHE_LEVEL_L3;
+                break;
+            default:
+                break;
+            }
+
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/*
+ * Check if there are caches defined at a particular level.
+ *
+ * Return True on success, False otherwise.
+ */
+bool machine_defines_cache_at_topo_level(const MachineState *ms,
+                                         CpuTopologyLevel topology)
+{
+    CacheLevelAndType cache_level;
+
+    for (cache_level = CACHE_LEVEL_AND_TYPE_L1D;
+         cache_level < CACHE_LEVEL_AND_TYPE__MAX; cache_level++) {
+        if (machine_get_cache_topo_level(ms, cache_level) == topology) {
+            return true;
+        }
+    }
+
+    return false;
 }
