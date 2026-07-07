@@ -12,6 +12,7 @@
  */
 
 #include "qemu/osdep.h"
+#include "exec/hwaddr.h"
 #include "sev.h"
 #include "csv.h"
 

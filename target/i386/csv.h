@@ -17,6 +17,7 @@
 #include "qapi/qapi-commands-misc-target.h"
 #include "qemu/thread.h"
 #include "qemu/queue.h"
+#include "exec/hwaddr.h"
 #include "sev.h"
 
 #define GUEST_POLICY_CSV3_BIT    (1 << 6)
