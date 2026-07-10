@@ -47,6 +47,9 @@ CpuTopologyLevel machine_get_cache_topo_level(const MachineState *ms,
 void machine_set_cache_topo_level(MachineState *ms, CacheLevelAndType cache,
                                   CpuTopologyLevel level);
 bool machine_check_smp_cache(const MachineState *ms, Error **errp);
+uint64_t machine_get_cache_size(const MachineState *ms, CacheLevelAndType cache);
+void machine_set_cache_size(MachineState *ms, CacheLevelAndType cache,
+                            uint64_t size);
 bool machine_defines_cache_at_topo_level(const MachineState *ms,
                                          CpuTopologyLevel topology);
 bool machine_find_lowest_level_cache_at_topo_level(const MachineState *ms,

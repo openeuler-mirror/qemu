@@ -938,6 +938,7 @@ static void machine_get_smp_cache(Object *obj, Visitor *v, const char *name,
 
         node->cache = cache->props[i].cache;
         node->topology = cache->props[i].topology;
+        node->size = cache->props[i].size;
         QAPI_LIST_APPEND(tail, node);
     }
 
@@ -1232,6 +1233,7 @@ static void machine_initfn(Object *obj)
     for (int i = 0; i < CACHE_LEVEL_AND_TYPE__MAX; i++) {
         ms->smp_cache.props[i].cache = (CacheLevelAndType)i;
         ms->smp_cache.props[i].topology = CPU_TOPOLOGY_LEVEL_DEFAULT;
+        ms->smp_cache.props[i].size = 0;
     }
 
     machine_copy_boot_config(ms, &(BootConfiguration){ 0 });

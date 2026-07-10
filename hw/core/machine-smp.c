@@ -302,6 +302,7 @@ bool machine_parse_smp_cache(MachineState *ms,
 
         machine_set_cache_topo_level(ms, node->value->cache,
                                      node->value->topology);
+        machine_set_cache_size(ms, node->value->cache, node->value->size);
         set_bit(node->value->cache, caches_bitmap);
 
         if (test_bit(CACHE_LEVEL_AND_TYPE_L1, caches_bitmap) &&
@@ -474,4 +475,15 @@ bool machine_defines_cache_at_topo_level(const MachineState *ms,
     }
 
     return false;
+}
+
+uint64_t machine_get_cache_size(const MachineState *ms, CacheLevelAndType cache)
+{
+    return ms->smp_cache.props[cache].size;
+}
+
+void machine_set_cache_size(MachineState *ms, CacheLevelAndType cache,
+                            uint64_t size)
+{
+    ms->smp_cache.props[cache].size = size;
 }

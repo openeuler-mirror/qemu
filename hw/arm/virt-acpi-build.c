@@ -172,13 +172,25 @@ static const struct {
     },
 };
 
-static void virt_fill_cache(CPUCoreCaches *cache, CacheLevelAndType key)
+static void virt_fill_cache(CPUCoreCaches *cache, const MachineState *ms,
+                            CacheLevelAndType key)
 {
     const typeof(arm_cache_defaults[0]) *d = &arm_cache_defaults[key];
+    uint64_t sz = machine_get_cache_size(ms, key);
 
     cache->type = d->type;
     cache->level = d->level;
-    cache->size = d->default_sz;
+    if (sz > 0) {
+        if (sz > UINT32_MAX) {
+            warn_report("smp-cache %s size %" PRIu64 " exceeds UINT32_MAX, "
+                        "truncated to %u",
+                        CacheLevelAndType_str(key), sz, (unsigned)UINT32_MAX);
+            sz = UINT32_MAX;
+        }
+        cache->size = sz;
+    } else {
+        cache->size = d->default_sz;
+    }
     cache->sets = d->sets;
     cache->linesize = d->linesize;
     cache->associativity = d->associativity;
@@ -205,31 +217,31 @@ static unsigned int virt_get_caches(const VirtMachineState *vms,
      * configured, fall back to hardware CLIDR.
      */
     if (has_l1) {
-        virt_fill_cache(&caches[n++], CACHE_LEVEL_AND_TYPE_L1);
+        virt_fill_cache(&caches[n++], ms, CACHE_LEVEL_AND_TYPE_L1);
     } else if (has_l1d && has_l1i) {
-        virt_fill_cache(&caches[n++], CACHE_LEVEL_AND_TYPE_L1D);
-        virt_fill_cache(&caches[n++], CACHE_LEVEL_AND_TYPE_L1I);
+        virt_fill_cache(&caches[n++], ms, CACHE_LEVEL_AND_TYPE_L1D);
+        virt_fill_cache(&caches[n++], ms, CACHE_LEVEL_AND_TYPE_L1I);
     } else if (has_l1d) {
-        virt_fill_cache(&caches[n++], CACHE_LEVEL_AND_TYPE_L1D);
+        virt_fill_cache(&caches[n++], ms, CACHE_LEVEL_AND_TYPE_L1D);
     } else if (has_l1i) {
-        virt_fill_cache(&caches[n++], CACHE_LEVEL_AND_TYPE_L1I);
+        virt_fill_cache(&caches[n++], ms, CACHE_LEVEL_AND_TYPE_L1I);
     } else if (cpu_l1_cache_unified(0)) {
-        virt_fill_cache(&caches[n++], CACHE_LEVEL_AND_TYPE_L1);
+        virt_fill_cache(&caches[n++], ms, CACHE_LEVEL_AND_TYPE_L1);
     } else {
-        virt_fill_cache(&caches[n++], CACHE_LEVEL_AND_TYPE_L1D);
-        virt_fill_cache(&caches[n++], CACHE_LEVEL_AND_TYPE_L1I);
+        virt_fill_cache(&caches[n++], ms, CACHE_LEVEL_AND_TYPE_L1D);
+        virt_fill_cache(&caches[n++], ms, CACHE_LEVEL_AND_TYPE_L1I);
     }
 
     /* L2: only if configured */
     if (ms->smp_cache.props[CACHE_LEVEL_AND_TYPE_L2].topology
         != CPU_TOPOLOGY_LEVEL_DEFAULT) {
-        virt_fill_cache(&caches[n++], CACHE_LEVEL_AND_TYPE_L2);
+        virt_fill_cache(&caches[n++], ms, CACHE_LEVEL_AND_TYPE_L2);
     }
 
     /* L3: only if configured */
     if (ms->smp_cache.props[CACHE_LEVEL_AND_TYPE_L3].topology
         != CPU_TOPOLOGY_LEVEL_DEFAULT) {
-        virt_fill_cache(&caches[n++], CACHE_LEVEL_AND_TYPE_L3);
+        virt_fill_cache(&caches[n++], ms, CACHE_LEVEL_AND_TYPE_L3);
     }
 
     return n;
