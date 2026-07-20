@@ -66,7 +66,8 @@
 #define CTYPE_INS_DATA 0b011
 #define CTYPE_UNIFIED  0b100
 
-#define ARM64_REG_CLIDR_EL1 ARM64_SYS_REG(3, 1, 0, 0, 1)
+// ARM64_SYS_REG(3, 1, 0, 0, 1)
+#define ARM64_REG_CLIDR_EL1 0x603000000013c801ULL
 
 #define CLIDR_CTYPE_SHIFT(level) (3 * (level - 1))
 #define CLIDR_CTYPE_MASK(level) (7 << CLIDR_CTYPE_SHIFT(level))
