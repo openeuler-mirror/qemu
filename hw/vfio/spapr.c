@@ -458,20 +458,11 @@ static void vfio_spapr_container_release(VFIOContainerBase *bcontainer)
     }
 }
 
-static VFIOIOMMUOps vfio_iommu_spapr_ops;
-
-static void setup_spapr_ops(VFIOContainerBase *bcontainer)
+static int vfio_spapr_container_setup(VFIOContainerBase *bcontainer,
+                                      Error **errp)
 {
-    vfio_iommu_spapr_ops = *bcontainer->ops;
-    vfio_iommu_spapr_ops.add_window = vfio_spapr_container_add_section_window;
-    vfio_iommu_spapr_ops.del_window = vfio_spapr_container_del_section_window;
-    vfio_iommu_spapr_ops.release = vfio_spapr_container_release;
-    bcontainer->ops = &vfio_iommu_spapr_ops;
-}
-
-int vfio_spapr_container_init(VFIOContainer *container, Error **errp)
-{
-    VFIOContainerBase *bcontainer = &container->bcontainer;
+    VFIOContainer *container = container_of(bcontainer, VFIOContainer,
+                                            bcontainer);
     VFIOSpaprContainer *scontainer = container_of(container, VFIOSpaprContainer,
                                                   container);
     struct vfio_iommu_spapr_tce_info info;
@@ -536,8 +527,6 @@ int vfio_spapr_container_init(VFIOContainer *container, Error **errp)
                           0x1000);
     }
 
-    setup_spapr_ops(bcontainer);
-
     return 0;
 
 listener_unregister_exit:
@@ -569,8 +558,8 @@ static void vfio_iommu_spapr_class_init(ObjectClass *klass, void *data)
 
     vioc->add_window = vfio_spapr_container_add_section_window;
     vioc->del_window = vfio_spapr_container_del_section_window;
-    //vioc->release = vfio_spapr_container_release;
-    //vioc->setup = vfio_spapr_container_setup;
+    vioc->release = vfio_spapr_container_release;
+    vioc->setup = vfio_spapr_container_setup;
 };
 
 static const TypeInfo types[] = {
