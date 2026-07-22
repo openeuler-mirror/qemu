@@ -130,7 +130,13 @@ read 1048576/1048576 bytes at offset 0
         self.vm.cmd('object-add', {
             'qom-type': 'throttle-group',
             'id': 'group0',
-            'limits': {'bps-write': 300 * 1024}
+            # Keep the write rate low enough that the copy-before-write
+            # block_copy() reliably exceeds cbw-timeout (1s). With a higher
+            # rate the throttle's burst allowance (avg/10) plus variable
+            # chunking lets the copy finish under 1s on a loaded CI runner,
+            # so the timeout never fires and the snapshot is not broken,
+            # making test_timeout_break_{snapshot,guest} flaky.
+            'limits': {'bps-write': 10 * 1024}
         })
 
         self.vm.cmd('blockdev-add', {
