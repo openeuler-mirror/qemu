@@ -209,6 +209,13 @@ typedef struct {
     void *value;
 } hct_tlv_t;
 
+// Buffer structure for TLV serialization
+typedef struct {
+    char *data;
+    size_t len;
+    size_t capacity;
+} hct_buffer_t;
+
 // CCP device management structure
 typedef struct {
     char pci_addr[PCI_ADDR_MAX];    /* PCI address (e.g., 0000:01:00.0) */
@@ -253,8 +260,8 @@ typedef struct {
 #define HCT_MAX_PASID                (1 << 8)
 #define HCT_MIGRATE_VERSION          1
 #define HCT_QUEUE_NEED_INIT          0x01
-#define HCT_DMA_MEM_SIZE_256K        (1ull << 18) /* 256K */
-#define HCT_DMA_MEM_SIZE_8M          (1ull << 23) /* 8M */
+#define HCT_DMA_MEM_SIZE_256K        (1uLL << 18) /* 256K */
+#define HCT_DMA_MEM_SIZE_8M          (1uLL << 23) /* 8M */
 
 #define PCI_VENDOR_ID_HYGON_CCP      0x1d94
 #define PCI_DEVICE_ID_HYGON_CCP      0x1468
@@ -311,6 +318,11 @@ typedef struct {
 #define HCT_MIGRATION_DONE           0x03
 #define HCT_MIG_MSG_ACK              0x01
 #define HCT_MIG_MSG_ERR              0x02
+
+#define MSG_IDX_MAGIC                0
+#define MSG_IDX_VER                  1
+#define MSG_IDX_OP                   2
+#define MSG_IDX_STATE                3
 
 static volatile struct hct_data {
     int init;
@@ -450,7 +462,7 @@ static int hct_client_send_mem_cmd(HCTDevState *state, uint32_t cmd_type, hct_me
 
 static int hct_parse_tlv(const char *buffer, size_t buffer_len, size_t *offset, hct_tlv_t *tlv);
 
-static int hct_add_tlv_to_buffer(char *buffer, size_t *current_len, size_t max_len, uint16_t type, const void *value, uint16_t length);
+static int hct_add_tlv_to_buffer(hct_buffer_t *buf, uint16_t type, const char *value, uint16_t length);
 
 static int hct_get_sysfs_value(const char *path, int *val)
 {
@@ -598,17 +610,16 @@ struct VFIODeviceOps vfio_ccp_ops = {
     .vfio_compute_needs_reset = vfio_ccp_compute_needs_reset,
 };
 
-/* create BAR2 and BAR3 space for the virtual machine. */
 static int vfio_hct_region_mmap(HCTDevState *state)
 {
-    int ret;
+    int ret = 0;
     int i;
     struct vfio_region_info *info;
 
     for (i = 0; i < PCI_ROM_SLOT; i++) {
         ret = vfio_get_region_info(&state->vdev, i, &info);
         if (ret)
-            goto out;
+            return ret;
 
         if (info->size) {
             state->maps[i] = mmap(NULL, info->size,
@@ -616,12 +627,24 @@ static int vfio_hct_region_mmap(HCTDevState *state)
                                  state->vdev.fd, info->offset);
             if (state->maps[i] == MAP_FAILED) {
                 ret = -errno;
+                g_free(info);
                 error_report("vfio mmap fail\n");
-                goto out;
+                return ret;
             }
             state->map_size[i] = info->size;
         }
         g_free(info);
+    }
+
+    return ret;
+}
+
+/* create BAR2 and BAR3 space for the virtual machine. */
+static int vfio_hct_register_bar(HCTDevState *state)
+{
+    if (vfio_hct_region_mmap(state)) {
+        error_report("vfio_hct_region_mmap fail\n");
+        return -1;
     }
 
     /* create BAR2 space */
@@ -668,8 +691,8 @@ static int vfio_hct_region_mmap(HCTDevState *state)
         address_space_init(&state->dma_as, &state->shared, "hct-dma-as");
         memory_listener_register(&state->listener, &state->dma_as);
     }
-out:
-    return ret;
+
+    return 0;
 }
 
 static int hct_check_duplicated_index(int index)
@@ -863,6 +886,37 @@ static int hct_shared_memory_init(void)
     return flock(shm_fd, LOCK_SH);
 }
 
+static int hct_iova_mmap_vfio_pci(HCTDevState *state, void *vaddr,
+                                    hwaddr iova, Int128 llsize)
+{
+    int ret = 0;
+    iova = (iova | (hct_data.pasid << PASID_OFFSET)) + PAGE_SIZE;
+
+    /* If the region is the HCT shared DMA memory mapped from daemon,
+     * skip the ioctl call as the mapping is already established by daemon.
+     */
+    if (vaddr >= (void *)state->sdev.dma_memory - PAGE_SIZE &&
+        vaddr < (void *)(state->sdev.dma_memory - PAGE_SIZE +
+                        state->sdev.dma_memory_size)) {
+        if (state->sdev.dma_mem_fd >= 0) {
+            hct_mem_req_t req = {0};
+            req.mem_type = HCT_MEM_TYPE_QEMU;
+            req.gid = (uint32_t)g_id;
+            req.mdev_id = state->sdev.ccp_idx;
+            req.size = llsize;
+            req.iova = iova;
+
+            ret = hct_client_send_mem_cmd(state, HCT_CMD_MEM_ALLOC,
+                                            &req, NULL);
+            if (ret == HCT_SUCCESS) {
+                return 0;
+            }
+        }
+    }
+
+    return vfio_hct_dma_map_vfio_pci(hct_data.vfio_container_fd, vaddr, iova, llsize);
+}
+
 static void hct_listener_region_add(MemoryListener *listener,
                                     MemoryRegionSection *section)
 {
@@ -892,31 +946,11 @@ static void hct_listener_region_add(MemoryListener *listener,
 
     /* according to host running mode to select different DMA mapping mode */
     if (hct_data.driver == HCT_CCP_DRV_MOD_VFIO_PCI) {
-        iova = (iova | (hct_data.pasid << PASID_OFFSET)) + PAGE_SIZE;
-        /* If the region is the HCT shared DMA memory mapped from daemon,
-         * skip the ioctl call as the mapping is already established by daemon.
-         */
+
         HCTDevState *state = container_of(listener, HCTDevState, listener);
-        if (vaddr >= (void *)state->sdev.dma_memory - PAGE_SIZE &&
-            vaddr < (void *)(state->sdev.dma_memory - PAGE_SIZE + state->sdev.dma_memory_size)) {
-            if (state->sdev.dma_mem_fd >= 0) {
-                hct_mem_req_t req = {0};
-                req.mem_type = HCT_MEM_TYPE_QEMU;
-                req.gid = (uint32_t)g_id;
-                req.mdev_id = state->sdev.ccp_idx;
-                req.size = llsize;
-                req.iova = iova;
-
-                ret = hct_client_send_mem_cmd(state, HCT_CMD_MEM_ALLOC, &req, NULL);
-                if (ret == HCT_SUCCESS) {
-                    return;
-                }
-            }
-        }
-
-        ret = vfio_hct_dma_map_vfio_pci(hct_data.vfio_container_fd, vaddr, iova, llsize);
-        if (ret < 0) {
-            error_report("VFIO_PCI_MAP_DMA: %d, iova=%lx", ret, iova);
+        ret = hct_iova_mmap_vfio_pci(state, vaddr, iova, llsize);
+        if (ret) {
+            error_report("hct_iova_mmap_vfio_pci: %d, iova=%lx", ret, iova);
         }
     } else {
         /* host running hct/ccp mdev mode: use hct/ccp module mapping */
@@ -979,7 +1013,7 @@ static MemoryListener hct_memory_listener = {
     .region_del = hct_listener_region_del,
 };
 
-static void hct_memory_do_mbind(void *mem, size_t size, int node)
+static void hct_memory_do_mbind(char *mem, size_t size, int node)
 {
     struct bitmask *bmp = NULL;
     int max_node = numa_max_node();
@@ -1052,7 +1086,7 @@ static int hct_client_send_mem_cmd(HCTDevState *state, uint32_t cmd_type, hct_me
 {
     char cmsgbuf[CMSG_SPACE(sizeof(int))];
     char buffer[MAX_TLV_BUFFER_SIZE] = {0};
-    size_t buffer_len = 0;
+    hct_buffer_t hct_buf = { .data = buffer, .len = 0, .capacity = sizeof(buffer) };
     struct sockaddr_un addr;
     struct msghdr msg = {0};
     struct iovec iov;
@@ -1065,15 +1099,14 @@ static int hct_client_send_mem_cmd(HCTDevState *state, uint32_t cmd_type, hct_me
     addr.sun_family = AF_UNIX;
     strncpy(addr.sun_path, HCT_DAEMON_SOCK_PATH, sizeof(addr.sun_path) - 1);
 
-    if (connect(sock, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+    if (hct_add_tlv_to_buffer(&hct_buf, HCT_IPC_FIELD_COMMAND, (const char *)&cmd_type, sizeof(cmd_type))
+        || hct_add_tlv_to_buffer(&hct_buf, HCT_IPC_FIELD_MEM_REQ, (const char *)req, sizeof(*req))) {
         close(sock);
-        return HCT_ERROR_CONNECT;
+        return HCT_ERROR_INVALID_DATA;
     }
 
-    hct_add_tlv_to_buffer(buffer, &buffer_len, sizeof(buffer), HCT_IPC_FIELD_COMMAND, &cmd_type, sizeof(cmd_type));
-    hct_add_tlv_to_buffer(buffer, &buffer_len, sizeof(buffer), HCT_IPC_FIELD_MEM_REQ, req, sizeof(*req));
-
-    if (send(sock, buffer, buffer_len, 0) < 0) {
+    if (connect(sock, (struct sockaddr *)&addr, sizeof(addr)) < 0
+        || send(sock, buffer, hct_buf.len, 0) < 0) {
         close(sock);
         return HCT_ERROR_CONNECT;
     }
@@ -1111,15 +1144,43 @@ static int hct_client_send_mem_cmd(HCTDevState *state, uint32_t cmd_type, hct_me
     return HCT_SUCCESS;
 }
 
+static int hct_dma_memory_init_daemon(HCTDevState *state, size_t maddr, size_t size)
+{
+    hct_mem_req_t req = {0};
+    int mem_fd = -1;
+    void *vaddr = NULL;
+    int dma_success = 0;
+
+    req.mem_type = HCT_MEM_TYPE_QEMU;
+    req.gid = (uint32_t)g_id;
+    req.mdev_id = state->sdev.ccp_idx;
+    req.size = size;
+    req.iova = 0;
+
+    if (hct_client_send_mem_cmd(state, HCT_CMD_MEM_ALLOC, &req, &mem_fd) == HCT_SUCCESS) {
+        vaddr = mmap((void *)maddr, size,
+                    PROT_READ | PROT_WRITE,
+                    MAP_SHARED | MAP_FIXED,
+                    mem_fd, 0);
+        if (vaddr != MAP_FAILED && vaddr == (void *)maddr) {
+            state->sdev.dma_mem_fd = mem_fd;
+            dma_success = 1;
+        } else {
+            if (vaddr != MAP_FAILED) munmap(vaddr, size);
+            close(mem_fd);
+        }
+    }
+
+    return dma_success;
+}
+
 static int hct_vfio_shared_dma_memory_init(HCTDevState *state)
 {
     struct hct_vfio_shared_memory *shr_mem = NULL;
     size_t maddr;
     size_t size;
     void *vaddr = NULL;
-    int mem_fd = -1;
     int use_daemon_shm = 0;
-    hct_mem_req_t req = {0};
 
     maddr = (size_t)state->sdev.premap_memory;
     maddr += PAGE_SIZE;
@@ -1129,29 +1190,13 @@ static int hct_vfio_shared_dma_memory_init(HCTDevState *state)
 
     /* Try to get pre-mapped memfd from daemon in vfio-pci mode */
     if (hct_data.driver == HCT_CCP_DRV_MOD_VFIO_PCI) {
-        req.mem_type = HCT_MEM_TYPE_QEMU;
-        req.gid = (uint32_t)g_id;
-        req.mdev_id = state->sdev.ccp_idx;
-        req.size = size;
-        req.iova = 0;
-
-        if (hct_client_send_mem_cmd(state, HCT_CMD_MEM_ALLOC, &req, &mem_fd) == HCT_SUCCESS) {
-            vaddr = mmap((void *)maddr, size,
-                        PROT_READ | PROT_WRITE,
-                        MAP_SHARED | MAP_FIXED,
-                        mem_fd, 0);
-            if (vaddr != MAP_FAILED && vaddr == (void *)maddr) {
-                state->sdev.dma_mem_fd = mem_fd;
-                use_daemon_shm = 1;
-            } else {
-                if (vaddr != MAP_FAILED) munmap(vaddr, size);
-                close(mem_fd);
-            }
-        }
+        use_daemon_shm = hct_dma_memory_init_daemon(state, maddr, size);
     }
 
-    /* Fallback to anonymous memory if not vfio-pci or daemon request failed */
-    if (!use_daemon_shm) {
+    if (use_daemon_shm) {
+        vaddr = (void *)maddr;
+    } else {
+        /* Fallback to anonymous memory if not vfio-pci or daemon request failed */
         vaddr = mmap((void *)maddr, size,
                     PROT_READ | PROT_WRITE,
                     MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED,
@@ -1198,7 +1243,7 @@ static int hct_listener_dma_memory_init(HCTDevState *state)
         return -1;
     }
 
-    hct_memory_do_mbind(state->sdev.dma_memory,
+    hct_memory_do_mbind((char *)state->sdev.dma_memory,
                         state->sdev.dma_memory_size,
                         state->numa_id);
 
@@ -1364,8 +1409,8 @@ static int hct_client_send_migrate_ops_msg(HCTDevState *state,
     /* [0]:magic [1]:version [2]:operation [3]:sync_state */
     msg[0] = HCT_MIG_MSG_MAGIC;
     msg[1] = HCT_MIG_PROTOCOL_VER;
-    msg[2] = op;
-    msg[3] = 0;
+    msg[MSG_IDX_OP] = op;
+    msg[MSG_IDX_STATE] = 0;
     return hct_client_send_msg(state, (char *)msg, len, loops);
 }
 
@@ -1378,8 +1423,8 @@ static int hct_client_send_migrate_done_msg(HCTDevState *state)
     ret = hct_client_send_migrate_ops_msg(state, (char *)msg, sizeof(msg),
                             HCT_MIGRATION_DONE, MAX_CONNECT_LOOPS);
 
-    if (ret != 0 || msg[0] != HCT_MIG_MSG_MAGIC || msg[3] != HCT_MIG_MSG_ACK) {
-        error_report("ret:%d msg[0]:0x%x msg[3]:0x%x, invalid.", ret, msg[0], msg[3]);
+    if (ret != 0 || msg[0] != HCT_MIG_MSG_MAGIC || msg[MSG_IDX_STATE] != HCT_MIG_MSG_ACK) {
+        error_report("ret:%d msg[0]:0x%x msg[MSG_IDX_STATE]:0x%x, invalid.", ret, msg[0], msg[MSG_IDX_STATE]);
         ret = -1;
     }
 
@@ -1434,18 +1479,18 @@ static int hct_migrate_precopy_notifier(NotifierWithReturn *notifier, void *data
         state->migrate_support = 0;
         ret = 0;
         goto exit;
-    } else if (msg[3] != HCT_MIG_MSG_ACK) {
+    } else if (msg[MSG_IDX_STATE] != HCT_MIG_MSG_ACK) {
         /* We believe that the virtual machine is not ready,
          * so terminate the live migration.
          */
         if (state->migrate_abort_err) {
-            error_setg(pnd->errp, "%s[%u] msg[3]:0x%02x invalid, notifier fail.\n",
-                                  __func__, __LINE__, msg[3]);
+            error_setg(pnd->errp, "%s[%u] msg[MSG_IDX_STATE]:0x%02x invalid, notifier fail.\n",
+                                  __func__, __LINE__, msg[MSG_IDX_STATE]);
             ms->state = MIGRATION_STATUS_CANCELLED;
             goto exit;
         } else {
-            error_report("%s[%u] msg[3]:0x%02x invalid, notifier fail.\n",
-                         __func__, __LINE__, msg[3]);
+            error_report("%s[%u] msg[MSG_IDX_STATE]:0x%02x invalid, notifier fail.\n",
+                         __func__, __LINE__, msg[MSG_IDX_STATE]);
             state->migrate_support = 0;
             ret = 0;
             goto exit;
@@ -1468,7 +1513,7 @@ static int hct_migrate_precopy_notifier(NotifierWithReturn *notifier, void *data
                 ret = 0;
                 goto exit;
             }
-        } else if (msg[3] == HCT_MIG_STATE_STOPPED) {
+        } else if (msg[MSG_IDX_STATE] == HCT_MIG_STATE_STOPPED) {
             break;
         }
         sleep(1);
@@ -1512,21 +1557,21 @@ static void *hct_client_connect_timer_thread(void *opaque)
         if (ret == -EAGAIN) {
             if (++loops > MAX_LOOP_TIMES) {
                 error_report("%s: loops = %d, connect failed.", __func__, loops);
-                goto exit;
+                break;
             }
             sleep(1);
             continue;
         }
+
+        // get response
+        if (ret != 0 || msg[0] != HCT_MIG_MSG_MAGIC || msg[MSG_IDX_STATE] != HCT_MIG_MSG_ACK) {
+            error_report("ret:%d msg[0]:0x%x msg[MSG_IDX_STATE]:0x%x, invalid.\n", ret, msg[0], msg[MSG_IDX_STATE]);
+        } else {
+            info_report("%s: recieved HCT_MIG_MSG_ACK.", __func__);
+        }
         break;
     }
 
-    if (ret != 0 || msg[0] != HCT_MIG_MSG_MAGIC || msg[3] != HCT_MIG_MSG_ACK) {
-        error_report("ret:%d msg[0]:0x%x msg[3]:0x%x, invalid.\n", ret, msg[0], msg[3]);
-        goto exit;
-    }
-    info_report("%s: recieved HCT_MIG_MSG_ACK.", __func__);
-
-exit:
     close(state->client_fd);
     return NULL;
 }
@@ -1604,10 +1649,118 @@ static void hct_data_uninit(HCTDevState *state)
     hct_data.driver = HCT_CCP_DRV_MOD_UNINIT;
 }
 
+static int hct_driver_check_vccp(HCTDevState *state)
+{
+    if (!state->ccp_dev_path)
+        return -EINVAL;
+
+    FILE *fp = fopen(state->ccp_dev_path, "r");
+    if (fp) {
+        int type_char = fgetc(fp);
+        fclose(fp);
+        if (type_char == 'v') {
+            hct_data.driver = HCT_CCP_DRV_MOD_VFIO_PCI;
+        } else if (type_char == 'c') {
+            hct_data.driver = HCT_CCP_DRV_MOD_CCP;
+        } else {
+            error_report("hct: invalid vccp file content in %s", state->ccp_dev_path);
+            return -EINVAL;
+        }
+    } else {
+        error_report("hct: cannot open vccp file %s", state->ccp_dev_path);
+        return -EIO;
+    }
+
+    return 0;
+}
+
+static int hct_driver_check_mdev(HCTDevState *state)
+{
+    int ret = 0;
+    /* Default to legacy mdev mode check if no params given */
+    ret = hct_get_used_driver_walk(PCI_DRV_HCT_DIR);
+    if (ret == 0) {
+        hct_data.driver = HCT_CCP_DRV_MOD_HCT;
+        hct_data.hct_fd = qemu_open_old(HCT_SHARE_DEV, O_RDWR);
+        if (hct_data.hct_fd < 0) {
+            error_report("fail to open %s, errno %d.", HCT_SHARE_DEV, errno);
+            return errno;
+        }
+
+        /* The hct.ko version number needs not to be less than 0.2. */
+        ret = hct_api_version_check();
+        if (ret) {
+            return ret;
+        }
+        /* close fd for ioctl in kernel module and open the real share memory file below. */
+        qemu_close(hct_data.hct_fd);
+    } else {
+        /* This case is now handled by the unified logic below, assuming vccp path */
+        error_report("hct: sysfsdev is only supported hct driver mode.");
+    }
+
+    return ret;
+}
+
+static int hct_base_init(HCTDevState *state)
+{
+    int ret = 0;
+    /* assign a page to the virtual BAR3 of each CCP. */
+    ret = hct_shared_memory_init();
+    if (ret)
+        return ret;
+
+    do {
+        /* Open fd for ioctl */
+        const char *share_dev = hct_data.driver == HCT_CCP_DRV_MOD_HCT ? HCT_SHARE_DEV :
+                            hct_data.driver == HCT_CCP_DRV_MOD_CCP ? CCP_SHARE_DEV : NULL;
+        if (share_dev) {
+            hct_data.hct_fd = qemu_open_old(share_dev, O_RDWR);
+            if (hct_data.hct_fd < 0) {
+                error_report("fail to open %s, errno %d.", share_dev, errno);
+                ret = errno;
+                break;
+            }
+        }
+
+        /* assign a unique pasid to each virtual machine. */
+        ret = pasid_get_and_init(state);
+        if (ret)
+            break;
+
+        ret = hct_get_vsock_guest_cid(state);
+        if (ret) {
+            error_report("get the guest_cid of vsock device fail.");
+            ret = 0;
+        }
+
+    } while(0);
+
+    if (ret) {
+        munmap((void *)hct_data.hct_shared_memory, hct_data.hct_shared_size);
+        return ret;
+    }
+
+    state->precopy_notifier.notify = hct_migrate_precopy_notifier;
+    precopy_add_notifier(&state->precopy_notifier);
+    state->migrate_load_timer = NULL;
+    state->migrate_support = 1;
+    hct_data.support_dma_all = state->support_dma_all;
+
+    if (hct_data.support_dma_all) {
+        if (hct_data.driver == HCT_CCP_DRV_MOD_VFIO_PCI) {
+            error_report("The support-dma-all mode does not support vfio-pci driver."
+                            " Please switch to the ccp or hct driver.");
+            return -1;
+        }
+        memory_listener_register(&hct_memory_listener, &address_space_memory);
+    }
+
+    return 0;
+}
+
 static int hct_data_init(HCTDevState *state)
 {
-
-    const char *hct_shr_name = NULL;
     int ret = 0;
 
     if (hct_data.init == 0) {
@@ -1617,48 +1770,18 @@ static int hct_data_init(HCTDevState *state)
          * dev(ccp_dev_path): vfio-pci or ccp mode (via vccp files)
          */
         if (state->ccp_dev_path) {
-            FILE *fp = fopen(state->ccp_dev_path, "r");
-            if (fp) {
-                int type_char = fgetc(fp);
-                fclose(fp);
-                if (type_char == 'v') {
-                    hct_data.driver = HCT_CCP_DRV_MOD_VFIO_PCI;
-                } else if (type_char == 'c') {
-                    hct_data.driver = HCT_CCP_DRV_MOD_CCP;
-                } else {
-                    error_report("hct: invalid vccp file content in %s", state->ccp_dev_path);
-                    return -EINVAL;
-                }
-            } else {
-                error_report("hct: cannot open vccp file %s", state->ccp_dev_path);
-                return -EIO;
-            }
+            ret = hct_driver_check_vccp(state);
          } else {
              /* Default to legacy mdev mode check if no params given */
-             ret = hct_get_used_driver_walk(PCI_DRV_HCT_DIR);
-             if (ret == 0) {
-                 hct_data.driver = HCT_CCP_DRV_MOD_HCT;
-                 hct_shr_name = HCT_SHARE_DEV;
-                 hct_data.hct_fd = qemu_open_old(hct_shr_name, O_RDWR);
-                 if (hct_data.hct_fd < 0) {
-                     error_report("fail to open %s, errno %d.", hct_shr_name, errno);
-                     goto out;
-                 }
+            ret = hct_driver_check_mdev(state);
+         }
 
-                 /* The hct.ko version number needs not to be less than 0.2. */
-                 ret = hct_api_version_check();
-                 if (ret) {
-                     goto out;
-                 }
-                 /* close fd for ioctl in kernel module and open the real share memory file below. */
-                 qemu_close(hct_data.hct_fd);
-
-            } else {
-                /* This case is now handled by the unified logic below, assuming vccp path */
-                error_report("hct: sysfsdev is only supported hct driver mode.");
-            }
+         if (ret)
+         {
+             return ret;
          }
     }
+
     if (hct_data.driver == HCT_CCP_DRV_MOD_VFIO_PCI || hct_data.driver == HCT_CCP_DRV_MOD_CCP) {
         /* host running vfio-pci/ccp mode: get device information from daemon via vccp file */
         ret = vfio_hct_init_from_daemon(state);
@@ -1667,62 +1790,15 @@ static int hct_data_init(HCTDevState *state)
             return ret;
         }
     }
+
     if (hct_data.init == 0) {
-        /* assign a page to the virtual BAR3 of each CCP. */
-        ret = hct_shared_memory_init();
+        ret = hct_base_init(state);
         if (ret)
-            goto out;
-
-        /* Open fd for ioctl */
-        if (hct_data.driver == HCT_CCP_DRV_MOD_HCT) {
-            hct_data.hct_fd = qemu_open_old(HCT_SHARE_DEV, O_RDWR);
-            if (hct_data.hct_fd < 0) {
-                error_report("fail to open %s, errno %d.", HCT_SHARE_DEV, errno);
-                goto unmap_shared_memory_exit;
-            }
-        } else if (hct_data.driver == HCT_CCP_DRV_MOD_CCP) {
-            hct_data.hct_fd = qemu_open_old(CCP_SHARE_DEV, O_RDWR);
-            if (hct_data.hct_fd < 0) {
-                error_report("fail to open %s, errno %d.", CCP_SHARE_DEV, errno);
-                goto unmap_shared_memory_exit;
-            }
-        }
-
-        /* assign a unique pasid to each virtual machine. */
-        ret = pasid_get_and_init(state);
-        if (ret < 0)
-            goto unmap_shared_memory_exit;
-
-        ret = hct_get_vsock_guest_cid(state);
-        if (ret < 0)
-            error_report("get the guest_cid of vsock device fail.");
-
-        state->precopy_notifier.notify = hct_migrate_precopy_notifier;
-        precopy_add_notifier(&state->precopy_notifier);
-        state->migrate_load_timer = NULL;
-        state->migrate_support = 1;
-        hct_data.support_dma_all = state->support_dma_all;
-
-        if (hct_data.support_dma_all) {
-            if (hct_data.driver == HCT_CCP_DRV_MOD_VFIO_PCI) {
-                error_report("The support-dma-all mode does not support vfio-pci driver."
-                             " Please switch to the ccp or hct driver.");
-                ret = -1;
-                goto out;
-            }
-            memory_listener_register(&hct_memory_listener, &address_space_memory);
-        }
-
+            return ret;
         hct_data.init = 1;
     }
 
     return hct_get_ccp_index(state);
-
-unmap_shared_memory_exit:
-    munmap((void *)hct_data.hct_shared_memory, hct_data.hct_shared_size);
-
-out:
-    return ret;
 }
 
 #define VFIO_GET_REGION_ADDR(x) ((uint64_t)(x) << 40ULL)
@@ -1816,7 +1892,7 @@ static void vfio_hct_realize(PCIDevice *pci_dev, Error **errp)
         goto detach_device_out;
     }
 
-    ret = vfio_hct_region_mmap(state);
+    ret = vfio_hct_register_bar(state);
     if (ret < 0) {
         error_setg(errp, "hct vfio region mmap failed.");
         goto put_dma_mem_out;
@@ -2092,30 +2168,28 @@ static int hct_parse_tlv(const char *buffer, size_t buffer_len, size_t *offset, 
 
 /**
  * @brief Add a TLV to the buffer
- * @param buffer The buffer to add the TLV to
- * @param current_len The current length of the buffer
- * @param max_len The maximum length of the buffer
+ * @param buf The buffer structure (data, len, capacity)
  * @param type The type of the TLV
  * @param value The value of the TLV
- * @param length The length of the TLV
+ * @param length The length of the TLV value
  * @return 0 on success, -1 on failure
  */
-static int hct_add_tlv_to_buffer(char *buffer, size_t *current_len, size_t max_len, uint16_t type, const void *value, uint16_t length)
+static int hct_add_tlv_to_buffer(hct_buffer_t *buf, uint16_t type, const char *value, uint16_t length)
 {
-    if (*current_len + sizeof(type) + sizeof(length) + length > max_len) {
+    if (buf->len + sizeof(type) + sizeof(length) + length > buf->capacity) {
         error_report("Buffer overflow in TLV add\n");
         return -1;
     }
 
-    memcpy(buffer + *current_len, &type, sizeof(type));
-    *current_len += sizeof(type);
+    memcpy(buf->data + buf->len, &type, sizeof(type));
+    buf->len += sizeof(type);
 
-    memcpy(buffer + *current_len, &length, sizeof(length));
-    *current_len += sizeof(length);
+    memcpy(buf->data + buf->len, &length, sizeof(length));
+    buf->len += sizeof(length);
 
     if (length > 0 && value) {
-        memcpy(buffer + *current_len, value, length);
-        *current_len += length;
+        memcpy(buf->data + buf->len, value, length);
+        buf->len += length;
     }
 
     return 0;
@@ -2132,12 +2206,12 @@ static int hct_add_tlv_to_buffer(char *buffer, size_t *current_len, size_t max_l
 static int hct_send_command(int sock, enum hct_daemon_req_cmd cmd, void *req_data)
 {
     char buffer[2048] = {0};
-    size_t buffer_len = 0;
+    hct_buffer_t hct_buf = { .data = buffer, .len = 0, .capacity = sizeof(buffer) };
     struct hct_vccp_req *vccp_req = NULL;
 
     /* add command TLV */
-    if (hct_add_tlv_to_buffer(buffer, &buffer_len, sizeof(buffer),
-                              HCT_IPC_FIELD_COMMAND, &cmd, sizeof(cmd)) < 0) {
+    if (hct_add_tlv_to_buffer(&hct_buf,
+            HCT_IPC_FIELD_COMMAND, (const char *)&cmd, sizeof(cmd)) < 0) {
         error_report("Failed to add command TLV\n");
         return -1;
     }
@@ -2145,22 +2219,20 @@ static int hct_send_command(int sock, enum hct_daemon_req_cmd cmd, void *req_dat
     /* add device names TLV if present */
     if (cmd == HCT_CMD_GET_DEVICE_BY_NAME) {
         vccp_req = req_data;
-        if (hct_add_tlv_to_buffer(buffer, &buffer_len, sizeof(buffer),
-                                  HCT_IPC_FIELD_VCCP_PATH, vccp_req->path,
-                                  strlen(vccp_req->path) + 1) < 0) {
+        if (hct_add_tlv_to_buffer(&hct_buf, HCT_IPC_FIELD_VCCP_PATH,
+                vccp_req->path, strlen(vccp_req->path) + 1) < 0) {
             error_report("Failed to add vccp path TLV\n");
             return -1;
         }
-        if (hct_add_tlv_to_buffer(buffer, &buffer_len, sizeof(buffer),
-                                  HCT_IPC_FIELD_VCCP_CONTENT, vccp_req->content,
-                                  strlen(vccp_req->content) + 1) < 0) {
+        if (hct_add_tlv_to_buffer(&hct_buf, HCT_IPC_FIELD_VCCP_CONTENT,
+                vccp_req->content, strlen(vccp_req->content) + 1) < 0) {
             error_report("Failed to add vccp content TLV\n");
             return -1;
         }
     }
 
     /* send command */
-    if (send(sock, buffer, buffer_len, 0) < 0) {
+    if (send(sock, buffer, hct_buf.len, 0) < 0) {
         error_report("Failed to send command: %s\n", strerror(errno));
         return -1;
     }
