@@ -37,6 +37,7 @@
 #define VIRTIO_BALLOON_F_FREE_PAGE_HINT	3 /* VQ to report free pages */
 #define VIRTIO_BALLOON_F_PAGE_POISON	4 /* Guest is using page poisoning */
 #define VIRTIO_BALLOON_F_REPORTING	5 /* Page reporting virtqueue */
+#define VIRTIO_BALLOON_F_MEMOP	20 /* VQ for host-initiated memory operations */
 
 /* Size of a PFN in the balloon interface. */
 #define VIRTIO_BALLOON_PFN_SHIFT 12
@@ -56,9 +57,71 @@ struct virtio_balloon_config {
 	union {
 		uint32_t free_page_hint_cmd_id;
 		uint32_t free_page_report_cmd_id;	/* deprecated */
+		uint32_t memop_cmd_id;
 	};
 	/* Stores PAGE_POISON if page poisoning is in use */
 	uint32_t poison_val;
+};
+
+/* Memop virtqueue commands */
+#define VIRTIO_BALLOON_MEMOP_NONE			0
+#define VIRTIO_BALLOON_MEMOP_RECLAIM_PAGE_CACHE	1
+#define VIRTIO_BALLOON_MEMOP_COMPACT_MEMORY	2
+#define VIRTIO_BALLOON_MEMOP_QUERY_FRAGMENTATION 3
+
+/*
+ * memop_cmd_id layout:
+ *   bits 31-28: sequence number, incremented on every request so the
+ *               driver can tell a fresh request apart from the previous
+ *               one even when command and argument repeat; wraps every
+ *               16 requests, compare for (in)equality only.
+ *   bits 27-24: VIRTIO_BALLOON_MEMOP_* command; VIRTIO_BALLOON_MEMOP_NONE
+ *               means no request is pending.
+ *   bits 23-0:  command argument.
+ *               VIRTIO_BALLOON_MEMOP_RECLAIM_PAGE_CACHE: nr_pages to
+ *               reclaim; other commands: reserved, 0.
+ */
+#define VIRTIO_BALLOON_MEMOP_ARG_MASK	0x00ffffff
+#define VIRTIO_BALLOON_MEMOP_CMD_SHIFT	24
+#define VIRTIO_BALLOON_MEMOP_CMD_MASK	0xf
+#define VIRTIO_BALLOON_MEMOP_SEQ_SHIFT	28
+
+/*
+ * Number of buddy free block counters reported for
+ * VIRTIO_BALLOON_MEMOP_COMPACT_MEMORY and
+ * VIRTIO_BALLOON_MEMOP_QUERY_FRAGMENTATION: free_blocks[order] is the
+ * raw number of free blocks of that order in the guest's buddy
+ * allocator, as in /proc/buddyinfo.  Orders beyond the guest's
+ * MAX_ORDER are reported as 0.  Sized to cover the largest arm64
+ * configuration (64K pages, NR_PAGE_ORDERS = 14) with headroom.
+ */
+#define VIRTIO_BALLOON_MEMOP_NR_FREE_BLOCKS	16
+
+/*
+ * Memop response: guest driver writes, device reads (out_sg).
+ * The request itself travels through the device config space
+ * (memop_cmd_id); only the response uses the virtqueue.
+ */
+struct virtio_balloon_memop_resp {
+	uint64_t status;	/* 0 = ok; negative errno otherwise */
+	union {
+		/* VIRTIO_BALLOON_MEMOP_RECLAIM_PAGE_CACHE */
+		struct {
+			uint64_t nr_reclaimed;
+			uint64_t pad[VIRTIO_BALLOON_MEMOP_NR_FREE_BLOCKS - 1];
+		} reclaim;
+		/*
+		 * VIRTIO_BALLOON_MEMOP_COMPACT_MEMORY: buddy free block
+		 * counts after compaction.
+		 * VIRTIO_BALLOON_MEMOP_QUERY_FRAGMENTATION: same layout,
+		 * current counts without compacting.
+		 * free_blocks[order] = raw number of free blocks of that
+		 * order, as in /proc/buddyinfo; orders beyond the
+		 * guest's MAX_ORDER are 0.
+		 */
+		uint64_t free_blocks[VIRTIO_BALLOON_MEMOP_NR_FREE_BLOCKS];
+	};
+	uint64_t reserved;
 };
 
 #define VIRTIO_BALLOON_S_SWAP_IN  0   /* Amount of memory swapped in */

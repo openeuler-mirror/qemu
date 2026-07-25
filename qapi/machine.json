@@ -1086,6 +1086,155 @@
 { 'command': 'balloon', 'data': {'value': 'int'} }
 
 ##
+# @balloon-reclaim:
+#
+# Ask the balloon driver to reclaim page cache.  The host publishes
+# the requested page count through the balloon device's config space;
+# the guest reclaims page cache asynchronously.  The command returns
+# as soon as the request has been sent to the guest; the result is
+# reported later via the BALLOON_RECLAIM_COMPLETED event.
+#
+# The request word packs the page count into 24 bits, so @value may
+# not exceed 16777215 (2^24 - 1).
+#
+# Since: 8.2
+#
+# Example:
+#
+# -> { "execute": "balloon-reclaim", "arguments": { "value": 262144 } }
+# <- { "return": {} }
+# <- { "event": "BALLOON_RECLAIM_COMPLETED",
+#      "data": { "requested-pages": 262144, "reclaimed-pages": 258048 } }
+##
+{ 'command': 'balloon-reclaim',
+  'data': { 'value': 'int' } }
+
+##
+# @balloon-compact:
+#
+# Ask the balloon driver to compact guest memory.  The command returns
+# as soon as the request has been sent to the guest; the result is
+# reported later via the BALLOON_COMPACT_COMPLETED event.
+#
+# Since: 8.2
+#
+# Example:
+#
+# -> { "execute": "balloon-compact" }
+# <- { "return": {} }
+# <- { "event": "BALLOON_COMPACT_COMPLETED",
+#      "data": { "status": 0,
+#                "free-blocks": [12, 30, 55, 40, 18, 9, 4, 2, 1, 2048,
+#                                1024, 512, 256, 0, 0, 0] } }
+##
+{ 'command': 'balloon-compact' }
+
+##
+# @balloon-query-fragmentation:
+#
+# Ask the balloon driver to report the guest's current buddy free block
+# distribution without compacting anything.  The command returns as soon
+# as the request has been sent to the guest; the result is reported
+# later via the BALLOON_FRAGMENTATION event.
+#
+# Since: 8.2
+#
+# Example:
+#
+# -> { "execute": "balloon-query-fragmentation" }
+# <- { "return": {} }
+# <- { "event": "BALLOON_FRAGMENTATION",
+#      "data": { "status": 0,
+#                "free-blocks": [12, 30, 55, 40, 18, 9, 4, 2, 1, 2048,
+#                                1024, 512, 256, 0, 0, 0] } }
+##
+{ 'command': 'balloon-query-fragmentation' }
+
+##
+# @BALLOON_FRAGMENTATION:
+#
+# Emitted when the guest has answered a fragmentation query issued via
+# the balloon-query-fragmentation command.
+#
+# @status: 0 on success, negative errno otherwise; -ECANCELED with an
+#     empty @free-blocks list if the query was dropped before the guest
+#     answered (device reset, device unplug or migration)
+#
+# @free-blocks: current buddy free block counts.  Index N is the raw
+#     number of free blocks of order N in the guest's buddy allocator,
+#     as in /proc/buddyinfo; orders beyond the guest's MAX_ORDER are
+#     reported as 0.  The list always has 16 entries; any aggregation
+#     (e.g. counting 2M pages) is left to the caller.
+#
+# Since: 8.2
+#
+# Example:
+#
+# <- { "event": "BALLOON_FRAGMENTATION",
+#      "data": { "status": 0,
+#                "free-blocks": [12, 30, 55, 40, 18, 9, 4, 2, 1, 2048,
+#                                1024, 512, 256, 0, 0, 0] },
+#      "timestamp": { "seconds": 1721836800, "microseconds": 123456 } }
+##
+{ 'event': 'BALLOON_FRAGMENTATION',
+  'data': { 'status': 'int', 'free-blocks': ['int'] } }
+
+##
+# @BALLOON_COMPACT_COMPLETED:
+#
+# Emitted when the guest has finished a memory compaction request
+# issued via the balloon-compact command.
+#
+# @status: 0 on success, negative errno otherwise; -ECANCELED with an
+#     empty @free-blocks list if the request was dropped before the
+#     guest answered (device reset, device unplug or migration)
+#
+# @free-blocks: buddy free block counts after compaction.  Index N is
+#     the raw number of free blocks of order N in the guest's buddy
+#     allocator, as in /proc/buddyinfo; orders beyond the guest's
+#     MAX_ORDER are reported as 0.  The list always has 16 entries;
+#     any aggregation (e.g. counting 2M pages) is left to the caller.
+#
+# Since: 8.2
+#
+# Example:
+#
+# <- { "event": "BALLOON_COMPACT_COMPLETED",
+#      "data": { "status": 0,
+#                "free-blocks": [12, 30, 55, 40, 18, 9, 4, 2, 1, 2048,
+#                                1024, 512, 256, 0, 0, 0] },
+#      "timestamp": { "seconds": 1721836800, "microseconds": 123456 } }
+##
+{ 'event': 'BALLOON_COMPACT_COMPLETED',
+  'data': { 'status': 'int', 'free-blocks': ['int'] } }
+
+##
+# @BALLOON_RECLAIM_COMPLETED:
+#
+# Emitted when the guest has finished a page cache reclaim request
+# issued via the balloon-reclaim command.
+#
+# @requested-pages: number of pages host asked guest to reclaim
+# @reclaimed-pages: number of pages guest actually reclaimed (0 when
+#     @status is -ECANCELED)
+# @status: 0 on success, negative errno otherwise; -ECANCELED if the
+#     request was dropped before the guest answered (device reset,
+#     device unplug or migration)
+#
+# Since: 8.2
+#
+# Example:
+#
+# <- { "event": "BALLOON_RECLAIM_COMPLETED",
+#      "data": { "requested-pages": 262144, "reclaimed-pages": 258048,
+#                "status": 0 },
+#      "timestamp": { "seconds": 1721836800, "microseconds": 123456 } }
+##
+{ 'event': 'BALLOON_RECLAIM_COMPLETED',
+  'data': { 'requested-pages': 'int', 'reclaimed-pages': 'int',
+            'status': 'int' } }
+
+##
 # @BalloonInfo:
 #
 # Information about the guest balloon device.

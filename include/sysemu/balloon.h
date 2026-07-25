@@ -19,9 +19,12 @@
 
 typedef void (QEMUBalloonEvent)(void *opaque, ram_addr_t target);
 typedef void (QEMUBalloonStatus)(void *opaque, BalloonInfo *info);
+typedef void (QEMUBalloonMemop)(void *opaque, uint64_t cmd,
+                                int64_t arg, Error **errp);
 
 int qemu_add_balloon_handler(QEMUBalloonEvent *event_func,
                              QEMUBalloonStatus *stat_func, void *opaque);
+void qemu_add_balloon_memop_handler(QEMUBalloonMemop *memop_func);
 void qemu_remove_balloon_handler(void *opaque);
 
 #endif

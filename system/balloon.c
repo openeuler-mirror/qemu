@@ -31,10 +31,12 @@
 #include "qapi/error.h"
 #include "qapi/qapi-commands-machine.h"
 #include "qapi/qmp/qerror.h"
+#include "standard-headers/linux/virtio_balloon.h"
 #include "trace.h"
 
 static QEMUBalloonEvent *balloon_event_fn;
 static QEMUBalloonStatus *balloon_stat_fn;
+static QEMUBalloonMemop *balloon_memop_fn;
 static void *balloon_opaque;
 
 static bool have_balloon(Error **errp)
@@ -67,6 +69,11 @@ int qemu_add_balloon_handler(QEMUBalloonEvent *event_func,
     return 0;
 }
 
+void qemu_add_balloon_memop_handler(QEMUBalloonMemop *memop_func)
+{
+    balloon_memop_fn = memop_func;
+}
+
 void qemu_remove_balloon_handler(void *opaque)
 {
     if (balloon_opaque != opaque) {
@@ -74,7 +81,52 @@ void qemu_remove_balloon_handler(void *opaque)
     }
     balloon_event_fn = NULL;
     balloon_stat_fn = NULL;
+    /* the memop handler belongs to the balloon device, drop it too */
+    balloon_memop_fn = NULL;
     balloon_opaque = NULL;
+}
+
+static bool have_memop(Error **errp)
+{
+    if (!have_balloon(errp)) {
+        return false;
+    }
+    if (!balloon_memop_fn) {
+        error_setg(errp, "balloon device does not support memop");
+        return false;
+    }
+    return true;
+}
+
+void qmp_balloon_reclaim(int64_t value, Error **errp)
+{
+    if (!have_memop(errp)) {
+        return;
+    }
+    if (value <= 0) {
+        error_setg(errp, QERR_INVALID_PARAMETER_VALUE, "value", "a size");
+        return;
+    }
+    balloon_memop_fn(balloon_opaque,
+                     VIRTIO_BALLOON_MEMOP_RECLAIM_PAGE_CACHE, value, errp);
+}
+
+void qmp_balloon_compact(Error **errp)
+{
+    if (!have_memop(errp)) {
+        return;
+    }
+    balloon_memop_fn(balloon_opaque, VIRTIO_BALLOON_MEMOP_COMPACT_MEMORY,
+                     0, errp);
+}
+
+void qmp_balloon_query_fragmentation(Error **errp)
+{
+    if (!have_memop(errp)) {
+        return;
+    }
+    balloon_memop_fn(balloon_opaque,
+                     VIRTIO_BALLOON_MEMOP_QUERY_FRAGMENTATION, 0, errp);
 }
 
 BalloonInfo *qmp_query_balloon(Error **errp)

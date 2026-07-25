@@ -15,18 +15,23 @@
 
 #include "qemu/osdep.h"
 #include "qemu/iov.h"
+#include "qemu/main-loop.h"
 #include "qemu/module.h"
 #include "qemu/timer.h"
 #include "qemu/madvise.h"
+#include "block/aio.h"
 #include "hw/virtio/virtio.h"
 #include "hw/mem/pc-dimm.h"
 #include "hw/qdev-properties.h"
 #include "hw/boards.h"
 #include "sysemu/balloon.h"
+#include "sysemu/runstate.h"
 #include "hw/virtio/virtio-balloon.h"
 #include "exec/address-spaces.h"
 #include "qapi/error.h"
+#include "qapi/qapi-commands-machine.h"
 #include "qapi/qapi-events-machine.h"
+#include "qapi/qapi-types-machine.h"
 #include "qapi/visitor.h"
 #include "trace.h"
 #include "qemu/error-report.h"
@@ -36,6 +41,7 @@
 
 #include "hw/virtio/virtio-bus.h"
 #include "hw/virtio/virtio-access.h"
+#include <stdbool.h>
 
 #define BALLOON_PAGE_SIZE  (1 << VIRTIO_BALLOON_PFN_SHIFT)
 
@@ -498,6 +504,105 @@ static void balloon_stats_set_poll_interval(Object *obj, Visitor *v,
     balloon_stats_change_timer(s, 0);
 }
 
+static void virtio_balloon_memop(void *opaque, uint64_t cmd,
+                                 int64_t arg, Error **errp)
+{
+    VirtIOBalloon *dev = VIRTIO_BALLOON(opaque);
+    VirtIODevice *vdev = VIRTIO_DEVICE(dev);
+    uint32_t seq;
+
+    if (!dev->memop_vq) {
+        error_setg(errp, "virtio balloon device does not support memop "
+                         "(set memop=on to enable)");
+        return;
+    }
+
+    if (!virtio_vdev_has_feature(vdev, VIRTIO_BALLOON_F_MEMOP)) {
+        error_setg(errp, "guest does not support balloon memop");
+        return;
+    }
+
+    if (dev->memop_pending_cmd != VIRTIO_BALLOON_MEMOP_NONE) {
+        error_setg(errp, "a memop request is already in flight");
+        return;
+    }
+
+    /* the request word packs the argument into the low 24 bits */
+    if (cmd == VIRTIO_BALLOON_MEMOP_RECLAIM_PAGE_CACHE &&
+        arg > VIRTIO_BALLOON_MEMOP_ARG_MASK) {
+        error_setg(errp, "reclaim page count exceeds %u",
+                   VIRTIO_BALLOON_MEMOP_ARG_MASK);
+        return;
+    }
+
+    /*
+     * Publish the request through the device config space: bump the
+     * sequence number so the guest recognizes a fresh request even when
+     * command and argument repeat, then raise a config change
+     * notification.  The guest's response arrives later on the memop
+     * virtqueue.
+     */
+    seq = ((dev->memop_cmd_id >> VIRTIO_BALLOON_MEMOP_SEQ_SHIFT) + 1) &
+          (UINT32_MAX >> VIRTIO_BALLOON_MEMOP_SEQ_SHIFT);
+    dev->memop_cmd_id = (seq << VIRTIO_BALLOON_MEMOP_SEQ_SHIFT) |
+                        ((cmd & VIRTIO_BALLOON_MEMOP_CMD_MASK) <<
+                         VIRTIO_BALLOON_MEMOP_CMD_SHIFT);
+    if (cmd == VIRTIO_BALLOON_MEMOP_RECLAIM_PAGE_CACHE) {
+        dev->memop_cmd_id |= arg;
+    }
+    dev->memop_pending_cmd = cmd;
+
+    virtio_notify_config(vdev);
+}
+
+/*
+ * Send a terminal event for a pending memop request whose guest answer
+ * will never arrive: the request is dropped when the device is reset
+ * (guest reboot/kexec) or when the VM migrates away (a late answer
+ * reaches the destination, which has no record of the request and
+ * discards it).  Keeps the invariant that every accepted memop request
+ * produces exactly one terminal event, so QMP clients can release
+ * their in-flight tracking immediately instead of waiting for a
+ * timeout.  Idempotent: clears memop_pending_cmd.
+ */
+static void virtio_balloon_memop_cancel(VirtIOBalloon *s)
+{
+    switch (s->memop_pending_cmd) {
+    case VIRTIO_BALLOON_MEMOP_RECLAIM_PAGE_CACHE:
+        qapi_event_send_balloon_reclaim_completed(
+            (int64_t)(s->memop_cmd_id & VIRTIO_BALLOON_MEMOP_ARG_MASK),
+            0, -ECANCELED);
+        break;
+    case VIRTIO_BALLOON_MEMOP_COMPACT_MEMORY:
+        qapi_event_send_balloon_compact_completed(-ECANCELED, NULL);
+        break;
+    case VIRTIO_BALLOON_MEMOP_QUERY_FRAGMENTATION:
+        qapi_event_send_balloon_fragmentation(-ECANCELED, NULL);
+        break;
+    default:
+        break;
+    }
+
+    s->memop_pending_cmd = VIRTIO_BALLOON_MEMOP_NONE;
+}
+
+static void virtio_balloon_memop_vmstate_change(void *opaque, bool running,
+                                                RunState state)
+{
+    VirtIOBalloon *s = VIRTIO_BALLOON(opaque);
+
+    if (state == RUN_STATE_POSTMIGRATE) {
+        /*
+         * Migration succeeded and this source will not resume the guest:
+         * an answer to an in-flight memop request can only arrive at the
+         * destination now, so terminate the request here.  Not emitted
+         * at FINISH_MIGRATE: a failed migration resumes the source and
+         * the request may still complete normally.
+         */
+        virtio_balloon_memop_cancel(s);
+    }
+}
+
 static void virtio_balloon_handle_report(VirtIODevice *vdev, VirtQueue *vq)
 {
     VirtIOBalloon *dev = VIRTIO_BALLOON(vdev);
@@ -665,6 +770,75 @@ out:
     if (balloon_stats_enabled(s)) {
         balloon_stats_change_timer(s, s->stats_poll_interval);
     }
+}
+
+static void virtio_balloon_memop_complete(VirtIOBalloon *s,
+                                          const struct virtio_balloon_memop_resp *resp)
+{
+    int64_t status = (int64_t)le64_to_cpu(resp->status);
+    intList *list = NULL;
+    intList *node;
+    int i;
+
+    switch (s->memop_pending_cmd) {
+    case VIRTIO_BALLOON_MEMOP_RECLAIM_PAGE_CACHE:
+        qapi_event_send_balloon_reclaim_completed(
+            (int64_t)(s->memop_cmd_id & VIRTIO_BALLOON_MEMOP_ARG_MASK),
+            (int64_t)le64_to_cpu(resp->reclaim.nr_reclaimed),
+            status);
+        break;
+    case VIRTIO_BALLOON_MEMOP_COMPACT_MEMORY:
+    case VIRTIO_BALLOON_MEMOP_QUERY_FRAGMENTATION:
+        for (i = VIRTIO_BALLOON_MEMOP_NR_FREE_BLOCKS - 1; i >= 0; i--) {
+            node = g_new0(intList, 1);
+
+            node->value = (int64_t)le64_to_cpu(resp->free_blocks[i]);
+            node->next = list;
+            list = node;
+        }
+        if (s->memop_pending_cmd == VIRTIO_BALLOON_MEMOP_COMPACT_MEMORY) {
+            qapi_event_send_balloon_compact_completed(status, list);
+        } else {
+            qapi_event_send_balloon_fragmentation(status, list);
+        }
+        qapi_free_intList(list);
+        break;
+    default:
+        warn_report("virtio-balloon: unknown memop cmd %" PRIu8,
+                    s->memop_pending_cmd);
+        break;
+    }
+
+    s->memop_pending_cmd = VIRTIO_BALLOON_MEMOP_NONE;
+}
+
+static void virtio_balloon_receive_memop(VirtIODevice *vdev, VirtQueue *vq)
+{
+    VirtIOBalloon *s = VIRTIO_BALLOON(vdev);
+    VirtQueueElement *elem;
+    struct virtio_balloon_memop_resp resp = {};
+
+    elem = virtqueue_pop(vq, sizeof(VirtQueueElement));
+    if (!elem) {
+        return;
+    }
+
+    if (s->memop_pending_cmd == VIRTIO_BALLOON_MEMOP_NONE) {
+        /*
+         * A stale response, e.g. to a request dropped by reset or
+         * migration; nothing matches it anymore.
+         */
+        warn_report("virtio-balloon: unexpected memop response dropped");
+        goto out;
+    }
+
+    iov_to_buf(elem->out_sg, elem->out_num, 0, &resp, sizeof(resp));
+    virtio_balloon_memop_complete(s, &resp);
+
+out:
+    virtqueue_push(vq, elem, 0);
+    virtio_notify(vdev, vq);
+    g_free(elem);
 }
 
 static void virtio_balloon_handle_free_page_vq(VirtIODevice *vdev,
@@ -877,7 +1051,9 @@ static size_t virtio_balloon_config_size(VirtIOBalloon *s)
     if (virtio_has_feature(features, VIRTIO_BALLOON_F_PAGE_POISON)) {
         return sizeof(struct virtio_balloon_config);
     }
-    if (virtio_has_feature(features, VIRTIO_BALLOON_F_FREE_PAGE_HINT)) {
+    if (virtio_has_feature(features, VIRTIO_BALLOON_F_FREE_PAGE_HINT) ||
+        virtio_has_feature(features, VIRTIO_BALLOON_F_MEMOP)) {
+        /* memop_cmd_id shares storage with free_page_hint_cmd_id */
         return offsetof(struct virtio_balloon_config, poison_val);
     }
     return offsetof(struct virtio_balloon_config, free_page_hint_cmd_id);
@@ -892,7 +1068,9 @@ static void virtio_balloon_get_config(VirtIODevice *vdev, uint8_t *config_data)
     config.actual = cpu_to_le32(dev->actual);
     config.poison_val = cpu_to_le32(dev->poison_val);
 
-    if (dev->free_page_hint_status == FREE_PAGE_HINT_S_REQUESTED) {
+    if (dev->memop_cmd_id) {
+        config.memop_cmd_id = cpu_to_le32(dev->memop_cmd_id);
+    } else if (dev->free_page_hint_status == FREE_PAGE_HINT_S_REQUESTED) {
         config.free_page_hint_cmd_id =
                        cpu_to_le32(dev->free_page_hint_cmd_id);
     } else if (dev->free_page_hint_status == FREE_PAGE_HINT_S_STOP) {
@@ -1012,6 +1190,31 @@ static const VMStateDescription vmstate_virtio_balloon_page_poison = {
     }
 };
 
+static bool virtio_balloon_memop_support(void *opaque)
+{
+    VirtIOBalloon *s = opaque;
+    VirtIODevice *vdev = VIRTIO_DEVICE(s);
+
+    return virtio_vdev_has_feature(vdev, VIRTIO_BALLOON_F_MEMOP);
+}
+
+/*
+ * Migrate the request id so its sequence number keeps increasing on
+ * the destination; an in-flight request itself is not migrated (the
+ * source terminates it at POSTMIGRATE, see
+ * virtio_balloon_memop_vmstate_change).
+ */
+static const VMStateDescription vmstate_virtio_balloon_memop = {
+    .name = "virtio-balloon-device/memop",
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .needed = virtio_balloon_memop_support,
+    .fields = (VMStateField[]) {
+        VMSTATE_UINT32(memop_cmd_id, VirtIOBalloon),
+        VMSTATE_END_OF_LIST()
+    }
+};
+
 static const VMStateDescription vmstate_virtio_balloon_device = {
     .name = "virtio-balloon-device",
     .version_id = 1,
@@ -1025,6 +1228,7 @@ static const VMStateDescription vmstate_virtio_balloon_device = {
     .subsections = (const VMStateDescription * []) {
         &vmstate_virtio_balloon_free_page_hint,
         &vmstate_virtio_balloon_page_poison,
+        &vmstate_virtio_balloon_memop,
         NULL
     }
 };
@@ -1034,6 +1238,21 @@ static void virtio_balloon_device_realize(DeviceState *dev, Error **errp)
     VirtIODevice *vdev = VIRTIO_DEVICE(dev);
     VirtIOBalloon *s = VIRTIO_BALLOON(dev);
     int ret;
+
+    /*
+     * memop_cmd_id shares config space storage with
+     * free_page_hint_cmd_id, so memop cannot coexist with free page
+     * hinting; free-page-hint defaults to off, so a conflict always
+     * means an explicit user misconfiguration: fail rather than
+     * silently dropping a requested feature.
+     */
+    if (virtio_has_feature(s->host_features, VIRTIO_BALLOON_F_MEMOP) &&
+        virtio_has_feature(s->host_features,
+                           VIRTIO_BALLOON_F_FREE_PAGE_HINT)) {
+        error_setg(errp, "virtio-balloon: memop is mutually exclusive with "
+                         "free-page-hint");
+        return;
+    }
 
     virtio_init(vdev, VIRTIO_ID_BALLOON, virtio_balloon_config_size(s));
 
@@ -1073,6 +1292,15 @@ static void virtio_balloon_device_realize(DeviceState *dev, Error **errp)
                                            virtio_balloon_handle_report);
     }
 
+    if (virtio_has_feature(s->host_features, VIRTIO_BALLOON_F_MEMOP)) {
+        qemu_add_balloon_memop_handler(virtio_balloon_memop);
+        s->memop_vq = virtio_add_queue(vdev, 128,
+                                       virtio_balloon_receive_memop);
+        s->memop_vmstate_entry =
+            qemu_add_vm_change_state_handler(
+                virtio_balloon_memop_vmstate_change, s);
+    }
+
     reset_stats(s);
 }
 
@@ -1099,6 +1327,13 @@ static void virtio_balloon_device_unrealize(DeviceState *dev)
     if (s->reporting_vq) {
         virtio_delete_queue(s->reporting_vq);
     }
+    if (s->memop_vq) {
+        /* Terminate an in-flight request: with the device gone, its
+         * guest answer can never arrive. */
+        virtio_balloon_memop_cancel(s);
+        qemu_del_vm_change_state_handler(s->memop_vmstate_entry);
+        virtio_delete_queue(s->memop_vq);
+    }
     virtio_cleanup(vdev);
 #ifdef CONFIG_HUGEPAGE_POD
     free_gbp();
@@ -1118,6 +1353,10 @@ static void virtio_balloon_device_reset(VirtIODevice *vdev)
         g_free(s->stats_vq_elem);
         s->stats_vq_elem = NULL;
     }
+
+    /* A reset drops the in-flight request without a guest answer. */
+    virtio_balloon_memop_cancel(s);
+    s->memop_cmd_id = 0;
 
     s->poison_val = 0;
 #ifdef CONFIG_HUGEPAGE_POD
@@ -1194,6 +1433,8 @@ static Property virtio_balloon_properties[] = {
                     VIRTIO_BALLOON_F_PAGE_POISON, true),
     DEFINE_PROP_BIT("free-page-reporting", VirtIOBalloon, host_features,
                     VIRTIO_BALLOON_F_REPORTING, false),
+    DEFINE_PROP_BIT("memop", VirtIOBalloon, host_features,
+                    VIRTIO_BALLOON_F_MEMOP, false),
     /* QEMU 4.0 accidentally changed the config size even when free-page-hint
      * is disabled, resulting in QEMU 3.1 migration incompatibility.  This
      * property retains this quirk for QEMU 4.1 machine types.
