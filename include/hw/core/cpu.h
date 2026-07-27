@@ -585,6 +585,9 @@ struct CPUState {
     /* track IOMMUs whose translations we've cached in the TCG TLB */
     GArray *iommu_notifiers;
 
+    /* CLIDR_EL1 value calculated from -smp-cache configuration */
+    uint64_t clidr_reg;
+
     /*
      * MUST BE LAST in order to minimize the displacement to CPUArchState.
      */
@@ -1262,5 +1265,30 @@ extern const VMStateDescription vmstate_cpu_common;
 
 #define UNASSIGNED_CPU_INDEX -1
 #define UNASSIGNED_CLUSTER_INDEX -1
+
+#define CPU_MAX_CACHES 16
+
+/* Cache level constants */
+#define CACHE_LEVEL_L1     1
+#define CACHE_LEVEL_L2     2
+#define CACHE_LEVEL_L3     3
+
+enum CpuCacheType {
+    CPU_CACHE_DATA,
+    CPU_CACHE_INSTRUCTION,
+    CPU_CACHE_UNIFIED
+};
+
+struct CPUCoreCaches {
+    enum CpuCacheType type;
+    uint32_t sets;
+    uint32_t size;
+    uint32_t level;
+    uint16_t linesize;
+    uint8_t attributes; /* write policy: 0x0 write back, 0x1 write through */
+    uint8_t associativity;
+};
+
+typedef struct CPUCoreCaches CPUCoreCaches;
 
 #endif

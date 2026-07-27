@@ -3765,6 +3765,69 @@ static void virt_update_gic(VirtMachineState *vms, CPUState *cs)
     notifier_list_notify(&vms->cpuhp_notifiers, &gic_info);
 }
 
+/*
+ * Calculate CLIDR_EL1 value from -smp-cache configuration.
+ *
+ * The ARM64 kernel uses CLIDR to determine the number of cache levels
+ * and the type (separate/unified) of each level. This must be consistent
+ * with the PPTT table, otherwise the kernel may ignore some cache levels.
+ */
+static uint64_t virt_get_vcpu_clidr(const MachineState *ms)
+{
+    uint64_t clidr = 0;
+    int max_level = 0;
+
+    /* L1: check l1 (unified), or l1d + l1i (separate) */
+    bool has_l1 = ms->smp_cache.props[CACHE_LEVEL_AND_TYPE_L1].topology
+                  != CPU_TOPOLOGY_LEVEL_DEFAULT;
+    bool has_l1d = ms->smp_cache.props[CACHE_LEVEL_AND_TYPE_L1D].topology
+                   != CPU_TOPOLOGY_LEVEL_DEFAULT;
+    bool has_l1i = ms->smp_cache.props[CACHE_LEVEL_AND_TYPE_L1I].topology
+                   != CPU_TOPOLOGY_LEVEL_DEFAULT;
+
+    if (has_l1) {
+        clidr |= (uint64_t)CTYPE_UNIFIED << CLIDR_CTYPE_SHIFT(CACHE_LEVEL_L1);
+        max_level = CACHE_LEVEL_L1;
+    } else if (has_l1d && has_l1i) {
+        clidr |= (uint64_t)CTYPE_INS_DATA << CLIDR_CTYPE_SHIFT(CACHE_LEVEL_L1);
+        max_level = CACHE_LEVEL_L1;
+    } else if (has_l1d) {
+        clidr |= (uint64_t)CTYPE_DATA << CLIDR_CTYPE_SHIFT(CACHE_LEVEL_L1);
+        max_level = CACHE_LEVEL_L1;
+    } else if (has_l1i) {
+        clidr |= (uint64_t)CTYPE_INS << CLIDR_CTYPE_SHIFT(CACHE_LEVEL_L1);
+        max_level = CACHE_LEVEL_L1;
+    }
+
+    /* L2: unified cache */
+    if (ms->smp_cache.props[CACHE_LEVEL_AND_TYPE_L2].topology
+        != CPU_TOPOLOGY_LEVEL_DEFAULT) {
+        clidr |= (uint64_t)CTYPE_UNIFIED << CLIDR_CTYPE_SHIFT(CACHE_LEVEL_L2);
+        max_level = CACHE_LEVEL_L2;
+    }
+
+    /* L3: unified cache */
+    if (ms->smp_cache.props[CACHE_LEVEL_AND_TYPE_L3].topology
+        != CPU_TOPOLOGY_LEVEL_DEFAULT) {
+        clidr |= (uint64_t)CTYPE_UNIFIED << CLIDR_CTYPE_SHIFT(CACHE_LEVEL_L3);
+        max_level = CACHE_LEVEL_L3;
+    }
+
+    /*
+     * LoC, LoUU, LoUIS all set to max_level.
+     * Hardware maintains data cache coherency across all levels via
+     * cache coherency protocols (e.g. MESI), so setting these to the
+     * highest level is the safe and correct approach.
+     * Additionally, LoUU/LoUIS must be non-zero, otherwise KVM's
+     * set_clidr() rejects the value when hardware lacks IDC support.
+     */
+    clidr |= (uint64_t)max_level << CLIDR_LOC_SHIFT;
+    clidr |= (uint64_t)max_level << CLIDR_LOUU_SHIFT;
+    clidr |= (uint64_t)max_level << CLIDR_LOUIS_SHIFT;
+
+    return clidr;
+}
+
 static void virt_cpu_pre_plug(HotplugHandler *hotplug_dev, DeviceState *dev,
                               Error **errp)
 {
@@ -3806,6 +3869,9 @@ static void virt_cpu_pre_plug(HotplugHandler *hotplug_dev, DeviceState *dev,
     }
 
     cs->cpu_index = virt_get_cpu_id_from_cpu_topo(ms, dev);
+
+    /* Calculate CLIDR from -smp-cache config, will be injected into vCPU later */
+    cs->clidr_reg = virt_get_vcpu_clidr(ms);
 
     /* Except for cold-booted vCPUs, this should check presence of ACPI GED */
     if (cs->cpu_index >= ms->smp.cpus && !vms->acpi_dev) {
@@ -4335,6 +4401,11 @@ static void virt_machine_class_init(ObjectClass *oc, void *data)
     hc->unplug = virt_machine_device_unplug_cb;
     mc->nvdimm_supported = true;
     mc->smp_props.clusters_supported = true;
+    mc->smp_props.cache_supported[CACHE_LEVEL_AND_TYPE_L1D] = true;
+    mc->smp_props.cache_supported[CACHE_LEVEL_AND_TYPE_L1I] = true;
+    mc->smp_props.cache_supported[CACHE_LEVEL_AND_TYPE_L1] = true;
+    mc->smp_props.cache_supported[CACHE_LEVEL_AND_TYPE_L2] = true;
+    mc->smp_props.cache_supported[CACHE_LEVEL_AND_TYPE_L3] = true;
     mc->auto_enable_numa_with_memhp = true;
     mc->auto_enable_numa_with_memdev = true;
     /* platform instead of architectural choice */

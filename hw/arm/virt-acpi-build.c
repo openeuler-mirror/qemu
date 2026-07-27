@@ -72,60 +72,342 @@
 #define ACPI_BUILD_TABLE_SIZE             0x20000
 
 /*
+ * PPTT Cache Type Structure (Type 1) constants
+ * ACPI spec, Revision 6.3, 5.2.29.2
+ */
+#define PPTT_CACHE_NODE_TYPE             1
+#define PPTT_CACHE_NODE_LENGTH           24
+
+/* Field sizes in bytes */
+#define PPTT_CACHE_RESERVED_BYTES        2
+#define PPTT_CACHE_FLAGS_BYTES           4
+#define PPTT_CACHE_NEXT_LEVEL_BYTES      4
+#define PPTT_CACHE_SIZE_BYTES            4
+#define PPTT_CACHE_SETS_BYTES            4
+#define PPTT_CACHE_LINESIZE_BYTES        2
+
+/* Attributes byte: bits [1:0] = allocation policy, bits [3:2] = cache type */
+#define PPTT_CACHE_ATTR_ALLOC_POLICY     0x3
+#define PPTT_CACHE_TYPE_SHIFT            2
+#define PPTT_CACHE_TYPE_DATA_VAL         0
+#define PPTT_CACHE_TYPE_INSTR_VAL        1
+#define PPTT_CACHE_TYPE_UNIFIED_VAL      3
+
+/* Number of private resources when I/D offsets differ or are unified */
+#define PPTT_PRIV_RSRC_UNIFIED           1
+#define PPTT_PRIV_RSRC_SEPARATE          2
+
+/* Highest cache level supported (L3) */
+#define PPTT_MAX_CACHE_LEVEL             3
+
+/*
+ * Constant context for PPTT cache node construction. These values never
+ * change during the table build, so bundling them avoids passing four
+ * separate arguments through every helper call.
+ */
+typedef struct PpttCacheCtx {
+    GArray *table_data;
+    uint32_t pptt_start;
+    CPUCoreCaches *caches;
+    int num_caches;
+} PpttCacheCtx;
+
+/*
+ * Result of building caches at one topology level (socket/cluster/core).
+ * Filled by build_topo_caches(), consumed by build_pptt_arm().
+ */
+typedef struct PpttLevelResult {
+    uint32_t priv_rsrc[2];  /* I/D cache node offsets for hierarchy node */
+    uint32_t num_priv;       /* count of valid entries in priv_rsrc */
+    int bottom_level;        /* lowest cache level found at this topo level */
+    bool found;              /* whether any cache exists at this topo level */
+} PpttLevelResult;
+
+/*
+ * Hardcoded cache geometry per CacheLevelAndType, from virt.h macros.
+ *
+ * We read from hardcoded macros instead of KVM registers because KVM does not
+ * support reading CCSIDR_EL1 via KVM_GET_ONE_REG (returns ENOENT).
+ *
+ * The values match the host hardware cache geometry (verified via sysfs).
+ */
+static const struct {
+    enum CpuCacheType type;
+    uint32_t level;
+    uint32_t default_sz;
+    uint32_t sets;
+    uint16_t linesize;
+    uint8_t associativity;
+    uint8_t attributes;
+} arm_cache_defaults[CACHE_LEVEL_AND_TYPE__MAX] = {
+    [CACHE_LEVEL_AND_TYPE_L1D] = {
+        CPU_CACHE_DATA, CACHE_LEVEL_L1,
+        ARM_L1DCACHE_SIZE, ARM_L1DCACHE_SETS,
+        ARM_L1DCACHE_LINE_SIZE, ARM_L1DCACHE_ASSOCIATIVITY,
+        ARM_L1DCACHE_ATTRIBUTES,
+    },
+    [CACHE_LEVEL_AND_TYPE_L1I] = {
+        CPU_CACHE_INSTRUCTION, CACHE_LEVEL_L1,
+        ARM_L1ICACHE_SIZE, ARM_L1ICACHE_SETS,
+        ARM_L1ICACHE_LINE_SIZE, ARM_L1ICACHE_ASSOCIATIVITY,
+        ARM_L1ICACHE_ATTRIBUTES,
+    },
+    [CACHE_LEVEL_AND_TYPE_L1] = {
+        CPU_CACHE_UNIFIED, CACHE_LEVEL_L1,
+        ARM_L1CACHE_SIZE, ARM_L1CACHE_SETS,
+        ARM_L1CACHE_LINE_SIZE, ARM_L1CACHE_ASSOCIATIVITY,
+        ARM_L1CACHE_ATTRIBUTES,
+    },
+    [CACHE_LEVEL_AND_TYPE_L2] = {
+        CPU_CACHE_UNIFIED, CACHE_LEVEL_L2,
+        ARM_L2CACHE_SIZE, ARM_L2CACHE_SETS,
+        ARM_L2CACHE_LINE_SIZE, ARM_L2CACHE_ASSOCIATIVITY,
+        ARM_L2CACHE_ATTRIBUTES,
+    },
+    [CACHE_LEVEL_AND_TYPE_L3] = {
+        CPU_CACHE_UNIFIED, CACHE_LEVEL_L3,
+        ARM_L3CACHE_SIZE, ARM_L3CACHE_SETS,
+        ARM_L3CACHE_LINE_SIZE, ARM_L3CACHE_ASSOCIATIVITY,
+        ARM_L3CACHE_ATTRIBUTES,
+    },
+};
+
+static void virt_fill_cache(CPUCoreCaches *cache, CacheLevelAndType key)
+{
+    const typeof(arm_cache_defaults[0]) *d = &arm_cache_defaults[key];
+
+    cache->type = d->type;
+    cache->level = d->level;
+    cache->size = d->default_sz;
+    cache->sets = d->sets;
+    cache->linesize = d->linesize;
+    cache->associativity = d->associativity;
+    cache->attributes = d->attributes;
+}
+
+static unsigned int virt_get_caches(const VirtMachineState *vms,
+                                    CPUCoreCaches *caches)
+{
+    const MachineState *ms = MACHINE(vms);
+    int n = 0;
+
+    bool has_l1 = ms->smp_cache.props[CACHE_LEVEL_AND_TYPE_L1].topology
+                  != CPU_TOPOLOGY_LEVEL_DEFAULT;
+    bool has_l1d = ms->smp_cache.props[CACHE_LEVEL_AND_TYPE_L1D].topology
+                   != CPU_TOPOLOGY_LEVEL_DEFAULT;
+    bool has_l1i = ms->smp_cache.props[CACHE_LEVEL_AND_TYPE_L1I].topology
+                   != CPU_TOPOLOGY_LEVEL_DEFAULT;
+
+    /*
+     * L1 cache nodes must match the CLIDR value computed by
+     * virt_get_vcpu_clidr() in virt.c. Only build cache nodes for
+     * types that the user has configured. When no L1 cache is
+     * configured, fall back to hardware CLIDR.
+     */
+    if (has_l1) {
+        virt_fill_cache(&caches[n++], CACHE_LEVEL_AND_TYPE_L1);
+    } else if (has_l1d && has_l1i) {
+        virt_fill_cache(&caches[n++], CACHE_LEVEL_AND_TYPE_L1D);
+        virt_fill_cache(&caches[n++], CACHE_LEVEL_AND_TYPE_L1I);
+    } else if (has_l1d) {
+        virt_fill_cache(&caches[n++], CACHE_LEVEL_AND_TYPE_L1D);
+    } else if (has_l1i) {
+        virt_fill_cache(&caches[n++], CACHE_LEVEL_AND_TYPE_L1I);
+    } else if (cpu_l1_cache_unified(0)) {
+        virt_fill_cache(&caches[n++], CACHE_LEVEL_AND_TYPE_L1);
+    } else {
+        virt_fill_cache(&caches[n++], CACHE_LEVEL_AND_TYPE_L1D);
+        virt_fill_cache(&caches[n++], CACHE_LEVEL_AND_TYPE_L1I);
+    }
+
+    /* L2: only if configured */
+    if (ms->smp_cache.props[CACHE_LEVEL_AND_TYPE_L2].topology
+        != CPU_TOPOLOGY_LEVEL_DEFAULT) {
+        virt_fill_cache(&caches[n++], CACHE_LEVEL_AND_TYPE_L2);
+    }
+
+    /* L3: only if configured */
+    if (ms->smp_cache.props[CACHE_LEVEL_AND_TYPE_L3].topology
+        != CPU_TOPOLOGY_LEVEL_DEFAULT) {
+        virt_fill_cache(&caches[n++], CACHE_LEVEL_AND_TYPE_L3);
+    }
+
+    return n;
+}
+
+/*
  * ACPI spec, Revision 6.3
  * 5.2.29.2 Cache Type Structure (Type 1)
  */
-static void build_cache_hierarchy_node(GArray *tbl, uint32_t next_level,
-                                       uint32_t cache_type)
+static void build_cache_nodes(GArray *tbl, CPUCoreCaches *cache,
+                              uint32_t next_offset)
 {
-    build_append_byte(tbl, 1);
-    build_append_byte(tbl, 24);
-    build_append_int_noprefix(tbl, 0, 2);
-    build_append_int_noprefix(tbl, 127, 4);
-    build_append_int_noprefix(tbl, next_level, 4);
+    int start_len = tbl->len;
+    int val;
 
-    switch (cache_type) {
-    case ARM_L1D_CACHE: /* L1 dcache info */
-        build_append_int_noprefix(tbl, ARM_L1DCACHE_SIZE, 4);
-        build_append_int_noprefix(tbl, ARM_L1DCACHE_SETS, 4);
-        build_append_byte(tbl, ARM_L1DCACHE_ASSOCIATIVITY);
-        build_append_byte(tbl, ARM_L1DCACHE_ATTRIBUTES);
-        build_append_int_noprefix(tbl, ARM_L1DCACHE_LINE_SIZE, 2);
+    build_append_byte(tbl, PPTT_CACHE_NODE_TYPE); /* Type 1 - cache */
+    build_append_byte(tbl, PPTT_CACHE_NODE_LENGTH); /* Length */
+    build_append_int_noprefix(tbl, 0, PPTT_CACHE_RESERVED_BYTES); /* Reserved */
+    build_append_int_noprefix(tbl, 0x7f, PPTT_CACHE_FLAGS_BYTES); /* Flags */
+    build_append_int_noprefix(tbl, next_offset, PPTT_CACHE_NEXT_LEVEL_BYTES);
+    build_append_int_noprefix(tbl, cache->size, PPTT_CACHE_SIZE_BYTES);
+    build_append_int_noprefix(tbl, cache->sets, PPTT_CACHE_SETS_BYTES);
+    build_append_byte(tbl, cache->associativity); /* Associativity */
+    val = PPTT_CACHE_ATTR_ALLOC_POLICY;
+    switch (cache->type) {
+    case CPU_CACHE_INSTRUCTION:
+        val |= (PPTT_CACHE_TYPE_INSTR_VAL << PPTT_CACHE_TYPE_SHIFT);
         break;
-    case ARM_L1I_CACHE: /* L1 icache info */
-        build_append_int_noprefix(tbl, ARM_L1ICACHE_SIZE, 4);
-        build_append_int_noprefix(tbl, ARM_L1ICACHE_SETS, 4);
-        build_append_byte(tbl, ARM_L1ICACHE_ASSOCIATIVITY);
-        build_append_byte(tbl, ARM_L1ICACHE_ATTRIBUTES);
-        build_append_int_noprefix(tbl, ARM_L1ICACHE_LINE_SIZE, 2);
+    case CPU_CACHE_DATA:
+        val |= (PPTT_CACHE_TYPE_DATA_VAL << PPTT_CACHE_TYPE_SHIFT);
         break;
-    case ARM_L1_CACHE: /* L1 cache info */
-        build_append_int_noprefix(tbl, ARM_L1CACHE_SIZE, 4);
-        build_append_int_noprefix(tbl, ARM_L1CACHE_SETS, 4);
-        build_append_byte(tbl, ARM_L1CACHE_ASSOCIATIVITY);
-        build_append_byte(tbl, ARM_L1CACHE_ATTRIBUTES);
-        build_append_int_noprefix(tbl, ARM_L1CACHE_LINE_SIZE, 2);
+    case CPU_CACHE_UNIFIED:
+        val |= (PPTT_CACHE_TYPE_UNIFIED_VAL << PPTT_CACHE_TYPE_SHIFT);
         break;
-    case ARM_L2_CACHE: /* L2 cache info */
-        build_append_int_noprefix(tbl, ARM_L2CACHE_SIZE, 4);
-        build_append_int_noprefix(tbl, ARM_L2CACHE_SETS, 4);
-        build_append_byte(tbl, ARM_L2CACHE_ASSOCIATIVITY);
-        build_append_byte(tbl, ARM_L2CACHE_ATTRIBUTES);
-        build_append_int_noprefix(tbl, ARM_L2CACHE_LINE_SIZE, 2);
-        break;
-    case ARM_L3_CACHE: /* L3 cache info */
-        build_append_int_noprefix(tbl, ARM_L3CACHE_SIZE, 4);
-        build_append_int_noprefix(tbl, ARM_L3CACHE_SETS, 4);
-        build_append_byte(tbl, ARM_L3CACHE_ASSOCIATIVITY);
-        build_append_byte(tbl, ARM_L3CACHE_ATTRIBUTES);
-        build_append_int_noprefix(tbl, ARM_L3CACHE_LINE_SIZE, 2);
-        break;
-    default:
-        build_append_int_noprefix(tbl, 0, 4);
-        build_append_int_noprefix(tbl, 0, 4);
-        build_append_byte(tbl, 0);
-        build_append_byte(tbl, 0);
-        build_append_int_noprefix(tbl, 0, 2);
+    }
+    build_append_byte(tbl, val); /* Attributes */
+    build_append_int_noprefix(tbl, cache->linesize, PPTT_CACHE_LINESIZE_BYTES);
+    g_assert(tbl->len == start_len + PPTT_CACHE_NODE_LENGTH);
+}
+
+/*
+ * Build PPTT Cache Type structures (Type 1) from cache level `level_high`
+ * down to `level_low` (both inclusive), appending them to the PPTT table.
+ *
+ * On output, `data_offset` and `instr_offset` hold the PPTT offsets of the
+ * lowest-level data and instruction cache nodes respectively.
+ */
+static bool build_caches(PpttCacheCtx *ctx,
+                         uint8_t level_high, /* Inclusive */
+                         uint8_t level_low,  /* Inclusive */
+                         uint32_t *data_offset,
+                         uint32_t *instr_offset)
+{
+    GArray *table_data = ctx->table_data;
+    uint32_t next_level_offset_data = 0, next_level_offset_instruction = 0;
+    uint32_t this_offset, next_offset = 0;
+    int c, level;
+    bool found_cache = false;
+
+    /* Walk caches from top to bottom */
+    for (level = level_high; level >= level_low; level--) {
+        for (c = 0; c < ctx->num_caches; c++) {
+            if (ctx->caches[c].level != level) {
+                continue;
+            }
+
+            this_offset = table_data->len - ctx->pptt_start;
+            switch (ctx->caches[c].type) {
+            case CPU_CACHE_INSTRUCTION:
+                next_offset = next_level_offset_instruction;
+                break;
+            case CPU_CACHE_DATA:
+                next_offset = next_level_offset_data;
+                break;
+            case CPU_CACHE_UNIFIED:
+                next_offset = next_level_offset_instruction;
+                break;
+            }
+            build_cache_nodes(table_data, &ctx->caches[c], next_offset);
+            switch (ctx->caches[c].type) {
+            case CPU_CACHE_INSTRUCTION:
+                next_level_offset_instruction = this_offset;
+                break;
+            case CPU_CACHE_DATA:
+                next_level_offset_data = this_offset;
+                break;
+            case CPU_CACHE_UNIFIED:
+                next_level_offset_instruction = this_offset;
+                next_level_offset_data = this_offset;
+                break;
+            }
+            *data_offset = next_level_offset_data;
+            *instr_offset = next_level_offset_instruction;
+
+            found_cache = true;
+        }
+    }
+
+    return found_cache;
+}
+
+/*
+ * Check whether the user has configured any -smp-cache option.
+ * Returns true when all cache topology properties remain at their
+ * initial DEFAULT value, i.e. no -smp-cache was specified.
+ */
+static bool virt_smp_cache_all_default(const MachineState *ms)
+{
+    CacheLevelAndType i;
+
+    for (i = 0; i < CACHE_LEVEL_AND_TYPE__MAX; i++) {
+        if (ms->smp_cache.props[i].topology != CPU_TOPOLOGY_LEVEL_DEFAULT) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/*
+ * Set default cache topology when the user has not configured any
+ * -smp-cache option, so that PPTT still contains cache information.
+ * L1 type (unified vs separate) is determined by hardware CLIDR.
+ */
+static void virt_set_default_cache_topology(MachineState *ms)
+{
+    if (!virt_smp_cache_all_default(ms)) {
+        return;
+    }
+
+    if (cpu_l1_cache_unified(0)) {
+        ms->smp_cache.props[CACHE_LEVEL_AND_TYPE_L1].topology =
+            CPU_TOPOLOGY_LEVEL_CORE;
+    } else {
+        ms->smp_cache.props[CACHE_LEVEL_AND_TYPE_L1D].topology =
+            CPU_TOPOLOGY_LEVEL_CORE;
+        ms->smp_cache.props[CACHE_LEVEL_AND_TYPE_L1I].topology =
+            CPU_TOPOLOGY_LEVEL_CORE;
+    }
+    ms->smp_cache.props[CACHE_LEVEL_AND_TYPE_L2].topology =
+        CPU_TOPOLOGY_LEVEL_CORE;
+    ms->smp_cache.props[CACHE_LEVEL_AND_TYPE_L3].topology =
+        CPU_TOPOLOGY_LEVEL_SOCKET;
+}
+
+/*
+ * Find and build cache nodes at a given CPU topology level, filling the
+ * private resource fields for the corresponding processor hierarchy node.
+ *
+ * On entry, @top_level is the highest cache level to search from.
+ * On return, result->bottom_level is the lowest cache level found and
+ * result->found indicates whether any cache exists at @topo.
+ */
+static void build_topo_caches(PpttCacheCtx *ctx, MachineState *ms,
+                               CpuTopologyLevel topo, int top_level,
+                               PpttLevelResult *result)
+{
+    uint32_t data_off = 0, instr_off = 0;
+
+    result->priv_rsrc[0] = 0;
+    result->priv_rsrc[1] = 0;
+    result->num_priv = 0;
+    result->bottom_level = top_level;
+    result->found = false;
+
+    result->found = machine_find_lowest_level_cache_at_topo_level(
+        ms, &result->bottom_level, topo);
+    if (!result->found) {
+        return;
+    }
+
+    build_caches(ctx, top_level, result->bottom_level,
+                 &data_off, &instr_off);
+
+    result->priv_rsrc[0] = instr_off;
+    result->priv_rsrc[1] = data_off;
+    if (instr_off || data_off) {
+        result->num_priv = (instr_off == data_off) ?
+            PPTT_PRIV_RSRC_UNIFIED : PPTT_PRIV_RSRC_SEPARATE;
     }
 }
 
@@ -134,37 +416,46 @@ static void build_cache_hierarchy_node(GArray *tbl, uint32_t next_level,
  * 5.2.29 Processor Properties Topology Table (PPTT)
  */
 static void build_pptt_arm(GArray *table_data, BIOSLinker *linker, MachineState *ms,
-                const char *oem_id, const char *oem_table_id)
+                const char *oem_id, const char *oem_table_id,
+                int num_caches, CPUCoreCaches *caches)
 {
     MachineClass *mc = MACHINE_GET_CLASS(ms);
     GQueue *list = g_queue_new();
     guint pptt_start = table_data->len;
+    PpttCacheCtx ctx = { table_data, pptt_start, caches, num_caches };
     guint parent_offset;
     guint length, i;
     int uid = 0;
     int socket;
     AcpiTable table = { .sig = "PPTT", .rev = 2,
                         .oem_id = oem_id, .oem_table_id = oem_table_id };
-    bool unified_l1 = cpu_l1_cache_unified(0);
+
+    /* Cache topology level tracking */
+    int top_node = PPTT_MAX_CACHE_LEVEL;
+    int top_cluster = PPTT_MAX_CACHE_LEVEL;
+    int top_core = PPTT_MAX_CACHE_LEVEL;
 
     acpi_table_begin(&table, table_data);
 
+    /* === Socket level === */
     for (socket = 0; socket < ms->smp.sockets; socket++) {
-        uint32_t l3_cache_offset = table_data->len - pptt_start;
-        build_cache_hierarchy_node(table_data, 0, ARM_L3_CACHE);
+        PpttLevelResult res = {};
+
+        build_topo_caches(&ctx, ms, CPU_TOPOLOGY_LEVEL_SOCKET,
+                          top_node, &res);
+        if (res.found) {
+            top_cluster = res.bottom_level - 1;
+        }
 
         g_queue_push_tail(list,
             GUINT_TO_POINTER(table_data->len - pptt_start));
         build_processor_hierarchy_node(
             table_data,
-            /*
-             * Physical package - represents the boundary
-             * of a physical package
-             */
-            (1 << 0),
-            0, socket, &l3_cache_offset, 1);
+            (1 << 0), /* Physical package */
+            0, socket, res.priv_rsrc, res.num_priv);
     }
 
+    /* === Cluster level === */
     if (mc->smp_props.clusters_supported) {
         length = g_queue_get_length(list);
         for (i = 0; i < length; i++) {
@@ -172,35 +463,36 @@ static void build_pptt_arm(GArray *table_data, BIOSLinker *linker, MachineState 
 
             parent_offset = GPOINTER_TO_UINT(g_queue_pop_head(list));
             for (cluster = 0; cluster < ms->smp.clusters; cluster++) {
+                PpttLevelResult res = {};
+
+                build_topo_caches(&ctx, ms, CPU_TOPOLOGY_LEVEL_CLUSTER,
+                                  top_cluster, &res);
+                top_core = res.found ? res.bottom_level - 1 : top_cluster;
+
                 g_queue_push_tail(list,
                     GUINT_TO_POINTER(table_data->len - pptt_start));
                 build_processor_hierarchy_node(
                     table_data,
                     (0 << 0), /* not a physical package */
-                    parent_offset, cluster, NULL, 0);
+                    parent_offset, cluster, res.priv_rsrc, res.num_priv);
             }
         }
+    } else {
+        top_core = top_cluster;
     }
 
+    /* === Core level === */
     length = g_queue_get_length(list);
     for (i = 0; i < length; i++) {
         int core;
 
         parent_offset = GPOINTER_TO_UINT(g_queue_pop_head(list));
-        for (core = 0; core < ms->smp.cores; core++) {
-            uint32_t priv_rsrc[3] = {};
-            priv_rsrc[0] = table_data->len - pptt_start; /* L2 cache offset */
-            build_cache_hierarchy_node(table_data, 0, ARM_L2_CACHE);
 
-            if (unified_l1) {
-                priv_rsrc[1] = table_data->len - pptt_start; /* L1 cache offset */
-                build_cache_hierarchy_node(table_data, priv_rsrc[0], ARM_L1_CACHE);
-            } else {
-                priv_rsrc[1] = table_data->len - pptt_start; /* L1 dcache offset */
-                build_cache_hierarchy_node(table_data, priv_rsrc[0], ARM_L1D_CACHE);
-                priv_rsrc[2] = table_data->len - pptt_start; /* L1 icache offset */
-                build_cache_hierarchy_node(table_data, priv_rsrc[0], ARM_L1I_CACHE);
-            }
+        for (core = 0; core < ms->smp.cores; core++) {
+            PpttLevelResult res = {};
+
+            build_topo_caches(&ctx, ms, CPU_TOPOLOGY_LEVEL_CORE,
+                              top_core, &res);
 
             if (ms->smp.threads > 1) {
                 g_queue_push_tail(list,
@@ -208,17 +500,18 @@ static void build_pptt_arm(GArray *table_data, BIOSLinker *linker, MachineState 
                 build_processor_hierarchy_node(
                     table_data,
                     (0 << 0), /* not a physical package */
-                    parent_offset, core, priv_rsrc, 3);
+                    parent_offset, core, res.priv_rsrc, res.num_priv);
             } else {
                 build_processor_hierarchy_node(
                     table_data,
                     (1 << 1) | /* ACPI Processor ID valid */
                     (1 << 3),  /* Node is a Leaf */
-                    parent_offset, uid++, priv_rsrc, 3);
+                    parent_offset, uid++, res.priv_rsrc, res.num_priv);
             }
         }
     }
 
+    /* === Thread level === */
     length = g_queue_get_length(list);
     for (i = 0; i < length; i++) {
         int thread;
@@ -1469,6 +1762,18 @@ void virt_acpi_build(VirtMachineState *vms, AcpiBuildTables *tables)
     unsigned dsdt, xsdt;
     GArray *tables_blob = tables->table_data;
     MachineState *ms = MACHINE(vms);
+    CPUCoreCaches caches[CPU_MAX_CACHES];
+    unsigned int num_caches;
+
+    /*
+     * Ensure default cache topology is set when the user has not
+     * configured any -smp-cache option, so PPTT is not empty.
+     * Must run before virt_get_caches() so that caches[] is filled
+     * consistently with the topology configuration.
+     */
+    virt_set_default_cache_topology(ms);
+
+    num_caches = virt_get_caches(vms, caches);
 
     table_offsets = g_array_new(false, true /* clear */,
                                         sizeof(uint32_t));
@@ -1494,7 +1799,8 @@ void virt_acpi_build(VirtMachineState *vms, AcpiBuildTables *tables)
     if (!vmc->no_cpu_topology) {
         acpi_add_table(table_offsets, tables_blob);
         build_pptt_arm(tables_blob, tables->linker, ms,
-                   vms->oem_id, vms->oem_table_id);
+                   vms->oem_id, vms->oem_table_id,
+                   num_caches, caches);
     }
 
     acpi_add_table(table_offsets, tables_blob);

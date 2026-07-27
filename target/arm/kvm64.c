@@ -862,6 +862,7 @@ static int kvm_arm_set_vend_hyp_bmap_2(ARMCPU *cpu)
 }
 
 #define ARM_CPU_ID_MPIDR       3, 0, 0, 0, 5
+#define ARM_CPU_ID_CLIDR       3, 1, 0, 0, 1
 
 int kvm_arch_init_vcpu(CPUState *cs)
 {
@@ -972,6 +973,19 @@ int kvm_arch_init_vcpu(CPUState *cs)
     }
     /* overwrite writable ID regs with their updated property values */
     kvm_arm_writable_idregs_to_cpreg_list(cpu);
+
+    /* Override CLIDR_EL1 with the value calculated from -smp-cache */
+    if (cs->clidr_reg) {
+        uint64_t clidr_id = ARM64_SYS_REG(ARM_CPU_ID_CLIDR);
+        int i;
+
+        for (i = 0; i < cpu->cpreg_array_len; i++) {
+            if (cpu->cpreg_indexes[i] == clidr_id) {
+                cpu->cpreg_values[i] = cs->clidr_reg;
+                break;
+            }
+        }
+    }
 
     write_list_to_kvmstate(cpu, 3);
 

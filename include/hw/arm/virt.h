@@ -39,6 +39,7 @@
 #include "sysemu/kvm.h"
 #include "hw/intc/arm_gicv3_common.h"
 #include "qom/object.h"
+#include "hw/core/cpu.h"
 
 #define NUM_GICV2M_SPIS       64
 #define NUM_VIRTIO_TRANSPORTS 32
@@ -68,6 +69,10 @@
 #define CLIDR_CTYPE_MASK(level) (7 << CLIDR_CTYPE_SHIFT(level))
 #define CLIDR_CTYPE(clidr, level) \
     (((clidr) & CLIDR_CTYPE_MASK(level)) >> CLIDR_CTYPE_SHIFT(level))
+
+#define CLIDR_LOC_SHIFT   24
+#define CLIDR_LOUIS_SHIFT 21
+#define CLIDR_LOUU_SHIFT  27
 
 /* L1 data cache */
 #define ARM_L1DCACHE_SIZE 65536

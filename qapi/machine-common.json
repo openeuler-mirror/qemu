@@ -72,6 +72,8 @@
 #
 # @l1i: L1 instruction cache.
 #
+# @l1: L1 unified cache.
+#
 # @l2: L2 (unified) cache.
 #
 # @l3: L3 (unified) cache
@@ -79,7 +81,7 @@
 # Since: 9.2
 ##
 { 'enum': 'CacheLevelAndType',
-  'data': [ 'l1d', 'l1i', 'l2', 'l3' ] }
+  'data': [ 'l1d', 'l1i', 'l1', 'l2', 'l3' ] }
 
 ##
 # @SmpCacheProperties:
