@@ -309,8 +309,10 @@ typedef enum HiMsgqIdx {
 } HiMsgqIdx_t;
 
 enum HiCqeStatus {
-    CQE_SUCCESS,
-    CQE_FAIL
+    CQE_SUCCESS = 0,
+    CQE_FAIL = 1,
+    CQE_OP_UNSUPP_ASCEND = 38,
+    CQE_OP_UNSUPP_KUNPENG = 39
 };
 
 enum HiCqSwState {
@@ -373,7 +375,9 @@ typedef enum HiMsgqPrivateOpcode {
     CC_CTX_CFG_CMD = 0,
     QUERY_UB_MEM_ROUTE_CMD = 1,
     EU_TABLE_CFG_CMD = 2,
-    CC_CTX_QUERY_CMD = 3
+    CC_CTX_QUERY_CMD = 3,
+    GET_UBMEM_EVENT_CMD = 4,
+    VER_EXCH_CMD = 255
 } HiMsgqPrivateOpcode;
 
 typedef enum HiEuCfgStatus {
@@ -409,6 +413,23 @@ typedef struct HiEuCfgPld {
         HiEuCfgRsp rsp;
     };
 } HiEuCfgPld;
+
+typedef struct HiVerExchRsp {
+    uint32_t firmware_highest_ver : 16;
+    uint32_t firmware_lowest_ver : 16;
+}HiVerExchRsp;
+
+typedef struct HiVerExchReq {
+    uint32_t ubus_highest_ver : 16;
+    uint32_t ubus_lowest_ver : 16;
+} HiVerExchReq;
+
+typedef struct HiVerExchPld {
+    union {
+        HiVerExchReq req;
+        HiVerExchRsp rsp;
+    };
+} HiVerExchPld;
 
 void msgq_sq_init(void *opaque);
 void msgq_cq_init(void *opaque);

@@ -6,3 +6,4 @@ msgq_sq_init(uint64_t gpa, uint32_t depth, uint64_t size) "sq_base_addr_gpa 0x%l
 msgq_cq_init(uint64_t gpa, uint32_t depth, uint64_t size) "cq_base_addr_gpa 0x%lx depth %u size %lu"
 msgq_rq_init(uint64_t gpa, uint32_t depth, uint64_t size) "rq_base_addr_gpa 0x%lx depth %u size %lu"
 paddr_is_validate(uint32_t start, uint32_t end, uint32_t paddr) "start 0x%x end 0x%x paddr 0x%x"
+handle_ver_exch_cmd(uint32_t ubus_highest_ver, uint32_t ubus_lowest_ver) "ubus_highest_ver(%u), ubus_lowest_ver(%u)"
