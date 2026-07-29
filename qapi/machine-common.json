@@ -95,12 +95,15 @@
 #     enumeration as the parameter, i.e., CPUs in the same
 #     topology container share the same cache.
 #
+# @size: Cache size in bytes.
+#
 # Since: 9.2
 ##
 { 'struct': 'SmpCacheProperties',
   'data': {
   'cache': 'CacheLevelAndType',
-  'topology': 'CpuTopologyLevel' } }
+  'topology': 'CpuTopologyLevel',
+  'size': 'uint64' } }
 
 ##
 # @SmpCachePropertiesWrapper:
