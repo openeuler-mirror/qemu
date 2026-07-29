@@ -253,6 +253,31 @@ static size_t v9fs_string_size(V9fsString *str)
     return str->size;
 }
 
+static int xattr_fid_count_inc(V9fsPDU *pdu)
+{
+    V9fsState *s = pdu->s;
+
+    if (s->ctx.xattr_fid_limit > 0 &&
+        s->ctx.xattr_fid_count >= s->ctx.xattr_fid_limit) {
+        error_report_once("9pfs: xattr_fid_count limit exceeded "
+                          "(configurable by option 'max_xattr').");
+        return -ENOSPC;
+    }
+    s->ctx.xattr_fid_count++;
+    return 0;
+}
+
+static void xattr_fid_count_decr(V9fsPDU *pdu)
+{
+    V9fsState *s = pdu->s;
+
+    if (s->ctx.xattr_fid_count > 0) {
+        s->ctx.xattr_fid_count--;
+    } else {
+        error_report_once("9pfs: xattr_fid_count underflow detected");
+    }
+}
+
 /*
  * returns 0 if fid got re-opened, 1 if not, < 0 on error
  */
@@ -385,6 +410,7 @@ static int coroutine_fn free_fid(V9fsPDU *pdu, V9fsFidState *fidp)
         }
     } else if (fidp->fid_type == P9_FID_XATTR) {
         retval = v9fs_xattr_fid_clunk(pdu, fidp);
+        xattr_fid_count_decr(pdu);
     }
     v9fs_path_free(&fidp->path);
     g_free(fidp);
@@ -593,6 +619,14 @@ static void coroutine_fn virtfs_reset(V9fsPDU *pdu)
         fidp->clunked = true;
         put_fid(pdu, fidp);
     }
+
+    /*
+     * Explicitly reset the xattr FID counter.
+     *
+     * free_fid() already decrements the counter for each P9_FID_XATTR, so the
+     * counter should already be zero, hence this is just a defensive measure.
+     */
+    s->ctx.xattr_fid_count = 0;
 }
 
 #define P9_QID_TYPE_DIR         0x80
@@ -2566,6 +2600,7 @@ static void coroutine_fn v9fs_readdir(void *opaque)
     uint32_t max_count;
     V9fsPDU *pdu = opaque;
     V9fsState *s = pdu->s;
+    size_t max_resp_sz;
 
     retval = pdu_unmarshal(pdu, offset, "dqd", &fid,
                            &initial_offset, &max_count);
@@ -2574,9 +2609,28 @@ static void coroutine_fn v9fs_readdir(void *opaque)
     }
     trace_v9fs_readdir(pdu->tag, pdu->id, fid, initial_offset, max_count);
 
+    max_resp_sz = s->msize;
+
+    /*
+     * Constrain max_count to transport's current, actual response buffer size.
+     * A bad client might provide a response buffer < msize.
+     */
+    if (s->transport->response_buffer_size) {
+        size_t buf_size = s->transport->response_buffer_size(pdu);
+        if (max_resp_sz > buf_size) {
+            max_resp_sz = buf_size;
+        }
+    }
+
     /* Enough space for a R_readdir header: size[4] Rreaddir tag[2] count[4] */
-    if (max_count > s->msize - 11) {
-        max_count = s->msize - 11;
+    if (max_resp_sz > 11) {
+        max_resp_sz -= 11;
+    } else {
+        max_resp_sz = 0;
+    }
+
+    if (max_count > max_resp_sz) {
+        max_count = max_resp_sz;
         warn_report_once(
             "9p: bad client: T_readdir with count > msize - 11"
         );
@@ -3898,6 +3952,14 @@ static void coroutine_fn v9fs_xattrwalk(void *opaque)
             clunk_fid(s, xattr_fidp->fid);
             goto out;
         }
+
+        /* Check xattr FID limit */
+        err = xattr_fid_count_inc(pdu);
+        if (err < 0) {
+            clunk_fid(s, xattr_fidp->fid);
+            goto out;
+        }
+
         /*
          * Read the xattr value
          */
@@ -3905,6 +3967,7 @@ static void coroutine_fn v9fs_xattrwalk(void *opaque)
         xattr_fidp->fid_type = P9_FID_XATTR;
         xattr_fidp->fs.xattr.xattrwalk_fid = true;
         xattr_fidp->fs.xattr.value = g_malloc0(size);
+
         if (size) {
             err = v9fs_co_llistxattr(pdu, &xattr_fidp->path,
                                      xattr_fidp->fs.xattr.value,
@@ -3931,6 +3994,14 @@ static void coroutine_fn v9fs_xattrwalk(void *opaque)
             clunk_fid(s, xattr_fidp->fid);
             goto out;
         }
+
+        /* Check xattr FID limit */
+        err = xattr_fid_count_inc(pdu);
+        if (err < 0) {
+            clunk_fid(s, xattr_fidp->fid);
+            goto out;
+        }
+
         /*
          * Read the xattr value
          */
@@ -3938,6 +4009,7 @@ static void coroutine_fn v9fs_xattrwalk(void *opaque)
         xattr_fidp->fid_type = P9_FID_XATTR;
         xattr_fidp->fs.xattr.xattrwalk_fid = true;
         xattr_fidp->fs.xattr.value = g_malloc0(size);
+
         if (size) {
             err = v9fs_co_lgetxattr(pdu, &xattr_fidp->path,
                                     &name, xattr_fidp->fs.xattr.value,
@@ -4026,6 +4098,12 @@ static void coroutine_fn v9fs_xattrcreate(void *opaque)
     }
     if (file_fidp->fid_type != P9_FID_NONE) {
         err = -EINVAL;
+        goto out_put_fid;
+    }
+
+    /* Check xattr FID limit */
+    err = xattr_fid_count_inc(pdu);
+    if (err < 0) {
         goto out_put_fid;
     }
 
@@ -4288,6 +4366,10 @@ int v9fs_device_realize_common(V9fsState *s, const V9fsTransport *t,
 
     s->ctx.fst = &fse->fst;
     fsdev_throttle_init(s->ctx.fst);
+
+    /* init xattr FID limit */
+    s->ctx.xattr_fid_limit = V9FS_MAX_XATTR_DEFAULT;
+    s->ctx.xattr_fid_count = 0;
 
     rc = 0;
 out:
