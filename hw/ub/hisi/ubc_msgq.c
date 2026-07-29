@@ -218,16 +218,31 @@ static void handle_task_type_enum(BusControllerState *s, HiMsgSqe *sqe)
     handle_msg_enum(s, sqe, payload);
 }
 
-static void handle_eu_table_cfg_cmd(BusControllerState *s, HiMsgSqe *sqe, void *payload)
+static void handle_eu_table_cfg_cmd(BusControllerState *s, HiMsgSqe *sqe)
 {
-    HiEuCfgReq *req = (HiEuCfgReq *)payload;
+    HiEuCfgReq *req = NULL;
     HiEuCfgRsp rsp;
     HiMsgCqe cqe;
+    uint32_t p_addr = sqe->p_addr;
 
+    if (!paddr_is_validate(s, p_addr)) {
+        qemu_log("invalid p_addr 0x%x\n", p_addr);
+        return;
+    }
+
+    assert(HI_MSG_SQE_PLD_SIZE > sizeof(HiEuCfgReq));
+    req = g_malloc0(sizeof(HiEuCfgReq));
+    if (dma_memory_read(&address_space_memory, s->msgq.sq_base_addr_gpa + p_addr,
+                        req, sizeof(HiEuCfgReq), MEMTXATTRS_MEMORY)) {
+        qemu_log("Failed to read sq_base_addr_gpa entry\n");
+        g_free(req);
+        return;
+    }
     /* qemu do nothing for hisi_private msg, just mask the msg return success */
     trace_handle_eu_table_cfg_cmd(req->eu_msg_code, req->cfg_entry_num,
                                   req->tbl_cfg_mode, req->tbl_cfg_status,
                                   req->entry_start_id, req->eid, req->upi);
+    g_free(req);
 
     memset(&rsp, 0, sizeof(rsp));
     rsp.tbl_cfg_status = EU_CFG_SUCCESS;
@@ -243,18 +258,59 @@ static void handle_eu_table_cfg_cmd(BusControllerState *s, HiMsgSqe *sqe, void *
     }
 }
 
-static void (*hisi_private_handlers[])(BusControllerState *s, HiMsgSqe *sqe, void *payload) = {
+static void handle_ver_exch_cmd(BusControllerState *s, HiMsgSqe *sqe)
+{
+    HiVerExchReq *req = NULL;
+    HiVerExchRsp rsp;
+    HiMsgCqe cqe;
+    uint32_t p_addr = sqe->p_addr;
+
+    if (!paddr_is_validate(s, p_addr)) {
+        qemu_log("invalid p_addr 0x%x\n", p_addr);
+        return;
+    }
+
+    assert(HI_MSG_SQE_PLD_SIZE > sizeof(HiVerExchReq));
+    req = g_malloc0(sizeof(HiVerExchReq));
+    if (dma_memory_read(&address_space_memory, s->msgq.sq_base_addr_gpa + p_addr,
+                        req, sizeof(HiVerExchReq), MEMTXATTRS_MEMORY)) {
+        qemu_log("Failed to read sq_base_addr_gpa entry\n");
+        g_free(req);
+        return;
+    }
+    /* qemu do nothing for hisi_private msg, just mask the msg return success */
+    trace_handle_ver_exch_cmd(req->ubus_highest_ver, req->ubus_lowest_ver);
+    g_free(req);
+
+    memset(&rsp, 0, sizeof(rsp));
+    memset(&cqe, 0, sizeof(cqe));
+    cqe.opcode = VER_EXCH_CMD;
+    cqe.task_type = HISI_PRIVATE;
+    cqe.msn = sqe->msn;
+    cqe.p_len = sizeof(rsp);
+    cqe.status = CQE_OP_UNSUPP_KUNPENG;
+    if (fill_rq_cq(s, &rsp, sizeof(rsp), &cqe) != 0) {
+        qemu_log("handle_ver_exch_cmd: fill_rq_cq failed\n");
+    }
+}
+
+static void (*hisi_private_handlers[])(BusControllerState *s, HiMsgSqe *sqe) = {
     [CC_CTX_CFG_CMD] = NULL,
     [QUERY_UB_MEM_ROUTE_CMD] = NULL,
     [EU_TABLE_CFG_CMD] = handle_eu_table_cfg_cmd,
     [CC_CTX_QUERY_CMD] = NULL,
+    [GET_UBMEM_EVENT_CMD] = NULL,
+    /* VER_EXCH_CMD is handled separately before array lookup */
 };
 
 static void handle_task_type_hisi_private(BusControllerState *s, HiMsgSqe *sqe)
 {
-    HiEuCfgReq *payload = NULL;
     uint8_t opcode = sqe->opcode;
-    uint32_t p_addr = sqe->p_addr;
+
+    if (opcode == VER_EXCH_CMD) {
+        handle_ver_exch_cmd(s, sqe);
+        return;
+    }
 
     if (opcode >= ARRAY_SIZE(hisi_private_handlers)) {
         qemu_log("invalid msg code %u, array size %lu\n",
@@ -262,26 +318,11 @@ static void handle_task_type_hisi_private(BusControllerState *s, HiMsgSqe *sqe)
         return;
     }
 
-    if (!paddr_is_validate(s, p_addr)) {
-        qemu_log("invalid p_addr 0x%x\n", p_addr);
-        return;
-    }
-
-    assert(HI_MSG_SQE_PLD_SIZE > sizeof(HiEuCfgReq));
-    payload = g_malloc0(sizeof(HiEuCfgReq));
-    if (dma_memory_read(&address_space_memory, s->msgq.sq_base_addr_gpa + p_addr,
-                        payload, sizeof(HiEuCfgReq), MEMTXATTRS_MEMORY)) {
-        qemu_log("Failed to read sq_base_addr_gpa entry\n");
-        g_free(payload);
-        return;
-    }
-
     if (hisi_private_handlers[opcode]) {
-        hisi_private_handlers[opcode](s, sqe, payload);
+        hisi_private_handlers[opcode](s, sqe);
     } else {
         qemu_log("current cannot support process hisi private opcode: %u.\n", opcode);
     }
-    g_free(payload);
 }
 
 void msgq_process_task(void *opaque, uint64_t val)
@@ -310,12 +351,6 @@ void msgq_process_task(void *opaque, uint64_t val)
         if (dma_memory_read(&address_space_memory, (unsigned long)((HiMsgSqe *)s->msgq.sq_base_addr_gpa + ci),
                             sqe, sizeof(HiMsgSqe), MEMTXATTRS_MEMORY)) {
             qemu_log("Failed to read sq_base_addr_gpa entry\n");
-            g_free(sqe);
-            return;
-        }
-        if (sqe->msg_code >= (ARRAY_SIZE(msgq_handlers))) {
-            qemu_log("invalid msg code %u, array size %lu\n",
-                     sqe->msg_code, ARRAY_SIZE(msgq_handlers));
             g_free(sqe);
             return;
         }
