@@ -4736,6 +4736,7 @@ static void virt_machine_6_2_options(MachineClass *mc)
     virt_machine_7_0_options(mc);
     compat_props_add(mc->compat_props, hw_compat_6_2, hw_compat_6_2_len);
     vmc->no_tcg_lpa2 = true;
+    vmc->legacy_cpu_hotplug = true;
 }
 DEFINE_VIRT_MACHINE(6, 2)
 

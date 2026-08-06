@@ -39,6 +39,7 @@
 #include "sysemu/kvm.h"
 #include "hw/intc/arm_gicv3_common.h"
 #include "qom/object.h"
+#include "hw/acpi/acpi_dev_interface.h"
 #include "hw/core/cpu.h"
 
 #define NUM_GICV2M_SPIS       64
@@ -232,6 +233,7 @@ struct VirtMachineClass {
     /* Machines < 6.2 have no support for describing cpu topology to guest */
     bool no_cpu_topology;
     bool no_tcg_lpa2;
+    bool legacy_cpu_hotplug;
 };
 
 struct VirtMachineState {
@@ -315,6 +317,8 @@ OBJECT_DECLARE_TYPE(VirtMachineState, VirtMachineClass, VIRT_MACHINE)
 
 void virt_acpi_setup(VirtMachineState *vms);
 bool virt_is_acpi_enabled(VirtMachineState *vms);
+void virt_madt_cpu_entry(int uid, const CPUArchIdList *cpu_list, GArray *entry,
+                         bool force_enabled);
 bool cpu_l1_cache_unified(int cpu);
 
 /* Return number of redistributors that fit in the specified region */
