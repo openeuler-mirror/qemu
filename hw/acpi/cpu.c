@@ -501,7 +501,9 @@ void build_cpus_aml(Aml *table, MachineState *machine, CPUHotplugFeatures opts,
                 else_ctx = aml_else();
                 {
                     /* cpu is present but disabled */
-                    aml_append(else_ctx, aml_store(aml_int(0xD), sta));
+                    if (!opts.has_huawei_legacy_cphp) {
+                        aml_append(else_ctx, aml_store(aml_int(0xD), sta));
+                    }
                 }
                 aml_append(ifctx, else_ctx);
             }

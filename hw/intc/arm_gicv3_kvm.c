@@ -340,15 +340,27 @@ static void kvm_arm_gicv3_put(GICv3State *s)
         /*
          * Restore base addresses before LPIs are potentially enabled by
          * GICR_CTLR write
+         *
+         * In ARM, cpu[0] is always valid. If cpu[0].gicr_propbaser == 0,
+         * this is a reset scenario and we write all values (including 0).
+         * Otherwise it is a migration scenario and we only write non-zero
+         * values to avoid overwriting valid LPI config in the destination.
          */
+        bool is_reset_scenario = (s->cpu[0].gicr_propbaser == 0);
+
         for (ncpu = 0; ncpu < s->num_cpu; ncpu++) {
             GICv3CPUState *c = &s->cpu[ncpu];
 
-            reg64 = c->gicr_propbaser;
-            regl = (uint32_t)reg64;
-            kvm_gicr_access(s, GICR_PROPBASER, ncpu, &regl, true);
-            regh = (uint32_t)(reg64 >> 32);
-            kvm_gicr_access(s, GICR_PROPBASER + 4, ncpu, &regh, true);
+            /* propbaser: write if reset OR has valid value, skip otherwise */
+            if (is_reset_scenario || c->gicr_propbaser != 0) {
+                reg64 = c->gicr_propbaser;
+                regl = (uint32_t)reg64;
+                kvm_gicr_access(s, GICR_PROPBASER, ncpu, &regl, true);
+                regh = (uint32_t)(reg64 >> 32);
+                kvm_gicr_access(s, GICR_PROPBASER + 4, ncpu, &regh, true);
+            } else {
+                continue;
+            }
 
             reg64 = c->gicr_pendbaser;
             regl = (uint32_t)reg64;
