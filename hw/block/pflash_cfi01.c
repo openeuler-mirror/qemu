@@ -797,6 +797,9 @@ static void pflash_cfi01_fill_cfi_table(PFlashCFI01 *pfl)
 
 static void pflash_cfi01_realize(DeviceState *dev, Error **errp)
 {
+#ifdef __aarch64__
+#define MAX_PFLASH_SIZE (64 * 1024 * 1024)
+#endif
     ERRP_GUARD();
     PFlashCFI01 *pfl = PFLASH_CFI01(dev);
     uint64_t total_len;
@@ -842,6 +845,19 @@ static void pflash_cfi01_realize(DeviceState *dev, Error **errp)
     }
 
     if (pfl->blk) {
+#ifdef __aarch64__
+        if (blk_bs(pfl->blk)) {
+            int64_t blk_len = blk_getlength(pfl->blk);
+            if (blk_len > 0 && blk_len <= MAX_PFLASH_SIZE) {
+                total_len = blk_len;
+            } else {
+                error_setg(errp, "pflash backing file length %" PRId64
+                           " invalid (expect 0 < len <= %d)",
+                           blk_len, MAX_PFLASH_SIZE);
+                return;
+            }
+        }
+#endif
         if (!blk_check_size_and_read_all(pfl->blk, pfl->storage, total_len,
                                          errp)) {
             vmstate_unregister_ram(&pfl->mem, DEVICE(pfl));
