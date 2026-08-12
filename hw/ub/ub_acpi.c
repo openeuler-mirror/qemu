@@ -75,6 +75,7 @@ static void ub_init_table_header(DtsTableHeader *header,
                                  uint32_t size, uint16_t version)
 {
     strncpy(header->name, name, sizeof(header->name) - 1);
+    header->name[sizeof(header->name) - 1] = '\0';
     header->total_size = size;
     header->version = version;
     header->remain_size = 0;
@@ -236,7 +237,7 @@ static void ub_init_ubios_ummu_table(DtsSubUmmuTable *ummu_table, VirtMachineSta
 static void ub_init_ubios_rsv_mem_table(DtsRsvMemTable *rsv_mem_table, VirtMachineState *vms)
 {
     MemRange *mem_range;
-    rsv_mem_table->count = UBIOS_UMMU_TABLE_CNT;
+    rsv_mem_table->count = UBIOS_RSV_MEM_TABLE_CNT;
     ub_init_table_header(&rsv_mem_table->header, DTS_SIG_RSV_MEM,
                          UBIOS_RSV_MEM_TABLE_SIZE(rsv_mem_table->count),
                          UBIOS_VERSION);
@@ -245,6 +246,197 @@ static void ub_init_ubios_rsv_mem_table(DtsRsvMemTable *rsv_mem_table, VirtMachi
     memset(mem_range->reserved, 0, sizeof(mem_range->reserved));
     mem_range->base = 0x8000000;  /* MSI_IOVA_BASE */
     mem_range->size = 0x100000;  /* MSI_IOVA_LENGTH */
+}
+
+static void ods_put_name(GArray *a, const char *name)
+{
+    g_array_append_vals(a, name, strlen(name) + 1);
+}
+
+/* Simple member: name\0 + type(1B) + data (length from type) */
+static void ods_append_u8_member(GArray *a, const char *name, uint8_t val)
+{
+    ods_put_name(a, name);
+    build_append_byte(a, ODS_TYPE_U8);
+    build_append_byte(a, val);
+}
+
+static void ods_append_u32_member(GArray *a, const char *name, uint32_t val)
+{
+    ods_put_name(a, name);
+    build_append_byte(a, ODS_TYPE_U32);
+    build_append_int_noprefix(a, val, 4);  /* u32 value, 4 bytes */
+}
+
+/* LIST|U32 member: name\0 + type(LIST|U32, 1B) + data_length(4B) + count(2B) + values */
+static void ods_append_list_u32_member(GArray *a, const char *name,
+                                       const uint32_t *vals, int count)
+{
+    int i;
+    uint32_t dl = sizeof(uint16_t) + count * sizeof(uint32_t);
+
+    ods_put_name(a, name);
+    build_append_byte(a, ODS_TYPE_LIST | ODS_TYPE_U32);
+    build_append_int_noprefix(a, dl, 4);     /* data_length, 4 bytes */
+    build_append_int_noprefix(a, count, 2);  /* element count, 2 bytes */
+    for (i = 0; i < count; i++) {
+        build_append_int_noprefix(a, vals[i], 4);  /* u32 element, 4 bytes */
+    }
+}
+
+/*
+ * Named STRUCT member:  name\0 + type(STRUCT, 1B) + data_length(4B) + member entries.
+ * Returns the byte offset of the data_length field for ods_append_struct_end.
+ */
+static unsigned ods_append_struct_begin(GArray *a, const char *name)
+{
+    unsigned dl_off;
+
+    ods_put_name(a, name);
+    build_append_byte(a, ODS_TYPE_STRUCT);
+    dl_off = a->len;
+    build_append_int_noprefix(a, 0, 4);  /* data_length placeholder, 4 bytes */
+    return dl_off;
+}
+
+static void ods_append_struct_end(GArray *a, unsigned dl_off)
+{
+    uint32_t dl = a->len - dl_off - sizeof(uint32_t);
+
+    memcpy(a->data + dl_off, &dl, sizeof(dl));
+}
+
+/*
+ * LIST|STRUCT member:  name\0 + type(LIST|STRUCT, 1B) + data_length(4B) + count(2B)
+ *                      + struct elements.
+ * Each struct element is: data_length(4B) + struct_data  (no name, no type).
+ * Returns the byte offset of the list data_length for ..._end.
+ */
+static unsigned ods_append_list_struct_begin(GArray *a, const char *name,
+                                             int count)
+{
+    unsigned dl_off;
+
+    ods_put_name(a, name);
+    build_append_byte(a, ODS_TYPE_LIST | ODS_TYPE_STRUCT);
+    dl_off = a->len;
+    build_append_int_noprefix(a, 0, 4);     /* data_length placeholder, 4 bytes */
+    build_append_int_noprefix(a, count, 2);  /* element count, 2 bytes */
+    return dl_off;
+}
+
+static void ods_append_list_struct_end(GArray *a, unsigned dl_off)
+{
+    uint32_t dl = a->len - dl_off - sizeof(uint32_t);
+
+    memcpy(a->data + dl_off, &dl, sizeof(dl));
+}
+
+/*
+ * Struct element inside a list: only data_length(4B) + struct_data.
+ * Returns the byte offset of the element data_length.
+ */
+static unsigned ods_append_struct_element_begin(GArray *a)
+{
+    unsigned dl_off = a->len;
+
+    build_append_int_noprefix(a, 0, 4);  /* data_length placeholder, 4 bytes */
+    return dl_off;
+}
+
+static void ods_append_struct_element_end(GArray *a, unsigned dl_off)
+{
+    uint32_t dl = a->len - dl_off - sizeof(uint32_t);
+
+    memcpy(a->data + dl_off, &dl, sizeof(dl));
+}
+
+/* Table header (32B ubios_od_header == DtsTableHeader) */
+static void ods_append_header(GArray *a, const char *name, uint8_t version)
+{
+    DtsTableHeader hdr;
+    size_t namelen = strlen(name);
+
+    memset(&hdr, 0, sizeof(hdr));
+    memcpy(hdr.name, name, MIN(namelen, sizeof(hdr.name) - 1));
+    hdr.total_size = 0;  /* backfilled by ods_finalize */
+    hdr.version = version;
+    hdr.remain_size = 0;
+    hdr.checksum = 0;  /* backfilled by ods_finalize */
+    g_array_append_vals(a, &hdr, sizeof(hdr));
+}
+
+/*
+ * Finalise the table: backpatch header.total_size and write the checksum so
+ * that the u32 accumulation of the whole table equals zero (matches Guest
+ * odf_checksum / odf_is_checksum_ok).
+ */
+static void ods_finalize(GArray *a)
+{
+    DtsTableHeader *hdr = (DtsTableHeader *)a->data;
+    uint32_t total = a->len;
+    uint32_t sum = 0;
+    size_t i;
+
+    hdr->total_size = total;
+    for (i = 0; i < total; i += sizeof(uint32_t)) {
+        uint32_t word = 0;
+        memcpy(&word, a->data + i, MIN(sizeof(uint32_t), total - i));
+        sum += word;
+    }
+    hdr->checksum = ~sum + 1;
+}
+
+/* Build the Call ID Service table in ODS format into @a. */
+/*  call_id_service (Header)                              */
+/*  ├── group : LIST|STRUCT  [count=1]                    */
+/*  │   └── [0]                                           */
+/*  │       ├── owner    : U32  = 0x20000000              */
+/*  │       ├── usage    : U8   = 3                       */
+/*  │       ├── index    : U8   = 0                       */
+/*  │       ├── call_id  : LIST|U32  [count=2]            */
+/*  │       │   ├── [0]  = 0xC00B0040 (QUERY)             */
+/*  │       │   └── [1]  = 0xC00B0041 (REFRESH)           */
+/*  │       └── forwarder: U32  = 0                       */
+/*  └── ub : STRUCT                                       */
+/*      ├── usage    : U8   = 3                           */
+/*      ├── index    : U8   = 0                           */
+/*      └── forwarder: U32  = 0                           */
+static void ub_build_call_id_service_table(GArray *a)
+{
+    uint32_t call_ids[2];
+    unsigned grp_dl_off, elem_dl_off, ub_dl_off;
+
+    g_array_set_size(a, 0);
+
+    /* header (32B) */
+    ods_append_header(a, DTS_SIG_CALL_ID_SERVICE, UBIOS_VERSION);
+
+    /* top-level "group" member: LIST|STRUCT, 1 element */
+    grp_dl_off = ods_append_list_struct_begin(a, "group", 1);
+    
+    /* struct element 0 (no name/type, only data_length) */
+    elem_dl_off = ods_append_struct_element_begin(a);
+    ods_append_u32_member(a, "owner", UB_CALL_ID_OWNER_OS);
+    ods_append_u8_member(a, "usage", UB_CALL_ID_USAGE_UB_MSG);
+    ods_append_u8_member(a, "index", 0);
+    call_ids[0] = UB_CIS_INFO_QUERY;  /* UB info query */
+    call_ids[1] = UB_CIS_INFO_REFRESH;  /* UB info refresh */
+    ods_append_list_u32_member(a, "call_id", call_ids, 2);
+    ods_append_u32_member(a, "forwarder", 0);
+    ods_append_struct_element_end(a, elem_dl_off);
+
+    ods_append_list_struct_end(a, grp_dl_off);
+
+    /* top-level "ub" member: STRUCT */
+    ub_dl_off = ods_append_struct_begin(a, "ub");
+    ods_append_u8_member(a, "usage", UB_CALL_ID_USAGE_UB_MSG);
+    ods_append_u8_member(a, "index", 0);
+    ods_append_u32_member(a, "forwarder", 0);
+
+    ods_append_struct_end(a, ub_dl_off);
+
+    ods_finalize(a);
 }
 
 void ub_init_ubios_info_table(uint64_t total_size)
@@ -262,6 +454,12 @@ void ub_init_ubios_info_table(uint64_t total_size)
     uint64_t ummu_table_size;
     uint64_t rsv_mem_tables_addr;
     DtsRsvMemTable *rsv_mem_table;
+    uint64_t rsv_mem_table_size;
+    uint64_t cid_tables_addr;
+    uint8_t *cid_table;
+    GArray *ods = g_array_new(false, false, 1);
+    DtsTableHeader *hdr;
+
 
     if (!ubios || size != total_size) {
         if (ubios) {
@@ -304,6 +502,24 @@ void ub_init_ubios_info_table(uint64_t total_size)
                  ALIGN_UP(ummu_table_size, UB_ALIGNMENT));
     ubios->tables[ubios->count] = rsv_mem_tables_addr;
     ub_init_ubios_rsv_mem_table(rsv_mem_table, vms);
+    ubios->count++;
+    rsv_mem_table_size = UBIOS_RSV_MEM_TABLE_SIZE(UBIOS_RSV_MEM_TABLE_CNT);
+
+    /* init call id service table (ODS format, built into a GArray) */
+    cid_tables_addr = rsv_mem_tables_addr + ALIGN_UP(rsv_mem_table_size, UB_ALIGNMENT);
+    cid_table = (uint8_t *)(rsv_mem_table) +
+                ALIGN_UP(rsv_mem_table_size, UB_ALIGNMENT);
+    ubios->tables[ubios->count] = cid_tables_addr;
+
+    ub_build_call_id_service_table(ods);
+    memcpy(cid_table, ods->data, ods->len);
+    hdr = (DtsTableHeader *)cid_table;
+    qemu_log("call_id_service ubios->tables[%u] = 0x%lx cid_table=0x%lx "
+             "total_size=%u\n",
+             ubios->count, cid_tables_addr, (uint64_t)cid_table,
+             hdr->total_size);
+    g_array_free(ods, true);
+
     ubios->count++;
 
     cpu_physical_memory_unmap(ubios, size, true, size);
@@ -540,14 +756,16 @@ void ub_idev_ers_free_address_space(hwaddr offset)
 void build_ubrt(GArray *table_data, BIOSLinker *linker)
 {
     VirtMachineState *vms = VIRT_MACHINE(qdev_get_machine());
-    /* 3 subtables: ubc, ummu, UB Reserved Memory */
-    uint8_t table_cnt = 3;
+    /* 4 subtables: ubc, ummu, UB Reserved Memory, Call ID Service */
+    uint8_t table_cnt = UBIOS_TABLE_TOTAL_CNT;
     uint64_t ubios_info_tables = vms->memmap[VIRT_UBIOS_INFO_TABLE].base;
     uint64_t ubc_tables_addr = ubios_info_tables + UBIOS_INFO_TABLE_SIZE;
     uint64_t ubc_table_size = UBIOS_UBC_TABLE_SIZE(UBIOS_UBC_TABLE_CNT);
     uint64_t ummu_tables_addr = ubc_tables_addr + ALIGN_UP(ubc_table_size, UB_ALIGNMENT);
     uint64_t ummu_table_size = UBIOS_UMMU_TABLE_SIZE(UBIOS_UMMU_TABLE_CNT);
     uint64_t rsv_mem_tables_addr = ummu_tables_addr + ALIGN_UP(ummu_table_size, UB_ALIGNMENT);
+    uint64_t rsv_mem_table_size = UBIOS_RSV_MEM_TABLE_SIZE(UBIOS_RSV_MEM_TABLE_CNT);
+    uint64_t cid_tables_addr = rsv_mem_tables_addr + ALIGN_UP(rsv_mem_table_size, UB_ALIGNMENT);
     AcpiTable table = { .sig = "UBRT", .rev = 0, .oem_id = vms->oem_id,
                         .oem_table_id = vms->oem_table_id };
 
@@ -566,9 +784,13 @@ void build_ubrt(GArray *table_data, BIOSLinker *linker)
     build_append_int_noprefix(table_data, 0, 7);
     build_append_int_noprefix(table_data, rsv_mem_tables_addr, 8);
 
+    build_append_int_noprefix(table_data, ACPI_UB_TABLE_TYPE_CALL_ID_SERVICE, 1);
+    build_append_int_noprefix(table_data, 0, 7);
+    build_append_int_noprefix(table_data, cid_tables_addr, 8);
+
     acpi_table_end(linker, &table);
-    qemu_log("init UBRT: ubc_tbl=0x%lx, ummu_tbl=0x%lx, rsv_mem_tbl=0x%lx\n",
-             ubc_tables_addr, ummu_tables_addr, rsv_mem_tables_addr);
+    qemu_log("init UBRT: ubc_tbl=0x%lx, ummu_tbl=0x%lx, rsv_mem_tbl=0x%lx, cid_tbl=0x%lx\n",
+             ubc_tables_addr, ummu_tables_addr, rsv_mem_tables_addr, cid_tables_addr);
 }
 
 void acpi_dsdt_add_ub(Aml *scope)

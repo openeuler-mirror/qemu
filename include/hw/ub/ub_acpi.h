@@ -28,6 +28,13 @@
 #define DTS_TABLE_HEADER_NAME_LEN 16
 /* ummu reserved tid num , don't modify */
 #define UMMU_RESERVED_TID_NUM 64
+
+#define UBIOS_UBC_TABLE_CNT 1
+#define UBIOS_UMMU_TABLE_CNT 1
+#define UBIOS_RSV_MEM_TABLE_CNT 1
+#define UBIOS_CALL_ID_SERVICE_TABLE_CNT 1
+#define UBIOS_TABLE_TOTAL_CNT (UBIOS_UBC_TABLE_CNT + UBIOS_UMMU_TABLE_CNT + UBIOS_RSV_MEM_TABLE_CNT + UBIOS_CALL_ID_SERVICE_TABLE_CNT)
+
 typedef struct DtsTableHeader {
     char name[DTS_TABLE_HEADER_NAME_LEN];
     uint32_t total_size;
@@ -42,7 +49,7 @@ typedef struct DtsRootTable {
     DtsTableHeader header;
     uint16_t count;
     uint8_t reserved[DTS_ROOT_TABLE_RESERVE_LEN];
-    uint64_t tables[3];
+    uint64_t tables[UBIOS_TABLE_TOTAL_CNT];
 } DtsRootTable;
 
 #define UBC_QUEUE_INTERRUPT_DEFAULT 443
@@ -160,18 +167,38 @@ typedef struct AcpiUbrtTable {
 #define ACPI_UB_TABLE_TYPE_DEVICE              5
 #define ACPI_UB_TABLE_TYPE_TOPOLOGY            6
 
-#define UBIOS_UBC_TABLE_CNT 1
-#define UBIOS_UMMU_TABLE_CNT 1
 #define UBIOS_MMIOS_SIZE_PER_UBC (512 * GiB)
 #define UBIOS_INFO_TABLE_SIZE (sizeof(DtsRootTable))
+
+/* Call ID Service table constants */
+#define UB_CALL_ID_USAGE_UB_MSG     3
+#define UB_CALL_ID_OWNER_OS         0x20000000
+#define DTS_SIG_CALL_ID_SERVICE     "call_id_service"
+#define UB_CIS_INFO_QUERY 0xC00B0040
+#define UB_CIS_INFO_REFRESH 0xC00B0041
+
+/* ---- ODS (Object Description Structure) builder helpers ----
+ * Encodes the CIS table in the self-describing binary format consumed by the
+ * Guest ODF driver (drivers/firmware/uvb/odf/).  Each member stores its name
+ * (NUL-terminated string), a 1-byte type, and data; composite types carry a
+ * 4-byte data_length between type and data so the consumer can skip forward.
+ */
+#define ODS_TYPE_U8      0x01
+#define ODS_TYPE_U16     0x02
+#define ODS_TYPE_U32     0x03
+#define ODS_TYPE_STRUCT  0x30
+#define ODS_TYPE_LIST    0x80  /* flag bit, OR'd with element type */
+
 #define UBIOS_UBC_TABLE_SIZE(cnt) (sizeof(DtsSubUbcTable) + (cnt) * sizeof(UbcNode))
 #define UBIOS_UMMU_TABLE_SIZE(cnt) (sizeof(DtsSubUmmuTable) + (cnt) * sizeof(UmmuNode))
 #define UBIOS_RSV_MEM_TABLE_SIZE(cnt) (sizeof(DtsRsvMemTable) + (cnt) * sizeof(MemRange))
+#define UBIOS_CALL_ID_SERVICE_TABLE_SIZE  256
 
 #define UBIOS_TABLE_SIZE (UBIOS_INFO_TABLE_SIZE + \
                           UBIOS_UBC_TABLE_SIZE(UBIOS_UBC_TABLE_CNT) + \
                           UBIOS_UMMU_TABLE_SIZE(UBIOS_UMMU_TABLE_CNT) + \
-                          UBIOS_RSV_MEM_TABLE_SIZE(UBIOS_UMMU_TABLE_CNT))
+                          UBIOS_RSV_MEM_TABLE_SIZE(UBIOS_UMMU_TABLE_CNT) + \
+                          UBIOS_CALL_ID_SERVICE_TABLE_SIZE)
 
 void ub_init_ubios_info_table(uint64_t total_size);
 hwaddr ub_idev_ers_alloc_address_space(uint64_t size, uint32_t sys_pgs);
