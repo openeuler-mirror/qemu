@@ -305,6 +305,16 @@ static void kvm_vtimer_status_set(Object *obj, bool value, Error **errp)
     ARM_CPU(obj)->kvm_vtimer_status = value ? ON_OFF_AUTO_ON : ON_OFF_AUTO_OFF;
 }
 
+static bool kvm_pv_unhalt_get(Object *obj, Error **errp)
+{
+    return ARM_CPU(obj)->kvm_pv_unhalt != ON_OFF_AUTO_OFF;
+}
+
+static void kvm_pv_unhalt_set(Object *obj, bool value, Error **errp)
+{
+    ARM_CPU(obj)->kvm_pv_unhalt = value ? ON_OFF_AUTO_ON : ON_OFF_AUTO_OFF;
+}
+
 /* KVM VCPU properties should be prefixed with "kvm-". */
 void kvm_arm_add_vcpu_properties(Object *obj)
 {
@@ -334,6 +344,12 @@ void kvm_arm_add_vcpu_properties(Object *obj)
                              kvm_vtimer_status_set);
     object_property_set_description(obj, "kvm-vtimer-status",
                                     "Set off to disable KVM vtimer status.");
+
+    cpu->kvm_pv_unhalt = ON_OFF_AUTO_OFF;
+    object_property_add_bool(obj, "kvm-pv-unhalt", kvm_pv_unhalt_get,
+                             kvm_pv_unhalt_set);
+    object_property_set_description(obj, "kvm-pv-unhalt",
+                                    "Set off to disable KVM pv-unhalt (spinlock).");
 }
 
 bool kvm_arm_pmu_supported(void)

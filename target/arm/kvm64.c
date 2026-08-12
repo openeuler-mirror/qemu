@@ -861,6 +861,19 @@ static int kvm_arm_set_vend_hyp_bmap_2(ARMCPU *cpu)
     return kvm_set_one_reg(CPU(cpu), KVM_REG_ARM_VENDOR_HYP_BMAP_2, &bmap_2);
 }
 
+static int kvm_arm_set_pv_unhalt_bmap(ARMCPU *cpu)
+{
+    uint64_t bmap;
+    int ret;
+
+    ret = kvm_get_one_reg(CPU(cpu), KVM_REG_ARM_VENDOR_HYP_BMAP, &bmap);
+    if (ret != 0) {
+        return ret;   /* no VENDOR_HYP support: keep PV spinlock disabled */
+    }
+    bmap &= ~(1ULL << KVM_REG_ARM_VENDOR_HYP_BIT_NOPVSPINLOCK);
+    return kvm_set_one_reg(CPU(cpu), KVM_REG_ARM_VENDOR_HYP_BMAP, &bmap);
+}
+
 #define ARM_CPU_ID_MPIDR       3, 0, 0, 0, 5
 #define ARM_CPU_ID_CLIDR       3, 1, 0, 0, 1
 
@@ -939,6 +952,12 @@ int kvm_arch_init_vcpu(CPUState *cs)
     }
 
     kvm_arm_set_vend_hyp_bmap_2(cpu);
+    if (cpu->kvm_pv_unhalt == ON_OFF_AUTO_ON) {
+        if (kvm_arm_set_pv_unhalt_bmap(cpu) != 0) {
+            error_report("failed to enable PV spinlock");
+            /* Don't abort, as pvspinlock is optional */
+        }
+    }
     /*
      * KVM reports the exact PSCI version it is implementing via a
      * special sysreg. If it is present, use its contents to determine

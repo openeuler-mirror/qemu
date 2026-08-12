@@ -376,6 +376,18 @@ enum {
 enum {
 	KVM_REG_ARM_VENDOR_HYP_BIT_FUNC_FEAT	= 0,
 	KVM_REG_ARM_VENDOR_HYP_BIT_PTP		= 1,
+	/*
+	 * If the mainline conflicts, do not change the
+	 * current sequence, add in sequence.
+	 */
+	KVM_REG_ARM_VENDOR_HYP_BIT_IPIV		= 2,
+	KVM_REG_ARM_VENDOR_HYP_BIT_PVTIMER_STATUS		= 3,
+	KVM_REG_ARM_VENDOR_HYP_BIT_TIMER_EARLY_INJECT	= 4,
+	/*
+	 * Negative polarity: when set the guest is told PV queued spinlock is
+	 * not usable. Cleared by userspace to enable it. Defaults to set (off).
+	 */
+	KVM_REG_ARM_VENDOR_HYP_BIT_NOPVSPINLOCK		= 5,
 };
 
 /* Vendor hyper call function numbers 64-127 */
