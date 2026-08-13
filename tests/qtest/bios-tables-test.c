@@ -262,8 +262,14 @@ static void dump_aml_files(test_data *data, bool rebuild)
         g_assert(exp_sdt->aml);
 
         if (rebuild) {
+            const char *rebuild_ext = ext;
+            /* UBRT only exists under CONFIG_UB; no non-UB variant to differ
+             * from, so write it as a generic (suffix-less) file. */
+            if (memcmp(sdt->aml, "UBRT", 4) == 0) {
+                rebuild_ext = "";
+            }
             aml_file = g_strdup_printf("%s/%s/%.4s%s", data_dir, data->machine,
-                                       sdt->aml, ext);
+                                       sdt->aml, rebuild_ext);
             if (!g_file_test(aml_file, G_FILE_TEST_EXISTS) &&
                 sdt->aml_len == exp_sdt->aml_len &&
                 !memcmp(sdt->aml, exp_sdt->aml, sdt->aml_len)) {
