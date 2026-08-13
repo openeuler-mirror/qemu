@@ -18,6 +18,7 @@
 #include "standard-headers/linux/virtio_balloon.h"
 #include "hw/virtio/virtio.h"
 #include "sysemu/iothread.h"
+#include "sysemu/runstate.h"
 #include "qom/object.h"
 
 #define TYPE_VIRTIO_BALLOON "virtio-balloon-device"
@@ -42,7 +43,7 @@ enum virtio_balloon_free_page_hint_status {
 
 struct VirtIOBalloon {
     VirtIODevice parent_obj;
-    VirtQueue *ivq, *dvq, *svq, *free_page_vq, *reporting_vq;
+    VirtQueue *ivq, *dvq, *svq, *free_page_vq, *reporting_vq, *memop_vq;
     uint32_t free_page_hint_status;
     uint32_t num_pages;
     uint32_t actual;
@@ -50,6 +51,11 @@ struct VirtIOBalloon {
     uint64_t stats[VIRTIO_BALLOON_S_NR];
     VirtQueueElement *stats_vq_elem;
     size_t stats_vq_offset;
+    /* memop request mirrored into the device config space */
+    uint32_t memop_cmd_id;
+    uint8_t memop_pending_cmd;
+    /* vmstate handler that terminates an in-flight request on migration */
+    VMChangeStateEntry *memop_vmstate_entry;
     QEMUTimer *stats_timer;
     IOThread *iothread;
     QEMUBH *free_page_bh;
