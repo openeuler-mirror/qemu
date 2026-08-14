@@ -27,11 +27,7 @@
  * platform bus and it is the only sysbus device dynamically
  * instantiated, it gets plugged at its base address
  */
-#if !defined(CONFIG_PAS_EXPANSION)
 uint64_t tpm_tis_base_addr = 0xc000000;
-#else
-uint64_t tpm_tis_base_addr = 0x4200000000;
-#endif
 
 int main(int argc, char **argv)
 {

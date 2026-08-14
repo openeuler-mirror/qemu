@@ -21,11 +21,7 @@
 #include "tpm-tis-util.h"
 #include "hw/acpi/tpm.h"
 
-#if !defined(CONFIG_PAS_EXPANSION)
 uint64_t tpm_tis_base_addr = 0xc000000;
-#else
-uint64_t tpm_tis_base_addr = 0x4200000000;
-#endif
 #define MACHINE_OPTIONS "-machine virt,gic-version=max -accel tcg"
 
 typedef struct TestState {

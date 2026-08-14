@@ -191,7 +191,10 @@ static const MemMapEntry base_memmap[] = {
     [VIRT_CPUFREQ] =            { 0x0b000000, 0x00010000 },
     [VIRT_SMMU_ACCEL] =        { 0x0b010000, 0x00ff0000},
     /* ...repeating for a total of NUM_VIRTIO_TRANSPORTS, each of that size */
-#if !defined(CONFIG_PAS_EXPANSION)
+#ifdef CONFIG_PAS_EXPANSION
+    /* Keep TPM TIS in the MMIO window mapped by existing AAVMF firmware. */
+    [VIRT_TPM] =                { 0x0c000000, 0x00005000 },
+#else
     [VIRT_PLATFORM_BUS] =       { 0x0c000000, 0x02000000 },
 #endif
     [VIRT_SECURE_MEM] =         { 0x0e000000, 0x01000000 },
@@ -4113,6 +4116,18 @@ static void virt_machine_device_plug_cb(HotplugHandler *hotplug_dev,
 {
     VirtMachineState *vms = VIRT_MACHINE(hotplug_dev);
     MachineClass *mc = MACHINE_GET_CLASS(vms);
+
+#if defined(CONFIG_PAS_EXPANSION) && defined(CONFIG_TPM)
+    /*
+     * AAVMF discovers TPM from the DT before ACPI is available and accesses
+     * it during PEI.  Its early page tables only map the legacy low MMIO
+     * window, so keep TPM out of the expanded high platform bus.
+     */
+    if (object_dynamic_cast(OBJECT(dev), TYPE_TPM_TIS_SYSBUS)) {
+        sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0,
+                        vms->memmap[VIRT_TPM].base);
+    }
+#endif
 
     /* For smmuv3-nested devices we need to set the mem & irq */
     if (device_is_dynamic_sysbus(mc, dev) &&
