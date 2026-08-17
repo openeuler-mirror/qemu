@@ -70,6 +70,10 @@ typedef struct HostProperty {
     bool optional;
 } HostProperty;
 
+#ifdef CONFIG_PAS_EXPANSION
+#define TPM_TIS_FDT_64BIT_CELLS (sizeof(uint64_t) / sizeof(uint32_t))
+#endif
+
 #ifdef CONFIG_LINUX
 
 /**
@@ -455,22 +459,33 @@ static bool vfio_platform_match(SysBusDevice *sbdev,
 static int add_tpm_tis_fdt_node(SysBusDevice *sbdev, void *opaque)
 {
     PlatformBusFDTData *data = opaque;
-    PlatformBusDevice *pbus = data->pbus;
     void *fdt = data->fdt;
-    const char *parent_node = data->pbus_node_name;
     char *nodename;
-    uint32_t reg_attr[2];
+#ifndef CONFIG_PAS_EXPANSION
+    PlatformBusDevice *pbus = data->pbus;
+    const char *parent_node = data->pbus_node_name;
+#endif
     uint64_t mmio_base;
 
+#ifdef CONFIG_PAS_EXPANSION
+    mmio_base = sbdev->mmio[0].addr;
+    assert(mmio_base != (hwaddr)-1);
+    nodename = g_strdup_printf("/tpm_tis@%" PRIx64, mmio_base);
+#else
     mmio_base = platform_bus_get_mmio_addr(pbus, sbdev, 0);
     nodename = g_strdup_printf("%s/tpm_tis@%" PRIx64, parent_node, mmio_base);
+#endif
     qemu_fdt_add_subnode(fdt, nodename);
 
     qemu_fdt_setprop_string(fdt, nodename, "compatible", "tcg,tpm-tis-mmio");
 
-    reg_attr[0] = cpu_to_be32(mmio_base);
-    reg_attr[1] = cpu_to_be32(0x5000);
-    qemu_fdt_setprop(fdt, nodename, "reg", reg_attr, 2 * sizeof(uint32_t));
+#ifdef CONFIG_PAS_EXPANSION
+    qemu_fdt_setprop_sized_cells(fdt, nodename, "reg",
+                                 TPM_TIS_FDT_64BIT_CELLS, mmio_base,
+                                 TPM_TIS_FDT_64BIT_CELLS, 0x5000);
+#else
+    qemu_fdt_setprop_cells(fdt, nodename, "reg", (uint32_t)mmio_base, 0x5000);
+#endif
 
     g_free(nodename);
     return 0;

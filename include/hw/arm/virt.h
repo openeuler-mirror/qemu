@@ -149,7 +149,9 @@ enum {
     VIRT_KAE_DEVICE,
     VIRT_PCIE_PIO,
     VIRT_PCIE_ECAM,
-#if !defined(CONFIG_PAS_EXPANSION)
+#ifdef CONFIG_PAS_EXPANSION
+    VIRT_TPM,
+#else
     VIRT_PLATFORM_BUS,
 #endif
     VIRT_GPIO,

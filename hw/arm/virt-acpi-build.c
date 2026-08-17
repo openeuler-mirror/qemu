@@ -835,9 +835,12 @@ static void acpi_dsdt_add_tpm(Aml *scope, VirtMachineState *vms)
     }
 
     tpm_base = platform_bus_get_mmio_addr(pbus, sbdev, 0);
-    assert(tpm_base != -1);
-
-    tpm_base += pbus_base;
+    if (tpm_base == (hwaddr)-1) {
+        tpm_base = sbdev->mmio[0].addr;
+        assert(tpm_base != (hwaddr)-1);
+    } else {
+        tpm_base += pbus_base;
+    }
 
     sbdev_mr = sysbus_mmio_get_region(sbdev, 0);
 
