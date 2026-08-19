@@ -517,6 +517,12 @@ static void virtio_balloon_memop(void *opaque, uint64_t cmd,
         return;
     }
 
+    if (!virtio_device_started(vdev, vdev->status)) {
+        error_setg(errp, "guest balloon driver has not finished feature "
+                         "negotiation, try again later");
+        return;
+    }
+
     if (!virtio_vdev_has_feature(vdev, VIRTIO_BALLOON_F_MEMOP)) {
         error_setg(errp, "guest does not support balloon memop");
         return;
