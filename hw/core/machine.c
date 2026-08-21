@@ -33,7 +33,9 @@
 #include "audio/audio.h"
 
 GlobalProperty hw_compat_8_2[] = {};
-GlobalProperty hw_compat_9_0[] = {};
+GlobalProperty hw_compat_9_0[] = {
+    { "virtio-mmio", VIRTIO_QUEUE_SIZE_OVERRIDE, "1024" },
+};
 const size_t hw_compat_9_0_len = G_N_ELEMENTS(hw_compat_9_0);
 
 const size_t hw_compat_8_2_len = G_N_ELEMENTS(hw_compat_8_2);

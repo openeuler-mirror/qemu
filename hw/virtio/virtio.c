@@ -722,6 +722,10 @@ static int virtio_queue_packed_empty_rcu(VirtQueue *vq)
     struct VRingPackedDesc desc;
     VRingMemoryRegionCaches *cache;
 
+    if (virtio_device_disabled(vq->vdev)) {
+        return 1;
+    }
+
     if (unlikely(!vq->vring.desc)) {
         return 1;
     }
@@ -2285,6 +2289,11 @@ void virtio_queue_set_num(VirtIODevice *vdev, int n, int num)
         num > vq_max_size || num < 0) {
         return;
     }
+    if (num > vdev->vq[n].vring.num_default) {
+        virtio_error(vdev, "virtio: queue %d size %d exceeds max size %u",
+                     n, num, vdev->vq[n].vring.num_default);
+        return;
+    }
     vdev->vq[n].vring.num = num;
 }
 
@@ -2418,6 +2427,17 @@ VirtQueue *virtio_add_queue(VirtIODevice *vdev, int queue_size,
         qemu_log("unacceptable queue_size (%d) or num (%d)\n",
                  queue_size, i);
         abort();
+    }
+
+    BusState *qbus = qdev_get_parent_bus(DEVICE(vdev));
+    if (qbus && qbus->parent &&
+        object_property_find(OBJECT(qbus->parent), VIRTIO_QUEUE_SIZE_OVERRIDE)) {
+        int override = object_property_get_int(OBJECT(qbus->parent),
+                                               VIRTIO_QUEUE_SIZE_OVERRIDE,
+                                               &error_abort);
+        if (override) {
+            queue_size = override;
+        }
     }
 
     vdev->vq[i].vring.num = queue_size;
