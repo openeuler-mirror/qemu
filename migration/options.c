@@ -1197,6 +1197,8 @@ static bool compress_level_check(MigrationParameters *params, Error **errp)
  */
 bool migrate_params_check(MigrationParameters *params, Error **errp)
 {
+    ERRP_GUARD();
+    
     if (params->has_compress_level && !compress_level_check(params, errp)) {
         return false;
     }
