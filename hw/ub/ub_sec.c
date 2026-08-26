@@ -52,6 +52,7 @@ static void ub_sec_token_get_req(BusControllerState *s, HiMsgSqe *sqe, MsgPktHea
     rsp_pkt.pld.rsp.token_id = 0;
     rsp_pkt.pld.rsp.token_value = 0;
     rsp_pkt.header.msgetah.rsp_status = UB_MSG_RSP_SUCCESS;
+    rsp_pkt.header.msgetah.plen = QUERY_TOKEN_MSG_PLD_SIZE;
     ub_sec_msg_fill_cq_rq(s, sqe, header, &rsp_pkt);
 }
 
