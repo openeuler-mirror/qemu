@@ -1297,7 +1297,7 @@ static void virt_cpu_plug(HotplugHandler *hotplug_dev,
 
     qemu_register_reset(virt_cpu_reset, dev);
     cpu_slot = virt_find_cpu_slot(MACHINE(lvms), cpu->phy_id);
-    cpu_slot->cpu = OBJECT(dev);
+    cpu_slot->cpu = CPU(dev);
 }
 
 static bool memhp_type_supported(DeviceState *dev)
