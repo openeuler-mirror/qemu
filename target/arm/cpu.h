@@ -1061,6 +1061,9 @@ struct ArchCPU {
     /* KVM vtimer status  */
     OnOffAuto kvm_vtimer_status;
 
+    /* KVM pv-unhalt (pv spinlock) */
+    OnOffAuto kvm_pv_unhalt;
+
     /* KVM SVE has been finalized for this CPU */
     bool kvm_sve_finalized;
 #endif /* CONFIG_KVM */
