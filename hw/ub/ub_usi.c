@@ -458,12 +458,14 @@ void usi_init(UBDevice *udev, uint16_t vec_table_num, uint16_t addr_table_num,
 
 void usi_uninit(UBDevice *udev, MemoryRegion *fer0_mr)
 {
-    g_free(udev->usi_vec_table);
     memory_region_del_subregion(fer0_mr, &udev->usi_vec_table_mmio);
-    g_free(udev->usi_addr_table);
+    g_free(udev->usi_vec_table);
+
     memory_region_del_subregion(fer0_mr, &udev->usi_addr_table_mmio);
-    g_free(udev->usi_pend_table);
+    g_free(udev->usi_addr_table);
+
     memory_region_del_subregion(fer0_mr, &udev->usi_pend_table_mmio);
+    g_free(udev->usi_pend_table);
 }
 
 void usi_send_message(USIMessage *msg, uint32_t interrupt_id, UBDevice *udev)
