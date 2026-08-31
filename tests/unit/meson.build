@@ -117,6 +117,7 @@ if have_block
   endif
   if targetos != 'windows'
     tests += {
+      'test-io-channel-websock': [io],
       'test-image-locking': [testblock],
       'test-nested-aio-poll': [testblock],
     }
