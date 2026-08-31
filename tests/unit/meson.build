@@ -104,7 +104,10 @@ if have_block
     tests += {'test-crypto-xts': [crypto, io]}
   endif
   if 'CONFIG_POSIX' in config_host
-    tests += {'test-image-locking': [testblock]}
+    tests += {
+      'test-io-channel-websock': [io],
+      'test-image-locking': [testblock],
+    }
   endif
   if 'CONFIG_REPLICATION' in config_host
     tests += {'test-replication': [testblock]}
