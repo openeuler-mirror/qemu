@@ -667,6 +667,14 @@ static void virtio_gpu_do_set_scanout(VirtIOGPU *g,
         return;
     }
 
+    if (fb->stride < (uint64_t)fb->width * fb->bytes_pp) {
+        qemu_log_mask(LOG_GUEST_ERROR,
+                      "%s: stride %u too small for width %u at %u bpp\n",
+                      __func__, fb->stride, fb->width, fb->bytes_pp);
+        *error = VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER;
+        return;
+    }
+
     g->parent_obj.enable = 1;
 
     if (res->blob) {
