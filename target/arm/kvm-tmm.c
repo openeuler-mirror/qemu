@@ -236,8 +236,26 @@ int tmm_create_tec(void)
 {
     CPUState *cs;
     int ret = 0;
+    Error *local_err = NULL;
 
     CPU_FOREACH(cs) {
+        /*
+         * CVM vCPUs are not resettable (kvm_arch_cpu_check_are_resettable()
+         * returns false), so qemu_system_reset() skips
+         * cpu_synchronize_all_post_reset(). do_cpu_reset() sets the boot
+         * entry state (PC/x0 for direct kernel boot) in QEMU only; push it
+         * to KVM here so that TMI_TEC_CREATE picks up the correct entry
+         * point instead of the reset-time zeroed registers.
+         */
+        ret = kvm_arch_put_registers(cs, KVM_PUT_FULL_STATE, &local_err);
+        if (ret) {
+            error_reportf_err(local_err,
+                              "TMM: failed to sync boot registers: ");
+            return ret;
+        }
+        error_free(local_err);
+        local_err = NULL;
+
         ret = kvm_arm_vcpu_finalize(cs, KVM_ARM_VCPU_REC);
         if (ret) {
             error_report("TMM: failed to finalize vCPU: %s", strerror(-ret));
