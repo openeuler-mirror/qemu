@@ -84,6 +84,9 @@ static int tmm_configure_one(TmmGuest *guest, uint32_t cfg, Error **errp)
  
     switch (cfg) {
     case KVM_CAP_ARM_TMM_CFG_RPV:
+        if (!guest->personalization_value_str) {
+            return 0;
+        }
         memcpy(args.rpv, guest->personalization_value, KVM_CAP_ARM_TMM_RPV_SIZE);
         cfg_str = "personalization value";
         break;
@@ -170,6 +173,17 @@ static int tmm_configure_one(TmmGuest *guest, uint32_t cfg, Error **errp)
     ret = kvm_vm_enable_cap(kvm_state, KVM_CAP_ARM_RME, 0,
                             KVM_CAP_ARM_TMM_CONFIG_CVM, (intptr_t)&args);
     if (ret) {
+        /*
+         * Older kernels don't support configuring the RPV from userspace.
+         * Ignore the failure so the CVM can still start on them, but warn
+         * that the personalization value was not applied.
+         */
+        if (cfg == KVM_CAP_ARM_TMM_CFG_RPV &&
+            (ret == -EINVAL || ret == -EOPNOTSUPP)) {
+            warn_report("TMM: kernel does not support personalization value, "
+                        "RPV ignored");
+            return 0;
+        }
         error_setg_errno(errp, -ret, "TMM: failed to configure %s", cfg_str);
     }
 
