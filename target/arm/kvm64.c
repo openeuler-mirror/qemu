@@ -782,6 +782,30 @@ bool kvm_arm_vtimer_status_supported(void)
     return kvm_vm_check_extension(kvm_state, KVM_CAP_ARM_HISI_PVTIMER_STATUS);
 }
 
+bool kvm_arm_vtlbid_supported(void)
+{
+    return kvm_check_extension(kvm_state, KVM_CAP_ARM_TLBIDOMAIN);
+}
+
+uint8_t kvm_arm_get_max_vdomains(void)
+{
+    struct kvm_arm_get_vdomain arg;
+    int ret;
+
+    if (!kvm_arm_vtlbid_supported()) {
+        return 0;
+    }
+
+    ret = kvm_vm_ioctl(kvm_state, KVM_ARM_GET_VDOMAIN_NUM, &arg);
+    if (ret < 0) {
+        error_report("Failed to get max vdomains from KVM: %s",
+                     g_strerror(errno));
+        return 0;
+    }
+
+    return arg.max_vdomains;
+}
+
 QEMU_BUILD_BUG_ON(KVM_ARM64_SVE_VQ_MIN != 1);
 
 uint32_t kvm_arm_sve_get_vls(CPUState *cs)

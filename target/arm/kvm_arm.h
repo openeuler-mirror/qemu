@@ -330,6 +330,21 @@ void kvm_arm_steal_time_finalize(ARMCPU *cpu, Error **errp);
 bool kvm_arm_steal_time_supported(void);
 
 /**
+ * kvm_arm_vtlbid_supported:
+ *
+ * Returns: true if KVM supports TLBI vdomain ioctl
+ * and false otherwise.
+ */
+bool kvm_arm_vtlbid_supported(void);
+
+/**
+ * kvm_arm_get_max_vdomains:
+ *
+ * Returns: max number of vdomains supported by KVM (0 if not supported).
+ */
+uint8_t kvm_arm_get_max_vdomains(void);
+
+/**
  * kvm_arm_vtimer_status_finalize:
  * @cpu: ARMCPU for which to finalize kvm-vtimer-status
  * @errp: Pointer to Error* for error propagation
@@ -568,6 +583,16 @@ static inline bool kvm_arm_steal_time_supported(void)
 static inline bool kvm_arm_vtimer_status_supported(void)
 {
     return false;
+}
+
+static inline bool kvm_arm_vtlbid_supported(void)
+{
+    return false;
+}
+
+static inline uint8_t kvm_arm_get_max_vdomains(void)
+{
+    return 0;
 }
 
 static inline void kvm_arm_rme_init_guest_ram(hwaddr base, size_t size)
