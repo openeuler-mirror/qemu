@@ -28,7 +28,6 @@
 
 #include "qemu/osdep.h"
 #include "qapi/error.h"
-#include "qemu/bitmap.h"
 #include "qemu/error-report.h"
 #include "trace.h"
 #include "hw/core/cpu.h"
@@ -1240,6 +1239,73 @@ spcr_setup(GArray *table_data, BIOSLinker *linker, VirtMachineState *vms)
 }
 
 /*
+ * ACPI Specification Version 6.nex
+ * Build the TLBI ACPI table (signature "TLBI").
+ *
+ * Table layout (after standard ACPI header):
+ *   [4 bytes] max_cpus — number of PE Component entries
+ *   For each vCPU (PE Component subtable):
+ *     [2] type = 1 (PE Component)
+ *     [2] reserved
+ *     [4] component_length (total bytes of this subtable, including domain IDs)
+ *     [4] pe_id (vCPU index)
+ *     [4] domain_count (number of domain IDs that follow)
+ *     [4] domain_offset (byte offset from TLBI Header start to
+ *         the domain ID array, or 0)
+ *     [domain_count * 4] domain IDs
+ *
+ * Guest kernel parses this via acpi_tlbi_init() to learn TLBI vdomain topology.
+ */
+static void
+build_tlbi(GArray *table_data, BIOSLinker *linker, VirtMachineState *vms)
+{
+    unsigned int max_cpus = MACHINE(vms)->smp.max_cpus;
+    int i, j;
+    AcpiTable table = { .sig = "TLBI", .rev = 1, .oem_id = vms->oem_id,
+                        .oem_table_id = vms->oem_table_id };
+
+    acpi_table_begin(&table, table_data);
+    build_append_int_noprefix(table_data, max_cpus, 4);  /* PE count */
+
+    for (i = 0; i < (int)max_cpus; i++) {
+        GArray *dom_ids = g_array_new(false, false, sizeof(uint32_t));
+        uint32_t component_len, domain_offset;
+        uint32_t vdbm = virt_cpu_vdomain_bitmap(vms, i);
+
+        for (j = 0; j < vms->num_vdomains; j++) {
+            if (vdbm & (1U << j)) {
+                uint32_t id = j;
+                g_array_append_val(dom_ids, id);
+            }
+        }
+
+        component_len = 20 + dom_ids->len * sizeof(uint32_t);
+        domain_offset = dom_ids->len > 0
+            ? (table_data->len - table.table_offset + 20) : 0;
+
+        /* Type: PE Component */
+        build_append_int_noprefix(table_data, 1, 2);
+        /* Reserved */
+        build_append_int_noprefix(table_data, 0, 2);
+        /* Length */
+        build_append_int_noprefix(table_data, component_len, 4);
+        /* PE ID (vCPU index) */
+        build_append_int_noprefix(table_data, i, 4);
+        /* Domain count */
+        build_append_int_noprefix(table_data, dom_ids->len, 4);
+        /* Domain offset */
+        build_append_int_noprefix(table_data, domain_offset, 4);
+        for (j = 0; j < (int)dom_ids->len; j++) {
+            build_append_int_noprefix(table_data,
+                g_array_index(dom_ids, uint32_t, j), 4);
+        }
+        g_array_free(dom_ids, true);
+    }
+
+    acpi_table_end(linker, &table);
+}
+
+/*
  * ACPI spec, Revision 5.1
  * 5.2.16 System Resource Affinity Table (SRAT)
  */
@@ -1881,6 +1947,11 @@ void virt_acpi_build(VirtMachineState *vms, AcpiBuildTables *tables)
     if (its_class_name() && !vmc->no_its) {
         acpi_add_table(table_offsets, tables_blob);
         build_iort(tables_blob, tables->linker, vms);
+    }
+
+    if (vms->num_vdomains > 0) {
+        acpi_add_table(table_offsets, tables_blob);
+        build_tlbi(tables_blob, tables->linker, vms);
     }
 
 #ifdef CONFIG_TPM
