@@ -80,13 +80,13 @@ urma_context_t *(*urma_create_context_p)(urma_device_t *dev, uint32_t eid_index)
 urma_status_t (*urma_delete_context_p)(urma_context_t *ctx);
 urma_jfc_t *(*urma_create_jfc_p)(urma_context_t *ctx, urma_jfc_cfg_t *jfc_cfg);
 urma_status_t (*urma_delete_jfc_p)(urma_jfc_t *jfc);
-urma_jfs_t *(*urma_create_jfs_p)(urma_context_t *ctx, urma_jfs_cfg_t *jfs_cfg);
-urma_status_t (*urma_delete_jfs_p)(urma_jfs_t *jfs);
 urma_jfr_t *(*urma_create_jfr_p)(urma_context_t *ctx, urma_jfr_cfg_t *jfr_cfg);
 urma_status_t (*urma_delete_jfr_p)(urma_jfr_t *jfr);
-urma_target_jetty_t *(*urma_import_jfr_p)(urma_context_t *ctx, urma_rjfr_t *rjfr, urma_token_t *token_value);
-urma_status_t (*urma_unimport_jfr_p)(urma_target_jetty_t *target_jfr);
-urma_status_t (*urma_advise_jfr_p)(urma_jfs_t *jfs, urma_target_jetty_t *tjfr);
+urma_jetty_t *(*urma_create_jetty_p)(urma_context_t *ctx, urma_jetty_cfg_t *jetty_cfg);
+urma_status_t (*urma_delete_jetty_p)(urma_jetty_t *jetty);
+urma_target_jetty_t *(*urma_import_jetty_p)(urma_context_t *ctx, urma_rjetty_t *rjetty, urma_token_t *token_value);
+urma_status_t (*urma_unimport_jetty_p)(urma_target_jetty_t *tjetty);
+urma_status_t (*urma_advise_jetty_p)(urma_jetty_t *jetty, urma_target_jetty_t *tjetty);
 urma_jfce_t *(*urma_create_jfce_p)(urma_context_t *ctx);
 urma_status_t (*urma_delete_jfce_p)(urma_jfce_t *jfce);
 urma_target_seg_t *(*urma_register_seg_p)(urma_context_t *ctx, urma_seg_cfg_t *seg_cfg);
@@ -94,13 +94,17 @@ urma_status_t (*urma_unregister_seg_p)(urma_target_seg_t *target_seg);
 urma_target_seg_t *(*urma_import_seg_p)(
     urma_context_t *ctx, urma_seg_t *seg, urma_token_t *token_value, uint64_t addr, urma_import_seg_flag_t flag);
 urma_status_t (*urma_unimport_seg_p)(urma_target_seg_t *tseg);
-urma_status_t (*urma_write_p)(urma_jfs_t *jfs, urma_target_jetty_t *target_jfr, urma_target_seg_t *dst_tseg,
+urma_status_t (*urma_write_p)(urma_jetty_t *jetty, urma_target_jetty_t *target_jetty, urma_target_seg_t *dst_tseg,
     urma_target_seg_t *src_tseg, uint64_t dst, uint64_t src, uint32_t len, urma_jfs_wr_flag_t flag, uint64_t user_ctx);
 int (*urma_poll_jfc_p)(urma_jfc_t *jfc, int cr_cnt, urma_cr_t *cr);
 urma_status_t (*urma_user_ctl_p)(urma_context_t *ctx, urma_user_ctl_in_t *in, urma_user_ctl_out_t *out);
-urma_status_t (*urma_post_jfs_wr_p)(urma_jfs_t *jfs, urma_jfs_wr_t *wr, urma_jfs_wr_t **bad_wr);
+urma_status_t (*urma_post_jetty_send_wr_p)(urma_jetty_t *jetty, urma_jfs_wr_t *wr, urma_jfs_wr_t **bad_wr);
 int (*uvs_get_path_set_p)(const uvs_eid_t *src_bonding_eid, const uvs_eid_t *dst_bonding_eid,
                           enum uvs_tp_type tp_type, bool iodie_level, uvs_path_set_t *uvs_path_set);
+urma_status_t (*urma_get_rjetty_p)(urma_jetty_t *jetty, urma_rjetty_t **rjetty, uint32_t *length);
+void (*urma_put_rjetty_p)(urma_rjetty_t *rjetty);
+urma_status_t (*urma_get_seg_ctx_p)(urma_target_seg_t *tseg, urma_seg_t **seg, uint32_t *size);
+void (*urma_put_seg_ctx_p)(urma_seg_t *seg);
 
 typedef struct dl_functions {
     const char *func_name;
@@ -120,13 +124,13 @@ dl_functions urma_dlfunc_list[] = {
     {.func_name = "urma_delete_context", .func = (void **)&urma_delete_context_p},
     {.func_name = "urma_create_jfc", .func = (void **)&urma_create_jfc_p},
     {.func_name = "urma_delete_jfc", .func = (void **)&urma_delete_jfc_p},
-    {.func_name = "urma_create_jfs", .func = (void **)&urma_create_jfs_p},
-    {.func_name = "urma_delete_jfs", .func = (void **)&urma_delete_jfs_p},
     {.func_name = "urma_create_jfr", .func = (void **)&urma_create_jfr_p},
     {.func_name = "urma_delete_jfr", .func = (void **)&urma_delete_jfr_p},
-    {.func_name = "urma_import_jfr", .func = (void **)&urma_import_jfr_p},
-    {.func_name = "urma_unimport_jfr", .func = (void **)&urma_unimport_jfr_p},
-    {.func_name = "urma_advise_jfr", .func = (void **)&urma_advise_jfr_p},
+    {.func_name = "urma_create_jetty", .func = (void **)&urma_create_jetty_p},
+    {.func_name = "urma_delete_jetty", .func = (void **)&urma_delete_jetty_p},
+    {.func_name = "urma_import_jetty", .func = (void **)&urma_import_jetty_p},
+    {.func_name = "urma_unimport_jetty", .func = (void **)&urma_unimport_jetty_p},
+    {.func_name = "urma_advise_jetty", .func = (void **)&urma_advise_jetty_p},
     {.func_name = "urma_create_jfce", .func = (void **)&urma_create_jfce_p},
     {.func_name = "urma_delete_jfce", .func = (void **)&urma_delete_jfce_p},
     {.func_name = "urma_register_seg", .func = (void **)&urma_register_seg_p},
@@ -136,7 +140,11 @@ dl_functions urma_dlfunc_list[] = {
     {.func_name = "urma_write", .func = (void **)&urma_write_p},
     {.func_name = "urma_poll_jfc", .func = (void **)&urma_poll_jfc_p},
     {.func_name = "urma_user_ctl", .func = (void **)&urma_user_ctl_p},
-    {.func_name = "urma_post_jfs_wr", .func = (void **)&urma_post_jfs_wr_p},
+    {.func_name = "urma_post_jetty_send_wr", .func = (void **)&urma_post_jetty_send_wr_p},
+    {.func_name = "urma_get_rjetty", .func = (void **)&urma_get_rjetty_p},
+    {.func_name = "urma_put_rjetty", .func = (void **)&urma_put_rjetty_p},
+    {.func_name = "urma_get_seg_ctx", .func = (void **)&urma_get_seg_ctx_p},
+    {.func_name = "urma_put_seg_ctx", .func = (void **)&urma_put_seg_ctx_p},
 };
 
 static dl_functions uvs_dlfunc_list[] = {
@@ -776,7 +784,7 @@ static int qemu_init_jfs_post_list(URMAContext *urma)
 
     flag.bs.complete_enable = 1;
 
-    for (i = 0; i < URMA_JFS_WR_LIST_LEN; i++) {
+    for (i = 0; i < URMA_JETTY_WR_LIST_LEN; i++) {
         wr = &urma->jfs_wr_list[i];
 
         wr->opcode = URMA_OPC_WRITE;
@@ -813,19 +821,14 @@ static void qemu_urma_cleanup_context(URMAContext *ctx)
         return;
     }
 
-    if (ctx->tjfr) {
-        urma_unimport_jfr_p(ctx->tjfr);
-        ctx->tjfr = NULL;
+    if (ctx->jetty) {
+        urma_delete_jetty_p(ctx->jetty);
+        ctx->jetty = NULL;
     }
 
     if (ctx->jfr) {
         urma_delete_jfr_p(ctx->jfr);
         ctx->jfr = NULL;
-    }
-
-    if (ctx->jfs) {
-        urma_delete_jfs_p(ctx->jfs);
-        ctx->jfs = NULL;
     }
 
     if (ctx->jfc) {
@@ -892,7 +895,7 @@ int qemu_urma_init_context(URMAContext *ctx)
 
     ret = qemu_init_jfs_post_list(ctx);
     if (ret) {
-        qemu_log("URMA: Failed to init jfr post list, errno: %d\n", errno);
+        qemu_log("URMA: Failed to init jetty post list, errno: %d\n", errno);
         return ret;
     }
 
@@ -911,24 +914,6 @@ int qemu_urma_init_context(URMAContext *ctx)
     ctx->jfc = urma_create_jfc_p(ctx->urma_ctx, &jfc_cfg);
     if (ctx->jfc == NULL) {
         qemu_log("URMA: Failed to create jfc, errno: %d\n", errno);
-        goto err;
-    }
-
-    urma_jfs_cfg_t jfs_cfg = {
-        .depth = ctx->dev_attr.dev_cap.max_jfs_depth,
-        .trans_mode = URMA_TM_RM,
-        .priority = URMA_MAX_PRIORITY, /* Highest priority */
-        .max_sge = 1,
-        .max_inline_data = 0,
-        .rnr_retry = URMA_TYPICAL_RNR_RETRY,
-        .err_timeout = URMA_TYPICAL_ERR_TIMEOUT,
-        .jfc = ctx->jfc,
-        .flag.bs.multi_path = 1,
-        .user_ctx = (uint64_t)NULL
-    };
-    ctx->jfs = urma_create_jfs_p(ctx->urma_ctx, &jfs_cfg);
-    if (ctx->jfs == NULL) {
-        qemu_log("URMA: Failed to create jfs, errno: %d\n", errno);
         goto err;
     }
 
@@ -958,6 +943,35 @@ int qemu_urma_init_context(URMAContext *ctx)
     ctx->jfr = urma_create_jfr_p(ctx->urma_ctx, &jfr_cfg);
     if (ctx->jfr == NULL) {
         qemu_log("Failed to create jfr, errno: %d\n", errno);
+        goto err;
+    }
+
+    urma_jfs_cfg_t jfs_cfg = {
+        .depth = ctx->dev_attr.dev_cap.max_jfs_depth,
+        .trans_mode = URMA_TM_RM,
+        .priority = URMA_MAX_PRIORITY, /* Highest priority */
+        .max_sge = 1,
+        .max_inline_data = 0,
+        .rnr_retry = URMA_TYPICAL_RNR_RETRY,
+        .err_timeout = URMA_TYPICAL_ERR_TIMEOUT,
+        .jfc = ctx->jfc,
+        .flag.bs.multi_path = 1,
+        .user_ctx = (uint64_t)NULL
+    };
+
+    urma_jetty_cfg_t jetty_cfg = {
+        .id = 0,
+        .flag.bs.share_jfr = 1,
+        .jfs_cfg = jfs_cfg,
+        .shared.jfr = ctx->jfr,
+        .shared.jfc = ctx->jfc,
+        .jetty_grp = NULL,
+        .user_ctx = (uint64_t) NULL
+    };
+    
+    ctx->jetty = urma_create_jetty_p(ctx->urma_ctx, &jetty_cfg);
+    if (ctx->jetty == NULL) {
+        qemu_log("Failed to create jetty, errno: %d\n", errno);
         goto err;
     }
 
@@ -1128,55 +1142,20 @@ err:
 }
 
 
-static void pack_seg_jfr_info(seg_jfr_info_t *info, URMAContext *ctx, URMALocalBlock *block)
+static urma_target_jetty_t *qemu_import_jetty(URMAContext *ctx)
 {
-    (void)memset(info, 0, sizeof(seg_jfr_info_t));
-    info->eid = ctx->urma_ctx->eid;
-    info->uasid = ctx->urma_ctx->uasid;
-    info->seg_va = block->local_tseg->seg.ubva.va;
-    info->seg_len = block->local_tseg->seg.len;
-    info->seg_flag = block->local_tseg->seg.attr.value;
-    info->seg_token_id = block->local_tseg->seg.token_id;
-    info->seg_token.token = block->local_seg_token.token;
-    info->jfr_id = ctx->jfr->jfr_id;
-    info->jfr_token.token = ctx->jfr_token.token;
-
-}
-
-static void unpack_seg_jfr_info(seg_jfr_info_t *info, URMAContext *ctx, URMALocalBlock *block)
-{
-    block->remote_seg.ubva.eid = info->eid;
-    block->remote_seg.ubva.uasid = info->uasid;
-    block->remote_seg.ubva.va = info->seg_va;
-    block->remote_seg.len = info->seg_len;
-    block->remote_seg.attr.value = info->seg_flag;
-    block->remote_seg.token_id = info->seg_token_id;
-    block->remote_seg_token.token = info->seg_token.token;
-    ctx->remote_jfr_id = info->jfr_id;
-    ctx->rjfr_token.token = info->jfr_token.token;
-
-}
-
-static urma_target_jetty_t *qemu_import_jfr(URMAContext *ctx)
-{
-    urma_rjfr_t remote_jfr = {
-        .jfr_id = ctx->remote_jfr_id,
-        .trans_mode = URMA_TM_RM,
-        .tp_type = URMA_CTP,
-    };
-    urma_target_jetty_t *tjfr = urma_import_jfr_p(ctx->urma_ctx, &remote_jfr, &ctx->rjfr_token);
-    if (tjfr == NULL) {
-        qemu_log("Failed to do urma_import_jfr, errno: %d\n", errno);
+    ctx->remote_rjetty->tp_type = URMA_CTP;
+    urma_target_jetty_t *tjetty = urma_import_jetty_p(ctx->urma_ctx, ctx->remote_rjetty, &ctx->rjetty_token);
+    if (tjetty == NULL) {
+        qemu_log("Failed to do urma_import_jetty, errno: %d\n", errno);
         return NULL;
     }
-
-    if (urma_advise_jfr_p(ctx->jfs, tjfr) != URMA_SUCCESS) {
-        qemu_log("Failed to advise jfr, errno: %d\n", errno);
-        (void)urma_unimport_jfr_p(tjfr);
+    if (urma_advise_jetty_p(ctx->jetty, tjetty) != URMA_SUCCESS) {
+        qemu_log("Failed to advise jetty, errno: %d\n", errno);
+        (void)urma_unimport_jetty_p(tjetty);
         return NULL;
     }
-
-    return tjfr;
+    return tjetty;
 }
 
 static void qemu_urma_search_ram_block(URMAContext *urma,
@@ -1307,10 +1286,10 @@ int qemu_urma_write_all(URMAContext *urma)
 
         for (offset = 0; offset < block->length; offset += chunk_length) {
             local_addr = (uint64_t)block->local_host_addr + offset;
-            remote_addr = (uint64_t)block->remote_seg.ubva.va + offset;
+            remote_addr = (uint64_t)block->remote_seg->ubva.va + offset;
             length = (block->length - offset) > chunk_length ? chunk_length : (block->length - offset);
 
-            if (urma_write_p(urma->jfs, urma->tjfr, block->import_tseg, block->local_tseg,
+            if (urma_write_p(urma->jetty, urma->tjetty, block->import_tseg, block->local_tseg,
                        remote_addr, local_addr, length,
                        flag, urma->rid) != URMA_SUCCESS) {
                 qemu_log("Failed to do urma_write, block: %s, size: %zu, errno: %d\n",
@@ -1343,9 +1322,9 @@ static int qemu_urma_write_one(URMAContext *urma,
     if (block->is_ram_block) {
         offset = current_addr - block->offset;
         local_addr = (uintptr_t)(block->local_host_addr + offset);
-        remote_addr = (uintptr_t)(block->remote_seg.ubva.va + offset);
+        remote_addr = (uintptr_t)(block->remote_seg->ubva.va + offset);
 
-        if (urma->nr_wr_polling < 0 || urma->nr_wr_polling >= URMA_JFS_WR_LIST_LEN) {
+        if (urma->nr_wr_polling < 0 || urma->nr_wr_polling >= URMA_JETTY_WR_LIST_LEN) {
             qemu_log("Invalid nr wr polling number: %d.\n", urma->nr_wr_polling);
             return -EINVAL;
         }
@@ -1360,7 +1339,7 @@ static int qemu_urma_write_one(URMAContext *urma,
 
         wr = &urma->jfs_wr_list[urma->nr_wr_polling];
         wr->user_ctx = urma->rid;
-        wr->tjetty = urma->tjfr;
+        wr->tjetty = urma->tjetty;
         wr->next = NULL;
 
         if (urma->nr_wr_polling > 0) {
@@ -1368,10 +1347,10 @@ static int qemu_urma_write_one(URMAContext *urma,
         }
         urma->nr_wr_polling++;
 
-        if (force || urma->nr_wr_polling >= URMA_JFS_WR_LIST_LEN) {
-            ret = urma_post_jfs_wr_p(urma->jfs, urma->jfs_wr_list, &bad_wr);
+        if (force || urma->nr_wr_polling >= URMA_JETTY_WR_LIST_LEN) {
+            ret = urma_post_jetty_send_wr_p(urma->jetty, urma->jfs_wr_list, &bad_wr);
             if (ret != URMA_SUCCESS) {
-                qemu_log("Failed to do urma_post_jfs_wr, block: %s, size: %zu, ret: %d, errno: %d\n",
+                qemu_log("Failed to do urma_post_jetty_send_wr, block: %s, size: %zu, ret: %d, errno: %d\n",
                         block->block_name, (size_t)length, ret, errno);
                 return -EINVAL;
             }
@@ -1489,14 +1468,24 @@ static void qemu_urma_unimport(URMAContext *urma)
             urma_unimport_seg_p(block->import_tseg);
             block->import_tseg = NULL;
         }
+        if (block->remote_seg) {
+            g_free(block->remote_seg);
+            block->remote_seg = NULL;
+            block->remote_seg_len = 0;
+        }
     }
 
-    if (urma->tjfr) {
-        urma_unimport_jfr_p(urma->tjfr);
-        urma->tjfr = NULL;
+    if (urma->tjetty) {
+        urma_unimport_jetty_p(urma->tjetty);
+        urma->tjetty = NULL;
+    }
+    if (urma->remote_rjetty) {
+        g_free(urma->remote_rjetty);
+        urma->remote_rjetty = NULL;
+        urma->remote_rjetty_len = 0;
     }
 
-    qemu_log("unimport all blocks and jfr success.\n");
+    qemu_log("unimport all blocks and jetty success.\n");
 }
 
 int qemu_urma_import(URMAContext *urma)
@@ -1513,7 +1502,7 @@ int qemu_urma_import(URMAContext *urma)
     for (i = 0; i < local_block->nb_blocks; i++) {
         URMALocalBlock *block = &local_block->block[i];
 
-        block->import_tseg = urma_import_seg_p(urma->urma_ctx, &block->remote_seg, &block->remote_seg_token, 0, flag);
+        block->import_tseg = urma_import_seg_p(urma->urma_ctx, block->remote_seg, &block->remote_seg_token, 0, flag);
         if (block->import_tseg == NULL) {
             qemu_log("Failed to import segment, block name: %s, size: %ld, errno: %d\n",
                 block->block_name, block->length, errno);
@@ -1521,13 +1510,13 @@ int qemu_urma_import(URMAContext *urma)
         }
     }
 
-    urma->tjfr = qemu_import_jfr(urma);
-    if (urma->tjfr == NULL) {
-        qemu_log("Failed to import jfr, errno: %d\n", errno);
+    urma->tjetty = qemu_import_jetty(urma);
+    if (urma->tjetty == NULL) {
+        qemu_log("Failed to import jetty, errno: %d\n", errno);
         goto err;
     }
 
-    qemu_log("import all blocks and jfr success.\n");
+    qemu_log("import all blocks and jetty success.\n");
     return 0;
 
 err:
@@ -1539,35 +1528,95 @@ int qemu_exchange_urma_info(QEMUFile *f, URMAContext *urma, bool server)
 {
     int i;
     URMALocalBlocks *local_block = &urma->local_ram_blocks;
-    seg_jfr_info_t local = {0}, remote = {0};
     MigrationState *s = migrate_get_current();
     int64_t start_time;
+    int seg_get_success = 0;
 
     start_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
-
     qemu_log("start to exchange urma segment info.\n");
 
-    for (i = 0; i < local_block->nb_blocks; i++) {
-        URMALocalBlock *block = &local_block->block[i];
+    if (server) {
+        urma_rjetty_t *rjetty = NULL;
+        uint32_t rjetty_len = 0;
 
-        if (server) {
-            pack_seg_jfr_info(&local, urma, block);
-            qemu_put_buffer(f, (uint8_t *)&local, sizeof(seg_jfr_info_t));
-            if (qemu_fflush(f) < 0) {
-                qemu_log("Failed to flush qemu file, errno: %d\n", errno);
+        if (urma_get_rjetty_p(urma->jetty, &rjetty, &rjetty_len) != URMA_SUCCESS) {
+            qemu_log("Failed to urma_get_rjetty, errno: %d\n", errno);
+            return -EINVAL;
+        }
+        qemu_put_be32(f, rjetty_len);
+        qemu_put_buffer(f, (uint8_t *)rjetty, rjetty_len);
+        qemu_put_buffer(f, (uint8_t *)&urma->jfr_token, sizeof(urma_token_t));
+        urma_put_rjetty_p(rjetty);
+
+        for (i = 0; i < local_block->nb_blocks; i++) {
+            URMALocalBlock *block = &local_block->block[i];
+            urma_seg_t *seg = NULL;
+            uint32_t seg_len = 0;
+
+            if (urma_get_seg_ctx_p(block->local_tseg, &seg, &seg_len) != URMA_SUCCESS) {
+                qemu_log("Failed to urma_get_seg_ctx,block: %s, errno: %d\n", block->block_name, errno);
                 return -EINVAL;
             }
-        } else {
-            if (qemu_get_buffer(f, (uint8_t *)&remote, sizeof(seg_jfr_info_t)) != sizeof(seg_jfr_info_t)) {
-                qemu_log("get urma info failed, block name: %s, errno: %d\n", block->block_name, errno);
-                return -EINVAL;
+            qemu_put_be32(f, seg_len);
+            qemu_put_buffer(f, (uint8_t *)seg, seg_len);
+            qemu_put_buffer(f, (uint8_t *)&block->local_seg_token, sizeof(urma_token_t));
+            urma_put_seg_ctx_p(seg);
+        }
+
+        if (qemu_fflush(f) < 0) {
+            qemu_log("Failed to flush qemu file, errno: %d\n", errno);
+            return -EINVAL;
+        }
+    } else {
+        uint32_t rjetty_len = qemu_get_be32(f);
+
+        urma->remote_rjetty = (urma_rjetty_t *)g_malloc(rjetty_len);
+
+        if (qemu_get_buffer(f, (uint8_t *)urma->remote_rjetty, rjetty_len) != rjetty_len) {
+            qemu_log("Failed to get urma rjetty, errno: %d\n", errno);
+            goto client_err;
+        }
+        urma->remote_rjetty_len = rjetty_len;
+        if (qemu_get_buffer(f, (uint8_t *)&urma->rjetty_token, sizeof(urma_token_t)) != sizeof(urma_token_t)) {
+            qemu_log("Failed to get urma rjetty token, errno: %d\n", errno);
+            goto client_err;
+        }
+
+        for (i = 0; i < local_block->nb_blocks; i++) {
+            URMALocalBlock *block = &local_block->block[i];
+            uint32_t seg_len = qemu_get_be32(f);
+
+            block->remote_seg = (urma_seg_t *)g_malloc(seg_len);
+            if (qemu_get_buffer(f, (uint8_t *)block->remote_seg, seg_len) != seg_len) {
+                qemu_log("Failed to get urma seg, block: %s, errno: %d\n", block->block_name, errno);
+                goto client_err;
             }
-            unpack_seg_jfr_info(&remote, urma, block);
+            seg_get_success++;
+            block->remote_seg_len = seg_len;
+            if (qemu_get_buffer(f, (uint8_t *)&block->remote_seg_token, sizeof(urma_token_t)) != sizeof(urma_token_t)) {
+                qemu_log("Failed to get urma seg token, errno: %d\n", errno);
+                goto client_err;
+            }
         }
     }
 
     s->urma_exchange_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME) - start_time;
     return 0;
+client_err:
+    if (urma->remote_rjetty) {
+        g_free(urma->remote_rjetty);
+        urma->remote_rjetty = NULL;
+        urma->remote_rjetty_len = 0;
+    }
+    for (int j = 0; j < seg_get_success; j++) {
+        URMALocalBlock *block = &local_block->block[j];
+        if (block->remote_seg) {
+            g_free(block->remote_seg);
+            block->remote_seg = NULL;
+            block->remote_seg_len = 0;
+        }
+    }
+    return -EINVAL;
 }
 
 void urma_start_outgoing_migration(void *opaque,
