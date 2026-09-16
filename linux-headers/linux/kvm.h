@@ -1849,4 +1849,11 @@ struct kvm_arm_get_vdomain {
 
 #define KVM_ARM_GET_VDOMAIN_NUM        _IOR(KVMIO, 0xd7, struct kvm_arm_get_vdomain)
 
+struct kvm_arm_set_vdomain {
+	__u32 vdomain_bitmap;
+	__u8 num_vdomains;
+};
+
+#define KVM_ARM_VCPU_SET_VDOMAIN	_IOW(KVMIO, 0xd8, struct kvm_arm_set_vdomain)
+
 #endif /* __LINUX_KVM_H */
