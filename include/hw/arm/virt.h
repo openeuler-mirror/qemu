@@ -32,6 +32,7 @@
 
 #include "exec/hwaddr.h"
 #include "qemu/notify.h"
+#include "qemu/bitmap.h"
 #include "hw/boards.h"
 #include "hw/arm/boot.h"
 #include "hw/arm/bsa.h"
@@ -217,6 +218,14 @@ typedef enum VirtGICType {
 #define VIRT_GIC_VERSION_3_MASK BIT(VIRT_GIC_VERSION_3)
 #define VIRT_GIC_VERSION_4_MASK BIT(VIRT_GIC_VERSION_4)
 
+#define VDOMAIN_BITMAP_BITS  32    /* uint32_t vdomain_bitmap width */
+
+/* TLBI vdomain: maps a vdomain ID to the set of vCPUs belonging to it */
+typedef struct TlbiVdomainConfig {
+    uint8_t vdomain_id;
+    unsigned long *cpu_bitmap;
+} TlbiVdomainConfig;
+
 struct VirtMachineClass {
     MachineClass parent;
     bool disallow_affinity_adjustment;
@@ -310,6 +319,9 @@ struct VirtMachineState {
     char *kvm_type;
     NotifierList cpuhp_notifiers;
     Object *event_log;
+    TlbiVdomainConfig *vdomains;
+    int num_vdomains;
+    uint8_t max_vdomains;              /* max vdomains from KVM (via ioctl) */
 };
 
 #define VIRT_ECAM_ID(high) (high ? VIRT_HIGH_PCIE_ECAM : VIRT_PCIE_ECAM)
@@ -319,6 +331,7 @@ OBJECT_DECLARE_TYPE(VirtMachineState, VirtMachineClass, VIRT_MACHINE)
 
 void virt_acpi_setup(VirtMachineState *vms);
 bool virt_is_acpi_enabled(VirtMachineState *vms);
+uint32_t virt_cpu_vdomain_bitmap(VirtMachineState *vms, int cpu_index);
 void virt_madt_cpu_entry(int uid, const CPUArchIdList *cpu_list, GArray *entry,
                          bool force_enabled);
 bool cpu_l1_cache_unified(int cpu);

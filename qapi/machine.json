@@ -1970,6 +1970,22 @@
      '*slots': 'uint64' } }
 
 ##
+# @TlbiDomainOptions:
+#
+# Configure a TLBI vdomain.  (for OptsVisitor)
+#
+# @domain-id: TLBI vdomain ID
+#
+# @cpus: VCPUs belonging to this vdomain
+#
+# Since: 8.2
+##
+{ 'struct': 'TlbiDomainOptions',
+  'data': {
+   '*domain-id': 'uint8',
+   '*cpus':      ['uint16'] } }
+
+##
 # @dumpdtb:
 #
 # Save the FDT in dtb format.

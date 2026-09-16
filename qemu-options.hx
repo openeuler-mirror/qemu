@@ -581,6 +581,23 @@ SRST
         -numa hmat-cache,node-id=1,size=10K,level=1,associativity=direct,policy=write-back,line=8
 ERST
 
+DEF("tlbidomain", HAS_ARG, QEMU_OPTION_tlbidomain,
+    "-tlbidomain domain-id=id,cpus=cpurange[,cpus=cpurange]\n",
+    QEMU_ARCH_ALL)
+SRST
+``-tlbidomain domain-id=id,cpus=firstcpu[-lastcpu][,cpus=firstcpu[-lastcpu]]``
+    Define a TLBI domain and assign vCPUs to it. ``domain-id`` is
+    the domain identifier. ``cpus`` can be a single CPU index or a
+    range. Multiple ``cpus`` entries accumulate. Domain 0 must
+    cover all vCPUs. Domain IDs must be contiguous from 0.
+
+    Example::
+
+        -tlbidomain domain-id=0,cpus=0-7
+        -tlbidomain domain-id=1,cpus=0-3,cpus=5-7
+        -tlbidomain domain-id=2,cpus=1,cpus=3,cpus=6
+ERST
+
 DEF("add-fd", HAS_ARG, QEMU_OPTION_add_fd,
     "-add-fd fd=fd,set=set[,opaque=opaque]\n"
     "                Add 'fd' to fd 'set'\n", QEMU_ARCH_ALL)
