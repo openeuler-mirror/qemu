@@ -16,7 +16,7 @@
 #include "migration/blocker.h"
 #include "qapi/error.h"
 #include "qapi/qapi-commands-misc-target.h"
-#include "qemu/osdep.h"
+#include "qemu/base64.h"
 #include "qom/object.h"
 #include "qom/object_interfaces.h"
 #include "sysemu/kvm.h"
@@ -53,6 +53,8 @@ typedef struct {
 struct TmmGuest {
     ConfidentialGuestSupport parent_obj;
     GSList *ram_regions;
+    char *personalization_value_str;
+    uint8_t personalization_value[KVM_CAP_ARM_TMM_RPV_SIZE];
     TmmGuestMeasurementAlgo measurement_algo;
     uint32_t sve_vl;
     uint32_t num_pmu_cntrs;
@@ -82,7 +84,12 @@ static int tmm_configure_one(TmmGuest *guest, uint32_t cfg, Error **errp)
  
     switch (cfg) {
     case KVM_CAP_ARM_TMM_CFG_RPV:
-        return 0;
+        if (!guest->personalization_value_str) {
+            return 0;
+        }
+        memcpy(args.rpv, guest->personalization_value, KVM_CAP_ARM_TMM_RPV_SIZE);
+        cfg_str = "personalization value";
+        break;
     case KVM_CAP_ARM_TMM_CFG_HASH_ALGO:
         switch (guest->measurement_algo) {
         case TMM_GUEST_MEASUREMENT_ALGO_DEFAULT:
@@ -166,6 +173,17 @@ static int tmm_configure_one(TmmGuest *guest, uint32_t cfg, Error **errp)
     ret = kvm_vm_enable_cap(kvm_state, KVM_CAP_ARM_RME, 0,
                             KVM_CAP_ARM_TMM_CONFIG_CVM, (intptr_t)&args);
     if (ret) {
+        /*
+         * Older kernels don't support configuring the RPV from userspace.
+         * Ignore the failure so the CVM can still start on them, but warn
+         * that the personalization value was not applied.
+         */
+        if (cfg == KVM_CAP_ARM_TMM_CFG_RPV &&
+            (ret == -EINVAL || ret == -EOPNOTSUPP)) {
+            warn_report("TMM: kernel does not support personalization value, "
+                        "RPV ignored");
+            return 0;
+        }
         error_setg_errno(errp, -ret, "TMM: failed to configure %s", cfg_str);
     }
 
@@ -525,6 +543,37 @@ static void tmm_set_measurement_algo(Object *obj, int algo, Error **errp G_GNUC_
     guest->measurement_algo = algo;
 }
 
+static char *tmm_get_rpv(Object *obj, Error **errp)
+{
+    TmmGuest *guest = TMM_GUEST(obj);
+
+    return g_strdup(guest->personalization_value_str);
+}
+
+static void tmm_set_rpv(Object *obj, const char *value, Error **errp)
+{
+    TmmGuest *guest = TMM_GUEST(obj);
+    g_autofree uint8_t *rpv = NULL;
+    size_t len;
+
+    rpv = qbase64_decode(value, -1, &len, errp);
+    if (!rpv) {
+        return;
+    }
+
+    if (len != sizeof(guest->personalization_value)) {
+        error_setg(errp,
+                   "expecting a TMM personalization value of size %zu, got %zu\n",
+                   sizeof(guest->personalization_value), len);
+        return;
+    }
+    memcpy(guest->personalization_value, rpv, len);
+
+    /* Save the value so we don't need to encode it in the getter */
+    g_free(guest->personalization_value_str);
+    guest->personalization_value_str = g_strdup(value);
+}
+
 static void tmm_get_kae_vf_num(Object *obj, Visitor *v, const char *name,
                                void *opaque, Error **errp)
 {
@@ -607,6 +656,10 @@ static void tmm_set_migvm_algo(Object *obj, int algo, Error **errp G_GNUC_UNUSED
 
 static void tmm_guest_class_init(ObjectClass *oc, void *data)
 {
+    object_class_property_add_str(oc, "personalization-value", tmm_get_rpv,
+                                  tmm_set_rpv);
+    object_class_property_set_description(oc, "personalization-value",
+            "CVM personalization value (64 bytes encoded in base64)");
     object_class_property_add_enum(oc, "measurement-algo",
                                    "TmmGuestMeasurementAlgo",
                                    &TmmGuestMeasurementAlgo_lookup,

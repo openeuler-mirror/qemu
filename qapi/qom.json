@@ -1033,12 +1033,16 @@
 #
 # Properties for tmm-guest objects.
 #
+# @personalization-value: CVM personalization value encoded in base64
+#     (64 bytes)
+#
 # @sve-vector-length: SVE vector length (default: 0, SVE disabled)
 #
 # Since: FIXME
 ##
 { 'struct': 'TmmGuestProperties',
-  'data': { '*sve-vector-length': 'uint32',
+  'data': { '*personalization-value': 'str',
+            '*sve-vector-length': 'uint32',
             '*num-pmu-counters': 'uint32',
             '*kae': 'uint32',
             '*virtcca-migration-cap': 'uint32',
