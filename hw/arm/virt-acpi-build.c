@@ -73,10 +73,10 @@
 
 /*
  * PPTT Cache Type Structure (Type 1) constants
- * ACPI spec, Revision 6.3, 5.2.29.2
+ * ACPI spec, Revision 6.4, 5.2.29.2
  */
 #define PPTT_CACHE_NODE_TYPE             1
-#define PPTT_CACHE_NODE_LENGTH           24
+#define PPTT_CACHE_NODE_LENGTH           28
 
 /* Field sizes in bytes */
 #define PPTT_CACHE_RESERVED_BYTES        2
@@ -85,6 +85,7 @@
 #define PPTT_CACHE_SIZE_BYTES            4
 #define PPTT_CACHE_SETS_BYTES            4
 #define PPTT_CACHE_LINESIZE_BYTES        2
+#define PPTT_CACHE_ID_BYTES              4
 
 /* Attributes byte: bits [1:0] = allocation policy, bits [3:2] = cache type */
 #define PPTT_CACHE_ATTR_ALLOC_POLICY     0x3
@@ -110,6 +111,7 @@ typedef struct PpttCacheCtx {
     uint32_t pptt_start;
     CPUCoreCaches *caches;
     int num_caches;
+    uint32_t next_cache_id; /* PPTT rev3 Cache ID allocator, starts from 1 */
 } PpttCacheCtx;
 
 /*
@@ -248,11 +250,11 @@ static unsigned int virt_get_caches(const VirtMachineState *vms,
 }
 
 /*
- * ACPI spec, Revision 6.3
+ * ACPI spec, Revision 6.4
  * 5.2.29.2 Cache Type Structure (Type 1)
  */
 static void build_cache_nodes(GArray *tbl, CPUCoreCaches *cache,
-                              uint32_t next_offset)
+                              uint32_t next_offset, uint32_t *cache_id)
 {
     int start_len = tbl->len;
     int val;
@@ -260,7 +262,8 @@ static void build_cache_nodes(GArray *tbl, CPUCoreCaches *cache,
     build_append_byte(tbl, PPTT_CACHE_NODE_TYPE); /* Type 1 - cache */
     build_append_byte(tbl, PPTT_CACHE_NODE_LENGTH); /* Length */
     build_append_int_noprefix(tbl, 0, PPTT_CACHE_RESERVED_BYTES); /* Reserved */
-    build_append_int_noprefix(tbl, 0x7f, PPTT_CACHE_FLAGS_BYTES); /* Flags */
+    /* Flags: bits 0-6 field validity, bit 7 Cache ID valid (rev3) */
+    build_append_int_noprefix(tbl, 0xff, PPTT_CACHE_FLAGS_BYTES); /* Flags */
     build_append_int_noprefix(tbl, next_offset, PPTT_CACHE_NEXT_LEVEL_BYTES);
     build_append_int_noprefix(tbl, cache->size, PPTT_CACHE_SIZE_BYTES);
     build_append_int_noprefix(tbl, cache->sets, PPTT_CACHE_SETS_BYTES);
@@ -279,6 +282,8 @@ static void build_cache_nodes(GArray *tbl, CPUCoreCaches *cache,
     }
     build_append_byte(tbl, val); /* Attributes */
     build_append_int_noprefix(tbl, cache->linesize, PPTT_CACHE_LINESIZE_BYTES);
+    /* Cache ID (rev3): unique, non-zero identifier for this cache */
+    build_append_int_noprefix(tbl, (*cache_id)++, PPTT_CACHE_ID_BYTES);
     g_assert(tbl->len == start_len + PPTT_CACHE_NODE_LENGTH);
 }
 
@@ -320,7 +325,8 @@ static bool build_caches(PpttCacheCtx *ctx,
                 next_offset = next_level_offset_instruction;
                 break;
             }
-            build_cache_nodes(table_data, &ctx->caches[c], next_offset);
+            build_cache_nodes(table_data, &ctx->caches[c], next_offset,
+                              &ctx->next_cache_id);
             switch (ctx->caches[c].type) {
             case CPU_CACHE_INSTRUCTION:
                 next_level_offset_instruction = this_offset;
@@ -424,7 +430,7 @@ static void build_topo_caches(PpttCacheCtx *ctx, MachineState *ms,
 }
 
 /*
- * ACPI spec, Revision 6.3
+ * ACPI spec, Revision 6.4
  * 5.2.29 Processor Properties Topology Table (PPTT)
  */
 static void build_pptt_arm(GArray *table_data, BIOSLinker *linker, MachineState *ms,
@@ -434,12 +440,18 @@ static void build_pptt_arm(GArray *table_data, BIOSLinker *linker, MachineState 
     MachineClass *mc = MACHINE_GET_CLASS(ms);
     GQueue *list = g_queue_new();
     guint pptt_start = table_data->len;
-    PpttCacheCtx ctx = { table_data, pptt_start, caches, num_caches };
+    PpttCacheCtx ctx = {
+        .table_data = table_data,
+        .pptt_start = pptt_start,
+        .caches = caches,
+        .num_caches = num_caches,
+        .next_cache_id = 1, /* Cache ID 0 is a NULL identifier per spec */
+    };
     guint parent_offset;
     guint length, i;
     int uid = 0;
     int socket;
-    AcpiTable table = { .sig = "PPTT", .rev = 2,
+    AcpiTable table = { .sig = "PPTT", .rev = 3,
                         .oem_id = oem_id, .oem_table_id = oem_table_id };
 
     /* Cache topology level tracking */
