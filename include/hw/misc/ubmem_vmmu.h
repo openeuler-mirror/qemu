@@ -9,7 +9,6 @@
 #define UBMEM_VMMU_PAGE_SIZE 0x1000
 
 #define UBMEM_VMMU_DEV_PATH "/dev/ubmempfd"
-#define UBMEM_VMMU_MAX_TID (64)
 #define UBMEM_VMMU_ERR (-1)
 #define UBMEM_VMMU_SUCCEED (0)
 #define UBMEM_VMMU_DONE (1)
@@ -51,7 +50,7 @@ struct UbmReq {
 
 struct UbmReqData {
     uint64_t slot_index;
-    uint64_t gap_count;
+    uint64_t gap_count;  /* Offset of the input areas snapshot in ubm_req.areas */
     uint64_t max_areas;  /* Bounds for worker, set at entry */
     struct UbmemVMMUState *vmmu;
     struct UbmReq ubm_req;

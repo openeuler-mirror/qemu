@@ -529,6 +529,8 @@ _meson_option_parse() {
     --disable-u2f) printf "%s" -Du2f=disabled ;;
     --enable-ub) printf "%s" -Dub=enabled ;;
     --disable-ub) printf "%s" -Dub=disabled ;;
+    --enable-ubmem-vmmu) printf "%s" -Dubmem_vmmu=enabled ;;
+    --disable-ubmem-vmmu) printf "%s" -Dubmem_vmmu=disabled ;;
     --enable-ham-migration) printf "%s" -Dham_migration=enabled ;;
     --disable-ham-migration) printf "%s" -Dham_migration=disabled ;;
     --enable-urma-migration) printf "%s" -Durma_migration=enabled ;;

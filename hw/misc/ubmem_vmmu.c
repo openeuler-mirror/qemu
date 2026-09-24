@@ -32,12 +32,12 @@ static int worker_cb(void *opaque)
     UbmemVMMUState *s = data->vmmu;
     void *host_addr;
     MemoryRegionSection section;
-    hwaddr offset;
     MemoryRegion *mr;
     uint64_t gpa, remaining;
     size_t gap_count = data->gap_count;
     size_t req_len;
     size_t cur_areas = 0;
+    size_t i;
 
     if (s->ubmemp_fd < 0) {
         qemu_log("ubmem vmmu: invalid ubmemp fd\n");
@@ -45,10 +45,15 @@ static int worker_cb(void *opaque)
         goto out;
     }
 
-    for (size_t i = 0; i < data->ubm_req.areas_num; i++) {
+    for (i = 0; i < data->ubm_req.areas_num; i++) {
         gpa = data->ubm_req.areas[i + gap_count].addr;
         remaining = data->ubm_req.areas[i + gap_count].size;
         if (gpa == 0) {
+            if (cur_areas >= data->max_areas) {
+                qemu_log("ubmem vmmu: too many translated areas\n");
+                ret = UBMEM_VMMU_ERR;
+                goto out;
+            }
             data->ubm_req.areas[cur_areas].addr = 0;
             data->ubm_req.areas[cur_areas].size = remaining;
             cur_areas++;
@@ -61,11 +66,23 @@ static int worker_cb(void *opaque)
                 ret = UBMEM_VMMU_ERR;
                 goto out;
             }
-            section.size = MIN(remaining, section.size);
             mr = section.mr;
-            offset = section.offset_within_region;
-            host_addr = memory_region_get_ram_ptr(mr) + offset;
-            memory_region_unref(section.mr);
+            if (!memory_region_is_ram(mr) || memory_region_is_ram_device(mr)) {
+                qemu_log("ubmem vmmu: gpa 0x%" PRIx64 " is not RAM\n", gpa);
+                memory_region_unref(mr);
+                ret = UBMEM_VMMU_ERR;
+                goto out;
+            }
+            if (cur_areas >= data->max_areas) {
+                qemu_log("ubmem vmmu: too many translated areas\n");
+                memory_region_unref(mr);
+                ret = UBMEM_VMMU_ERR;
+                goto out;
+            }
+            section.size = MIN(remaining, section.size);
+            host_addr = memory_region_get_ram_ptr(mr) +
+                        section.offset_within_region;
+            memory_region_unref(mr);
             data->ubm_req.areas[cur_areas].addr = (uint64_t)host_addr;
             data->ubm_req.areas[cur_areas].size = section.size;
             remaining -= section.size;
@@ -107,6 +124,7 @@ static void ubmem_vmmu_write(void *opaque, hwaddr addr,
     UbmemVMMUState *s = opaque;
     struct UbmReqData *req_data;
     struct UbmReq *ubm_req;
+    struct UbmReq req;
     uint64_t avail_areas, uba_end;
 
     if (val >= s->num_slots) {
@@ -117,48 +135,62 @@ static void ubmem_vmmu_write(void *opaque, hwaddr addr,
     s->result_slots[val] = 0;
     ubm_req = (struct UbmReq *)s->request_ring;
 
-    if (ubm_req->tid != s->tid) {
+    /*
+     * The request ring is guest-writable shared memory. Snapshot the
+     * header once so that a guest racing the validation cannot make the
+     * checks and the consumers disagree. The assignment only copies the
+     * fixed part, the areas[] array is copied separately below.
+     */
+    req = *ubm_req;
+
+    if (req.tid != s->tid) {
         qemu_log("ubmem vmmu: invalid tid in request\n");
         ubmem_vmmu_fill_result(s, val, UBMEM_VMMU_ERR);
         return;
     }
 
-    if (ubm_req->uba < s->uba) {
+    if (req.uba < s->uba) {
         qemu_log("ubmem vmmu: request uba below allowed range\n");
         ubmem_vmmu_fill_result(s, val, UBMEM_VMMU_ERR);
         return;
     }
 
-    if (check_uadd_overflow(ubm_req->uba, ubm_req->size, &uba_end) ||
+    if (check_uadd_overflow(req.uba, req.size, &uba_end) ||
         uba_end > (s->uba + s->size)) {
         qemu_log("ubmem vmmu: request out of bounds\n");
         ubmem_vmmu_fill_result(s, val, UBMEM_VMMU_ERR);
         return;
     }
 
-    if (ubm_req->size == 0 ||
-        (ubm_req->size & (UBMEM_VMMU_PAGE_SIZE - 1)) != 0) {
+    if (req.size == 0 ||
+        (req.size & (UBMEM_VMMU_PAGE_SIZE - 1)) != 0) {
         qemu_log("ubmem vmmu: invalid size\n");
         ubmem_vmmu_fill_result(s, val, UBMEM_VMMU_ERR);
         return;
     }
 
-    avail_areas = ubm_req->size / UBMEM_VMMU_PAGE_SIZE;
-    if (ubm_req->areas_num > avail_areas) {
+    avail_areas = req.size / UBMEM_VMMU_PAGE_SIZE;
+    if (req.areas_num > avail_areas) {
         qemu_log("ubmem vmmu: too many areas in request\n");
         ubmem_vmmu_fill_result(s, val, UBMEM_VMMU_ERR);
         return;
     }
 
     /* Limit areas_num to prevent memory exhaustion */
-    if (ubm_req->areas_num > UBMEM_VMMU_MAX_AREAS) {
+    if (req.areas_num > UBMEM_VMMU_MAX_AREAS) {
         qemu_log("ubmem vmmu: areas_num exceeds maximum\n");
         ubmem_vmmu_fill_result(s, val, UBMEM_VMMU_ERR);
         return;
     }
 
+    /*
+     * The buffer holds the translated areas emitted by the worker followed
+     * by the snapshot of the guest-provided areas, so the worker never
+     * overwrites its own input while compacting.
+     */
     req_data = g_try_malloc(sizeof(struct UbmReqData) +
-                            avail_areas * sizeof(struct UbmArea));
+                            (avail_areas + req.areas_num) *
+                            sizeof(struct UbmArea));
     if (!req_data) {
         qemu_log("ubmem vmmu: failed to allocate memory\n");
         ubmem_vmmu_fill_result(s, val, UBMEM_VMMU_ERR);
@@ -166,12 +198,12 @@ static void ubmem_vmmu_write(void *opaque, hwaddr addr,
     }
 
     req_data->vmmu = s;
-    req_data->gap_count = avail_areas - ubm_req->areas_num;
+    req_data->gap_count = avail_areas;
     req_data->slot_index = val;
     req_data->max_areas = avail_areas;
-    req_data->ubm_req = *ubm_req;
+    req_data->ubm_req = req;
     memcpy(req_data->ubm_req.areas + req_data->gap_count,
-           ubm_req->areas, ubm_req->areas_num * sizeof(struct UbmArea));
+           ubm_req->areas, req.areas_num * sizeof(struct UbmArea));
 
     thread_pool_submit_aio(worker_cb, req_data, NULL, NULL);
 }
@@ -247,11 +279,6 @@ static void ubmem_vmmu_realize(DeviceState *dev, Error **errp)
 
     if (vms->ubmem_vmmu_realized) {
         qemu_log("ubmem vmmu: only one ubmem vmmu device is supported\n");
-        exit(1);
-    }
-
-    if (s->tid == 0 || s->tid > UBMEM_VMMU_MAX_TID) {
-        qemu_log("ubmem vmmu: invalid tid %u", s->tid);
         exit(1);
     }
 
