@@ -282,6 +282,7 @@ if targetos != 'windows'
 endif
 if have_virtfs
   qos_test_ss.add(files('virtio-9p-test.c'))
+  qos_test_ss.add(files('virtio-9p-race-test.c'))
 endif
 if have_vhost_user
   qos_test_ss.add(files('vhost-user-test.c'))
