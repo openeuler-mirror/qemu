@@ -372,6 +372,17 @@ void csv3_shared_region_release(uint64_t gpa, uint32_t num_pages)
         memory_region_unref(mrs.mr);
 
         block = qemu_ram_block_from_host(hva, false, &offset);
+
+        /* When a CSV3 VM is using KVM_CAP_EXIT_CSV3_SECURE_CALL, we should
+         * not attempt to unpin memory backed by 1G huge pages in the userspace
+         * VMM.
+         */
+        if (block && kvm_csv3_npt_ex_enabled() &&
+            qemu_ram_pagesize(block) == HUGE_PAGE_SIZE_1G) {
+            gpa_start += length;
+            continue;
+        }
+
         if (!block || offset < ((uint64_t)hva & (block->mr->align - 1))) {
             gpa_start += 1 << TARGET_PAGE_BITS;
             continue;
@@ -466,6 +477,17 @@ void csv3_shared_region_get(uint64_t gpa, uint32_t num_pages)
         memory_region_unref(mrs.mr);
 
         block = qemu_ram_block_from_host(hva, false, &offset);
+
+        /* When a CSV3 VM is using KVM_CAP_EXIT_CSV3_SECURE_CALL, we should
+         * not attempt to pin memory backed by 1G huge pages in the userspace
+         * VMM.
+         */
+        if (block && kvm_csv3_npt_ex_enabled() &&
+            qemu_ram_pagesize(block) == HUGE_PAGE_SIZE_1G) {
+            gpa_start += length;
+            continue;
+        }
+
         if (!block || offset < ((uint64_t)hva & (block->mr->align - 1))) {
             gpa_start += 1 << TARGET_PAGE_BITS;
             continue;
