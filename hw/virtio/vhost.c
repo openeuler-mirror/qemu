@@ -1618,6 +1618,9 @@ int vhost_dev_init(struct vhost_dev *hdev, void *opaque,
     if (virtcca_cvm_enabled() && virtcca_shared_hugepage && virtcca_shared_hugepage->ram_block) {
         memory_listener_register(&hdev->memory_listener,
                                  &address_space_virtcca_shared_memory);
+    } else if (kvm_csv3_npt_ex_enabled()) {
+        memory_listener_register(&hdev->memory_listener,
+                                 &address_space_csv3_shared_memory);
     } else {
         memory_listener_register(&hdev->memory_listener, &address_space_memory);
     }
