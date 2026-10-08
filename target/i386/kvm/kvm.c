@@ -2657,6 +2657,61 @@ int kvm_arch_get_default_type(MachineState *ms)
     return 0;
 }
 
+static void
+kvm_hygon_setup_csv3_secure_call(KVMState *s, uint32_t *kvm_hygon_coco_ext)
+{
+    int ret;
+    int has_csv3_secure_call = 0;
+    char err_buf[64];
+    char *err_str;
+
+    /* check and enable Hygon secure call*/
+    has_csv3_secure_call = kvm_vm_check_extension(s, KVM_CAP_EXIT_CSV3_SECURE_CALL);
+    if (!has_csv3_secure_call) {
+        *kvm_hygon_coco_ext &= ~KVM_CAP_HYGON_COCO_EXT_CSV3_NPT_EX;
+        return;
+    }
+
+    ret = kvm_vm_enable_cap(s, KVM_CAP_EXIT_CSV3_SECURE_CALL, 0,
+                            KVM_EXIT_CSV3_SECURE_CALL_VALID_MASK);
+    if (ret < 0) {
+        err_str = strerror_r(-ret, err_buf, sizeof(err_buf));
+        error_report("kvm: Failed to enable CSV3_SECURE_CALL cap: %s",
+                     err_str);
+        *kvm_hygon_coco_ext &= ~KVM_CAP_HYGON_COCO_EXT_CSV3_NPT_EX;
+    }
+}
+
+static void kvm_arch_init_hygon_coco(KVMState *s)
+{
+    uint32_t kvm_hygon_coco_ext;
+    int ret;
+    char err_buf[64];
+    char *err_str;
+
+    /* check and enable Hygon coco extensions */
+    kvm_hygon_coco_ext = (uint32_t)kvm_vm_check_extension(s, KVM_CAP_HYGON_COCO_EXT);
+    kvm_hygon_coco_ext &= KVM_CAP_HYGON_COCO_EXT_VALID_MASK;
+    if (kvm_hygon_coco_ext) {
+        if (kvm_hygon_coco_ext & KVM_CAP_HYGON_COCO_EXT_CSV3_NPT_EX) {
+            kvm_hygon_setup_csv3_secure_call(s, &kvm_hygon_coco_ext);
+        }
+        ret = kvm_vm_enable_cap(s, KVM_CAP_HYGON_COCO_EXT, 0,
+                                (uint64_t)kvm_hygon_coco_ext);
+        if (ret == -EINVAL) {
+            err_str = strerror_r(-ret, err_buf, sizeof(err_buf));
+            error_report("kvm: Failed to enable KVM_CAP_HYGON_COCO_EXT cap: %s",
+                         err_str);
+            kvm_hygon_coco_ext_inuse = 0;
+            kvm_csv3_npt_ex_allowed = false;
+        } else {
+            kvm_hygon_coco_ext_inuse = (uint32_t)ret;
+            kvm_csv3_npt_ex_allowed = kvm_hygon_coco_ext_inuse &
+                KVM_CAP_HYGON_COCO_EXT_CSV3_NPT_EX;
+        }
+    }
+}
+
 int kvm_arch_init(MachineState *ms, KVMState *s)
 {
     uint64_t identity_base = 0xfffbc000;
@@ -2742,20 +2797,7 @@ int kvm_arch_init(MachineState *ms, KVMState *s)
     }
 
     if (is_hygon_cpu()) {
-        /* check and enable Hygon coco extensions */
-        kvm_hygon_coco_ext = (uint32_t)kvm_vm_check_extension(s,
-                                                    KVM_CAP_HYGON_COCO_EXT);
-        if (kvm_hygon_coco_ext) {
-            ret = kvm_vm_enable_cap(s, KVM_CAP_HYGON_COCO_EXT, 0,
-                                    (uint64_t)kvm_hygon_coco_ext);
-            if (ret == -EINVAL) {
-                error_report("kvm: Failed to enable KVM_CAP_HYGON_COCO_EXT cap: %s",
-                             strerror(-ret));
-                kvm_hygon_coco_ext_inuse = 0;
-            } else {
-                kvm_hygon_coco_ext_inuse = (uint32_t)ret;
-            }
-        }
+        kvm_arch_init_hygon_coco(s);
     }
 
     ret = kvm_get_supported_msrs(s);
@@ -5212,6 +5254,27 @@ static int kvm_handle_exit_hypercall(X86CPU *cpu, struct kvm_run *run)
     return 0;
 }
 
+static int kvm_handle_exit_csv3_secure_call(X86CPU *cpu, struct kvm_run *run)
+{
+    if (!kvm_csv3_npt_ex_enabled())
+        return 0;
+
+    if (run->secure_call.type == KVM_CSV3_SECURE_CALL_PG_ENC ||
+        run->secure_call.type == KVM_CSV3_SECURE_CALL_PG_DEC) {
+        unsigned long gpa = run->secure_call.enc_dec_info.gpa;
+        unsigned long size = run->secure_call.enc_dec_info.size;
+        unsigned int smr_size = run->secure_call.enc_dec_info.smr_size;
+        unsigned int enc = run->secure_call.enc_dec_info.enc;
+
+        if (!enc) {
+            csv3_secure_call_convert_private_to_shared(gpa, size, smr_size);
+        } else {
+            csv3_secure_call_convert_shared_to_private(gpa, size, smr_size);
+        }
+    }
+    return 0;
+}
+
 int kvm_arch_insert_sw_breakpoint(CPUState *cs, struct kvm_sw_breakpoint *bp)
 {
     static const uint8_t int3 = 0xcc;
@@ -5685,6 +5748,9 @@ int kvm_arch_handle_exit(CPUState *cs, struct kvm_run *run)
         } else {
             ret = kvm_handle_hypercall(run);
         }
+        break;
+    case KVM_EXIT_CSV3_SECURE_CALL:
+        ret = kvm_handle_exit_csv3_secure_call(cpu, run);
         break;
     default:
         fprintf(stderr, "KVM: unknown exit reason %d\n", run->exit_reason);

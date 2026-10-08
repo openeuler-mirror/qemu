@@ -1259,6 +1259,9 @@ sev_launch_finish(SevCommonState *sev_common)
 
     if (csv3_enabled()) {
         SevGuestState *sev_guest = SEV_GUEST(sev_common);
+        if (kvm_hygon_coco_ext_inuse & KVM_CAP_HYGON_COCO_EXT_CSV3_NPT_EX)
+            csv3_shared_memory_init();
+
         if (sev_guest->host_data &&
            (kvm_hygon_coco_ext_inuse & KVM_CAP_HYGON_COCO_EXT_CSV3_LFINISH_EX)) {
             csv3_launch_finish_ex(sev_guest->host_data);

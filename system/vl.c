@@ -3780,6 +3780,9 @@ void qemu_init(int argc, char **argv)
     qobject_unref(machine_opts_dict);
     phase_advance(PHASE_MACHINE_CREATED);
 
+    if (kvm_csv3_npt_ex_enabled())
+        csv3_shared_memory_address_space_init();
+
     /*
      * Note: uses machine properties such as kernel-irqchip, must run
      * after qemu_apply_machine_options.

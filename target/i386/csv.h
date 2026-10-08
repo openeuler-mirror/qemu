@@ -121,6 +121,7 @@ extern struct ConfidentialGuestMemoryEncryptionOps csv3_memory_encryption_ops;
 extern int csv3_init(uint32_t policy, int fd, void *state, struct sev_ops *ops);
 extern int csv3_launch_encrypt_vmcb(void);
 void csv3_launch_finish_ex(char *host_data);
+void csv3_shared_memory_init(void);
 
 int csv3_load_data(uint64_t gpa, uint8_t *ptr, uint64_t len, Error **errp);
 
@@ -128,6 +129,10 @@ int csv3_shared_region_dma_map(uint64_t start, uint64_t end);
 void csv3_shared_region_dma_unmap(uint64_t start, uint64_t end);
 void csv3_shared_region_release(uint64_t gpa, uint32_t num_pages);
 void csv3_shared_region_get(uint64_t gpa, uint32_t num_pages);
+void csv3_secure_call_convert_private_to_shared(unsigned long gpa, unsigned long size,
+                                                unsigned int smr_size);
+void csv3_secure_call_convert_shared_to_private(unsigned long gpa, unsigned long size,
+                                                unsigned int smr_size);
 int csv3_load_incoming_page(QEMUFile *f, uint8_t *ptr);
 int csv3_load_incoming_context(QEMUFile *f);
 int csv3_queue_outgoing_page(uint8_t *ptr, uint32_t sz, uint64_t addr);

@@ -30,6 +30,7 @@ bool kvm_usi_via_irqfd_allowed;
 bool virtcca_cvm_allowed;
 
 bool kvm_csv3_allowed;
+bool kvm_csv3_npt_ex_allowed;
 
 void kvm_flush_coalesced_mmio_buffer(void)
 {

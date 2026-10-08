@@ -90,6 +90,7 @@ RAMList ram_list = { .blocks = QLIST_HEAD_INITIALIZER(ram_list.blocks) };
 static MemoryRegion *system_memory;
 static MemoryRegion *system_io;
 static MemoryRegion *virtcca_shared_memory;
+static MemoryRegion *csv3_root_shared_memory;
 
 /*
  * Serves as the sub-MR of the root MR (virtcca_shared_memory)
@@ -100,6 +101,7 @@ MemoryRegion *virtcca_shared_hugepage;
 AddressSpace address_space_io;
 AddressSpace address_space_memory;
 AddressSpace address_space_virtcca_shared_memory;
+AddressSpace address_space_csv3_shared_memory;
 
 static MemoryRegion io_mem_unassigned;
 
@@ -2664,6 +2666,16 @@ void virtcca_shared_memory_address_space_init(void)
                        "virtcca_shared_memory", UINT64_MAX);
     address_space_init(&address_space_virtcca_shared_memory,
                        virtcca_shared_memory, "virtcca_shared_memory");
+}
+
+void csv3_shared_memory_address_space_init(void)
+{
+    csv3_root_shared_memory = g_malloc(sizeof(*csv3_root_shared_memory));
+
+    memory_region_init(csv3_root_shared_memory, NULL,
+                       "csv3_root_shared_memory", UINT64_MAX);
+    address_space_init(&address_space_csv3_shared_memory, csv3_root_shared_memory,
+                       "CSV3-SHARED-MEMORY-AS");
 }
 
 MemoryRegion *get_system_memory(void)

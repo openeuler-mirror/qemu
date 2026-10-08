@@ -48,11 +48,14 @@ extern bool kvm_gsi_direct_mapping;
 extern bool kvm_readonly_mem_allowed;
 extern bool kvm_msi_use_devid;
 extern bool kvm_csv3_allowed;
+extern bool kvm_csv3_npt_ex_allowed;
 
 #define kvm_enabled()           (kvm_allowed)
 #define virtcca_cvm_enabled()           (virtcca_cvm_allowed)
 #define virtcca_migcvm_enabled()           (virtcca_mig_migcvm_allowed)
 #define VIRTCCA_CVM_TYPE (1UL << 8)
+#define HUGE_PAGE_SIZE_2M (1UL << 21)
+#define HUGE_PAGE_SIZE_1G (1UL << 30)
 
 bool kvm_arm_rme_enabled(void);
 hwaddr rme_mask_share_bit(hwaddr addr);
@@ -178,6 +181,13 @@ hwaddr rme_mask_share_bit(hwaddr addr);
 #define kvm_csv3_should_set_priv_mem() \
         (kvm_hygon_coco_ext_inuse & KVM_CAP_HYGON_COCO_EXT_CSV3_SET_PRIV_MEM)
 
+/**
+ * kvm_csv3_npt_ex_enabled:
+ * Returns: true if CSV3 npt extension is used for the VM.
+ */
+#define kvm_csv3_npt_ex_enabled() \
+    (kvm_csv3_enabled() && kvm_csv3_npt_ex_allowed)
+
 #else
 
 #define kvm_enabled()           (0)
@@ -202,6 +212,7 @@ hwaddr rme_mask_share_bit(hwaddr addr);
 #define kvm_csv3_enabled() (false)
 #define kvm_csv3_should_set_priv_mem() (false)
 extern bool virtcca_cvm_allowed;
+#define kvm_csv3_npt_ex_enabled() (false)
 
 #endif  /* CONFIG_KVM_IS_POSSIBLE */
 

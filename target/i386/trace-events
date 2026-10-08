@@ -37,3 +37,5 @@ kvm_csv3_madvise_release(uint64_t hva, uint32_t num_pages) "hva 0x%" PRIx64 " nu
 kvm_csv3_pin_pages_count(uint64_t pin_count) "pinned count 0x%" PRIx64
 kvm_csv3_shared_region_get(uint64_t gpa, uint32_t num_pages) "gpa 0x%" PRIx64 " num_pages 0x%x"
 kvm_csv3_pinned(uint64_t gpa, uint32_t num_pages) "gpa 0x%" PRIx64 " num_pages 0x%x"
+kvm_csv3_secure_call_dec(unsigned long gpa, unsigned long size, unsigned int smr_size) "gpa 0x%" PRIx64 " size 0x%" PRIx64 " smr_size 0x%x"
+kvm_csv3_secure_call_enc(unsigned long gpa, unsigned long size, unsigned int smr_size) "gpa 0x%" PRIx64 " size 0x%" PRIx64 " smr_size 0x%x"
