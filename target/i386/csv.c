@@ -774,8 +774,9 @@ void csv3_secure_call_convert_private_to_shared(unsigned long gpa, unsigned long
     head_size = QEMU_ALIGN_UP(gpa, smr_size) - gpa;
     if (head_size) {
         csv3_sc_handle_smr_unaligned_shared_region(gpa, MIN(head_size, size));
-        if (head_size >= size)
-            return;
+        if (head_size >= size) {
+            goto end;
+        }
     }
 
     smr_aligned_size = QEMU_ALIGN_DOWN(gpa + size, smr_size)
@@ -788,6 +789,13 @@ void csv3_secure_call_convert_private_to_shared(unsigned long gpa, unsigned long
     if (tail_size)
         csv3_sc_handle_smr_unaligned_shared_region(
                     QEMU_ALIGN_DOWN(gpa + size, smr_size), tail_size);
+
+end:
+    /* Pin the SMR-unaligned unencrypted memory regions after applying
+     * the MemoryRegion overlay.
+     */
+    csv3_shared_region_get(gpa,
+                    (size + TARGET_PAGE_SIZE - 1) >> TARGET_PAGE_BITS);
 }
 
 /*
@@ -821,6 +829,12 @@ void csv3_secure_call_convert_shared_to_private(unsigned long gpa, unsigned long
     g_assert((gpa < x86ms->below_4g_mem_size &&
               (gpa + size) <= x86ms->below_4g_mem_size) ||
              gpa >= x86ms->above_4g_mem_start);
+
+    /* Unpin the SMR-unaligned unencrypted memory regions before
+     * revoking the MemoryRegion overlay.
+     */
+    csv3_shared_region_release(gpa,
+                    (size + TARGET_PAGE_SIZE - 1) >> TARGET_PAGE_BITS);
 
     trace_kvm_csv3_secure_call_enc(gpa, size, smr_size);
 
