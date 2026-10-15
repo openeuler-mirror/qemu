@@ -150,24 +150,24 @@ static int loongarch_gdb_set_vec(CPULoongArchState *env, uint8_t *mem_buf, int n
     return length;
 }
 
-static int loongarch_gdb_get_lsx(CPULoongArchState *env, GByteArray *mem_buf, int n)
+static int loongarch_gdb_get_lsx(CPUState *cs, GByteArray *mem_buf, int n)
 {
-    return loongarch_gdb_get_vec(env, mem_buf, n, LSX_LEN);
+    return loongarch_gdb_get_vec(cpu_env(cs), mem_buf, n, LSX_LEN);
 }
 
-static int loongarch_gdb_set_lsx(CPULoongArchState *env, uint8_t *mem_buf, int n)
+static int loongarch_gdb_set_lsx(CPUState *cs, uint8_t *mem_buf, int n)
 {
-    return loongarch_gdb_set_vec(env, mem_buf, n, LSX_LEN);
+    return loongarch_gdb_set_vec(cpu_env(cs), mem_buf, n, LSX_LEN);
 }
 
-static int loongarch_gdb_get_lasx(CPULoongArchState *env, GByteArray *mem_buf, int n)
+static int loongarch_gdb_get_lasx(CPUState *cs, GByteArray *mem_buf, int n)
 {
-    return loongarch_gdb_get_vec(env, mem_buf, n, LASX_LEN);
+    return loongarch_gdb_get_vec(cpu_env(cs), mem_buf, n, LASX_LEN);
 }
 
-static int loongarch_gdb_set_lasx(CPULoongArchState *env, uint8_t *mem_buf, int n)
+static int loongarch_gdb_set_lasx(CPUState *cs, uint8_t *mem_buf, int n)
 {
-    return loongarch_gdb_set_vec(env, mem_buf, n, LASX_LEN);
+    return loongarch_gdb_set_vec(cpu_env(cs), mem_buf, n, LASX_LEN);
 }
 
 void loongarch_cpu_register_gdb_regs_for_features(CPUState *cs)
