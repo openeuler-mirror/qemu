@@ -1830,6 +1830,8 @@ static int sev_common_kvm_init(ConfidentialGuestSupport *cgs, Error **errp)
                 g_free(user_id);
                 g_free(init_cmd_buf);
             }
+        } else {
+            ret = sev_ioctl(sev_common->sev_fd, cmd, NULL, &fw_error);
         }
     } else {
     switch (x86_klass->kvm_type(X86_CONFIDENTIAL_GUEST(sev_common))) {
