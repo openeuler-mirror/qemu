@@ -33,7 +33,9 @@
 #include "qemu/datadir.h"
 #include "qemu/units.h"
 #include "qemu/option.h"
+#include "qemu/config-file.h"
 #include "qemu/log.h"
+#include "qemu/bitmap.h"
 #include "monitor/qdev.h"
 #include "hw/sysbus.h"
 #include "hw/arm/boot.h"
@@ -91,6 +93,8 @@
 #include "hw/char/pl011.h"
 #include "qemu/guest-random.h"
 #include "qapi/qmp/qdict.h"
+#include "qapi/opts-visitor.h"
+#include "qapi/qapi-visit-machine.h"
 #include "qemu/log.h"
 #ifdef CONFIG_UB
 #include "hw/ub/ub.h"
@@ -304,6 +308,7 @@ static int virt_get_socket_id(const MachineState *ms, int cpu_index);
 static int virt_get_cluster_id(const MachineState *ms, int cpu_index);
 static int virt_get_core_id(const MachineState *ms, int cpu_index);
 static int virt_get_thread_id(const MachineState *ms, int cpu_index);
+static void virt_parse_vtlbidomain(VirtMachineState *vms);
 
 static bool cpu_type_valid(const char *cpu)
 {
@@ -2824,6 +2829,8 @@ static void machvirt_init(MachineState *machine)
 
     finalize_gic_version(vms);
 
+    virt_parse_vtlbidomain(vms);
+
     possible_cpus = mc->possible_cpu_arch_ids(machine);
 
     /*
@@ -3376,6 +3383,160 @@ static void virt_set_oem_table_id(Object *obj, const char *value,
         return;
     }
     strncpy(vms->oem_table_id, value, 8);
+}
+
+/* QemuOpts foreach callback: parse one -tlbidomain option entry */
+static int virt_parse_one_vtlbidomain(void *opaque, QemuOpts *opts,
+                                      Error **errp)
+{
+    VirtMachineState *vms = opaque;
+    TlbiVdomainConfig *d;
+    TlbiDomainOptions *tdo = NULL;
+    uint8_t vdomain_id;
+    uint16List *cpus;
+    int i;
+    Error *err = NULL;
+    Visitor *v = opts_visitor_new(opts);
+
+    visit_type_TlbiDomainOptions(v, NULL, &tdo, &err);
+    visit_free(v);
+    if (err) {
+        error_report("tlbidomain: OptsVisitor parse failed: %s",
+                     error_get_pretty(err));
+        error_free(err);
+        return -1;
+    }
+
+    if (vms->num_vdomains >= vms->max_vdomains) {
+        error_report("tlbidomain: too many vdomains, max %d",
+                     vms->max_vdomains);
+        exit(1);
+    }
+
+    if (!tdo->has_cpus) {
+        error_report("tlbidomain: missing cpus");
+        exit(1);
+    }
+    if (!tdo->has_domain_id) {
+        error_report("tlbidomain: missing domain-id");
+        exit(1);
+    }
+    vdomain_id = tdo->domain_id;
+    if (vdomain_id >= vms->max_vdomains) {
+        error_report("tlbidomain: invalid domain-id %u (max %d)",
+                     vdomain_id, vms->max_vdomains - 1);
+        exit(1);
+    }
+    for (i = 0; i < vms->num_vdomains; i++) {
+        if (vms->vdomains[i].vdomain_id == vdomain_id) {
+            error_report("tlbidomain: duplicate domain-id %u", vdomain_id);
+            exit(1);
+        }
+    }
+
+    d = &vms->vdomains[vms->num_vdomains];
+    d->vdomain_id = vdomain_id;
+    d->cpu_bitmap = bitmap_new(MACHINE(vms)->smp.max_cpus);
+
+    for (cpus = tdo->cpus; cpus; cpus = cpus->next) {
+        if (cpus->value >= MACHINE(vms)->smp.max_cpus) {
+            error_report("tlbidomain: cpu %u >= max_cpus %u",
+                         cpus->value, MACHINE(vms)->smp.max_cpus);
+            exit(1);
+        }
+        bitmap_set(d->cpu_bitmap, cpus->value, 1);
+    }
+    if (bitmap_empty(d->cpu_bitmap, MACHINE(vms)->smp.max_cpus)) {
+        error_report("tlbidomain: vdomain %u has no cpus", vdomain_id);
+        exit(1);
+    }
+
+    qapi_free_TlbiDomainOptions(tdo);
+    vms->num_vdomains++;
+    return 0;
+}
+
+uint32_t virt_cpu_vdomain_bitmap(VirtMachineState *vms, int cpu_index)
+{
+    int i;
+    uint32_t bm = 0;
+
+    for (i = 0; i < vms->num_vdomains; i++) {
+        if (test_bit(cpu_index, vms->vdomains[i].cpu_bitmap)) {
+            bm |= (1U << vms->vdomains[i].vdomain_id);
+        }
+    }
+    return bm;
+}
+
+/*
+ * Parse all -tlbidomain options, validate constraints:
+ *  - vdomain 0 (broadcast) must cover every vCPU
+ *  - vdomain IDs must be contiguous starting from 0
+ *  - Total vdomains must not exceed KVM max_vdomains
+ */
+static void virt_parse_vtlbidomain(VirtMachineState *vms)
+{
+    QemuOptsList *olist = qemu_find_opts_err("tlbidomain", NULL);
+    MachineState *ms = MACHINE(vms);
+    unsigned int max_cpus = ms->smp.max_cpus;
+    uint8_t max_vdomains;
+    int i;
+
+    if (!olist || QTAILQ_EMPTY(&olist->head)) {
+        vms->max_vdomains = 0;
+        vms->vdomains = NULL;
+        return;
+    }
+
+    if (!kvm_enabled()) {
+        warn_report("tlbidomain: not running under KVM, "
+                    "TLBI domain will only be reflected in ACPI table");
+        max_vdomains = VDOMAIN_BITMAP_BITS;
+    } else {
+        max_vdomains = kvm_arm_get_max_vdomains();
+        if (max_vdomains == 0) {
+            error_report("tlbidomain: KVM does not support TLBI vdomain");
+            exit(1);
+        }
+    }
+
+    vms->max_vdomains = max_vdomains;
+    vms->vdomains = g_new0(TlbiVdomainConfig, max_vdomains);
+
+    if (qemu_opts_foreach(olist, virt_parse_one_vtlbidomain,
+                          vms, NULL) < 0) {
+        exit(1);
+    }
+
+    if (vms->num_vdomains == 0) {
+        return;
+    }
+
+    /* Validate: vdomain 0 must be the broadcast vdomain (all vCPUs) */
+    for (i = 0; i < vms->num_vdomains; i++) {
+        if (vms->vdomains[i].vdomain_id == 0) {
+            if (!bitmap_full(vms->vdomains[i].cpu_bitmap, max_cpus)) {
+                error_report("tlbidomain: vdomain 0 must cover all cpus [0-%u]",
+                             max_cpus - 1);
+                exit(1);
+            }
+            break;
+        }
+    }
+
+    /* Validate: vdomain IDs are contiguous [0 .. num_vdomains-1] */
+    unsigned long *id_bm = bitmap_new(max_vdomains);
+    for (i = 0; i < vms->num_vdomains; i++) {
+        bitmap_set(id_bm, vms->vdomains[i].vdomain_id, 1);
+    }
+    if (bitmap_count_one(id_bm, max_vdomains) != vms->num_vdomains ||
+        find_last_bit(id_bm, max_vdomains) !=
+        (unsigned long)(vms->num_vdomains - 1)) {
+        error_report("tlbidomain: vdomain IDs must be contiguous from 0");
+        exit(1);
+    }
+    g_free(id_bm);
 }
 
 static TargetImplCpu target_impl_cpus[MAX_TARGET_IMPL_CPUS];

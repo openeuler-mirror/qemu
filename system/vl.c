@@ -738,6 +738,14 @@ static void configure_blockdev(BlockdevOptionsQueue *bdo_queue,
 
 }
 
+/* QemuOpts definition for -tlbidomain command-line option */
+static QemuOptsList qemu_tlbidomain_opts = {
+    .name = "tlbidomain",
+    .implied_opt_name = "domain-id",
+    .head = QTAILQ_HEAD_INITIALIZER(qemu_tlbidomain_opts.head),
+    .desc = { { 0 } } /* validated with OptsVisitor */
+};
+
 static QemuOptsList qemu_smp_opts = {
     .name = "smp-opts",
     .implied_opt_name = "cpus",
@@ -2844,6 +2852,7 @@ void qemu_init(int argc, char **argv)
     qemu_add_opts(&qemu_msg_opts);
     qemu_add_opts(&qemu_name_opts);
     qemu_add_opts(&qemu_numa_opts);
+    qemu_add_opts(&qemu_tlbidomain_opts);
     qemu_add_opts(&qemu_icount_opts);
     qemu_add_opts(&qemu_semihosting_config_opts);
     qemu_add_opts(&qemu_fw_cfg_opts);
@@ -2956,6 +2965,13 @@ void qemu_init(int argc, char **argv)
                 break;
             case QEMU_OPTION_numa:
                 opts = qemu_opts_parse_noisily(qemu_find_opts("numa"),
+                                               optarg, true);
+                if (!opts) {
+                    exit(1);
+                }
+                break;
+            case QEMU_OPTION_tlbidomain:
+                opts = qemu_opts_parse_noisily(qemu_find_opts("tlbidomain"),
                                                optarg, true);
                 if (!opts) {
                     exit(1);

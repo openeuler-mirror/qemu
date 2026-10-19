@@ -33,6 +33,7 @@
 #include "cpu-features.h"
 #include "hw/acpi/acpi.h"
 #include "hw/acpi/ghes.h"
+#include "hw/arm/virt.h"
 #include "cpu-custom.h"
 
 static bool have_guest_debug;
@@ -782,6 +783,30 @@ bool kvm_arm_vtimer_status_supported(void)
     return kvm_vm_check_extension(kvm_state, KVM_CAP_ARM_HISI_PVTIMER_STATUS);
 }
 
+bool kvm_arm_vtlbid_supported(void)
+{
+    return kvm_check_extension(kvm_state, KVM_CAP_ARM_TLBIDOMAIN);
+}
+
+uint8_t kvm_arm_get_max_vdomains(void)
+{
+    struct kvm_arm_get_vdomain arg;
+    int ret;
+
+    if (!kvm_arm_vtlbid_supported()) {
+        return 0;
+    }
+
+    ret = kvm_vm_ioctl(kvm_state, KVM_ARM_GET_VDOMAIN_NUM, &arg);
+    if (ret < 0) {
+        error_report("Failed to get max vdomains from KVM: %s",
+                     g_strerror(errno));
+        return 0;
+    }
+
+    return arg.max_vdomains;
+}
+
 QEMU_BUILD_BUG_ON(KVM_ARM64_SVE_VQ_MIN != 1);
 
 uint32_t kvm_arm_sve_get_vls(CPUState *cs)
@@ -874,6 +899,57 @@ static int kvm_arm_set_pv_unhalt_bmap(ARMCPU *cpu)
     return kvm_set_one_reg(CPU(cpu), KVM_REG_ARM_VENDOR_HYP_BMAP, &bmap);
 }
 
+static int kvm_arm_vtlbid_init(CPUState *cs)
+{
+    VirtMachineState *vms;
+    ARMCPU *cpu = ARM_CPU(cs);
+    uint32_t vdomain_bitmap;
+    struct kvm_arm_set_vdomain config;
+    int ret = 0;
+
+    if (!kvm_arm_vtlbid_supported()) {
+        return ret;
+    }
+
+    vms = VIRT_MACHINE(object_dynamic_cast(OBJECT(qdev_get_machine()),
+                                           TYPE_VIRT_MACHINE));
+    if (!vms || vms->num_vdomains == 0) {
+        return ret;
+    }
+
+    vdomain_bitmap = virt_cpu_vdomain_bitmap(vms, cs->cpu_index);
+    if (vdomain_bitmap == 0) {
+        return ret;
+    }
+
+    if (!runstate_is_running()) {
+        config = (struct kvm_arm_set_vdomain){
+            .vdomain_bitmap = vdomain_bitmap,
+            .num_vdomains = vms->num_vdomains,
+        };
+        ret = kvm_vcpu_ioctl(cs, KVM_ARM_VCPU_SET_VDOMAIN, &config);
+        if (ret < 0) {
+            error_report("vCPU %d: Failed to set vdomain bitmap (0x%x) "
+                         "with %d vdomains: %s",
+                         cs->cpu_index, vdomain_bitmap, vms->num_vdomains,
+                         g_strerror(-ret));
+            return ret;
+        }
+        qemu_log("vCPU %d: Set vdomain_bitmap=0x%x num_vdomains=%d\n",
+                 cs->cpu_index, vdomain_bitmap, vms->num_vdomains);
+    }
+
+    ret = kvm_get_one_reg(cs,
+                          idregs_sysreg_to_kvm_reg(
+                              id_register_sysreg[ID_AA64MMFR4_EL1_IDX]),
+                          &cpu->isar.idregs[ID_AA64MMFR4_EL1_IDX]);
+    if (ret)
+        error_report("vCPU %d: Failed to read ID_AA64MMFR4_EL1: %s",
+                     cs->cpu_index, g_strerror(-ret));
+
+    return ret;
+}
+
 #define ARM_CPU_ID_MPIDR       3, 0, 0, 0, 5
 #define ARM_CPU_ID_CLIDR       3, 1, 0, 0, 1
 
@@ -958,6 +1034,12 @@ int kvm_arch_init_vcpu(CPUState *cs)
             /* Don't abort, as pvspinlock is optional */
         }
     }
+
+    ret = kvm_arm_vtlbid_init(cs);
+    if (ret) {
+        return ret;
+    }
+
     /*
      * KVM reports the exact PSCI version it is implementing via a
      * special sysreg. If it is present, use its contents to determine

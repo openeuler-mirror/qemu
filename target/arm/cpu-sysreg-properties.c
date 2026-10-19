@@ -561,6 +561,7 @@ void initialize_cpu_sysreg_properties(void)
     ARM64SysReg *ID_AA64MMFR4_EL1 = arm64_sysreg_get(ID_AA64MMFR4_EL1_IDX);
     ID_AA64MMFR4_EL1->name = "ID_AA64MMFR4_EL1";
     arm64_sysreg_add_field(ID_AA64MMFR4_EL1, "SRMASK", 44, 47);
+    arm64_sysreg_add_field(ID_AA64MMFR4_EL1, "TLBID", 40, 43);
     arm64_sysreg_add_field(ID_AA64MMFR4_EL1, "E3DSE", 36, 39);
     arm64_sysreg_add_field(ID_AA64MMFR4_EL1, "RMEGDI", 28, 31);
     arm64_sysreg_add_field(ID_AA64MMFR4_EL1, "E2H0", 24, 27);
