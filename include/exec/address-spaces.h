@@ -34,6 +34,7 @@ MemoryRegion *get_system_io(void);
 extern AddressSpace address_space_memory;
 extern AddressSpace address_space_io;
 extern AddressSpace address_space_virtcca_shared_memory;
+extern AddressSpace address_space_csv3_shared_memory;
 
 extern MemoryRegion *virtcca_shared_hugepage;
 

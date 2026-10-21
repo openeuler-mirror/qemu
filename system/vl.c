@@ -3804,6 +3804,19 @@ void qemu_init(int argc, char **argv)
     phase_advance(PHASE_ACCEL_CREATED);
 
     /*
+     * Must run after kvm_init completes, as kvm_csv3_npt_ex_enabled()
+     * depends on the Hygon COCO extensions negotiated in kvm_init()
+     * (kvm_arch_init_hygon_coco()).  If it runs earlier,
+     * kvm_csv3_npt_ex_allowed is still false, the CSV3 shared memory
+     * address space is never created and the later
+     * csv3_shared_memory_init() adds subregions to a NULL root memory
+     * region.
+     */
+    if (kvm_csv3_npt_ex_enabled()) {
+        csv3_shared_memory_address_space_init();
+    }
+
+    /*
      * Must run after kvm_init completes, as virtcca_cvm_enabled()
      * depends on initialization performed in kvm_init.
      */

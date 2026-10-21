@@ -1259,6 +1259,9 @@ sev_launch_finish(SevCommonState *sev_common)
 
     if (csv3_enabled()) {
         SevGuestState *sev_guest = SEV_GUEST(sev_common);
+        if (kvm_hygon_coco_ext_inuse & KVM_CAP_HYGON_COCO_EXT_CSV3_NPT_EX)
+            csv3_shared_memory_init();
+
         if (sev_guest->host_data &&
            (kvm_hygon_coco_ext_inuse & KVM_CAP_HYGON_COCO_EXT_CSV3_LFINISH_EX)) {
             csv3_launch_finish_ex(sev_guest->host_data);
@@ -1827,6 +1830,8 @@ static int sev_common_kvm_init(ConfidentialGuestSupport *cgs, Error **errp)
                 g_free(user_id);
                 g_free(init_cmd_buf);
             }
+        } else {
+            ret = sev_ioctl(sev_common->sev_fd, cmd, NULL, &fw_error);
         }
     } else {
     switch (x86_klass->kvm_type(X86_CONFIDENTIAL_GUEST(sev_common))) {

@@ -20,6 +20,9 @@
 #include "qom/object_interfaces.h"
 #include "qemu/mmap-alloc.h"
 #include "qemu/madvise.h"
+#include "qemu/error-report.h"
+#include "sysemu/kvm.h"
+
 #ifdef CONFIG_MBIND_PROPORTION
 #include "qemu/option.h"
 #include "sysemu/sysemu.h"
@@ -333,6 +336,14 @@ MemoryRegion *host_memory_backend_get_memory(HostMemoryBackend *backend)
 
 void host_memory_backend_set_mapped(HostMemoryBackend *backend, bool mapped)
 {
+    if (mapped && kvm_csv3_npt_ex_enabled() &&
+        host_memory_backend_mr_inited(backend) &&
+        host_memory_backend_pagesize(backend) != HUGE_PAGE_SIZE_1G) {
+        error_report("memory backend '%s' is not backed by 1G huge pages, "
+                     "which is required by CSV3 NPT extension",
+                     object_get_canonical_path_component(OBJECT(backend)));
+        exit(EXIT_FAILURE);
+    }
     backend->is_mapped = mapped;
 }
 
@@ -462,6 +473,12 @@ host_memory_backend_memory_complete(UserCreatable *uc, Error **errp)
         goto out;
     }
 
+    if (kvm_csv3_npt_ex_enabled() &&
+        host_memory_backend_pagesize(backend) != HUGE_PAGE_SIZE_1G) {
+        error_setg(errp, "CSV3 NPT extension requires 1G huge page memory backend");
+        return;
+    }
+    
     ptr = memory_region_get_ram_ptr(&backend->mr);
     sz = memory_region_size(&backend->mr);
 

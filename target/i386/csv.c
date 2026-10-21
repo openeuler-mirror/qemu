@@ -14,14 +14,21 @@
 #include "qemu/osdep.h"
 #include "qemu/base64.h"
 #include "qemu/error-report.h"
+#include "qemu/memfd.h"
+#include "qemu/range.h"
 #include "qapi/error.h"
 #include "sysemu/kvm.h"
+#include "sysemu/runstate.h"
 #include "exec/address-spaces.h"
 #include "exec/ramblock.h"
+#include "exec/memory.h"
+#include "exec/ram_addr.h"
 #include "migration/blocker.h"
 #include "migration/qemu-file.h"
 #include "migration/misc.h"
+#include "migration/vmstate.h"
 #include "monitor/monitor.h"
+#include "hw/i386/x86.h"
 
 #include <linux/kvm.h>
 #include <linux/psp-sev.h>
@@ -40,6 +47,9 @@ uint32_t csv3_pin_pages_count = 0;
 bool csv_kvm_cpu_reset_inhibit;
 uint32_t kvm_hygon_coco_ext;
 uint32_t kvm_hygon_coco_ext_inuse;
+
+static MemoryRegion *csv3_shared_memory;
+static int csv3_shared_memfd = -1;
 
 struct ConfidentialGuestMemoryEncryptionOps csv3_memory_encryption_ops = {
     .save_setup = sev_save_setup,
@@ -362,6 +372,17 @@ void csv3_shared_region_release(uint64_t gpa, uint32_t num_pages)
         memory_region_unref(mrs.mr);
 
         block = qemu_ram_block_from_host(hva, false, &offset);
+
+        /* When a CSV3 VM is using KVM_CAP_EXIT_CSV3_SECURE_CALL, we should
+         * not attempt to unpin memory backed by 1G huge pages in the userspace
+         * VMM.
+         */
+        if (block && kvm_csv3_npt_ex_enabled() &&
+            qemu_ram_pagesize(block) == HUGE_PAGE_SIZE_1G) {
+            gpa_start += length;
+            continue;
+        }
+
         if (!block || offset < ((uint64_t)hva & (block->mr->align - 1))) {
             gpa_start += 1 << TARGET_PAGE_BITS;
             continue;
@@ -456,6 +477,17 @@ void csv3_shared_region_get(uint64_t gpa, uint32_t num_pages)
         memory_region_unref(mrs.mr);
 
         block = qemu_ram_block_from_host(hva, false, &offset);
+
+        /* When a CSV3 VM is using KVM_CAP_EXIT_CSV3_SECURE_CALL, we should
+         * not attempt to pin memory backed by 1G huge pages in the userspace
+         * VMM.
+         */
+        if (block && kvm_csv3_npt_ex_enabled() &&
+            qemu_ram_pagesize(block) == HUGE_PAGE_SIZE_1G) {
+            gpa_start += length;
+            continue;
+        }
+
         if (!block || offset < ((uint64_t)hva & (block->mr->align - 1))) {
             gpa_start += 1 << TARGET_PAGE_BITS;
             continue;
@@ -544,6 +576,326 @@ void csv3_shared_region_dma_unmap(uint64_t start, uint64_t end)
 end:
     qemu_mutex_unlock(&s->dma_map_regions_list_mutex);
     return;
+}
+
+void csv3_shared_memory_init(void)
+{
+    MachineState *machine = MACHINE(qdev_get_machine());
+    X86MachineState *x86ms = X86_MACHINE(machine);
+    MemoryRegion *csv3_ram_below_4g, *csv3_ram_above_4g;
+
+    if (csv3_shared_memfd != -1)
+        return;
+
+    csv3_shared_memfd = qemu_memfd_create("csv3_shared_memfd",
+                                          machine->ram_size,
+                                          false,
+                                          0,
+                                          0,
+                                          NULL);
+    g_assert(csv3_shared_memfd != -1);
+
+    csv3_ram_below_4g = g_malloc(sizeof(*csv3_ram_below_4g));
+    csv3_ram_above_4g = g_malloc(sizeof(*csv3_ram_above_4g));
+
+    csv3_shared_memory = g_malloc(sizeof(*csv3_shared_memory));
+
+    memory_region_init_ram_from_fd(csv3_shared_memory,
+                                   NULL,
+                                   "csv3_shared_memory",
+                                   machine->ram_size,
+                                   RAM_SHARED | RAM_NORESERVE,
+                                   csv3_shared_memfd,
+                                   0,
+                                   NULL);
+
+    memory_region_set_unmergeable(csv3_shared_memory, 1);
+    vmstate_register_ram_global(csv3_shared_memory);
+    memory_region_init_alias(csv3_ram_below_4g, NULL, "csv3_ram_below-4g",
+                             csv3_shared_memory, 0, x86ms->below_4g_mem_size);
+    memory_region_add_subregion(address_space_csv3_shared_memory.root, 0,
+                                csv3_ram_below_4g);
+    memory_region_init_alias(csv3_ram_above_4g, NULL, "csv3_ram_above-4g",
+                             csv3_shared_memory, x86ms->below_4g_mem_size,
+                             x86ms->above_4g_mem_size);
+    memory_region_add_subregion(address_space_csv3_shared_memory.root,
+                                x86ms->above_4g_mem_start,
+                                csv3_ram_above_4g);
+}
+
+/*
+ * Install a shared-memory alias for an SMR-unaligned GPA range.
+ *
+ * For a GPA range that is NOT aligned to the CSV3 hardware SMR, the
+ * guest's actual memory backend is csv3_shared_memfd (already mapped
+ * into address_space_csv3_shared_memory by csv3_shared_memory_init()).
+ *
+ * Here we alias that csv3_shared_memfd-backed range into the system
+ * address space at the same GPA with higher priority, so that guest
+ * accesses to this GPA range hit the csv3_shared_memfd backend
+ * instead of machine->ram.
+ */
+static void
+csv3_process_smr_unaligned_shared_range(unsigned long gpa,
+                                        unsigned long size)
+{
+    MemoryRegion *alias_mr = g_new(MemoryRegion, 1);
+    char *alias_name = g_strdup_printf("csv3_unalgn_alias_0x%lx", gpa);
+    bool need_lock = !runstate_check(RUN_STATE_INMIGRATE);
+
+    if (need_lock)
+         bql_lock();
+
+    memory_region_init_alias(alias_mr, NULL, alias_name,
+                             address_space_csv3_shared_memory.root,
+                             gpa, size);
+    memory_region_add_subregion_overlap(get_system_memory(), gpa, alias_mr, 1);
+
+    if (need_lock)
+         bql_unlock();
+
+    g_free(alias_name);
+}
+
+/*
+ * Split an SMR-unaligned shared GPA range into 2MB-aligned chunks
+ * and install a csv3_shared_memfd alias for each chunk.
+ *
+ * After this function returns, every byte in [gpa, gpa + size) that
+ * is not SMR-aligned is served by csv3_shared_memfd through the
+ * aliases installed in the system address space.
+ */
+static void
+csv3_sc_handle_smr_unaligned_shared_region(unsigned long gpa, unsigned long size)
+{
+    unsigned long head_size, hugepage_aligned_size, tail_size;
+    unsigned long hugepage_size = HUGE_PAGE_SIZE_2M;
+
+    head_size = QEMU_ALIGN_UP(gpa, hugepage_size) - gpa;
+    if (head_size && size) {
+        csv3_process_smr_unaligned_shared_range(gpa, MIN(head_size, size));
+        if (head_size >= size)
+            return;
+    }
+
+    hugepage_aligned_size = QEMU_ALIGN_DOWN(gpa + size, hugepage_size) -
+                            QEMU_ALIGN_UP(gpa, hugepage_size);
+
+    if (hugepage_aligned_size >= hugepage_size) {
+        csv3_process_smr_unaligned_shared_range(
+                                    QEMU_ALIGN_UP(gpa, hugepage_size),
+                                    hugepage_aligned_size);
+    }
+
+    tail_size = (gpa + size) - QEMU_ALIGN_DOWN(gpa + size, hugepage_size);
+    if (tail_size) {
+        csv3_process_smr_unaligned_shared_range(
+                                    QEMU_ALIGN_DOWN(gpa + size, hugepage_size),
+                                    tail_size);
+    }
+}
+
+/*
+ * Expose an SMR-aligned shared GPA range in the CSV3 shared address
+ * space.
+ *
+ * For a GPA range that is aligned to the CSV3 hardware SMR, the
+ * guest's actual memory backend is machine->ram (i.e. the system
+ * memory region).
+ *
+ * Here we alias that machine->ram-backed range into
+ * address_space_csv3_shared_memory at the same GPA, so the shared
+ * address space sees the SMR-aligned portion as shared while the
+ * guest still accesses it through machine->ram in the system
+ * address space. No alias is added to system_memory because
+ * machine->ram already serves it there.
+ */
+static void
+csv3_sc_handle_smr_aligned_shared_region(unsigned long gpa, unsigned long size)
+{
+    MemoryRegion *alias_mr = g_new(MemoryRegion, 1);
+    char *alias_name = g_strdup_printf("csv3_algn_alias_0x%lx", gpa);
+    bool need_lock = !runstate_check(RUN_STATE_INMIGRATE);
+
+    if (need_lock)
+         bql_lock();
+
+    memory_region_init_alias(alias_mr, NULL, alias_name,
+                             get_system_memory(), gpa, size);
+    memory_region_set_unmergeable(alias_mr, 1);
+    memory_region_add_subregion_overlap(address_space_csv3_shared_memory.root,
+                                        gpa, alias_mr, 1);
+
+    if (need_lock)
+         bql_unlock();
+
+    g_free(alias_name);
+}
+
+/*
+ * Handle a guest secure call that converts a [gpa, gpa + size) range
+ * from private to shared.
+ *
+ * Invariant:
+ *   - If a GPA range is aligned to the CSV3 hardware SMR, the guest's
+ *     actual memory backend for that range is machine->ram.
+ *   - If a GPA range is NOT aligned to the CSV3 hardware SMR, the
+ *     guest's actual memory backend for that range is
+ *     csv3_shared_memfd.
+ *
+ * Accordingly the range is split into head (unaligned), middle
+ * (SMR-aligned) and tail (unaligned) parts. The unaligned parts are
+ * served from csv3_shared_memfd via aliases installed in
+ * system_memory; the aligned part continues to be served from
+ * machine->ram in system_memory, and is additionally aliased into
+ * address_space_csv3_shared_memory so that the shared address space
+ * tracks it as shared.
+ */
+void csv3_secure_call_convert_private_to_shared(unsigned long gpa, unsigned long size,
+                                                unsigned int smr_size)
+{
+    MachineState *machine = MACHINE(qdev_get_machine());
+    X86MachineState *x86ms = X86_MACHINE(machine);
+    unsigned long head_size, smr_aligned_size, tail_size;
+
+    if (!size || !smr_size) {
+        error_report("%s: size or smr_size cannot be 0", __func__);
+        return;
+    }
+
+    /* The enc/dec range should not intersect the memory hole. */
+    g_assert((gpa < x86ms->below_4g_mem_size &&
+              (gpa + size) <= x86ms->below_4g_mem_size) ||
+             gpa >= x86ms->above_4g_mem_start);
+
+    trace_kvm_csv3_secure_call_dec(gpa, size, smr_size);
+
+    /* SMR-unaligned shared memory lives within the csv3_root_shared_memory. */
+    head_size = QEMU_ALIGN_UP(gpa, smr_size) - gpa;
+    if (head_size) {
+        csv3_sc_handle_smr_unaligned_shared_region(gpa, MIN(head_size, size));
+        if (head_size >= size) {
+            goto end;
+        }
+    }
+
+    smr_aligned_size = QEMU_ALIGN_DOWN(gpa + size, smr_size)
+                                - QEMU_ALIGN_UP(gpa, smr_size);
+    if (smr_aligned_size)
+        csv3_sc_handle_smr_aligned_shared_region(QEMU_ALIGN_UP(gpa, smr_size),
+                                                 smr_aligned_size);
+
+    tail_size = (gpa + size) - QEMU_ALIGN_DOWN(gpa + size, smr_size);
+    if (tail_size)
+        csv3_sc_handle_smr_unaligned_shared_region(
+                    QEMU_ALIGN_DOWN(gpa + size, smr_size), tail_size);
+
+end:
+    /* Pin the SMR-unaligned unencrypted memory regions after applying
+     * the MemoryRegion overlay.
+     */
+    csv3_shared_region_get(gpa,
+                    (size + TARGET_PAGE_SIZE - 1) >> TARGET_PAGE_BITS);
+}
+
+/*
+ * Handle a guest secure call that converts a [gpa, gpa + size) range
+ * from shared back to private.
+ *
+ * This is the inverse of csv3_secure_call_convert_private_to_shared():
+ * it removes the per-call aliases that were installed in either
+ * system_memory (for SMR-unaligned, csv3_shared_memfd-backed sub-
+ * ranges) or address_space_csv3_shared_memory (for SMR-aligned,
+ * machine->ram-backed sub-ranges), so the guest goes back to
+ * accessing the private machine->ram backend through the system
+ * address space alone.
+ */
+void csv3_secure_call_convert_shared_to_private(unsigned long gpa, unsigned long size,
+                                                unsigned int smr_size)
+{
+    MachineState *machine = MACHINE(qdev_get_machine());
+    X86MachineState *x86ms = X86_MACHINE(machine);
+    MemoryRegion *system = get_system_memory();
+    MemoryRegion *shared = address_space_csv3_shared_memory.root;
+    MemoryRegion *child, *next;
+    bool need_lock;
+
+    if (!size || !smr_size) {
+        error_report("%s: size or smr_size cannot be 0", __func__);
+        return;
+    }
+
+    /* The enc/dec range should not intersect the memory hole. */
+    g_assert((gpa < x86ms->below_4g_mem_size &&
+              (gpa + size) <= x86ms->below_4g_mem_size) ||
+             gpa >= x86ms->above_4g_mem_start);
+
+    /* Unpin the SMR-unaligned unencrypted memory regions before
+     * revoking the MemoryRegion overlay.
+     */
+    csv3_shared_region_release(gpa,
+                    (size + TARGET_PAGE_SIZE - 1) >> TARGET_PAGE_BITS);
+
+    trace_kvm_csv3_secure_call_enc(gpa, size, smr_size);
+
+    need_lock = !runstate_check(RUN_STATE_INMIGRATE);
+    if (need_lock)
+         bql_lock();
+
+    /*
+     * Remove every alias previously installed by
+     * csv3_process_smr_unaligned_shared_range() that falls within
+     * [gpa, gpa + size). Match by the well-known name prefix to avoid
+     * touching unrelated subregions (e.g. pc.ram, vga.vram) that may
+     * happen to be covered by this GPA range.
+     */
+    QTAILQ_FOREACH_SAFE(child, &system->subregions, subregions_link, next) {
+        /* The subregions list is sorted by descending priority, so
+         * once priority drops below CSV3 alias priority, no later CSV3
+         * alias can match. The priority of target child must be 1, see
+         * csv3_process_smr_unaligned_shared_range().
+         */
+        if (child->priority < 1)
+            break;
+        if (child->priority != 1 ||
+            !child->name ||
+            !g_str_has_prefix(child->name, "csv3_unalgn_alias_"))
+            continue;
+        if (gpa <= child->addr &&
+            (gpa + size) >= (child->addr + int128_get64(child->size))) {
+            memory_region_del_subregion(system, child);
+            object_unparent(OBJECT(child));
+            g_free(child);
+        }
+    }
+
+    /*
+     * Remove every alias previously installed by
+     * csv3_sc_handle_smr_aligned_shared_region() in the CSV3 shared
+     * address space within [gpa, gpa + size).
+     */
+    QTAILQ_FOREACH_SAFE(child, &shared->subregions, subregions_link, next) {
+        /* The subregions list is sorted by descending priority, so
+         * once priority drops below CSV3 alias priority, no later CSV3
+         * alias can match. The priority of target child must be 1, see
+         * csv3_sc_handle_smr_aligned_shared_region().
+         */
+        if (child->priority < 1)
+            break;
+        if (child->priority != 1 ||
+            !child->name ||
+            !g_str_has_prefix(child->name, "csv3_algn_alias_"))
+            continue;
+        if (gpa <= child->addr &&
+            (gpa + size) >= (child->addr + int128_get64(child->size))) {
+            memory_region_del_subregion(shared, child);
+            object_unparent(OBJECT(child));
+            g_free(child);
+        }
+    }
+
+    if (need_lock)
+         bql_unlock();
 }
 
 static inline hwaddr csv3_hva_to_gfn(uint8_t *ptr)

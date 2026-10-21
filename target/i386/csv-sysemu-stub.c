@@ -36,6 +36,11 @@ void csv3_launch_finish_ex(char *host_data)
     g_assert_not_reached();
 }
 
+void csv3_shared_memory_init(void)
+{
+    g_assert_not_reached();
+}
+
 int csv3_shared_region_dma_map(uint64_t start, uint64_t end)
 {
     return 0;
@@ -54,6 +59,18 @@ void csv3_shared_region_release(uint64_t gpa, uint32_t num_pages)
 void csv3_shared_region_get(uint64_t gpa, uint32_t num_pages)
 {
 
+}
+
+void csv3_secure_call_convert_private_to_shared(unsigned long gpa, unsigned long size,
+                                                unsigned int smr_size)
+{
+    g_assert_not_reached();
+}
+
+void csv3_secure_call_convert_shared_to_private(unsigned long gpa, unsigned long size,
+                                                unsigned int smr_size)
+{
+    g_assert_not_reached();
 }
 
 int csv3_set_guest_private_memory(Error **errp)

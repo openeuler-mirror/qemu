@@ -747,7 +747,7 @@ static int vfio_connect_container(VFIOGroup *group, AddressSpace *as,
     QLIST_INSERT_HEAD(&container->group_list, group, container_next);
 
     bcontainer->listener = vfio_memory_listener;
-    if (kvm_csv3_enabled()) {
+    if (kvm_csv3_enabled() && !kvm_csv3_npt_ex_enabled()) {
         bcontainer->csv3_ram_listener = csv3_vfio_ram_listener;
         bcontainer->csv3_mmio_listener = csv3_vfio_mmio_listener;
         shared_memory_listener_register(&bcontainer->csv3_ram_listener,
@@ -772,7 +772,7 @@ listener_release_exit:
     QLIST_REMOVE(group, container_next);
     QLIST_REMOVE(bcontainer, next);
     vfio_kvm_device_del_group(group);
-    if (kvm_csv3_enabled()) {
+    if (kvm_csv3_enabled() && !kvm_csv3_npt_ex_enabled()) {
         shared_memory_listener_unregister();
         memory_listener_unregister(&bcontainer->csv3_mmio_listener);
     } else {
@@ -814,7 +814,7 @@ static void vfio_disconnect_container(VFIOGroup *group)
      * group.
      */
     if (QLIST_EMPTY(&container->group_list)) {
-        if (kvm_csv3_enabled()) {
+        if (kvm_csv3_enabled() && !kvm_csv3_npt_ex_enabled()) {
             shared_memory_listener_unregister();
             memory_listener_unregister(&bcontainer->csv3_mmio_listener);
         } else {
