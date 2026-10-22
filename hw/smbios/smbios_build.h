@@ -105,4 +105,7 @@ extern unsigned smbios_table_cnt;
 /* IPMI SMBIOS firmware handling */
 void smbios_build_type_38_table(void);
 
+/* OEM Type 131 (UB Info) handling */
+void smbios_build_type_131_table(void);
+
 #endif /* QEMU_SMBIOS_BUILD_H */

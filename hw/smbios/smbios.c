@@ -1151,6 +1151,7 @@ void smbios_get_tables(MachineState *ms,
 
         smbios_build_type_32_table();
         smbios_build_type_38_table();
+        smbios_build_type_131_table();
         smbios_build_type_41_table(errp);
         smbios_build_type_127_table();
 
@@ -1493,6 +1494,10 @@ void smbios_entry_add(QemuOpts *opts, Error **errp)
             save_opt(&t41_i->pcidev, opts, "pcidev");
 
             QTAILQ_INSERT_TAIL(&type41, t41_i, next);
+            return;
+        }
+        case SMBIOS_TYPE_131: {
+            smbios_entry_add_type131(opts, errp);
             return;
         }
         default:
