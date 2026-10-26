@@ -17,10 +17,14 @@
  */
 
 
+#ifdef CONFIG_UB
 /* OEM SMBIOS type 131 - UB (Unified Bus) info */
 #define SMBIOS_TYPE_131 131
 /* highest SMBIOS type supported by this implementation */
 #define SMBIOS_MAX_TYPE SMBIOS_TYPE_131
+#else
+#define SMBIOS_MAX_TYPE 127
+#endif /* CONFIG_UB */
 #define offsetofend(TYPE, MEMBER) \
        (offsetof(TYPE, MEMBER) + sizeof_field(TYPE, MEMBER))
 
@@ -288,6 +292,7 @@ struct smbios_type_41 {
     uint8_t device_number;
 } QEMU_PACKED;
 
+#ifdef CONFIG_UB
 /* SMBIOS type 131 - OEM (UB Info) */
 struct smbios_type_131 {
     struct smbios_structure_header header;
@@ -300,6 +305,7 @@ struct smbios_type_131 {
     uint8_t  type_name_str;    /* 0Fh: String index for "UB INFO" */
     uint8_t  reserved[61];     /* Reserved, default 0 */
 } QEMU_PACKED;
+#endif /* CONFIG_UB */
 
 /* SMBIOS type 127 -- End-of-table */
 struct smbios_type_127 {
@@ -319,7 +325,8 @@ void smbios_get_tables(MachineState *ms,
                        uint8_t **tables, size_t *tables_len,
                        uint8_t **anchor, size_t *anchor_len,
                        Error **errp);
-
+#ifdef CONFIG_UB
 /* OEM Type 131 (UB Info) command-line parsing */
 void smbios_entry_add_type131(QemuOpts *opts, Error **errp);
+#endif /* CONFIG_UB */
 #endif /* QEMU_SMBIOS_H */

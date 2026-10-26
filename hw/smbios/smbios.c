@@ -1151,7 +1151,9 @@ void smbios_get_tables(MachineState *ms,
 
         smbios_build_type_32_table();
         smbios_build_type_38_table();
+#ifdef CONFIG_UB
         smbios_build_type_131_table();
+#endif /* CONFIG_UB */
         smbios_build_type_41_table(errp);
         smbios_build_type_127_table();
 
@@ -1496,10 +1498,12 @@ void smbios_entry_add(QemuOpts *opts, Error **errp)
             QTAILQ_INSERT_TAIL(&type41, t41_i, next);
             return;
         }
+#ifdef CONFIG_UB
         case SMBIOS_TYPE_131: {
             smbios_entry_add_type131(opts, errp);
             return;
         }
+#endif /* CONFIG_UB */
         default:
             error_setg(errp,
                        "Don't know how to build fields for SMBIOS type %ld",
