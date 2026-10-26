@@ -17,7 +17,14 @@
  */
 
 
+#ifdef CONFIG_UB
+/* OEM SMBIOS type 131 - UB (Unified Bus) info */
+#define SMBIOS_TYPE_131 131
+/* highest SMBIOS type supported by this implementation */
+#define SMBIOS_MAX_TYPE SMBIOS_TYPE_131
+#else
 #define SMBIOS_MAX_TYPE 127
+#endif /* CONFIG_UB */
 #define offsetofend(TYPE, MEMBER) \
        (offsetof(TYPE, MEMBER) + sizeof_field(TYPE, MEMBER))
 
@@ -285,6 +292,21 @@ struct smbios_type_41 {
     uint8_t device_number;
 } QEMU_PACKED;
 
+#ifdef CONFIG_UB
+/* SMBIOS type 131 - OEM (UB Info) */
+struct smbios_type_131 {
+    struct smbios_structure_header header;
+    uint8_t  flag;             /* 04h: 0xFF if BMC fetch failed, 0x0 on success */
+    uint16_t pod_id;           /* 05h: Server interconnect network ID (ChassisID) */
+    uint8_t  slot_id;          /* 07h: Server ID within the network */
+    uint8_t  mesh_type;        /* 08h: Topology type: 0=8P,1=1D-pod,2=2D-16P,3=YH,4=UBX,5=DY,0x80=1D,0x81=clos */
+    uint32_t super_pod_id;     /* 09h: Multi-Pod combined network ID, reserved */
+    uint16_t served_index;     /* 0Dh: Supernode global unique index */
+    uint8_t  type_name_str;    /* 0Fh: String index for "UB INFO" */
+    uint8_t  reserved[61];     /* Reserved, default 0 */
+} QEMU_PACKED;
+#endif /* CONFIG_UB */
+
 /* SMBIOS type 127 -- End-of-table */
 struct smbios_type_127 {
     struct smbios_structure_header header;
@@ -303,4 +325,8 @@ void smbios_get_tables(MachineState *ms,
                        uint8_t **tables, size_t *tables_len,
                        uint8_t **anchor, size_t *anchor_len,
                        Error **errp);
+#ifdef CONFIG_UB
+/* OEM Type 131 (UB Info) command-line parsing */
+void smbios_entry_add_type131(QemuOpts *opts, Error **errp);
+#endif /* CONFIG_UB */
 #endif /* QEMU_SMBIOS_H */
