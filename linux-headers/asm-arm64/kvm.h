@@ -732,8 +732,7 @@ struct kvm_dev_virtcca_mig_attr {
 enum kvm_cvm_cmd_id {
 	/* virtcca MIG migcvm commands. */
 	KVM_CVM_MIGCVM_SET_CID = 0,
-	KVM_CVM_MIGCVM_ATTEST,
-	KVM_CVM_MIGCVM_ATTEST_DST,
+	KVM_CVM_MIG_NOTIFY,
 	KVM_CVM_GET_BIND_STATUS,
     KVM_CVM_MIG_EXPORT_ABORT,
 	/* virtcca MIG stream commands. */

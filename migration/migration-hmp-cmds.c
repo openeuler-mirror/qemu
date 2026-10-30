@@ -434,6 +434,11 @@ void hmp_info_migrate_parameters(Monitor *mon, const QDict *qdict)
         monitor_printf(mon, "%s: %u\n",
             MigrationParameter_str(MIGRATION_PARAMETER_HDBSS_BUFFER_SIZE),
             params->hdbss_buffer_size);
+
+        assert(params->cvm_migagent_uri);
+        monitor_printf(mon, "%s: %s\n",
+            MigrationParameter_str(MIGRATION_PARAMETER_CVM_MIGAGENT_URI),
+            params->cvm_migagent_uri);
     }
 
     qapi_free_MigrationParameters(params);
@@ -765,6 +770,11 @@ void hmp_migrate_set_parameter(Monitor *mon, const QDict *qdict)
     case MIGRATION_PARAMETER_HDBSS_BUFFER_SIZE:
         p->has_hdbss_buffer_size = true;
         visit_type_uint8(v, param, &p->hdbss_buffer_size, &err);
+        break;
+    case MIGRATION_PARAMETER_CVM_MIGAGENT_URI:
+        p->cvm_migagent_uri = g_new0(StrOrNull, 1);
+        p->cvm_migagent_uri->type = QTYPE_QSTRING;
+        visit_type_str(v, param, &p->cvm_migagent_uri->u.s, &err);
         break;
     default:
         assert(0);

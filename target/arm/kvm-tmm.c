@@ -291,6 +291,7 @@ static int virtcca_save_migvm_cid(uint64_t cid)
     struct mig_cvm guest_mig_cvm_info;
     int ret;
 
+    memset(&guest_mig_cvm_info, 0, sizeof(guest_mig_cvm_info));
     cmd.id = KVM_CVM_MIGCVM_SET_CID;
     cmd.flags = 0;
     guest_mig_cvm_info.version = KVM_CVM_MIGVM_VERSION;
@@ -465,7 +466,7 @@ int kvm_arm_tmm_init(ConfidentialGuestSupport *cgs, Error **errp)
     }
 #ifdef CONFIG_VIRTCCA_MIGRATION
     if (runstate_check(RUN_STATE_INMIGRATE)) {
-        ret = !cgs_mig_is_ready(false, NULL, 0);
+        ret = !cgs_mig_is_ready(false);
     }
 
     if (ret) {

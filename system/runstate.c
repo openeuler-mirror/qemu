@@ -59,6 +59,7 @@
 #include "sysemu/runstate-action.h"
 #include "sysemu/sysemu.h"
 #include "sysemu/tpm.h"
+#include "sysemu/kvm.h"
 #include "trace.h"
 
 static NotifierList exit_notifiers =
@@ -514,6 +515,17 @@ void qemu_system_reset(ShutdownCause reason)
      */
     if (cpus_are_resettable()) {
         cpu_synchronize_all_post_reset();
+#ifdef CONFIG_VIRTCCA_MIGRATION
+    } else if (virtcca_cvm_enabled()) {
+        /*
+         * CVM guests have non-resettable CPUs as well, but they can also
+         * be reset while an incoming migration is still in progress.
+         */
+        if (!runstate_check(RUN_STATE_PRELAUNCH) &&
+            !runstate_check(RUN_STATE_INMIGRATE)) {
+            error_report("CVM guest reset in unexpected run state");
+        }
+#endif
     } else {
         assert(runstate_check(RUN_STATE_PRELAUNCH));
     }

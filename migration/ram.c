@@ -68,7 +68,7 @@
 #ifdef CONFIG_HAM_MIGRATION
 #include "ham.h"
 #endif
-#ifdef CONFIG_VIRTCCA_MIGRATION
+#if defined(CONFIG_VIRTCCA_MIGRATION) && defined(TARGET_AARCH64)
 #include "cgs.h"
 #endif
 /* Defines RAM_SAVE_ENCRYPTED_PAGE and RAM_SAVE_SHARED_REGION_LIST */
@@ -114,7 +114,7 @@
  * To switch between nvm and cvm migrations and avoid conflicts,
  * now we use the flag below in Kunpeng virtcca.
  */
-#ifdef CONFIG_VIRTCCA_MIGRATION
+#if defined(CONFIG_VIRTCCA_MIGRATION)
 #define RAM_SAVE_FLAG_CGS_EPOCH        0x100
 #define RAM_SAVE_FLAG_CGS_STATE        0x400
 #define RAM_SAVE_FLAG_CGS_STATE_CANCEL 0x800
@@ -143,7 +143,7 @@ struct PageSearchStatus {
     RAMBlock    *block;
     /* Current page to search from */
     unsigned long page;
-#ifdef CONFIG_VIRTCCA_MIGRATION
+#if defined(CONFIG_VIRTCCA_MIGRATION) && defined(TARGET_AARCH64)
     /* Guest-physical address of the current page if it is private */
     hwaddr cgs_private_gpa;
 #endif
@@ -412,7 +412,7 @@ struct RAMState {
     bool xbzrle_started;
     /* Are we on the last stage of migration */
     bool last_stage;
-#ifdef CONFIG_VIRTCCA_MIGRATION
+#if defined(CONFIG_VIRTCCA_MIGRATION) && defined(TARGET_AARCH64)
     /* Used by cgs migration and set to request for the start of a new epoch */
     bool cgs_start_epoch;
 #endif
@@ -512,7 +512,7 @@ static void pss_init(PageSearchStatus *pss, RAMBlock *rb, ram_addr_t page)
     pss->block = rb;
     pss->page = page;
     pss->complete_round = false;
-#ifdef CONFIG_VIRTCCA_MIGRATION
+#if defined(CONFIG_VIRTCCA_MIGRATION) && defined(TARGET_AARCH64)
     if (virtcca_cvm_enabled()) {
         pss->cgs_private_gpa = CGS_PRIVATE_GPA_INVALID;
     }
@@ -734,7 +734,7 @@ static int save_xbzrle_page(RAMState *rs, PageSearchStatus *pss,
     return 1;
 }
 
-#ifdef CONFIG_VIRTCCA_MIGRATION
+#if defined(CONFIG_VIRTCCA_MIGRATION) && defined(TARGET_AARCH64)
 #ifdef CONFIG_KVM
 static hwaddr virtcca_ram_get_private_gpa(RAMBlock *rb, unsigned long page)
 {
@@ -806,7 +806,7 @@ static void pss_find_next_dirty(PageSearchStatus *pss)
 
     pss->page = find_next_bit(bitmap, size, pss->page);
 
-#ifdef CONFIG_VIRTCCA_MIGRATION
+#if defined(CONFIG_VIRTCCA_MIGRATION) && defined(TARGET_AARCH64)
     if (virtcca_cvm_enabled()) {
         pss->cgs_private_gpa = virtcca_ram_get_private_gpa(pss->block, pss->page);
     }
@@ -1593,7 +1593,7 @@ static int find_dirty_block(RAMState *rs, PageSearchStatus *pss)
                             ((ram_addr_t)pss->page) << TARGET_PAGE_BITS)) {
         /* Didn't find anything in this RAM Block */
         pss->page = 0;
-#ifdef CONFIG_VIRTCCA_MIGRATION
+#if defined(CONFIG_VIRTCCA_MIGRATION) && defined(TARGET_AARCH64)
         if (virtcca_cvm_enabled()) {
             pss->cgs_private_gpa = virtcca_ram_get_private_gpa(pss->block, pss->page);
         }
@@ -1625,7 +1625,7 @@ static int find_dirty_block(RAMState *rs, PageSearchStatus *pss)
             pss->block = QLIST_FIRST_RCU(&ram_list.blocks);
             /* Flag that we've looped */
             pss->complete_round = true;
-#ifdef CONFIG_VIRTCCA_MIGRATION
+#if defined(CONFIG_VIRTCCA_MIGRATION) && defined(TARGET_AARCH64)
             if (virtcca_cvm_enabled()) {
                 rs->cgs_start_epoch = true;
             }
@@ -2125,7 +2125,7 @@ static bool get_queued_page(RAMState *rs, PageSearchStatus *pss)
          */
         pss->block = block;
         pss->page = offset >> TARGET_PAGE_BITS;
-#ifdef CONFIG_VIRTCCA_MIGRATION
+#if defined(CONFIG_VIRTCCA_MIGRATION) && defined(TARGET_AARCH64)
         if (virtcca_cvm_enabled()) {
             pss->cgs_private_gpa = virtcca_ram_get_private_gpa(pss->block, pss->page);
         }
@@ -2360,7 +2360,7 @@ static bool encrypted_test_list(RAMState *rs, RAMBlock *block,
     return ops->is_gfn_in_unshared_region(gfn);
 }
 
-#ifdef CONFIG_VIRTCCA_MIGRATION
+#if defined(CONFIG_VIRTCCA_MIGRATION) && defined(TARGET_AARCH64)
 static int ram_save_cgs_private_page(RAMState *rs,
                                      PageSearchStatus *pss, bool cancel)
 {
@@ -2449,7 +2449,15 @@ bool virtcca_is_swiotlb(void *host)
     return false;
 }
 #endif
+#endif
 
+/*
+ * The header helpers below are also referenced by the target-agnostic
+ * cgs_mig_* dispatchers in cgs.c, so they must stay available for every
+ * system target built with virtcca migration support; they carry no
+ * aarch64-specific dependency themselves.
+ */
+#if defined(CONFIG_VIRTCCA_MIGRATION)
 
 /* enable the CGS state in the ram header and the CGS epoch in the ram header */
 size_t ram_save_cgs_ram_header(QEMUFile *f, RAMBlock *block,
@@ -2466,7 +2474,9 @@ void ram_save_cgs_epoch_header(QEMUFile *f)
 {
     qemu_put_be64(f, RAM_SAVE_FLAG_CGS_EPOCH);
 }
+#endif
 
+#if defined(CONFIG_VIRTCCA_MIGRATION) && defined(TARGET_AARCH64)
 static int ram_save_cgs_start_epoch(RAMState *rs, PageSearchStatus *pss)
 {
     long res;
@@ -2498,7 +2508,7 @@ static int ram_save_target_page_legacy(RAMState *rs, PageSearchStatus *pss)
     ram_addr_t offset = ((ram_addr_t)pss->page) << TARGET_PAGE_BITS;
     int res;
 
-#ifdef CONFIG_VIRTCCA_MIGRATION
+#if defined(CONFIG_VIRTCCA_MIGRATION) && defined(TARGET_AARCH64)
     if (virtcca_cvm_enabled()) {
         return virtcca_save_target_page(offset, rs, pss);
     }
@@ -2929,7 +2939,7 @@ static int ram_save_host_page(RAMState *rs, PageSearchStatus *pss)
     }
 #endif
 
-#ifdef CONFIG_VIRTCCA_MIGRATION
+#if defined(CONFIG_VIRTCCA_MIGRATION) && defined(TARGET_AARCH64)
     /*
     * If the migration is not in postcopy mode, prepare the epoch of cgs pages
     * to be sent.
@@ -3172,7 +3182,7 @@ static void ram_state_reset(RAMState *rs)
     rs->last_page = 0;
     rs->last_version = ram_list.version;
     rs->xbzrle_started = false;
-#ifdef CONFIG_VIRTCCA_MIGRATION
+#if defined(CONFIG_VIRTCCA_MIGRATION) && defined(TARGET_AARCH64)
     if (virtcca_cvm_enabled()) {
         rs->cgs_start_epoch = true;
     }
@@ -4422,7 +4432,7 @@ int ram_load_postcopy(QEMUFile *f, int channel)
     bool matches_target_page_size = false;
     MigrationIncomingState *mis = migration_incoming_get_current();
     PostcopyTmpPage *tmp_page = &mis->postcopy_tmp_pages[channel];
-#ifdef CONFIG_VIRTCCA_MIGRATION
+#if defined(CONFIG_VIRTCCA_MIGRATION) && defined(TARGET_AARCH64)
     if (virtcca_cvm_enabled()) {
         error_report("Now virtCCA migration temporarily not support postcopy!");
         return -EINVAL;
@@ -4901,7 +4911,7 @@ static int ram_load_precopy(QEMUFile *f)
     return ret;
 }
 
-#ifdef CONFIG_VIRTCCA_MIGRATION
+#if defined(CONFIG_VIRTCCA_MIGRATION) && defined(TARGET_AARCH64)
 /**
  * virtcca_ram_load_precopy: load pages in precopy case
  *
@@ -5069,7 +5079,7 @@ static int ram_load(QEMUFile *f, void *opaque, int version_id)
             * is not enabled, the packaged flag_switch function should be
             * used for normal migration. Otherwise, use flag_switch_cgs for it.
             */
-#ifdef CONFIG_VIRTCCA_MIGRATION
+#if defined(CONFIG_VIRTCCA_MIGRATION) && defined(TARGET_AARCH64)
             if (!virtcca_cvm_enabled()) {
                 ret = ram_load_precopy(f);
             } else {

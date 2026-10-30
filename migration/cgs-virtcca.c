@@ -17,6 +17,7 @@
 #include "qemu/osdep.h"
 #include "qemu-file.h"
 #include "cgs.h"
+#include "options.h"
 #include "target/arm/kvm_arm.h"
 #include "migration/misc.h"
 #include "qemu/error-report.h"
@@ -46,16 +47,20 @@
 #define UINT64_LEN  20
 #define MB_SHIFT 20
 #define SYSFS_RESULT_LEN 10
+#define MIG_AGENT_DEFAULT_PORT  4433
 
 struct virtcca_bind_info {
     int16_t version;
     bool premig_done;
 };
 
-struct virtcca_dst_host_info {
-    char dst_ip[16];
-    uint16_t dst_port;
-    uint8_t version;
+struct virtcca_mig_dst_host_info {
+    char        name[64];
+    char        dst_ip[16];
+    uint16_t    dst_port;
+    uint8_t     is_src;
+    uint8_t     migcvm_enabled; /* used by kvm to indicate whether the migcvm exist */
+    uint8_t     version;
 };
 
 typedef struct virtCCAMigHdr {
@@ -485,53 +490,17 @@ static int virtcca_mig_savevm_state_end(QEMUFile *f)
     return 0;
 }
 
-static bool virtcca_migvm_agent_attest(bool is_src, const char *dst_ip, uint16_t dst_port)
-{
-    struct virtcca_dst_host_info info;
-    struct kvm_virtcca_mig_cmd cmd;
-    int ret = 0;
-
-    memset(&info, 0, sizeof(struct virtcca_dst_host_info));
-    cmd.flags = 0;
-    info.version = KVM_CVM_MIGVM_VERSION;
-    cmd.data = (__u64)(unsigned long)&info;
-    if (is_src) {
-        if (dst_ip == NULL) {
-            error_report("migration dst ip is NULL");
-            return false;
-        }
-
-        if (strlen(dst_ip) >= sizeof(info.dst_ip)) {
-            error_report("migration dst ip too long");
-            return false;
-        }
-        strncpy(info.dst_ip, dst_ip, sizeof(info.dst_ip) - 1);
-
-        info.dst_ip[sizeof(info.dst_ip) - 1] = '\0';
-        info.dst_port = dst_port;
-        cmd.id = KVM_CVM_MIGCVM_ATTEST;
-    } else {
-        cmd.id = KVM_CVM_MIGCVM_ATTEST_DST;
-    }
-
-    ret = kvm_vm_ioctl(kvm_state, KVM_CVM_MIG_IOCTL, &cmd);
-    if (ret) {
-        error_report("Failed to virtcca_migvm_agent_attest: %d", ret);
-        return false;
-    }
-
-    return true;
-}
-
 static bool virtcca_premig_is_done(bool is_src)
 {
     struct virtcca_bind_info info;
     struct kvm_virtcca_mig_cmd cmd;
     int ret;
 
-    if(!is_src) {
+    if (!is_src) {
         return true;
     }
+
+    info_report("migcvm enabled: is_src = %d", is_src);
     cmd.id = KVM_CVM_GET_BIND_STATUS;
     cmd.flags = 0;
     memset(&info, 0, sizeof(struct virtcca_bind_info));
@@ -547,18 +516,67 @@ static bool virtcca_premig_is_done(bool is_src)
     return !!info.premig_done;
 }
 
+
+static bool virtcca_mig_kvm_notify(bool is_src, bool *migcvm_enabled)
+{
+    struct virtcca_mig_dst_host_info info = {0};
+    struct kvm_virtcca_mig_cmd cmd  = {0};
+    int ret;
+    const char *dst_ip = migrate_cvm_agent_uri();
+
+    if (error_guest_name == NULL ||
+        strlen(error_guest_name) >= sizeof(info.name)) {
+        error_report("cvm migration failed, invalid guest name.");
+        return false;
+    }
+    strncpy(info.name, error_guest_name, sizeof(info.name) - 1);
+    info.name[sizeof(info.name) - 1] = '\0';
+
+    if (is_src) {
+        if (dst_ip == NULL || strlen(dst_ip) >= sizeof(info.dst_ip)) {
+            error_report("cvm migration failed, invalid dst ip.");
+            return false;
+        }
+
+        info_report("migvm-agent dst_ip = %s", dst_ip);
+        strncpy(info.dst_ip, dst_ip, sizeof(info.dst_ip) - 1);
+        info.dst_ip[sizeof(info.dst_ip) - 1] = '\0';
+        info.dst_port = MIG_AGENT_DEFAULT_PORT;
+        info.is_src = 1;
+    }
+
+    info.version = KVM_CVM_MIGVM_VERSION;
+    cmd.flags = 0;
+    cmd.id = KVM_CVM_MIG_NOTIFY;
+    cmd.data = (__u64)(unsigned long)&info;
+
+    ret = kvm_vm_ioctl(kvm_state, KVM_CVM_MIG_IOCTL, &cmd);
+    if (ret) {
+        error_report("Failed to virtcca_mig_kvm_notify: %d", ret);
+        return false;
+    }
+
+    *migcvm_enabled = !!info.migcvm_enabled;
+
+    return true;
+}
+
 /* check the mig */
-static bool virtcca_mig_is_ready(bool is_src, const char *dst_ip, uint16_t dst_port)
+static bool virtcca_mig_is_ready(bool is_src)
 {
     int ret;
+    bool migcvm_enabled = true;
+
     ret = virtcca_check_mig_mem(is_src);
     if (ret < 0) {
         error_report("Failed to migrate cvm, secure memory is insufficient.");
         return false;
     }
 
-    if(virtcca_migvm_agent_attest(is_src, dst_ip, dst_port))
+    if (virtcca_mig_kvm_notify(is_src, &migcvm_enabled)) {
         return virtcca_premig_is_done(is_src);
+    }
+
     return false;
 }
 
