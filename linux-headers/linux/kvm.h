@@ -984,6 +984,11 @@ struct kvm_enable_cap {
 	 KVM_CAP_HYGON_COCO_EXT_CSV3_LFINISH_EX |    \
 	 KVM_CAP_HYGON_COCO_EXT_CSV3_SP_MGR |        \
 	 KVM_CAP_HYGON_COCO_EXT_CSV3_NPT_EX)
+/*
+ * KVM_CAP_EXIT_CSV3_SECURE_CALL / KVM_CAP_ARM_HW_DIRTY_STATE_TRACK
+ * Both use cap number 502, they are arch-specific and handled separately
+ * by x86 and ARM KVM code, no conflict.
+ */
 #define KVM_CAP_EXIT_CSV3_SECURE_CALL 502
 #define KVM_CSV3_SECURE_CALL_PG_ENC_DEC      0
 #define KVM_CSV3_SECURE_CALL_PG_ENC_DEC_MASK (1UL << KVM_CSV3_SECURE_CALL_PG_ENC_DEC)
