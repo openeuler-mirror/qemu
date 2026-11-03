@@ -36,7 +36,7 @@ do {                                                             \
     }                                                            \
 } while (0)
 
-bool cgs_mig_is_ready(bool is_src, const char *dst_ip, uint16_t dst_port)
+bool cgs_mig_is_ready(bool is_src)
 {
     /*
      * For the legacy VM migration and some vendor specific implementations
@@ -47,7 +47,7 @@ bool cgs_mig_is_ready(bool is_src, const char *dst_ip, uint16_t dst_port)
         return true;
     }
 
-    return cgs_mig.is_ready(is_src, dst_ip, dst_port);
+    return cgs_mig.is_ready(is_src);
 }
 
 int cgs_mig_savevm_state_setup(QEMUFile *f)
@@ -278,10 +278,10 @@ void cgs_mig_loadvm_state_cleanup(void)
 
 void cgs_mig_init(void)
 {
-    if (virtcca_cvm_allowed)
-    {
-        info_report("INFO: cgs_mig_init is setup as the virtcca mode\n");
+#if defined(CONFIG_VIRTCCA_MIGRATION) && defined(TARGET_AARCH64)
+    if (virtcca_cvm_allowed) {
+        info_report("INFO: cgs_mig_init is setup as virtcca mode");
         virtcca_mig_init(&cgs_mig);
     }
-    return;
+#endif
 }

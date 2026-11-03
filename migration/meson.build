@@ -44,7 +44,13 @@ if get_option('replication').allowed()
 endif
 
 if have_virtcca_migration
-  specific_ss.add(when: 'TARGET_AARCH64', if_true: files('cgs.c', 'cgs-virtcca.c'))
+  # cgs.c holds the target-agnostic cgs_mig_* dispatchers used by the
+  # common migration code (migration.c, savevm.c, ...), so it must be
+  # built for every system target to keep those symbols resolvable.
+  specific_ss.add(when: 'CONFIG_SYSTEM_ONLY', if_true: files('cgs.c'))
+  # The virtcca backend requires the aarch64 KVM extensions.
+  specific_ss.add(when: ['CONFIG_SYSTEM_ONLY', 'TARGET_AARCH64'],
+                  if_true: files('cgs-virtcca.c'))
 endif
 
 system_ss.add(when: rdma, if_true: files('rdma.c'))

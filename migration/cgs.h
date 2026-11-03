@@ -24,9 +24,10 @@
 
 #define CGS_PRIVATE_GPA_INVALID (~0UL)
 #define UEFI_MAX_SIZE 0x8000000
+#define CVM_MIG_IP_LEN  16
 
 typedef struct CgsMig {
-    bool (*is_ready)(bool is_src, const char *dst_ip, uint16_t dst_port);
+    bool (*is_ready)(bool is_src);
     int (*savevm_state_setup)(uint32_t nr_channels, uint32_t nr_pages);
     int (*savevm_state_start)(QEMUFile *f);
     long (*savevm_state_ram_start_epoch)(QEMUFile *f);
@@ -46,7 +47,7 @@ typedef struct CgsMig {
     int (*multifd_recv_pages)(MultiFDRecvParams *p, Error **errp);
 } CgsMig;
 
-bool cgs_mig_is_ready(bool is_src, const char *dst_ip, uint16_t dst_port);
+bool cgs_mig_is_ready(bool is_src);
 int cgs_mig_savevm_state_setup(QEMUFile *f);
 int cgs_mig_savevm_state_start(QEMUFile *f);
 long cgs_ram_save_start_epoch(QEMUFile *f);
@@ -101,7 +102,12 @@ extern virtCCAMigState virtCCA_mig;
 
 struct mig_cvm {
     /* used by guest cvm */
-    uint8_t  version; /* kvm version of migcvm */
     uint64_t migvm_cid; /* hash of migcvm, from and used by guest cvm */
+    uint8_t version; /* kvm version of migcvm */
+    uint16_t dst_port; /* port of destination cvm */
+    char dst_ip[CVM_MIG_IP_LEN]; /* ip of destination cvm */
+    uint8_t is_migcvm; /* indicates whether the device is a migcvm. */
+    char reserved;
 };
+
 #endif

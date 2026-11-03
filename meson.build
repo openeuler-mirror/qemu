@@ -2330,6 +2330,7 @@ config_host_data.set('CONFIG_UB', have_ub)
 config_host_data.set('CONFIG_UBMEM_VMMU', have_ubmem_vmmu)
 config_host_data.set('CONFIG_HAM_MIGRATION', have_ham_migration)
 config_host_data.set('CONFIG_URMA_MIGRATION', have_urma_migration)
+config_host_data.set('CONFIG_VIRTCCA_MIGRATION', have_virtcca_migration)
 config_host_data.set('CONFIG_VHOST_VDPA', have_vhost_vdpa)
 config_host_data.set('CONFIG_VMNET', vmnet.found())
 config_host_data.set('CONFIG_VHOST_USER_BLK_SERVER', have_vhost_user_blk_server)
@@ -3084,9 +3085,6 @@ foreach target : target_dirs
   elif target.endswith('softmmu')
     config_target += { 'CONFIG_SYSTEM_ONLY': 'y' }
     config_target += { 'CONFIG_SOFTMMU': 'y' }
-    if target == 'aarch64-softmmu' and have_virtcca_migration
-      config_target += { 'CONFIG_VIRTCCA_MIGRATION': 'y' }
-    endif
   endif
   if target.endswith('-user')
     config_target += {

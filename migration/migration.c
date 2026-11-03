@@ -1976,10 +1976,7 @@ static bool migrate_prepare(MigrationState *s, bool blk, bool blk_inc,
     Error *local_err = NULL;
 
 #ifdef CONFIG_VIRTCCA_MIGRATION
-    const char *dst_ip = "";
-    uint16_t dst_port = 0;
-    /* transfer the dst ip to mig-CVM */
-    if (!cgs_mig_is_ready(true, dst_ip, dst_port) && virtcca_cvm_enabled()) {
+    if (virtcca_cvm_enabled() && !cgs_mig_is_ready(true)) {
         error_setg(errp, "cgs mig required, but not ready");
         return false;
     }

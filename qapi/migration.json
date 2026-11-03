@@ -958,6 +958,9 @@
 # @hdbss-buffer-size: Size of the HDBSS(Hardware Dirty state tracking Structure).
 #     Defaults to 0.  (Since 8.6)
 #
+# @cvm-migagent-uri: Dest migagent uri for CVM live migration (Kunpeng).
+#                    (Since 8.2)
+#
 # Features:
 #
 # @deprecated: Member @block-incremental is deprecated.  Use
@@ -995,7 +998,8 @@
            'vcpu-dirty-limit',
            'mode',
            'zero-page-detection',
-           'sev-pdh', 'sev-plat-cert', 'sev-amd-cert', 'hdbss-buffer-size'] }
+           'sev-pdh', 'sev-plat-cert', 'sev-amd-cert', 'hdbss-buffer-size',
+           'cvm-migagent-uri'] }
 
 ##
 # @MigrateSetParameters:
@@ -1176,6 +1180,9 @@
 # @hdbss-buffer-size: Size of the HDBSS(Hardware Dirty state tracking Structure).
 #     Defaults to 0.  (Since 8.6)
 #
+# @cvm-migagent-uri: Dest migagent uri for CVM live migration (Kunpeng).
+#                    (Since 8.2)
+#
 # Features:
 #
 # @deprecated: Member @block-incremental is deprecated.  Use
@@ -1238,7 +1245,8 @@
             '*sev-pdh': 'StrOrNull',
             '*sev-plat-cert': 'StrOrNull',
             '*sev-amd-cert' : 'StrOrNull',
-            '*hdbss-buffer-size': 'uint8'} }
+            '*hdbss-buffer-size': 'uint8',
+            '*cvm-migagent-uri': 'StrOrNull'} }
 
 ##
 # @migrate-set-parameters:
@@ -1439,6 +1447,9 @@
 # @hdbss-buffer-size: Size of the HDBSS(Hardware Dirty state tracking Structure).
 #     Defaults to 0.  (Since 8.6)
 #
+# @cvm-migagent-uri: Dest migagent uri for CVM live migration (Kunpeng).
+#                    (Since 8.2)
+#
 # Features:
 #
 # @deprecated: Member @block-incremental is deprecated.  Use
@@ -1497,7 +1508,8 @@
             '*sev-pdh': 'str',
             '*sev-plat-cert': 'str',
             '*sev-amd-cert' : 'str',
-            '*hdbss-buffer-size': 'uint8'} }
+            '*hdbss-buffer-size': 'uint8',
+            '*cvm-migagent-uri': 'str'} }
 
 ##
 # @query-migrate-parameters:

@@ -202,6 +202,7 @@ Property migration_properties[] = {
     DEFINE_PROP_UINT8("hdbss-buffer-size", MigrationState,
                       parameters.hdbss_buffer_size,
                       DEFAULT_HDBSS_BUFFER_SIZE),
+    DEFINE_PROP_STRING("cvm-migagent-uri", MigrationState, parameters.cvm_migagent_uri),
 
     /* Migration capabilities */
     DEFINE_PROP_MIG_CAP("x-xbzrle", MIGRATION_CAPABILITY_XBZRLE),
@@ -1006,6 +1007,13 @@ void migrate_set_block_incremental(bool value)
     s->parameters.block_incremental = value;
 }
 
+const char *migrate_cvm_agent_uri(void)
+{
+    MigrationState *s = migrate_get_current();
+
+    return s->parameters.cvm_migagent_uri;
+}
+
 /* parameters helpers */
 
 void block_cleanup_parameters(void)
@@ -1118,6 +1126,7 @@ MigrationParameters *qmp_query_migrate_parameters(Error **errp)
     params->zero_page_detection = s->parameters.zero_page_detection;
     params->has_hdbss_buffer_size = true;
     params->hdbss_buffer_size = s->parameters.hdbss_buffer_size;
+    params->cvm_migagent_uri = g_strdup(s->parameters.cvm_migagent_uri);
 
     return params;
 }
@@ -1162,6 +1171,7 @@ void migrate_params_init(MigrationParameters *params)
     params->sev_pdh = g_strdup("");
     params->sev_plat_cert = g_strdup("");
     params->sev_amd_cert = g_strdup("");
+    params->cvm_migagent_uri = g_strdup("");
 }
 
 static bool compress_level_check(MigrationParameters *params, Error **errp)
@@ -1531,6 +1541,10 @@ static void migrate_params_test_apply(MigrateSetParameters *params,
     if (params->has_hdbss_buffer_size) {
         dest->hdbss_buffer_size = params->hdbss_buffer_size;
     }
+    if (params->cvm_migagent_uri) {
+        assert(params->cvm_migagent_uri->type == QTYPE_QSTRING);
+        dest->cvm_migagent_uri = params->cvm_migagent_uri->u.s;
+    }
 }
 
 static void migrate_params_apply(MigrateSetParameters *params, Error **errp)
@@ -1712,6 +1726,12 @@ static void migrate_params_apply(MigrateSetParameters *params, Error **errp)
     if (params->has_hdbss_buffer_size) {
         s->parameters.hdbss_buffer_size = params->hdbss_buffer_size;
     }
+
+    if (params->cvm_migagent_uri) {
+        g_free(s->parameters.cvm_migagent_uri);
+        assert(params->cvm_migagent_uri->type == QTYPE_QSTRING);
+        s->parameters.cvm_migagent_uri = g_strdup(params->cvm_migagent_uri->u.s);
+    }
 }
 
 void qmp_migrate_set_parameters(MigrateSetParameters *params, Error **errp)
@@ -1757,6 +1777,13 @@ void qmp_migrate_set_parameters(MigrateSetParameters *params, Error **errp)
         qobject_unref(params->sev_amd_cert->u.n);
         params->sev_amd_cert->type = QTYPE_QSTRING;
         params->sev_amd_cert->u.s = strdup("");
+    }
+    /* TODO Rewrite "" to null instead */
+    if (params->cvm_migagent_uri
+        && params->cvm_migagent_uri->type == QTYPE_QNULL) {
+        qobject_unref(params->cvm_migagent_uri->u.n);
+        params->cvm_migagent_uri->type = QTYPE_QSTRING;
+        params->cvm_migagent_uri->u.s = strdup("");
     }
 
     migrate_params_test_apply(params, &tmp);
