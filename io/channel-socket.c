@@ -559,7 +559,7 @@ static ssize_t qio_channel_socket_writev(QIOChannel *ioc,
 
  retry:
     ret = sendmsg(sioc->fd, &msg, 0);
-    if (ret <= 0) {
+    if (ret < 0) {
         if (errno == EAGAIN) {
             return QIO_CHANNEL_ERR_BLOCK;
         }
