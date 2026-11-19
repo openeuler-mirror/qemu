@@ -2235,6 +2235,7 @@ X: hw/9pfs/9p-proxy*
 F: fsdev/
 X: fsdev/virtfs-proxy-helper.c
 F: tests/qtest/virtio-9p-test.c
+F: tests/qtest/virtio-9p-race-test.c
 F: tests/qtest/libqos/virtio-9p*
 T: git https://gitlab.com/gkurz/qemu.git 9p-next
 T: git https://github.com/cschoenebeck/qemu.git 9p.next

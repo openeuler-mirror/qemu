@@ -230,7 +230,7 @@ void virtio_gpu_get_edid(VirtIOGPU *g,
 
 static bool calc_image_hostmem(pixman_format_code_t pformat,
                                uint32_t width, uint32_t height,
-                               uint32_t *hostmem)
+                               uint32_t *hostmem, uint32_t *rowstride_bytes)
 {
     uint64_t bpp = PIXMAN_FORMAT_BPP(pformat);
     uint64_t stride = (((uint64_t)width * bpp + 0x1f) >> 5) * sizeof(uint32_t);
@@ -241,6 +241,7 @@ static bool calc_image_hostmem(pixman_format_code_t pformat,
     }
 
     *hostmem = size;
+    *rowstride_bytes = stride;
     return true;
 }
 
@@ -260,7 +261,7 @@ static void virtio_gpu_resource_create_2d(VirtIOGPU *g,
     pixman_format_code_t pformat;
     struct virtio_gpu_simple_resource *res;
     struct virtio_gpu_resource_create_2d c2d;
-    uint32_t hostmem;
+    uint32_t hostmem, rowstride_bytes;
 
     VIRTIO_GPU_FILL_CMD(c2d);
     virtio_gpu_bswap_32(&c2d, sizeof(c2d));
@@ -299,7 +300,8 @@ static void virtio_gpu_resource_create_2d(VirtIOGPU *g,
         return;
     }
 
-    if (!calc_image_hostmem(pformat, c2d.width, c2d.height, &hostmem)) {
+    if (!calc_image_hostmem(pformat, c2d.width, c2d.height,
+                            &hostmem, &rowstride_bytes)) {
         qemu_log_mask(LOG_GUEST_ERROR, "%s: image dimensions overflow\n",
                       __func__);
         g_free(res);
@@ -319,7 +321,7 @@ static void virtio_gpu_resource_create_2d(VirtIOGPU *g,
             pformat,
             c2d.width,
             c2d.height,
-            bits, c2d.height ? res->hostmem / c2d.height : 0);
+            bits, rowstride_bytes);
 #ifdef WIN32
         if (res->image) {
             pixman_image_set_destroy_function(res->image, win32_pixman_image_destroy, res->handle);
@@ -1309,7 +1311,7 @@ static int virtio_gpu_load(QEMUFile *f, void *opaque, size_t size,
 {
     VirtIOGPU *g = opaque;
     struct virtio_gpu_simple_resource *res;
-    uint32_t resource_id, pformat, hostmem;
+    uint32_t resource_id, pformat, hostmem, rowstride_bytes;
     void *bits = NULL;
     int i;
 
@@ -1336,7 +1338,8 @@ static int virtio_gpu_load(QEMUFile *f, void *opaque, size_t size,
             return -EINVAL;
         }
 
-        if (!calc_image_hostmem(pformat, res->width, res->height, &hostmem)) {
+        if (!calc_image_hostmem(pformat, res->width, res->height,
+                                &hostmem, &rowstride_bytes)) {
             g_free(res);
             return -EINVAL;
         }
@@ -1351,7 +1354,7 @@ static int virtio_gpu_load(QEMUFile *f, void *opaque, size_t size,
         res->image = pixman_image_create_bits(
             pformat,
             res->width, res->height,
-            bits, res->height ? res->hostmem / res->height : 0);
+            bits, rowstride_bytes);
         if (!res->image) {
             g_free(res);
             return -EINVAL;
